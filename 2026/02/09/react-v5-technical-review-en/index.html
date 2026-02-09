@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="An in-depth technical review of ReAct, covering method mechanics, task-level experiments, limitations, method lineage, and deployment guidance.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="ReAct Technical Review: From Reasoning Ability to Executable Reasoning">
+<meta property="og:url" content="https://zzz0906.github.io/2026/02/09/react-v5-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="An in-depth technical review of ReAct, covering method mechanics, task-level experiments, limitations, method lineage, and deployment guidance.">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://zzz0906.github.io/images/react-v5/diagram.jpg">
+<meta property="og:image" content="https://zzz0906.github.io/images/react-v5/results.jpg">
+<meta property="og:image" content="https://zzz0906.github.io/images/react-v5/hotpotqa.jpg">
+<meta property="og:image" content="https://zzz0906.github.io/images/react-v5/alfworld.jpg">
+<meta property="og:image" content="https://zzz0906.github.io/images/react-v5/hotpot_finetune.jpg">
+<meta property="article:published_time" content="2026-02-09T10:20:00.000Z">
+<meta property="article:modified_time" content="2026-02-09T10:27:34.856Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="ReAct">
+<meta property="article:tag" content="Chain-of-Thought">
+<meta property="article:tag" content="Tool Calling">
+<meta property="article:tag" content="HotpotQA">
+<meta property="article:tag" content="FEVER">
+<meta property="article:tag" content="ALFWorld">
+<meta property="article:tag" content="WebShop">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://zzz0906.github.io/images/react-v5/diagram.jpg">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/02/09/react-v5-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>ReAct Technical Review: From Reasoning Ability to Executable Reasoning | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/02/09/react-v5-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          ReAct Technical Review: From Reasoning Ability to Executable Reasoning
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2026-02-09 10:20:00 / Modified: 10:27:34" itemprop="dateCreated datePublished" datetime="2026-02-09T10:20:00+00:00">2026-02-09</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Reading/" itemprop="url" rel="index"><span itemprop="name">Paper Reading</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Reading/AI-Agents/" itemprop="url" rel="index"><span itemprop="name">AI Agents</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">An in-depth technical review of ReAct, covering method mechanics, task-level experiments, limitations, method lineage, and deployment guidance.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="ReAct-In-Depth-Technical-Review-English-v5"><a href="#ReAct-In-Depth-Technical-Review-English-v5" class="headerlink" title="ReAct In-Depth Technical Review (English, v5)"></a>ReAct In-Depth Technical Review (English, v5)</h1><p><strong>Author: zhongzhu zhou</strong><br>Paper: ReAct: Synergizing Reasoning and Acting in Language Models (ICLR 2023)</p>
+<h2 id="Abstract"><a href="#Abstract" class="headerlink" title="Abstract"></a>Abstract</h2><p>ReAct’s contribution is not simply “longer reasoning traces.” Its key idea is to reframe LLM problem solving as an executable closed loop: <strong>Thought (reasoning) → Action (interaction) → Observation (feedback)</strong>. This unifies reasoning and tool interaction in one trajectory, enabling planning before acting and correction after observing. As a result, ReAct improves robustness, interpretability, and diagnosability across both knowledge-intensive reasoning and long-horizon decision-making tasks. This review provides a detailed analysis of method mechanics, experiments, failure modes, and practical deployment guidance.</p>
+<h2 id="1-Prerequisites-What-to-know-before-reading-ReAct"><a href="#1-Prerequisites-What-to-know-before-reading-ReAct" class="headerlink" title="1. Prerequisites: What to know before reading ReAct"></a>1. Prerequisites: What to know before reading ReAct</h2><h3 id="1-1-Chain-of-Thought-CoT"><a href="#1-1-Chain-of-Thought-CoT" class="headerlink" title="1.1 Chain-of-Thought (CoT)"></a>1.1 Chain-of-Thought (CoT)</h3><p>CoT explicitly exposes intermediate reasoning steps. It often improves complex reasoning, but has two known risks: (1) ungrounded factual claims (hallucination), and (2) error propagation across long chains.</p>
+<h3 id="1-2-Tool-use-function-calling"><a href="#1-2-Tool-use-function-calling" class="headerlink" title="1.2 Tool use / function calling"></a>1.2 Tool use / function calling</h3><p>Tool use grounds models in external information (search, browsing, APIs). It improves factual reliability, but without high-level reasoning, systems can still behave myopically: repetitive calls, poor planning, weak synthesis.</p>
+<h3 id="1-3-Agent-evaluation-paradigm"><a href="#1-3-Agent-evaluation-paradigm" class="headerlink" title="1.3 Agent evaluation paradigm"></a>1.3 Agent evaluation paradigm</h3><p>Endpoint metrics (accuracy/success rate) are insufficient for agents. Process metrics matter: step cost, repetition rate, ineffective tool-call rate, fallback rate, and evidence coverage. ReAct is valuable because it naturally exposes process trajectories.</p>
+<h3 id="1-4-Few-shot-prompting"><a href="#1-4-Few-shot-prompting" class="headerlink" title="1.4 Few-shot prompting"></a>1.4 Few-shot prompting</h3><p>Few-shot prompting teaches both format and strategy from a small number of demonstrations. In ReAct, demonstrations encode not only answer style but also the interleaving protocol of Thought/Action/Observation, so example quality strongly affects generalization.</p>
+<h3 id="1-5-Task-background-HotpotQA-FEVER-ALFWorld-WebShop"><a href="#1-5-Task-background-HotpotQA-FEVER-ALFWorld-WebShop" class="headerlink" title="1.5 Task background: HotpotQA, FEVER, ALFWorld, WebShop"></a>1.5 Task background: HotpotQA, FEVER, ALFWorld, WebShop</h3><ul>
+<li><strong>HotpotQA</strong>: multi-hop QA requiring cross-passage evidence composition.</li>
+<li><strong>FEVER</strong>: fact verification requiring evidence-grounded support/refute judgment.</li>
+<li><strong>ALFWorld</strong>: long-horizon household task planning with sparse feedback.</li>
+<li><strong>WebShop</strong>: noisy real-world product selection under instruction constraints.</li>
+</ul>
+<h2 id="2-Core-Method-How-ReAct-unifies-reasoning-and-acting"><a href="#2-Core-Method-How-ReAct-unifies-reasoning-and-acting" class="headerlink" title="2. Core Method: How ReAct unifies reasoning and acting"></a>2. Core Method: How ReAct unifies reasoning and acting</h2><h3 id="2-1-Formal-perspective"><a href="#2-1-Formal-perspective" class="headerlink" title="2.1 Formal perspective"></a>2.1 Formal perspective</h3><p>Conventional policy:</p>
+<div class="eq">
+
+<p>π(a_t | c_t), with a_t ∈ A</p>
+</div>
+
+<p>ReAct expands the action space to:</p>
+<div class="eq">
+
+<p>Â = A ∪ L</p>
+</div>
+
+<p>where A is executable environment actions and L is language-space reasoning actions (Thought). Thought does not directly modify the environment, but updates context c_t and therefore shifts subsequent action selection.</p>
+<h3 id="2-2-Trajectory-syntax-and-information-flow"><a href="#2-2-Trajectory-syntax-and-information-flow" class="headerlink" title="2.2 Trajectory syntax and information flow"></a>2.2 Trajectory syntax and information flow</h3><p>Typical knowledge-task trajectory:</p>
+<div class="eq">
+
+<p>Question → Thought → Action → Observation → … → Finish</p>
+</div>
+
+<p>Typical decision-task trajectory:</p>
+<div class="eq">
+
+<p>Goal → Action/Observation … (sparse Thoughts at key nodes) → Finish</p>
+</div>
+
+<p>The design principle: dense reasoning for evidence-heavy tasks, sparse reasoning for long-horizon control.</p>
+<h3 id="2-3-Functional-roles-of-Thought-in-ReAct"><a href="#2-3-Functional-roles-of-Thought-in-ReAct" class="headerlink" title="2.3 Functional roles of Thought in ReAct"></a>2.3 Functional roles of Thought in ReAct</h3><ul>
+<li><strong>Goal decomposition</strong>: break down complex objectives into executable subgoals.</li>
+<li><strong>Evidence extraction</strong>: convert observations into decision-relevant facts.</li>
+<li><strong>Query reformulation</strong>: recover from retrieval misses by rewriting search targets.</li>
+<li><strong>Progress tracking</strong>: decide whether to continue, switch, or terminate subtasks.</li>
+<li><strong>Final synthesis</strong>: aggregate multi-step evidence into final answers/actions.</li>
+</ul>
+<h2 id="3-Key-figures-and-technical-interpretation"><a href="#3-Key-figures-and-technical-interpretation" class="headerlink" title="3. Key figures and technical interpretation"></a>3. Key figures and technical interpretation</h2><p><img src="../../../../images/react-v5/diagram.jpg" alt="**Fig.1 Method overview**: ReAct’s closed-loop structure (reasoning and acting interleaved in one policy flow)."></p>
+<p><img src="../../../../images/react-v5/results.jpg" alt="**Fig.2 Result overview**: Cross-task gains indicate broad applicability and better process transparency."></p>
+<p><img src="../../../../images/react-v5/hotpotqa.jpg" alt="**Fig.3 HotpotQA trajectory example**: ReAct reduces “coherent but ungrounded” reasoning by coupling retrieval evidence with inference."></p>
+<p><img src="../../../../images/react-v5/alfworld.jpg" alt="**Fig.4 ALFWorld example**: Sparse thought acts as a subgoal switcher in long-horizon planning."></p>
+<p><img src="../../../../images/react-v5/hotpot_finetune.jpg" alt="**Fig.5 Finetuning trend**: ReAct trajectories can serve as supervision signals beyond pure prompting."></p>
+<h2 id="4-Experiment-deep-dive-why-gains-differ-by-task"><a href="#4-Experiment-deep-dive-why-gains-differ-by-task" class="headerlink" title="4. Experiment deep-dive: why gains differ by task"></a>4. Experiment deep-dive: why gains differ by task</h2><h3 id="4-1-HotpotQA-FEVER-Internal-reasoning-vs-external-grounding"><a href="#4-1-HotpotQA-FEVER-Internal-reasoning-vs-external-grounding" class="headerlink" title="4.1 HotpotQA / FEVER: Internal reasoning vs external grounding"></a>4.1 HotpotQA / FEVER: Internal reasoning vs external grounding</h3><p>Both tasks benefit from reasoning+retrieval, but in different proportions. FEVER is highly sensitive to factual grounding, while HotpotQA stresses compositional multi-hop structure. In practice, hybrid routing (CoT ↔ ReAct) often outperforms single-paradigm use.</p>
+<h3 id="4-2-ALFWorld-cognitive-anchors-in-long-horizon-control"><a href="#4-2-ALFWorld-cognitive-anchors-in-long-horizon-control" class="headerlink" title="4.2 ALFWorld: cognitive anchors in long-horizon control"></a>4.2 ALFWorld: cognitive anchors in long-horizon control</h3><p>Many long-horizon failures are not action-primitive failures but subgoal-management failures. Sparse thought at key nodes answers three control questions: where am I, what is done, what is next?</p>
+<h3 id="4-3-WebShop-constraint-alignment-over-naive-search"><a href="#4-3-WebShop-constraint-alignment-over-naive-search" class="headerlink" title="4.3 WebShop: constraint alignment over naive search"></a>4.3 WebShop: constraint alignment over naive search</h3><p>The central challenge is semantic alignment between user constraints and product attributes, not merely retrieval. ReAct externalizes those constraints in thought, improving consistency under noisy observations.</p>
+<h2 id="5-Failure-modes-and-breakdown-analysis"><a href="#5-Failure-modes-and-breakdown-analysis" class="headerlink" title="5. Failure modes and breakdown analysis"></a>5. Failure modes and breakdown analysis</h2><ul>
+<li><strong>Retrieval coupling failure</strong>: weak recall breaks the reasoning chain.</li>
+<li><strong>Trajectory loops</strong>: repeated thought/action leads to local stagnation.</li>
+<li><strong>Cost inflation</strong>: multi-turn trajectories increase token and latency budgets.</li>
+<li><strong>Evaluation blind spot</strong>: endpoint-only metrics miss process quality differences.</li>
+</ul>
+<p>A robust production setup should include: step budget, no-gain observation detection, loop detector, fallback routing, and evidence gating.</p>
+<h2 id="6-ReAct-in-the-method-lineage"><a href="#6-ReAct-in-the-method-lineage" class="headerlink" title="6. ReAct in the method lineage"></a>6. ReAct in the method lineage</h2><p>Useful high-level lineage:</p>
+<div class="eq">
+
+<p>CoT → ReAct (closed loop) → Reflexion (reflection layer) / ToT (search layer) / Toolformer (tool-use learning layer) / Function-calling Agents (execution engineering layer)</p>
+</div>
+
+<p>ReAct provides the closed-loop backbone; Reflexion adds cross-episode learning; ToT expands branching search; Toolformer focuses on tool invocation learning; function-calling agents emphasize reliability, validation, and governance.</p>
+<h2 id="7-Deployment-guidance"><a href="#7-Deployment-guidance" class="headerlink" title="7. Deployment guidance"></a>7. Deployment guidance</h2><h3 id="7-1-Strategy-matrix"><a href="#7-1-Strategy-matrix" class="headerlink" title="7.1 Strategy matrix"></a>7.1 Strategy matrix</h3><ul>
+<li><strong>Low-latency, mostly internal-knowledge tasks</strong>: CoT/CoT-SC first.</li>
+<li><strong>Multi-step evidence acquisition, interactive environments</strong>: ReAct first.</li>
+<li><strong>Heterogeneous workload, variable uncertainty</strong>: hybrid routing (CoT ↔ ReAct).</li>
+<li><strong>High-risk domains</strong>: function-calling framework + ReAct-style reasoning + human approval gates.</li>
+</ul>
+<h3 id="7-2-Practical-implementation-checklist"><a href="#7-2-Practical-implementation-checklist" class="headerlink" title="7.2 Practical implementation checklist"></a>7.2 Practical implementation checklist</h3><ul>
+<li>Thought length control to prevent verbosity inflation.</li>
+<li>Action budget with fallback triggers.</li>
+<li>Evidence binding: key conclusions must cite observations.</li>
+<li>Loop detection and replanning trigger.</li>
+<li>Online telemetry: ineffective actions, average steps, fallback rate, success rate.</li>
+</ul>
+<h2 id="8-Conclusion"><a href="#8-Conclusion" class="headerlink" title="8. Conclusion"></a>8. Conclusion</h2><p>ReAct’s long-term impact is architectural: it turns reasoning from a static text capability into a dynamic control capability. If CoT taught models to “think,” ReAct teaches systems to make thinking operational in action and continuously corrected by feedback.</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/LLM/" rel="tag"># LLM</a>
+              <a href="/tags/Agent/" rel="tag"># Agent</a>
+              <a href="/tags/ReAct/" rel="tag"># ReAct</a>
+              <a href="/tags/Prompting/" rel="tag"># Prompting</a>
+              <a href="/tags/Tool-Use/" rel="tag"># Tool Use</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2023/04/29/ComputerArchitecture-Day1/" rel="prev" title="ComputerArchitecture-Day1">
+      <i class="fa fa-chevron-left"></i> ComputerArchitecture-Day1
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#ReAct-In-Depth-Technical-Review-English-v5"><span class="nav-number">1.</span> <span class="nav-text">ReAct In-Depth Technical Review (English, v5)</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#Abstract"><span class="nav-number">1.1.</span> <span class="nav-text">Abstract</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Prerequisites-What-to-know-before-reading-ReAct"><span class="nav-number">1.2.</span> <span class="nav-text">1. Prerequisites: What to know before reading ReAct</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-Chain-of-Thought-CoT"><span class="nav-number">1.2.1.</span> <span class="nav-text">1.1 Chain-of-Thought (CoT)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-Tool-use-function-calling"><span class="nav-number">1.2.2.</span> <span class="nav-text">1.2 Tool use &#x2F; function calling</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-Agent-evaluation-paradigm"><span class="nav-number">1.2.3.</span> <span class="nav-text">1.3 Agent evaluation paradigm</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-4-Few-shot-prompting"><span class="nav-number">1.2.4.</span> <span class="nav-text">1.4 Few-shot prompting</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-5-Task-background-HotpotQA-FEVER-ALFWorld-WebShop"><span class="nav-number">1.2.5.</span> <span class="nav-text">1.5 Task background: HotpotQA, FEVER, ALFWorld, WebShop</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Core-Method-How-ReAct-unifies-reasoning-and-acting"><span class="nav-number">1.3.</span> <span class="nav-text">2. Core Method: How ReAct unifies reasoning and acting</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-Formal-perspective"><span class="nav-number">1.3.1.</span> <span class="nav-text">2.1 Formal perspective</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-Trajectory-syntax-and-information-flow"><span class="nav-number">1.3.2.</span> <span class="nav-text">2.2 Trajectory syntax and information flow</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-Functional-roles-of-Thought-in-ReAct"><span class="nav-number">1.3.3.</span> <span class="nav-text">2.3 Functional roles of Thought in ReAct</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Key-figures-and-technical-interpretation"><span class="nav-number">1.4.</span> <span class="nav-text">3. Key figures and technical interpretation</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Experiment-deep-dive-why-gains-differ-by-task"><span class="nav-number">1.5.</span> <span class="nav-text">4. Experiment deep-dive: why gains differ by task</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-HotpotQA-FEVER-Internal-reasoning-vs-external-grounding"><span class="nav-number">1.5.1.</span> <span class="nav-text">4.1 HotpotQA &#x2F; FEVER: Internal reasoning vs external grounding</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-ALFWorld-cognitive-anchors-in-long-horizon-control"><span class="nav-number">1.5.2.</span> <span class="nav-text">4.2 ALFWorld: cognitive anchors in long-horizon control</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-WebShop-constraint-alignment-over-naive-search"><span class="nav-number">1.5.3.</span> <span class="nav-text">4.3 WebShop: constraint alignment over naive search</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Failure-modes-and-breakdown-analysis"><span class="nav-number">1.6.</span> <span class="nav-text">5. Failure modes and breakdown analysis</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-ReAct-in-the-method-lineage"><span class="nav-number">1.7.</span> <span class="nav-text">6. ReAct in the method lineage</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Deployment-guidance"><span class="nav-number">1.8.</span> <span class="nav-text">7. Deployment guidance</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-Strategy-matrix"><span class="nav-number">1.8.1.</span> <span class="nav-text">7.1 Strategy matrix</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-Practical-implementation-checklist"><span class="nav-number">1.8.2.</span> <span class="nav-text">7.2 Practical implementation checklist</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Conclusion"><span class="nav-number">1.9.</span> <span class="nav-text">8. Conclusion</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">30</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">2</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">12</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
