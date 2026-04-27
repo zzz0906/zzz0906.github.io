@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="A technical review of Reflexion, exploring how language agents use verbal self-reflection as reinforcement signals to iteratively improve performance on coding, reasoning, and decision-making tasks.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Reflexion: LLM Agents That Learn from Failure Through Verbal Self-Reflection">
+<meta property="og:url" content="https://zzz0906.github.io/2026/02/20/2026-02-20-Reflexion-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="A technical review of Reflexion, exploring how language agents use verbal self-reflection as reinforcement signals to iteratively improve performance on coding, reasoning, and decision-making tasks.">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-02-20T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-03T01:05:33.837Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/02/20/2026-02-20-Reflexion-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>Reflexion: LLM Agents That Learn from Failure Through Verbal Self-Reflection | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/02/20/2026-02-20-Reflexion-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Reflexion: LLM Agents That Learn from Failure Through Verbal Self-Reflection
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-02-20 00:00:00" itemprop="dateCreated datePublished" datetime="2026-02-20T00:00:00+00:00">2026-02-20</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-03 01:05:33" itemprop="dateModified" datetime="2026-04-03T01:05:33+00:00">2026-04-03</time>
+              </span>
+
+          
+            <div class="post-description">A technical review of Reflexion, exploring how language agents use verbal self-reflection as reinforcement signals to iteratively improve performance on coding, reasoning, and decision-making tasks.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="Reflexion-Language-Agents-with-Verbal-Reinforcement-Learning-—-Long-Form-Technical-Review-English">Reflexion: Language Agents with Verbal Reinforcement Learning — Long-Form Technical Review (English)</h1>
+<p><strong>Author: zhongzhu zhou</strong><br>
+Paper: Reflexion: Language Agents with Verbal Reinforcement Learning (NeurIPS 2023)<br>
+ArXiv: <a href="https://arxiv.org/abs/2303.11366" target="_blank" rel="noopener">https://arxiv.org/abs/2303.11366</a></p>
+<hr>
+<h2 id="TL-DR">TL;DR</h2>
+<p>Reflexion replaces expensive parameter updates with a lightweight language-space policy update loop: after each episode, the agent writes a compact reflection (what failed, why, and what to do differently), and this memory conditions the next attempt. The result is practical online adaptation without fine-tuning. In tasks where errors are diagnosable in language (tool misuse, missing constraints, wrong decomposition), Reflexion gives a strong retry efficiency boost over plain ReAct and vanilla prompting.</p>
+<a id="more"></a>
+<p><strong>Estimated reading time:</strong> 45–60 minutes.</p>
+<hr>
+<h2 id="1-Why-this-paper-matters-in-2026-agent-stacks">1) Why this paper matters in 2026 agent stacks</h2>
+<p>By 2026, many production agent systems already have retries, tools, and observability. What they still often miss is a robust mechanism to transfer <em>experience</em> across attempts. Reflexion’s key value is that it gives us a structured answer:</p>
+<ul>
+<li>Keep base model frozen.</li>
+<li>Keep evaluator explicit.</li>
+<li>Convert failure traces into reusable textual lessons.</li>
+<li>Feed those lessons back as policy hints.</li>
+</ul>
+<p>This is the bridge between one-shot prompting and expensive continual fine-tuning. I view it as a deployable middle layer: cheap enough for inference-time systems, but principled enough to improve over trials.</p>
+<hr>
+<h2 id="2-Problem-statement-and-framing">2) Problem statement and framing</h2>
+<p>Classic LLM-agent failure pattern:</p>
+<ol>
+<li>Attempt fails.</li>
+<li>Retry repeats almost the same mistake.</li>
+<li>We burn tokens and latency with little learning.</li>
+</ol>
+<p>Reflexion reframes this as a policy-iteration problem in text space:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex">
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>\pi_{t+1}(a|s) = \pi_t(a|s, M_t)</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex"></annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>M</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">M_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is reflection memory accumulated from prior trajectories. We do not optimize parameters; we optimize <em>conditioning context</em>.</p>
+<p>That sounds simple, but it changes operating economics:</p>
+<ul>
+<li>no training cluster,</li>
+<li>no checkpoint management,</li>
+<li>no model-version drift from online finetune,</li>
+<li>immediate deployability on closed APIs.</li>
+</ul>
+<hr>
+<h2 id="3-Method-Actor–Evaluator–Reflector-loop">3) Method: Actor–Evaluator–Reflector loop</h2>
+<h3 id="3-1-Actor">3.1 Actor</h3>
+<p>The Actor runs task trajectory generation with tools/environment interaction. Usually this is ReAct-style:</p>
+<ul>
+<li>reason,</li>
+<li>choose tool/action,</li>
+<li>observe,</li>
+<li>repeat until terminal condition.</li>
+</ul>
+<h3 id="3-2-Evaluator">3.2 Evaluator</h3>
+<p>The Evaluator converts trajectory outcome into quality signal:</p>
+<ul>
+<li>binary success/failure,</li>
+<li>score/ranking,</li>
+<li>unit tests pass rate,</li>
+<li>environment reward proxy.</li>
+</ul>
+<p>Evaluator quality is the first-order bottleneck: bad reward shaping leads to bad reflections.</p>
+<h3 id="3-3-Reflector">3.3 Reflector</h3>
+<p>The Reflector takes trajectory + evaluator signal and writes verbal feedback, often short and imperative:</p>
+<ul>
+<li>“I ignored constraint X; verify all constraints before action.”</li>
+<li>“I queried tool Y too late; gather evidence first.”</li>
+</ul>
+<p>These reflections are stored in memory and injected in future prompts.</p>
+<h3 id="3-4-Core-algorithm-sketch">3.4 Core algorithm sketch</h3>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">Initialize memory M &#x3D; []</span><br><span class="line">for trial in 1..K:</span><br><span class="line">  tau &#x3D; Actor(task, memory&#x3D;M)</span><br><span class="line">  r   &#x3D; Evaluator(tau)</span><br><span class="line">  if success(r): return tau</span><br><span class="line">  refl &#x3D; Reflector(tau, r)</span><br><span class="line">  M &#x3D; UpdateMemory(M, refl)   # dedup &#x2F; rank &#x2F; prune</span><br><span class="line">return best(tau_1..tau_K)</span><br></pre></td></tr></table></figure>
+<p>The critical design choice is <strong>UpdateMemory</strong>. Most real failures come from weak memory hygiene, not from the reflection generator itself.</p>
+<hr>
+<h2 id="4-What-changed-vs-ReAct-and-why-gains-appear">4) What changed vs ReAct and why gains appear</h2>
+<p>Reflexion is often described as “ReAct + memory,” but that undersells the mechanism. ReAct stores trajectory traces; Reflexion stores distilled <em>counterfactual policy hints</em>.</p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>ReAct baseline</th>
+<th>Reflexion</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Across-attempt transfer</td>
+<td>weak (raw traces)</td>
+<td>strong (explicit lessons)</td>
+</tr>
+<tr>
+<td>Policy update locus</td>
+<td>implicit in prompt restatement</td>
+<td>explicit reflection memory</td>
+</tr>
+<tr>
+<td>Noise control</td>
+<td>low</td>
+<td>configurable (dedup/pruning)</td>
+</tr>
+<tr>
+<td>Deployment cost</td>
+<td>low</td>
+<td>low-moderate</td>
+</tr>
+</tbody>
+</table>
+<p>The gains appear when three conditions hold:</p>
+<ol>
+<li>failure is linguistically diagnosable;</li>
+<li>evaluator signal is reliable;</li>
+<li>memory prompt budget is controlled.</li>
+</ol>
+<hr>
+<h2 id="5-Experiment-tasks-and-interpretation">5) Experiment tasks and interpretation</h2>
+<p>The paper covers sequential decision and coding-style tasks where iterative correction matters. Instead of reading the numbers as “Reflexion always wins,” I interpret the trend as:</p>
+<ul>
+<li>Largest gains: structured errors with verbalizable fixes.</li>
+<li>Moderate gains: partially observable tasks where reflection can improve search order.</li>
+<li>Weak gains: tasks dominated by deep capability gaps not fixable by prompt-state updates.</li>
+</ul>
+<p>A useful engineering reading is <em>retry efficiency curve</em>: success@attempt-N should rise faster under Reflexion than under no-reflection baselines.</p>
+<hr>
+<h2 id="6-Failure-modes-I-observed-and-how-to-mitigate">6) Failure modes I observed (and how to mitigate)</h2>
+<h3 id="6-1-Reflection-drift">6.1 Reflection drift</h3>
+<p>Symptoms: reflections become generic (“be careful”) and stop being actionable.</p>
+<p>Mitigation:</p>
+<ul>
+<li>enforce template: <code>Failure -&gt; Cause -&gt; Next Action</code>;</li>
+<li>reject reflections lacking concrete constraints/tools;</li>
+<li>use evaluator-backed citation snippets.</li>
+</ul>
+<h3 id="6-2-Contradictory-memory-accumulation">6.2 Contradictory memory accumulation</h3>
+<p>Symptoms: old reflections conflict with new conditions.</p>
+<p>Mitigation:</p>
+<ul>
+<li>attach metadata: task type, environment version, timestamp;</li>
+<li>perform conflict scoring;</li>
+<li>maintain top-k active memory with decay.</li>
+</ul>
+<h3 id="6-3-Reward-hacking-at-language-level">6.3 Reward hacking at language level</h3>
+<p>Symptoms: reflections optimize evaluator proxy rather than true task success.</p>
+<p>Mitigation:</p>
+<ul>
+<li>dual evaluators (task metric + behavioral guardrail);</li>
+<li>random holdout checks;</li>
+<li>delayed validation against hidden tests.</li>
+</ul>
+<h3 id="6-4-Context-window-pressure">6.4 Context-window pressure</h3>
+<p>Symptoms: long memory crowds out current state.</p>
+<p>Mitigation:</p>
+<ul>
+<li>memory compression every N trials;</li>
+<li>two-level retrieval: global lessons + task-local lessons;</li>
+<li>cap memory token budget (e.g., 10–20% of total context).</li>
+</ul>
+<hr>
+<h2 id="7-Reproducibility-protocol-practical">7) Reproducibility protocol (practical)</h2>
+<p>If I were reproducing this paper for production decisions, I would lock down:</p>
+<ol>
+<li><strong>Model/version pinning</strong>: same model snapshot for all baselines.</li>
+<li><strong>Prompt-control</strong>: actor/evaluator/reflector templates in versioned files.</li>
+<li><strong>Determinism policy</strong>: temperature/top-p fixed, seed where available.</li>
+<li><strong>Tool wrappers</strong>: stable I/O contracts and timeout behavior.</li>
+<li><strong>Telemetry schema</strong>: per-trial logs for trajectory, reward, reflection, final outcome.</li>
+</ol>
+<h3 id="Suggested-experiment-matrix">Suggested experiment matrix</h3>
+<ul>
+<li>Baselines: Prompt-only / CoT / ReAct / ReAct+history.</li>
+<li>Reflexion variants: raw memory / dedup memory / confidence-ranked memory.</li>
+<li>Metrics: success@k, token cost, latency, failure category reduction.</li>
+</ul>
+<p>This gives a decision-ready tradeoff chart rather than isolated benchmark wins.</p>
+<hr>
+<h2 id="8-Production-rollout-blueprint">8) Production rollout blueprint</h2>
+<h3 id="Stage-A-Shadow-mode">Stage A: Shadow mode</h3>
+<p>Run Reflexion in parallel, do not affect user-visible outputs. Compare success and cost.</p>
+<h3 id="Stage-B-Partial-traffic">Stage B: Partial traffic</h3>
+<p>Enable for failure-prone task classes only (tool orchestration, constrained coding tasks).</p>
+<h3 id="Stage-C-Full-with-guardrails">Stage C: Full with guardrails</h3>
+<ul>
+<li>hard cap retries,</li>
+<li>memory quality checks,</li>
+<li>evaluator anomaly alerts,</li>
+<li>periodic memory garbage collection.</li>
+</ul>
+<h3 id="Service-level-metrics-to-track">Service-level metrics to track</h3>
+<ul>
+<li>pass rate lift vs baseline,</li>
+<li>retries to success,</li>
+<li>token delta per solved task,</li>
+<li>hallucinated reflection rate,</li>
+<li>stale-memory incident rate.</li>
+</ul>
+<hr>
+<h2 id="9-Relationship-to-broader-methods">9) Relationship to broader methods</h2>
+<p>Reflexion is complementary to other agent-improvement strategies:</p>
+<ul>
+<li><strong>vs RLHF/PPO/DPO/GRPO</strong>: those change weights; Reflexion changes inference context.</li>
+<li><strong>vs RAG</strong>: RAG retrieves external facts; Reflexion retrieves self-generated lessons.</li>
+<li><strong>vs long-term memory stores</strong>: Reflexion memory is policy-centric, not user-profile-centric.</li>
+</ul>
+<p>In mature systems, the stack can be:
+<code>RAG (facts) + Reflexion (self-corrections) + lightweight policy finetune (periodic)</code>.</p>
+<hr>
+<h2 id="10-What-still-needs-to-be-improved">10) What still needs to be improved</h2>
+<ol>
+<li>Reflection verifiability: each lesson should cite trajectory evidence.</li>
+<li>Memory governance: retention/expiry policies by task family.</li>
+<li>Cross-task transfer learning: avoid overfitting reflections to narrow contexts.</li>
+<li>Robust evaluator design: reduce false rewards and brittle proxies.</li>
+</ol>
+<p>These are engineering-heavy, but solvable.</p>
+<hr>
+<h2 id="11-My-verdict">11) My verdict</h2>
+<p>Reflexion is one of the most practical agent papers in this line because it aligns with real deployment constraints: frozen base models, tool-centric workflows, and need for fast iteration. It is not magic. It wins when the system can <em>diagnose and verbalize</em> its mistakes and when memory hygiene is disciplined. If your agent pipeline currently retries blindly, Reflexion is likely the highest ROI upgrade before touching expensive training.</p>
+<hr>
+<h2 id="References">References</h2>
+<ol>
+<li>Shinn et al., Reflexion: Language Agents with Verbal Reinforcement Learning, 2023.</li>
+<li>Yao et al., ReAct: Synergizing Reasoning and Acting in Language Models, 2022.</li>
+<li>Yao et al., Tree of Thoughts: Deliberate Problem Solving with LLMs, 2023.</li>
+<li>Rafailov et al., DPO, 2023.</li>
+</ol>
+<hr>
+<h2 id="Appendix-A-Figure-Table-Oriented-Deep-Dive">Appendix A: Figure/Table-Oriented Deep Dive</h2>
+<h3 id="A-1-Framework-diagram-Actor-Evaluator-Reflector">A.1 Framework diagram (Actor/Evaluator/Reflector)</h3>
+<p>When reading the pipeline figure, I focus on interface contracts:</p>
+<ul>
+<li>Actor output must be machine-checkable (actions, tool args, terminal state).</li>
+<li>Evaluator output must be stable across retries (avoid reward jitter).</li>
+<li>Reflector output must be actionable and bounded.</li>
+</ul>
+<p>A practical interpretation is that Reflexion is less a “new model” and more a software architecture pattern. If these contracts are strict, model swaps are easier and offline analysis is cleaner.</p>
+<h3 id="A-2-Retry-improvement-curves">A.2 Retry improvement curves</h3>
+<p>A common mistake in reproductions is to report only final success@k. Better diagnostics include:</p>
+<ul>
+<li>delta success from attempt i to i+1,</li>
+<li>average token growth per attempt,</li>
+<li>failure type migration across attempts.</li>
+</ul>
+<p>If Reflexion works correctly, we should observe not only higher end success but also faster reduction of repeated failure categories.</p>
+<h3 id="A-3-Cost–benefit-accounting">A.3 Cost–benefit accounting</h3>
+<p>Suppose baseline requires 3.8 attempts per solved task, Reflexion reduces to 2.6, but each attempt has extra reflection tokens. Net gain depends on:</p>
+<ul>
+<li>reflection length,</li>
+<li>evaluator overhead,</li>
+<li>solved-task value.</li>
+</ul>
+<p>In high-value workflows (production incidents, high-precision coding tasks), Reflexion usually pays off even with moderate token overhead.</p>
+<h2 id="Appendix-B-Implementation-templates">Appendix B: Implementation templates</h2>
+<h3 id="B-1-Reflection-prompt-template">B.1 Reflection prompt template</h3>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">You are writing a post-episode reflection for an autonomous agent.</span><br><span class="line">Given the trajectory and evaluator signal, output:</span><br><span class="line">1) Failure Summary (1-2 lines)</span><br><span class="line">2) Root Cause (1-3 bullet points)</span><br><span class="line">3) Next-Attempt Rules (max 5 imperative bullets)</span><br><span class="line">4) Do-Not-Repeat list (optional)</span><br><span class="line">Rules: be concrete, reference constraints&#x2F;tools, avoid generic advice.</span><br></pre></td></tr></table></figure>
+<h3 id="B-2-Memory-ranking-heuristic">B.2 Memory ranking heuristic</h3>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">score &#x3D; alpha * recency + beta * evaluator_confidence + gamma * novelty - delta * conflict</span><br><span class="line">keep top-k</span><br></pre></td></tr></table></figure>
+<p>This lightweight scoring works surprisingly well before adding learned retrievers.</p>
+<h3 id="B-3-Conflict-detector">B.3 Conflict detector</h3>
+<p>Two reflections conflict if they prescribe opposite action order under similar task signature. Keep both only if signatures differ by environment/tool version.</p>
+<h2 id="Appendix-C-Case-based-analysis">Appendix C: Case-based analysis</h2>
+<h3 id="C-1-Coding-agent-case">C.1 Coding agent case</h3>
+<p>Failure pattern: repeatedly edits wrong file despite clear stack trace.
+Reflection that helped: “Before editing, map stack frame -&gt; module path and confirm import resolution.”
+Outcome: retries stop oscillating between unrelated modules.</p>
+<h3 id="C-2-Tool-use-planning-case">C.2 Tool-use planning case</h3>
+<p>Failure pattern: call generation tool before evidence retrieval.
+Reflection that helped: “Always query facts first; generation step must cite retrieved evidence IDs.”
+Outcome: hallucination rate drops and evaluator agreement rises.</p>
+<h3 id="C-3-Long-horizon-task-case">C.3 Long-horizon task case</h3>
+<p>Failure pattern: short-term fix creates later-stage inconsistency.
+Reflection that helped: “Record invariant checklist and validate at each phase boundary.”
+Outcome: fewer late-stage collapses, smoother multi-step completion.</p>
+<h2 id="Appendix-D-What-I-would-test-next">Appendix D: What I would test next</h2>
+<ol>
+<li>Reflection distillation: compress many reflections into one canonical policy card.</li>
+<li>Cross-model transfer: generate reflections with model A, execute with model B.</li>
+<li>Hybrid memory: combine textual reflection with structured key-value error codes.</li>
+<li>Safety mode: block reflections that suggest policy-violating shortcuts.</li>
+</ol>
+<p>These experiments can turn Reflexion from a paper-level method into a robust platform primitive.</p>
+<hr>
+<h2 id="Appendix-E-Reproduction-logbook-expanded">Appendix E: Reproduction logbook (expanded)</h2>
+<h3 id="E-1-Suggested-run-matrix">E.1 Suggested run matrix</h3>
+<p>To make results comparable across teams, I would lock the following matrix before any tuning:</p>
+<table>
+<thead>
+<tr>
+<th>Axis</th>
+<th>Values</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Model family</td>
+<td>GPT-class / Claude-class / open 7B-70B</td>
+</tr>
+<tr>
+<td>Task suite</td>
+<td>HumanEval-like coding, HotPotQA, ALFWorld/WebShop-like decision tasks</td>
+</tr>
+<tr>
+<td>Budget</td>
+<td>max retries = {1, 2, 3, 5}</td>
+</tr>
+<tr>
+<td>Reflection policy</td>
+<td>off / short summary / full root-cause + rules</td>
+</tr>
+<tr>
+<td>Memory budget</td>
+<td>top-k = {1, 3, 5, 10}</td>
+</tr>
+<tr>
+<td>Evaluator style</td>
+<td>binary outcome / rubric score / process-aware critic</td>
+</tr>
+</tbody>
+</table>
+<p>This matrix separates “model power gains” from “control-loop gains,” which is essential for fair claims.</p>
+<h3 id="E-2-Failure-taxonomy-sheet">E.2 Failure taxonomy sheet</h3>
+<p>I prefer tagging each failed trial with one primary reason:</p>
+<ol>
+<li><strong>Plan error</strong>: wrong decomposition or missing prerequisite action.</li>
+<li><strong>Tool/protocol misuse</strong>: API/tool called with invalid assumptions.</li>
+<li><strong>Grounding error</strong>: generated claim not backed by retrieved evidence.</li>
+<li><strong>Constraint violation</strong>: broke explicit instruction, budget, or safety rule.</li>
+<li><strong>State-tracking drift</strong>: forgot prior commitments, produced inconsistent follow-up.</li>
+</ol>
+<p>Reflexion should reduce categories (2), (3), and (5) first. If (1) stays dominant, we need better planning priors, not only reflection verbosity.</p>
+<h3 id="E-3-Minimal-metrics-dashboard">E.3 Minimal metrics dashboard</h3>
+<p>Besides success@k, my default dashboard would include:</p>
+<ul>
+<li><strong>Repeated-error ratio</strong>: fraction of retries repeating same primary failure tag.</li>
+<li><strong>First-fix latency</strong>: attempts until first materially improved trajectory.</li>
+<li><strong>Evaluator disagreement</strong>: variance between automatic evaluator and human spot checks.</li>
+<li><strong>Token efficiency</strong>: net solved tasks per 1K tokens.</li>
+</ul>
+<p>The repeated-error ratio is especially diagnostic for Reflexion-like methods.</p>
+<h2 id="Appendix-F-Boundary-conditions-and-anti-patterns">Appendix F: Boundary conditions and anti-patterns</h2>
+<h3 id="F-1-When-Reflexion-underperforms">F.1 When Reflexion underperforms</h3>
+<p>Reflexion may not help much when:</p>
+<ul>
+<li>task is nearly single-shot and deterministic,</li>
+<li>evaluator signal is too noisy or delayed,</li>
+<li>mistakes come from missing external knowledge rather than strategy.</li>
+</ul>
+<p>In these cases, adding retrieval quality or better tools can yield larger gains than adding reflection loops.</p>
+<h3 id="F-2-Reflection-anti-patterns-I-have-seen">F.2 Reflection anti-patterns I have seen</h3>
+<ol>
+<li><strong>Vague moralizing</strong>: “be careful next time” without action constraints.</li>
+<li><strong>Overfitting to one failure</strong>: rules become too narrow and hurt transfer.</li>
+<li><strong>Memory bloat</strong>: storing every reflection degrades retrieval precision.</li>
+<li><strong>Unverifiable prescriptions</strong>: recommendations cannot be checked by evaluator.</li>
+</ol>
+<p>A practical defense is strict reflection schema + memory pruning cadence.</p>
+<h3 id="F-3-Production-guardrails-checklist">F.3 Production guardrails checklist</h3>
+<p>Before enabling Reflexion in production agents, I would require:</p>
+<ul>
+<li>deterministic logging of trajectory + reflection + evaluator verdict,</li>
+<li>red-team prompts for policy-bypass suggestions,</li>
+<li>rollback switch to baseline policy,</li>
+<li>on-call dashboard for retry explosion and latency spikes.</li>
+</ul>
+<p>This keeps Reflexion as a controlled reliability layer rather than an opaque behavior modifier.</p>
+<hr>
+<h2 id="Appendix-G-End-to-end-rollout-playbook-field-checklist">Appendix G: End-to-end rollout playbook (field checklist)</h2>
+<h3 id="G-1-Week-1-pilot-plan">G.1 Week-1 pilot plan</h3>
+<p>I would run a one-week pilot with strict gates:</p>
+<ul>
+<li>Day 1: baseline-only shadow run (no Reflexion action taken, logging only).</li>
+<li>Day 2-3: enable Reflexion for low-risk task slices.</li>
+<li>Day 4-5: broaden to medium-risk slices if repeated-error ratio improves.</li>
+<li>Day 6-7: compare with baseline on success, latency, and escalation volume.</li>
+</ul>
+<p>A staged rollout prevents noisy first impressions from driving architecture decisions.</p>
+<h3 id="G-2-Ops-checklist-before-each-deployment">G.2 Ops checklist before each deployment</h3>
+<ol>
+<li>Confirm evaluator rubric version hash.</li>
+<li>Confirm reflection schema version and max token budget.</li>
+<li>Validate memory store pruning job ran in last 24h.</li>
+<li>Run canary prompts that intentionally trigger known historical failures.</li>
+<li>Verify alerts for retry explosion and cost spikes are active.</li>
+</ol>
+<p>If any check fails, deployment should stop automatically.</p>
+<h3 id="G-3-Incident-response-template">G.3 Incident-response template</h3>
+<p>When Reflexion causes regressions, use this compact triage format:</p>
+<ul>
+<li><strong>Symptom:</strong> what user-facing degradation appeared?</li>
+<li><strong>First bad run:</strong> run ID and timestamp.</li>
+<li><strong>Failure-tag shift:</strong> which category increased?</li>
+<li><strong>Reflection sample:</strong> one harmful rule with context.</li>
+<li><strong>Immediate mitigation:</strong> disable reflection / reduce top-k / tighten evaluator.</li>
+<li><strong>Long-term fix:</strong> schema patch, retraining of evaluator, memory dedup.</li>
+</ul>
+<p>This keeps diagnosis actionable for mixed research+production teams.</p>
+<h3 id="G-4-Decision-framework-keep-tune-rollback">G.4 Decision framework: keep / tune / rollback</h3>
+<p>After pilot, I would decide with three thresholds:</p>
+<ul>
+<li>Keep as-is if success improves and latency increase is within SLO budget.</li>
+<li>Tune if success improves but token/latency cost exceeds budget.</li>
+<li>Rollback if repeated-error ratio does not improve or safety incidents rise.</li>
+</ul>
+<p>Reflexion is best treated as a controllable systems primitive, not a universal upgrade toggle.</p>
+<hr>
+<p><em>Third-pass long-form review updated on 2026-02-20 (UTC).</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/02/19/2026-02-19-AdaLoRA-technical-review-en/" rel="prev" title="AdaLoRA: Adaptive Budget Allocation for Parameter-Efficient Fine-Tuning — Technical Review">
+      <i class="fa fa-chevron-left"></i> AdaLoRA: Adaptive Budget Allocation for Parameter-Efficient Fine-Tuning — Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/02/20/2026-02-20-DeepSeekMath-technical-review-en/" rel="next" title="DeepSeekMath: How 120B Tokens of Math Data and GRPO Rival GPT-4 on Competition Problems">
+      DeepSeekMath: How 120B Tokens of Math Data and GRPO Rival GPT-4 on Competition Problems <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Reflexion-Language-Agents-with-Verbal-Reinforcement-Learning-—-Long-Form-Technical-Review-English"><span class="nav-number">1.</span> <span class="nav-text">Reflexion: Language Agents with Verbal Reinforcement Learning — Long-Form Technical Review (English)</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#TL-DR"><span class="nav-number">1.1.</span> <span class="nav-text">TL;DR</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Why-this-paper-matters-in-2026-agent-stacks"><span class="nav-number">1.2.</span> <span class="nav-text">1) Why this paper matters in 2026 agent stacks</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Problem-statement-and-framing"><span class="nav-number">1.3.</span> <span class="nav-text">2) Problem statement and framing</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Method-Actor–Evaluator–Reflector-loop"><span class="nav-number">1.4.</span> <span class="nav-text">3) Method: Actor–Evaluator–Reflector loop</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-Actor"><span class="nav-number">1.4.1.</span> <span class="nav-text">3.1 Actor</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-Evaluator"><span class="nav-number">1.4.2.</span> <span class="nav-text">3.2 Evaluator</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-Reflector"><span class="nav-number">1.4.3.</span> <span class="nav-text">3.3 Reflector</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-Core-algorithm-sketch"><span class="nav-number">1.4.4.</span> <span class="nav-text">3.4 Core algorithm sketch</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-What-changed-vs-ReAct-and-why-gains-appear"><span class="nav-number">1.5.</span> <span class="nav-text">4) What changed vs ReAct and why gains appear</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Experiment-tasks-and-interpretation"><span class="nav-number">1.6.</span> <span class="nav-text">5) Experiment tasks and interpretation</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Failure-modes-I-observed-and-how-to-mitigate"><span class="nav-number">1.7.</span> <span class="nav-text">6) Failure modes I observed (and how to mitigate)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Reflection-drift"><span class="nav-number">1.7.1.</span> <span class="nav-text">6.1 Reflection drift</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Contradictory-memory-accumulation"><span class="nav-number">1.7.2.</span> <span class="nav-text">6.2 Contradictory memory accumulation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-Reward-hacking-at-language-level"><span class="nav-number">1.7.3.</span> <span class="nav-text">6.3 Reward hacking at language level</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-Context-window-pressure"><span class="nav-number">1.7.4.</span> <span class="nav-text">6.4 Context-window pressure</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Reproducibility-protocol-practical"><span class="nav-number">1.8.</span> <span class="nav-text">7) Reproducibility protocol (practical)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Suggested-experiment-matrix"><span class="nav-number">1.8.1.</span> <span class="nav-text">Suggested experiment matrix</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Production-rollout-blueprint"><span class="nav-number">1.9.</span> <span class="nav-text">8) Production rollout blueprint</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Stage-A-Shadow-mode"><span class="nav-number">1.9.1.</span> <span class="nav-text">Stage A: Shadow mode</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Stage-B-Partial-traffic"><span class="nav-number">1.9.2.</span> <span class="nav-text">Stage B: Partial traffic</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Stage-C-Full-with-guardrails"><span class="nav-number">1.9.3.</span> <span class="nav-text">Stage C: Full with guardrails</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Service-level-metrics-to-track"><span class="nav-number">1.9.4.</span> <span class="nav-text">Service-level metrics to track</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-Relationship-to-broader-methods"><span class="nav-number">1.10.</span> <span class="nav-text">9) Relationship to broader methods</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-What-still-needs-to-be-improved"><span class="nav-number">1.11.</span> <span class="nav-text">10) What still needs to be improved</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-My-verdict"><span class="nav-number">1.12.</span> <span class="nav-text">11) My verdict</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#References"><span class="nav-number">1.13.</span> <span class="nav-text">References</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-A-Figure-Table-Oriented-Deep-Dive"><span class="nav-number">1.14.</span> <span class="nav-text">Appendix A: Figure&#x2F;Table-Oriented Deep Dive</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#A-1-Framework-diagram-Actor-Evaluator-Reflector"><span class="nav-number">1.14.1.</span> <span class="nav-text">A.1 Framework diagram (Actor&#x2F;Evaluator&#x2F;Reflector)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#A-2-Retry-improvement-curves"><span class="nav-number">1.14.2.</span> <span class="nav-text">A.2 Retry improvement curves</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#A-3-Cost–benefit-accounting"><span class="nav-number">1.14.3.</span> <span class="nav-text">A.3 Cost–benefit accounting</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-B-Implementation-templates"><span class="nav-number">1.15.</span> <span class="nav-text">Appendix B: Implementation templates</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#B-1-Reflection-prompt-template"><span class="nav-number">1.15.1.</span> <span class="nav-text">B.1 Reflection prompt template</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#B-2-Memory-ranking-heuristic"><span class="nav-number">1.15.2.</span> <span class="nav-text">B.2 Memory ranking heuristic</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#B-3-Conflict-detector"><span class="nav-number">1.15.3.</span> <span class="nav-text">B.3 Conflict detector</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-C-Case-based-analysis"><span class="nav-number">1.16.</span> <span class="nav-text">Appendix C: Case-based analysis</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#C-1-Coding-agent-case"><span class="nav-number">1.16.1.</span> <span class="nav-text">C.1 Coding agent case</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#C-2-Tool-use-planning-case"><span class="nav-number">1.16.2.</span> <span class="nav-text">C.2 Tool-use planning case</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#C-3-Long-horizon-task-case"><span class="nav-number">1.16.3.</span> <span class="nav-text">C.3 Long-horizon task case</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-D-What-I-would-test-next"><span class="nav-number">1.17.</span> <span class="nav-text">Appendix D: What I would test next</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-E-Reproduction-logbook-expanded"><span class="nav-number">1.18.</span> <span class="nav-text">Appendix E: Reproduction logbook (expanded)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#E-1-Suggested-run-matrix"><span class="nav-number">1.18.1.</span> <span class="nav-text">E.1 Suggested run matrix</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#E-2-Failure-taxonomy-sheet"><span class="nav-number">1.18.2.</span> <span class="nav-text">E.2 Failure taxonomy sheet</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#E-3-Minimal-metrics-dashboard"><span class="nav-number">1.18.3.</span> <span class="nav-text">E.3 Minimal metrics dashboard</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-F-Boundary-conditions-and-anti-patterns"><span class="nav-number">1.19.</span> <span class="nav-text">Appendix F: Boundary conditions and anti-patterns</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#F-1-When-Reflexion-underperforms"><span class="nav-number">1.19.1.</span> <span class="nav-text">F.1 When Reflexion underperforms</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#F-2-Reflection-anti-patterns-I-have-seen"><span class="nav-number">1.19.2.</span> <span class="nav-text">F.2 Reflection anti-patterns I have seen</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#F-3-Production-guardrails-checklist"><span class="nav-number">1.19.3.</span> <span class="nav-text">F.3 Production guardrails checklist</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-G-End-to-end-rollout-playbook-field-checklist"><span class="nav-number">1.20.</span> <span class="nav-text">Appendix G: End-to-end rollout playbook (field checklist)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#G-1-Week-1-pilot-plan"><span class="nav-number">1.20.1.</span> <span class="nav-text">G.1 Week-1 pilot plan</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#G-2-Ops-checklist-before-each-deployment"><span class="nav-number">1.20.2.</span> <span class="nav-text">G.2 Ops checklist before each deployment</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#G-3-Incident-response-template"><span class="nav-number">1.20.3.</span> <span class="nav-text">G.3 Incident-response template</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#G-4-Decision-framework-keep-tune-rollback"><span class="nav-number">1.20.4.</span> <span class="nav-text">G.4 Decision framework: keep &#x2F; tune &#x2F; rollback</span></a></li></ol></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

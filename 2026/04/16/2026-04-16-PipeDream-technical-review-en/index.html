@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. Why this paper still matters in 2026 I think PipeDream is one of those papers that is easier to appreciate after the field has moved on. If I explain it in one sentence, I would say:  PipeDream tur">
+<meta property="og:type" content="article">
+<meta property="og:title" content="PipeDream: Turning Pipeline Parallelism into a Practical Training System — Deep Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/16/2026-04-16-PipeDream-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. Why this paper still matters in 2026 I think PipeDream is one of those papers that is easier to appreciate after the field has moved on. If I explain it in one sentence, I would say:  PipeDream tur">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-16T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-16T12:57:27.475Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Distributed Training">
+<meta property="article:tag" content="Pipeline Parallelism">
+<meta property="article:tag" content="ML Systems">
+<meta property="article:tag" content="PipeDream">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/16/2026-04-16-PipeDream-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>PipeDream: Turning Pipeline Parallelism into a Practical Training System — Deep Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/16/2026-04-16-PipeDream-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          PipeDream: Turning Pipeline Parallelism into a Practical Training System — Deep Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2026-04-16 00:00:00 / Modified: 12:57:27" itemprop="dateCreated datePublished" datetime="2026-04-16T00:00:00+00:00">2026-04-16</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/ML-Systems/" itemprop="url" rel="index"><span itemprop="name">ML Systems</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-Why-this-paper-still-matters-in-2026">1. Why this paper still matters in 2026</h2>
+<p>I think PipeDream is one of those papers that is easier to appreciate after the field has moved on.</p>
+<p>If I explain it in one sentence, I would say:</p>
+<blockquote>
+<p>PipeDream turned pipeline parallelism from a vague idea into a system-level recipe: profile the model, partition it automatically, keep multiple minibatches in flight, and repair the optimization semantics enough that training still converges.</p>
+</blockquote>
+<p>That sounds modest today because pipeline parallelism is now normal vocabulary in large-model training. But in 2018, this was an important systems step.</p>
+<p>The paper is historically important for at least four reasons.</p>
+<ul>
+<li>It clearly shows that <strong>data parallelism is not always the right default</strong>. When models become large, or when interconnects are weak relative to GPU speed, weight synchronization becomes a real bottleneck.</li>
+<li>It reframes pipeline parallelism as a <strong>joint scheduling and optimization problem</strong>, not just a diagram where layers are placed on different GPUs.</li>
+<li>It identifies the subtle but crucial issue of <strong>parameter-version mismatch</strong> between forward and backward passes. That is the kind of detail that separates a classroom concept from a production system.</li>
+<li>It anticipates a lot of the design space that later became standard in large-scale training stacks: stage partitioning, pipeline schedules, weight-version policies, stage replication, and runtime-managed buffer reuse.</li>
+</ul>
+<p>I also think the paper is still useful for modern readers because it teaches a systems mindset that remains valid:</p>
+<ol>
+<li>first find the actual bottleneck,</li>
+<li>then pick the right parallelization dimension,</li>
+<li>then ask what semantic damage the optimization introduces,</li>
+<li>then engineer around that damage carefully.</li>
+</ol>
+<p>That sequence is still exactly how good ML systems work today.</p>
+<hr>
+<a id="more"></a>
+<h2 id="2-Prerequisites-background-I-want-a-reader-to-have-first">2. Prerequisites: background I want a reader to have first</h2>
+<p>I want to spend real time on background here, because the paper is easier if the reader already has a mental model for why distributed training becomes difficult.</p>
+<h3 id="2-1-Why-distributed-training-exists-at-all">2.1 Why distributed training exists at all</h3>
+<p>A single GPU has three obvious limits:</p>
+<ul>
+<li>finite memory,</li>
+<li>finite compute throughput,</li>
+<li>finite wall-clock patience.</li>
+</ul>
+<p>As models get deeper and wider, a single worker may become too slow, too small, or both. Distributed training exists because we want one of three outcomes:</p>
+<ul>
+<li><strong>fit</strong> a model that no longer fits on one device,</li>
+<li><strong>speed up</strong> time to a target accuracy,</li>
+<li><strong>increase throughput</strong> so training finishes in a practical amount of time.</li>
+</ul>
+<p>At a high level, distributed training means splitting work across multiple accelerators. But there are different ways to split it:</p>
+<ul>
+<li>split the <strong>data</strong>,</li>
+<li>split the <strong>model</strong>,</li>
+<li>split the <strong>sequence/tensor dimensions</strong>,</li>
+<li>or combine several of those.</li>
+</ul>
+<p>PipeDream focuses on the first two and tries to combine them intelligently.</p>
+<h3 id="2-2-Data-parallelism-and-why-communication-becomes-painful">2.2 Data parallelism and why communication becomes painful</h3>
+<p>In classic data parallelism, every worker keeps a full copy of the model. Each worker processes a different minibatch slice, computes gradients, and then participates in synchronizing parameter updates.</p>
+<p>This is conceptually attractive because:</p>
+<ul>
+<li>each worker runs the full model locally,</li>
+<li>implementation is comparatively simple,</li>
+<li>the optimization semantics are close to ordinary minibatch SGD.</li>
+</ul>
+<p>But the cost is communication.</p>
+<p>Every synchronization step moves information proportional to model size. If the model is large, and if synchronization happens frequently, communication can begin to dominate runtime.</p>
+<p>This is exactly what <strong>Figure 1</strong> in the paper is trying to make emotionally obvious. The authors measure communication overhead as a fraction of total training time for several models and several GPU generations. The message is simple:</p>
+<blockquote>
+<p>faster GPUs can make bad communication patterns look even worse, because compute gets cheaper while synchronization does not magically disappear.</p>
+</blockquote>
+<p>That point still matters in 2026. Faster accelerators do not save a communication-heavy design; they often expose it.</p>
+<h3 id="2-3-Model-parallelism-and-why-it-wastes-hardware-when-used-naively">2.3 Model parallelism and why it wastes hardware when used naively</h3>
+<p>Model parallelism means different workers own different layers or pieces of layers.</p>
+<p>This helps when the model is too large for one device, or when you want to reduce replicated parameter state. But a naive layer-by-layer split has a serious problem: only a small subset of workers may be active at a time.</p>
+<p>Imagine four GPUs, with stage 1 on GPU 1, stage 2 on GPU 2, and so on. If only one minibatch is moving through the network, then when stage 1 is working, stages 2-4 are idle; later stage 2 works while others wait; and so on. You have distributed the model, but you have not yet distributed time effectively.</p>
+<p>That is why model parallelism by itself can have terrible hardware utilization.</p>
+<h3 id="2-4-Why-training-is-harder-than-inference-forward-pass-plus-backward-pass">2.4 Why training is harder than inference: forward pass plus backward pass</h3>
+<p>Inference is one-directional: data moves from input to output.</p>
+<p>Training is bi-directional:</p>
+<ol>
+<li>a <strong>forward pass</strong> computes activations and the loss,</li>
+<li>a <strong>backward pass</strong> propagates gradients in reverse,</li>
+<li>then parameters are updated.</li>
+</ol>
+<p>This matters for pipelines. If training were only forward, filling a pipeline would already be useful. But because gradients must travel backward through the same logical structure, the schedule becomes much trickier.</p>
+<p>A good training pipeline has to answer at least three questions:</p>
+<ul>
+<li>how many minibatches should be active,</li>
+<li>when should a stage run forward work versus backward work,</li>
+<li>which parameter version should each minibatch see.</li>
+</ul>
+<p>PipeDream is strong because it answers all three.</p>
+<h3 id="2-5-Hardware-efficiency-vs-statistical-efficiency">2.5 Hardware efficiency vs. statistical efficiency</h3>
+<p>The paper repeatedly separates two ideas that people often mix up.</p>
+<ul>
+<li><strong>Hardware efficiency</strong>: how fast one epoch or one unit of work finishes.</li>
+<li><strong>Statistical efficiency</strong>: how many epochs or optimization steps are needed to reach a target accuracy.</li>
+</ul>
+<p>A system can have excellent hardware efficiency but poor optimization behavior. For example, a very asynchronous method may keep GPUs busy but require many more updates to reach the same quality. Conversely, a perfectly synchronized method can preserve clean SGD semantics but waste huge amounts of time waiting for communication.</p>
+<p>PipeDream’s claimed metric is not just raw throughput. The authors care about <strong>time to target accuracy</strong>, which is the product of these two effects.</p>
+<p>That is exactly the right metric for this paper.</p>
+<h3 id="2-6-What-a-pipeline-bubble-is">2.6 What a pipeline bubble is</h3>
+<p>A pipeline bubble is idle time caused by the pipeline not yet being full or not staying full.</p>
+<p>In an ideal pipeline, every stage is busy almost all the time. In a bad pipeline, some stages sit idle waiting for inputs or waiting for backward dependencies.</p>
+<p>So when a systems paper says it is improving pipeline parallelism, what it usually means is some combination of:</p>
+<ul>
+<li>reducing bubbles,</li>
+<li>balancing stage runtimes,</li>
+<li>overlapping communication and computation,</li>
+<li>or reducing semantic damage from asynchronous execution.</li>
+</ul>
+<p>PipeDream tries to do all of these.</p>
+<hr>
+<h2 id="3-The-exact-problem-PipeDream-is-solving">3. The exact problem PipeDream is solving</h2>
+<p>I would phrase the paper’s central problem like this:</p>
+<blockquote>
+<p>Data-parallel DNN training scales poorly when synchronization cost becomes large relative to useful compute. Pure model parallelism avoids full-model synchronization but suffers from poor hardware utilization. Can we combine model partitioning, pipelined execution, and selective stage replication in a way that actually reduces time to target accuracy?</p>
+</blockquote>
+<p>There are three hard subproblems hiding inside that sentence.</p>
+<h3 id="Subproblem-A-partitioning">Subproblem A: partitioning</h3>
+<p>Given a model with many layers and a cluster with multiple GPUs, where should we cut the model into stages?</p>
+<p>Bad cuts create two problems:</p>
+<ul>
+<li>some stages become slow and dominate throughput,</li>
+<li>some cuts cause heavy activation traffic between machines.</li>
+</ul>
+<h3 id="Subproblem-B-scheduling">Subproblem B: scheduling</h3>
+<p>Even with a good stage decomposition, training still has forward and backward passes. The system needs a policy that keeps the pipeline busy while still making learning progress.</p>
+<h3 id="Subproblem-C-parameter-consistency">Subproblem C: parameter consistency</h3>
+<p>If a minibatch sees one parameter version on the forward pass and a newer one on the backward pass, the gradient is no longer computed with respect to the same function evaluation. Too much mismatch can hurt convergence or even break training quality.</p>
+<p>PipeDream addresses all three with a coherent design:</p>
+<ul>
+<li>profile and partition automatically,</li>
+<li>schedule with a fixed 1F1B policy,</li>
+<li>use weight stashing to make forward/backward pairs locally consistent.</li>
+</ul>
+<hr>
+<h2 id="4-Core-idea-in-one-paragraph">4. Core idea in one paragraph</h2>
+<p>PipeDream splits a DNN into consecutive stages placed on different workers, keeps several minibatches moving through the stages simultaneously, and optionally replicates some stages with data parallelism when that helps balance throughput. It profiles layer compute and communication cost, uses dynamic programming to choose the partition, schedules work with a one-forward-one-backward pattern once the pipeline is full, and preserves useful optimization semantics by storing parameter versions for in-flight minibatches. In other words, it is not just “pipeline parallelism”; it is a full training system around pipeline parallelism.</p>
+<hr>
+<h2 id="5-Figure-1-explained-when-communication-starts-dominating-training">5. Figure 1 explained: when communication starts dominating training</h2>
+<p><strong>Figure 1</strong> may look like a simple motivation plot, but it is one of the most important pieces of evidence in the paper.</p>
+<p>The figure shows communication overhead as a percentage of total training time for different models, different worker counts, and different GPU generations. The broad pattern is:</p>
+<ul>
+<li>communication gets worse as the number of workers increases,</li>
+<li>communication also gets worse as compute gets faster,</li>
+<li>some models are much more communication-heavy than others.</li>
+</ul>
+<p>This tells us two things.</p>
+<p>First, distributed training bottlenecks are <strong>model dependent</strong>. VGG16, AlexNet, and S2VT suffer much more from data-parallel synchronization than Inception-v3. So a good system should not hard-code one parallelization strategy for all models.</p>
+<p>Second, hardware progress can make system design less forgiving. If you move from slower K80 GPUs to faster V100 GPUs, compute shrinks, but the network is still the network. The synchronization fraction can therefore increase. That is why PipeDream’s motivation is not “communication is always the bottleneck.” The real claim is subtler:</p>
+<blockquote>
+<p>communication becomes the bottleneck exactly in the regimes where data parallelism would otherwise look attractive.</p>
+</blockquote>
+<p>I think this is a very mature motivation section. The authors do not argue that data parallelism is bad. They argue that it is <strong>fragile to communication-to-computation ratio</strong>.</p>
+<hr>
+<h2 id="6-Figure-4-explained-what-pipeline-parallel-training-actually-looks-like-over-time">6. Figure 4 explained: what pipeline-parallel training actually looks like over time</h2>
+<p>If Figure 1 explains <em>why</em> we need a different design, <strong>Figure 4</strong> explains <em>what the alternative really is</em>.</p>
+<p>The paper shows a four-machine pipeline. Each machine owns a stage that contains a consecutive subset of layers. Several minibatches are injected one after another. While one minibatch is moving forward in a later stage, another minibatch can be moving forward in an earlier stage, and yet another can be doing backward work elsewhere.</p>
+<p>The important systems idea is temporal overlap:</p>
+<ul>
+<li>forward activations move to the next stage,</li>
+<li>backward gradients move to the previous stage,</li>
+<li>communication is asynchronous,</li>
+<li>stages compute while neighboring stages communicate.</li>
+</ul>
+<p>This is why the approach can reduce training time in two distinct ways:</p>
+<ol>
+<li>it replaces full-model gradient synchronization with <strong>boundary activation/gradient transfer</strong> between adjacent stages,</li>
+<li>it overlaps some of that transfer with computation from other minibatches.</li>
+</ol>
+<p>The paper’s accompanying <strong>Figure 5</strong> makes the communication argument concrete for VGG16. The size of one layer’s output activation can be far smaller than the size of the entire model parameter set. So instead of repeatedly synchronizing all weights, PipeDream often only ships boundary tensors between neighboring stages.</p>
+<p>That is where the reported 90% to 95% communication reduction comes from.</p>
+<hr>
+<h2 id="7-The-architecture-idea-combine-model-parallelism-pipelining-and-selective-data-parallelism">7. The architecture idea: combine model parallelism, pipelining, and selective data parallelism</h2>
+<p>A detail I really like is that PipeDream does <strong>not</strong> treat model parallelism and data parallelism as mutually exclusive camps.</p>
+<p>The paper’s <strong>Figure 6</strong> shows the real design philosophy:</p>
+<ul>
+<li>use model parallel stage partitioning to reduce full-model synchronization,</li>
+<li>pipeline execution to keep multiple stages active at once,</li>
+<li>use data parallel replication only for stages where extra replicas improve balance.</li>
+</ul>
+<p>This is a very practical idea.</p>
+<p>If one stage is much slower than others, then a pure pipeline is bottlenecked by that slow stage. Replicating the stage can reduce its effective service time. In queueing language, the paper is really trying to shape a pipeline whose maximum stage time is as small as possible.</p>
+<p>That is a systems paper move I respect: the authors optimize the <strong>critical path</strong>, not ideology.</p>
+<hr>
+<h2 id="8-Partitioning-algorithm-in-detail">8. Partitioning algorithm in detail</h2>
+<p>The partitioner is one of the paper’s central technical contributions.</p>
+<h3 id="8-1-What-PipeDream-profiles">8.1 What PipeDream profiles</h3>
+<p>The paper says PipeDream profiles three quantities per layer <code>l</code>:</p>
+<ul>
+<li><code>T_l</code>: forward plus backward compute time for the layer,</li>
+<li><code>a_l</code>: output activation size of the layer,</li>
+<li><code>w_l</code>: parameter size of the layer.</li>
+</ul>
+<p>This is enough to estimate two key costs:</p>
+<ul>
+<li>computation inside a stage,</li>
+<li>communication either across pipeline boundaries or for stage-local data parallel synchronization.</li>
+</ul>
+<p>I like the minimalism here. The profiler does not try to build an overly detailed simulation. It captures the dominant terms and then optimizes on those terms.</p>
+<h3 id="8-2-What-optimization-objective-it-uses">8.2 What optimization objective it uses</h3>
+<p>The partitioning goal is to minimize total training time. In a steady pipeline, that becomes approximately equivalent to minimizing the time of the slowest stage.</p>
+<p>That matters because the throughput of a pipeline is controlled by its bottleneck. Even if seven stages are fast, one slow stage can cap everyone else.</p>
+<p>So the partitioner is searching over:</p>
+<ul>
+<li>where to place cuts between layers,</li>
+<li>how many machines to allocate to each stage,</li>
+<li>which stages should be replicated with data parallelism.</li>
+</ul>
+<h3 id="8-3-The-dynamic-programming-formulation">8.3 The dynamic-programming formulation</h3>
+<p>The paper defines a stage cost for layers <code>i</code> through <code>j</code> replicated over <code>m</code> machines as:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>T</mi><mo stretchy="false">(</mo><mi>i</mi><mo>→</mo><mi>j</mi><mo separator="true">,</mo><mi>m</mi><mo stretchy="false">)</mo><mo>=</mo><mi>max</mi><mo>⁡</mo><mrow><mo fence="true">(</mo><mfrac><mn>1</mn><mi>m</mi></mfrac><munderover><mo>∑</mo><mrow><mi>l</mi><mo>=</mo><mi>i</mi></mrow><mi>j</mi></munderover><msub><mi>T</mi><mi>l</mi></msub><mo separator="true">,</mo><munderover><mo>∑</mo><mrow><mi>l</mi><mo>=</mo><mi>i</mi></mrow><mi>j</mi></munderover><msubsup><mi>W</mi><mi>l</mi><mi>m</mi></msubsup><mo fence="true">)</mo></mrow></mrow><annotation encoding="application/x-tex">T(i \rightarrow j, m) = \max\left(\frac{1}{m}\sum_{l=i}^{j} T_l, \sum_{l=i}^{j} W_l^m \right)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="mopen">(</span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.05724em;">j</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">m</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3.1609em;vertical-align:-1.3021em;"></span><span class="mop">max</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size4">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">m</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8588em;"><span style="top:-1.8479em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span><span class="mrel mtight">=</span><span class="mord mathnormal mtight">i</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3471em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.3021em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8588em;"><span style="top:-1.8479em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span><span class="mrel mtight">=</span><span class="mord mathnormal mtight">i</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3471em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.3021em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7144em;"><span style="top:-2.453em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">m</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size4">)</span></span></span></span></span></span></span></p>
+<p>Intuitively:</p>
+<ul>
+<li>the first term is stage computation time after replication,</li>
+<li>the second term is synchronization time for that replicated stage,</li>
+<li>the stage time is whichever of those dominates.</li>
+</ul>
+<p>Then the global problem is solved with dynamic programming. The paper denotes <code>A(j,m)</code> as the time of the slowest stage in the best pipeline covering layers 1 through <code>j</code> using <code>m</code> machines. The optimal solution either:</p>
+<ul>
+<li>keeps everything as one replicated stage,</li>
+<li>or splits into an optimal subpipeline plus one final stage.</li>
+</ul>
+<p>I do not think the exact algebra is the deepest insight. The deeper insight is the decomposition pattern:</p>
+<blockquote>
+<p>once layer-level costs are profiled, stage construction becomes an optimization problem over a one-dimensional sequence of layers.</p>
+</blockquote>
+<p>That is why dynamic programming is a natural fit.</p>
+<h3 id="8-4-Why-stage-replication-matters">8.4 Why stage replication matters</h3>
+<p>Without replication, the partitioner is only allowed to choose cuts. But many real networks have lopsided compute. Some layer groups are simply more expensive.</p>
+<p>Stage replication gives the optimizer another knob:</p>
+<ul>
+<li>instead of forcing a bad cut,</li>
+<li>it can duplicate a heavy stage across multiple workers,</li>
+<li>then route minibatches round-robin through those replicas.</li>
+</ul>
+<p>This is exactly how PipeDream escapes the false choice between “pure pipeline” and “pure data parallel.”</p>
+<hr>
+<h2 id="9-Scheduling-in-detail">9. Scheduling in detail</h2>
+<p>Once stages exist, the next question is how to run them.</p>
+<h3 id="9-1-NOAM-how-many-minibatches-should-be-in-flight">9.1 NOAM: how many minibatches should be in flight</h3>
+<p>PipeDream defines the <strong>number of optimal active minibatches (NOAM)</strong> as:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mo fence="true">⌈</mo><mfrac><mrow><mi mathvariant="normal">#</mi><mtext>machines</mtext></mrow><mrow><mi mathvariant="normal">#</mi><mtext>machines in input stage</mtext></mrow></mfrac><mo fence="true">⌉</mo></mrow><annotation encoding="application/x-tex">\left\lceil \frac{\#\text{machines} }{\#\text{machines in input stage} } \right\rceil
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">⌈</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3714em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">#</span><span class="mord text"><span class="mord">machines in input stage</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">#</span><span class="mord text"><span class="mord">machines</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.8804em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">⌉</span></span></span></span></span></span></span></p>
+<p>The point is to keep the pipeline full in steady state.</p>
+<p>If too few minibatches are active, bubbles dominate.
+If too many are active, memory pressure and bookkeeping overhead increase without helping much.</p>
+<p>This is a nice example of a systems paper introducing a simple operational quantity that a practitioner can actually use.</p>
+<h3 id="9-2-1F1B-scheduling">9.2 1F1B scheduling</h3>
+<p>After startup, PipeDream uses <strong>one-forward-one-backward (1F1B)</strong> scheduling.</p>
+<p>That means each stage alternates between:</p>
+<ul>
+<li>doing the forward pass for one minibatch,</li>
+<li>doing the backward pass for another minibatch.</li>
+</ul>
+<p>The paper’s <strong>Figure 8</strong> is the key visualization here. It shows startup and steady state for a four-stage pipeline. Once the pipeline fills, each machine alternates between forward and backward work, ideally with no idle periods.</p>
+<p>Why is this better than always prioritizing forward work?</p>
+<p>Because training only learns when backward passes finish and updates happen. A schedule that keeps admitting forward work but starves backward work may look busy without making real optimization progress.</p>
+<p>Why not always prioritize backward work?</p>
+<p>Because then the pipeline can starve of new inputs and develop bubbles.</p>
+<p>1F1B is therefore a compromise between two pathologies:</p>
+<ul>
+<li>too much speculative forward occupancy,</li>
+<li>too little inflow to maintain pipeline utilization.</li>
+</ul>
+<p>This design became influential for a reason. It is simple, static, and effective.</p>
+<h3 id="9-3-Why-deterministic-round-robin-routing-matters">9.3 Why deterministic round-robin routing matters</h3>
+<p>When a stage is replicated, the backward pass for a minibatch must go through the same replica that handled its forward pass, because that replica holds the corresponding stashed state.</p>
+<p>So PipeDream uses deterministic round-robin routing based on minibatch ID.</p>
+<p>This sounds like a small implementation detail, but it is essential. Without consistent routing:</p>
+<ul>
+<li>activations and stashed weights may be missing,</li>
+<li>backward computation may not line up with forward state,</li>
+<li>reproducibility and debugging become much harder.</li>
+</ul>
+<p>I would call this a classic example of systems correctness hidden behind a simple sentence in the paper.</p>
+<hr>
+<h2 id="10-Learning-correctness-under-pipeline-asynchrony">10. Learning correctness under pipeline asynchrony</h2>
+<p>This is, in my view, the most intellectually valuable section of the paper.</p>
+<h3 id="10-1-Why-naive-pipelining-breaks-SGD-semantics">10.1 Why naive pipelining breaks SGD semantics</h3>
+<p>Suppose minibatch 5 runs its forward pass on a stage using parameter version <code>w_t</code>, but by the time its backward pass happens, that same stage has already applied updates from minibatches 1 through 4 and is now at a newer version <code>w_{t+4}</code>.</p>
+<p>Then the backward pass is not computing the gradient of the same function evaluation produced on the forward pass.</p>
+<p>That mismatch is not merely “a bit stale.” It changes the semantics of the optimization step.</p>
+<p>The paper also points out a subtle asymmetry: later stages may see less staleness than earlier stages. So the problem is not uniform across the network depth.</p>
+<h3 id="10-2-Weight-stashing">10.2 Weight stashing</h3>
+<p>PipeDream’s answer is <strong>weight stashing</strong>.</p>
+<p>For each in-flight minibatch, each stage remembers the parameter version used during the forward pass. When the backward pass for that minibatch arrives, the stage uses the same stashed parameter version to compute gradients.</p>
+<p>This restores a crucial form of local consistency:</p>
+<ul>
+<li>within a stage,</li>
+<li>the forward and backward pass for a given minibatch use the same weights.</li>
+</ul>
+<p>That is not perfect global consistency across stages, but it is much better than naive pipelining.</p>
+<h3 id="10-3-Vertical-sync">10.3 Vertical sync</h3>
+<p>The paper also discusses <strong>vertical sync</strong>, which further enforces that a minibatch uses the same logical weight version across all stages.</p>
+<p>This is semantically cleaner, but the paper says its empirical benefit was negligible while increasing metadata overhead. So PipeDream’s default keeps weight stashing but not vertical sync.</p>
+<p>I think that choice is sensible. A systems paper should not pay complexity tax for a semantic improvement that does not materially help outcomes.</p>
+<h3 id="10-4-Why-the-paper-keeps-weight-stashing-but-drops-vertical-sync-by-default">10.4 Why the paper keeps weight stashing but drops vertical sync by default</h3>
+<p>The paper explicitly analyzes the update equations and argues:</p>
+<ul>
+<li>without weight stashing, the update no longer corresponds cleanly to the gradient of the loss at any single coherent parameter vector,</li>
+<li>with weight stashing, the system sits in a middle ground between fully synchronous SGD and unconstrained asynchronous updates,</li>
+<li>with vertical sync, the semantics become closer to BSP-style synchronization, but the engineering overhead increases.</li>
+</ul>
+<p>The authors also report that weight stashing is critical, whereas vertical sync is not.</p>
+<p>I think this is one of the paper’s strongest lessons:</p>
+<blockquote>
+<p>do not chase perfect semantics if most of the real benefit comes from fixing the worst inconsistency.</p>
+</blockquote>
+<p>That lesson still applies to modern distributed optimization.</p>
+<hr>
+<h2 id="11-Runtime-and-memory-management-design">11. Runtime and memory-management design</h2>
+<p>The runtime section is not as flashy as the scheduling section, but it is what makes the system believable.</p>
+<p><strong>Figure 9</strong> shows the stage runtime architecture. A few decisions stand out.</p>
+<h3 id="Static-GPU-memory-allocation">Static GPU-memory allocation</h3>
+<p>PipeDream preallocates GPU memory for:</p>
+<ul>
+<li>activations,</li>
+<li>gradients,</li>
+<li>parameters,</li>
+<li>intermediate state,</li>
+<li>stashed versions needed by in-flight minibatches.</li>
+</ul>
+<p>This matters because repeated dynamic allocation can become a silent systems tax.</p>
+<h3 id="Explicit-parameter-version-management">Explicit parameter-version management</h3>
+<p>Stages keep multiple parameter versions alive until all dependent backward work has completed. That is not optional bookkeeping; it is required by weight stashing.</p>
+<h3 id="Intermediate-state-lifetime-discipline">Intermediate-state lifetime discipline</h3>
+<p>Forward intermediate state is kept until the corresponding backward pass consumes it. Backward intermediate state can usually be freed much earlier.</p>
+<p>This is a classic memory-lifetime optimization. The paper is implicitly solving a dataflow retention problem, not just a compute scheduling problem.</p>
+<h3 id="Integration-with-existing-DL-frameworks">Integration with existing DL frameworks</h3>
+<p>The implementation is described as a C++ library around Caffe, but the authors position the design as extensible to TensorFlow, MXNet, and CNTK.</p>
+<p>That was a smart framing at the time. It tells the reader the contribution is mostly at the systems-runtime layer rather than being inseparable from one framework.</p>
+<hr>
+<h2 id="12-Experimental-setup">12. Experimental setup</h2>
+<p>The experiments use two clusters.</p>
+<h3 id="Cluster-A">Cluster-A</h3>
+<ul>
+<li>NVIDIA Titan X GPUs</li>
+<li>12 GB device memory</li>
+<li>25 Gbps Ethernet</li>
+</ul>
+<h3 id="Cluster-B">Cluster-B</h3>
+<ul>
+<li>AWS p3.2xlarge with V100 GPUs</li>
+<li>16 GB device memory</li>
+<li>10 Gbps Ethernet</li>
+</ul>
+<p>The contrast is useful because Cluster-B has faster GPUs but a slower network, which exaggerates communication bottlenecks.</p>
+<p>The models are:</p>
+<ul>
+<li><strong>VGG16</strong> (550 MB)</li>
+<li><strong>Inception-v3</strong> (157 MB)</li>
+<li><strong>S2VT</strong> sequence-to-sequence model (349 MB)</li>
+</ul>
+<p>Datasets are:</p>
+<ul>
+<li>ImageNet / ILSVRC12 for VGG16 and Inception-v3</li>
+<li>MSVD for S2VT</li>
+</ul>
+<p>The target metric is time to reach advertised validation quality:</p>
+<ul>
+<li>68% top-1 for VGG16,</li>
+<li>67% top-1 for Inception-v3,</li>
+<li>METEOR 0.294 for S2VT.</li>
+</ul>
+<p>I like that the paper evaluates not only CNNs but also an RNN-style seq2seq model. That broadens the claim from “works for one image model” to “works across architectures with different compute/communication structure.”</p>
+<hr>
+<h2 id="13-Results-and-what-they-really-mean">13. Results and what they really mean</h2>
+<h3 id="13-1-Table-1-the-headline-result">13.1 Table 1: the headline result</h3>
+<p><strong>Table 1</strong> is the most information-dense evidence in the paper.</p>
+<p>A few numbers matter most.</p>
+<p>For <strong>VGG16</strong>:</p>
+<ul>
+<li>8 machines on Cluster-A: BSP gives <strong>2.35x</strong> speedup over 1 machine, PipeDream gives <strong>7.04x</strong>, which is <strong>2.99x over BSP</strong>, with <strong>95% communication reduction</strong>.</li>
+<li>8 machines on Cluster-B: BSP gives <strong>1.36x</strong>, PipeDream gives <strong>6.98x</strong>, which is <strong>5.12x over BSP</strong>, again with <strong>95% communication reduction</strong>.</li>
+</ul>
+<p>For <strong>Inception-v3</strong>:</p>
+<ul>
+<li>8 machines on Cluster-A: PipeDream chooses pure data parallelism and matches BSP at <strong>7.66x</strong>.</li>
+<li>8 machines on Cluster-B: PipeDream gives <strong>6.88x</strong>, about <strong>1.45x over BSP</strong>, with <strong>47% communication reduction</strong>.</li>
+</ul>
+<p>For <strong>S2VT</strong>:</p>
+<ul>
+<li>4 machines on Cluster-A: BSP gives <strong>1.10x</strong>, PipeDream gives <strong>3.34x</strong>, which is <strong>3.01x over BSP</strong>, with <strong>95% communication reduction</strong>.</li>
+</ul>
+<p>My interpretation is this:</p>
+<ol>
+<li>PipeDream is <strong>not universally better because pipelines are magical</strong>.</li>
+<li>It is better precisely when communication-heavy data parallelism becomes weak.</li>
+<li>When data parallelism is already near-ideal, PipeDream’s optimizer is willing to choose it.</li>
+</ol>
+<p>That third point is important. The optimizer is not biased toward pipelining for aesthetic reasons.</p>
+<h3 id="13-2-Figure-10-VGG16-versus-Inception-v3-on-Cluster-A">13.2 Figure 10: VGG16 versus Inception-v3 on Cluster-A</h3>
+<p><strong>Figure 10</strong> shows accuracy-versus-time curves for VGG16 and Inception-v3 on 8 machines in Cluster-A.</p>
+<p>For VGG16, the gap is dramatic. BSP improves over a single worker, but not by much, because communication eats a large fraction of runtime. PipeDream reaches the target accuracy substantially sooner.</p>
+<p>For Inception-v3, the story is different. Communication overhead in this setting is low enough that BSP already scales well. PipeDream therefore chooses a data-parallel plan.</p>
+<p>This is exactly the kind of result I trust. The paper is not trying to “win every benchmark.” It is teaching the reader when the design should help.</p>
+<h3 id="13-3-Figure-11-why-faster-GPUs-can-make-communication-look-worse">13.3 Figure 11: why faster GPUs can make communication look worse</h3>
+<p><strong>Figure 11</strong> is one of my favorite plots in the paper because it teaches a counterintuitive systems lesson.</p>
+<p>On Cluster-B, GPUs are faster but the network is slower. Both BSP and PipeDream become less scalable than on Cluster-A in absolute terms, yet PipeDream’s advantage over BSP grows.</p>
+<p>For VGG16, the speedup over BSP jumps from about <strong>2.99x</strong> on Cluster-A to <strong>5.12x</strong> on Cluster-B.</p>
+<p>The reason is not mysterious:</p>
+<ul>
+<li>faster compute makes synchronization relatively more expensive,</li>
+<li>PipeDream reduces synchronization cost much more than BSP does,</li>
+<li>so the relative benefit widens.</li>
+</ul>
+<p>This is a general systems principle: if a design attacks the dominant bottleneck, its relative gain often increases as other parts of the stack become faster.</p>
+<h3 id="13-4-Figure-12-scaling-and-the-ASP-comparison">13.4 Figure 12: scaling and the ASP comparison</h3>
+<p><strong>Figure 12</strong> compares multiple configurations for VGG16, including BSP, ASP, and PipeDream.</p>
+<p>The scaling story is clear:</p>
+<ul>
+<li>BSP with 4, 8, and 16 workers only gets <strong>1.47x</strong>, <strong>2.35x</strong>, and <strong>3.28x</strong> over one machine.</li>
+<li>PipeDream reaches <strong>3.14x</strong>, <strong>7.04x</strong>, and <strong>9.86x</strong> respectively.</li>
+</ul>
+<p>This is a strong result. It means PipeDream with 4 machines is already close to or better than BSP with far more hardware in some settings.</p>
+<p>The comparison to <strong>ASP (asynchronous parallel)</strong> is also revealing. ASP removes synchronization waiting, but its statistical efficiency degrades badly. The paper says PipeDream reaches 48% accuracy <strong>7.4x faster</strong> than 4-machine ASP on Cluster-A.</p>
+<p>That supports the paper’s main philosophy: eliminating communication stalls is not enough if optimization quality collapses.</p>
+<h3 id="13-5-Figure-13-why-straight-pipelines-are-not-enough">13.5 Figure 13: why straight pipelines are not enough</h3>
+<p><strong>Figure 13</strong> compares three families:</p>
+<ul>
+<li>model parallelism only,</li>
+<li>straight pipeline without stage replication,</li>
+<li>full PipeDream.</li>
+</ul>
+<p>This is exactly the ablation the paper needed.</p>
+<p>Simple model parallelism underutilizes hardware.
+Straight pipelines help a lot because they keep several minibatches active.
+But full PipeDream does even better because it adds selective data-parallel replication for load balancing.</p>
+<p>This figure proves that the real contribution is not merely “use a pipeline.” The contribution is the <strong>combined design</strong>.</p>
+<h3 id="13-6-S2VT-result-why-recurrent-models-benefit-strongly">13.6 S2VT result: why recurrent models benefit strongly</h3>
+<p>The S2VT result is easy to overlook because modern readers focus on transformers, but it matters.</p>
+<p>BSP gives only <strong>1.1x</strong> speedup with 4 machines, whereas PipeDream gives <strong>3.34x</strong> over a single machine and <strong>3.01x over BSP</strong>.</p>
+<p>That tells us the method is especially valuable for architectures where communication overhead dominates and straightforward data parallelism is weak.</p>
+<p>Even though the paper predates the modern LLM boom, this part of the result points forward: architecture-dependent communication structure matters a lot.</p>
+<hr>
+<h2 id="14-What-I-think-is-genuinely-strong-in-this-paper">14. What I think is genuinely strong in this paper</h2>
+<p>Here are the parts I think are genuinely excellent.</p>
+<h3 id="Strength-1-it-optimizes-the-right-metric">Strength 1: it optimizes the right metric</h3>
+<p>The paper focuses on <strong>time to target accuracy</strong>, not raw throughput alone. That prevents a common systems mistake where a method looks fast but quietly harms optimization quality.</p>
+<h3 id="Strength-2-it-does-not-oversell-one-parallelism-mode">Strength 2: it does not oversell one parallelism mode</h3>
+<p>PipeDream is willing to pick data parallelism when that is the best answer. That makes the optimizer credible.</p>
+<h3 id="Strength-3-it-addresses-semantics-not-just-mechanics">Strength 3: it addresses semantics, not just mechanics</h3>
+<p>Weight stashing is a serious response to the training-semantics problem. The paper would be much weaker if it simply ignored that issue.</p>
+<h3 id="Strength-4-the-system-design-is-layered-cleanly">Strength 4: the system design is layered cleanly</h3>
+<p>The design has a logical stack:</p>
+<ol>
+<li>profile layers,</li>
+<li>optimize stage layout,</li>
+<li>schedule work,</li>
+<li>manage versioned weights and buffers,</li>
+<li>evaluate by time to accuracy.</li>
+</ol>
+<p>That makes the paper teachable.</p>
+<h3 id="Strength-5-the-figures-support-the-argument-well">Strength 5: the figures support the argument well</h3>
+<p>The paper uses the right kinds of figures:</p>
+<ul>
+<li>motivation plot (Figure 1),</li>
+<li>conceptual timeline (Figure 4 and 8),</li>
+<li>architecture diagram (Figure 9),</li>
+<li>summary table (Table 1),</li>
+<li>ablation and scaling plots (Figures 10-13).</li>
+</ul>
+<p>This is a strong evidence story, not just a single headline number.</p>
+<hr>
+<h2 id="15-Limitations-and-boundary-conditions">15. Limitations and boundary conditions</h2>
+<p>The paper is strong, but it has real limits.</p>
+<h3 id="Limitation-1-the-optimizer-assumes-a-fairly-structured-cost-model">Limitation 1: the optimizer assumes a fairly structured cost model</h3>
+<p>The dynamic-programming partitioner relies on per-layer profiling and relatively stable runtime behavior. That is reasonable for the evaluated setting, but modern training stacks can involve:</p>
+<ul>
+<li>fused kernels,</li>
+<li>overlapping collectives,</li>
+<li>sequence-length variation,</li>
+<li>activation checkpointing,</li>
+<li>mixed precision and optimizer sharding,</li>
+<li>heterogeneous interconnects.</li>
+</ul>
+<p>Those can make the stage-cost model less faithful.</p>
+<h3 id="Limitation-2-weight-staleness-is-reduced-not-eliminated">Limitation 2: weight staleness is reduced, not eliminated</h3>
+<p>Weight stashing fixes within-stage forward/backward consistency, but default PipeDream still allows inconsistency across stages unless vertical sync is used.</p>
+<p>So the optimization semantics remain approximate.</p>
+<p>That was good enough for the reported workloads, but it is not mathematically the same as synchronous SGD.</p>
+<h3 id="Limitation-3-the-paper-predates-transformer-era-realities">Limitation 3: the paper predates transformer-era realities</h3>
+<p>PipeDream studies CNNs and an RNN seq2seq model, not trillion-parameter transformers. Modern large-model training also cares about:</p>
+<ul>
+<li>tensor parallelism,</li>
+<li>sequence parallelism,</li>
+<li>optimizer-state sharding,</li>
+<li>activation recomputation,</li>
+<li>interleaved virtual pipeline stages,</li>
+<li>ZeRO-style memory partitioning,</li>
+<li>long-context attention structure.</li>
+</ul>
+<p>So the paper is foundational, but not sufficient for modern LLM training by itself.</p>
+<h3 id="Limitation-4-code-availability-is-weak-from-a-reproducibility-perspective">Limitation 4: code availability is weak from a reproducibility perspective</h3>
+<p>The paper describes an implementation atop Caffe, ZeroMQ, and a distributed parameter server, but it does not provide a modern, easy-to-run open-source artifact in the paper itself. That weakens practical reproducibility today.</p>
+<h3 id="Limitation-5-no-explicit-failure-analysis-for-badly-imbalanced-or-dynamic-workloads">Limitation 5: no explicit failure analysis for badly imbalanced or dynamic workloads</h3>
+<p>The paper explains why load balancing matters, but it does not deeply study what happens when profiling is inaccurate, communication fluctuates, or the best partition changes over time.</p>
+<hr>
+<h2 id="16-Reproducibility-and-practical-notes">16. Reproducibility and practical notes</h2>
+<p>If I were a practitioner trying to reproduce this paper today, I would classify it as <strong>conceptually reproducible, operationally nontrivial</strong>.</p>
+<h3 id="What-is-reproducible-from-the-paper">What is reproducible from the paper</h3>
+<p>The paper gives enough detail to understand:</p>
+<ul>
+<li>the stage-partitioning objective,</li>
+<li>the dynamic-programming structure,</li>
+<li>the 1F1B schedule,</li>
+<li>the role of weight stashing,</li>
+<li>the high-level runtime architecture.</li>
+</ul>
+<h3 id="What-would-still-require-engineering-work">What would still require engineering work</h3>
+<p>A modern reimplementation would need choices for:</p>
+<ul>
+<li>framework integration points,</li>
+<li>buffer management strategy,</li>
+<li>stage-local optimizer behavior,</li>
+<li>checkpoint semantics,</li>
+<li>collective communication backend,</li>
+<li>profiling methodology,</li>
+<li>and debugging tools for version mismatches.</li>
+</ul>
+<h3 id="Practical-implementation-advice">Practical implementation advice</h3>
+<p>If I were implementing a modern reinterpretation, I would do the following:</p>
+<ol>
+<li>build a simulator first for stage timing and bubble analysis,</li>
+<li>separate the schedule engine from the framework bindings,</li>
+<li>make parameter-version metadata explicit and observable,</li>
+<li>include memory accounting from the beginning,</li>
+<li>test on intentionally imbalanced toy pipelines before large runs.</li>
+</ol>
+<p>That last point matters. Pipeline systems often fail first on bookkeeping, not on theory.</p>
+<hr>
+<h2 id="17-How-I-would-reinterpret-PipeDream-for-modern-LLM-systems">17. How I would reinterpret PipeDream for modern LLM systems</h2>
+<p>In 2026, I do not read PipeDream as a ready-to-run recipe. I read it as the conceptual ancestor of modern pipeline stacks.</p>
+<p>Here is what still survives directly.</p>
+<h3 id="Still-directly-relevant">Still directly relevant</h3>
+<ul>
+<li>Stage partitioning should be cost-aware.</li>
+<li>Bottleneck stages should be balanced, not merely identified.</li>
+<li>Pipeline schedules need explicit bubble control.</li>
+<li>Parameter/version semantics must be designed, not assumed.</li>
+<li>Throughput claims should be tied to training quality.</li>
+</ul>
+<h3 id="What-modern-systems-add-on-top">What modern systems add on top</h3>
+<p>Modern LLM systems typically combine PipeDream-like ideas with:</p>
+<ul>
+<li>tensor parallelism inside a stage,</li>
+<li>ZeRO or FSDP-style state partitioning,</li>
+<li>activation checkpointing,</li>
+<li>interleaved or virtual pipeline stages,</li>
+<li>topology-aware collectives,</li>
+<li>long-sequence attention-specific optimizations.</li>
+</ul>
+<h3 id="The-historical-connection-I-would-emphasize">The historical connection I would emphasize</h3>
+<p>GPipe, Megatron-LM, DeepSpeed pipeline engine, and later PipeDream variants all live in the design space that this paper helped define. PipeDream’s exact implementation is no longer the end state, but the paper helped make the design space legible.</p>
+<p>So if someone wants to understand where modern LLM pipeline training came from, PipeDream is still worth reading.</p>
+<hr>
+<h2 id="18-Final-verdict">18. Final verdict</h2>
+<p>My overall view is very positive.</p>
+<p>PipeDream is not important because every detail survived unchanged. It is important because it showed how to transform pipeline parallelism from a hand-wavy concept into a full training system with:</p>
+<ul>
+<li>automated partitioning,</li>
+<li>a workable schedule,</li>
+<li>a principled response to parameter-version mismatch,</li>
+<li>and convincing time-to-accuracy experiments.</li>
+</ul>
+<p>If I score the paper on long-term systems value, I would rate it highly.</p>
+<p>My concise verdict would be:</p>
+<blockquote>
+<p>PipeDream is a foundational ML systems paper. Its most durable contribution is not a single benchmark number, but the systems decomposition it introduced for pipeline-parallel training: profile, partition, schedule, version, and measure by time to accuracy.</p>
+</blockquote>
+<p>That decomposition still feels right.</p>
+<hr>
+<h2 id="19-References">19. References</h2>
+<ol>
+<li>Aaron Harlap, Deepak Narayanan, Amar Phanishayee, Vivek Seshadri, Nikhil Devanur, Greg Ganger, Phil Gibbons. <em>PipeDream: Fast and Efficient Pipeline Parallel DNN Training</em>. arXiv:1806.03377.</li>
+<li>Yanping Huang, Yonglong Cheng, Ankur Bapna, et al. <em>GPipe: Efficient Training of Giant Neural Networks using Pipeline Parallelism</em>.</li>
+<li>Deepak Narayanan, Mohammad Shoeybi, Jared Casper, et al. <em>Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM</em>.</li>
+<li>Samyam Rajbhandari, Olatunji Ruwase, Jeff Rasley, et al. <em>ZeRO: Memory Optimizations Toward Training Trillion Parameter Models</em>.</li>
+<li>Deepak Narayanan, Jared Casper, Purnananda S. et al. <em>PipeDream-2BW: Balanced Pipeline Parallelism for DNN Training</em>.</li>
+</ol>
+<hr>
+<h2 id="20-Appendix-A-short-FAQ">20. Appendix A: short FAQ</h2>
+<h3 id="Q1-Is-PipeDream-the-same-thing-as-GPipe">Q1. Is PipeDream the same thing as GPipe?</h3>
+<p>No. Both are pipeline-parallel training systems, but their optimization semantics and scheduling choices differ. PipeDream emphasizes asynchronous pipeline execution with weight stashing; GPipe is more strictly synchronous and flush-based.</p>
+<h3 id="Q2-Why-does-the-paper-care-so-much-about-time-to-accuracy-instead-of-examples-per-second">Q2. Why does the paper care so much about time to accuracy instead of examples per second?</h3>
+<p>Because a faster hardware schedule is useless if it harms convergence enough that the model needs many more epochs.</p>
+<h3 id="Q3-Why-is-Inception-v3-less-impressive-than-VGG16-in-the-results">Q3. Why is Inception-v3 less impressive than VGG16 in the results?</h3>
+<p>Because data parallelism already works well enough in some Inception settings. PipeDream helps most when synchronization overhead is large.</p>
+<h3 id="Q4-What-is-the-single-most-important-systems-idea-in-the-paper">Q4. What is the single most important systems idea in the paper?</h3>
+<p>For me, it is the combination of 1F1B scheduling and weight stashing. Those are the pieces that make the pipeline both busy and trainable.</p>
+<h3 id="Q5-Would-I-still-recommend-reading-this-paper-today">Q5. Would I still recommend reading this paper today?</h3>
+<p>Yes. Especially if you want to understand the lineage of modern large-model distributed training.</p>
+<hr>
+<h2 id="21-Appendix-B-evidence-checklist">21. Appendix B: evidence checklist</h2>
+<ul>
+<li>Figure 1 used to motivate communication bottlenecks and hardware-ratio effects.</li>
+<li>Figure 4 used to explain temporal overlap in a pipeline.</li>
+<li>Figure 5 used to explain why boundary-tensor communication can be much smaller than full-model synchronization.</li>
+<li>Figure 6 used to explain selective stage replication.</li>
+<li>Figure 8 used to explain 1F1B scheduling and steady-state behavior.</li>
+<li>Figure 9 used to explain runtime architecture and buffer management.</li>
+<li>Table 1 used to summarize end-to-end speedups and communication reduction.</li>
+<li>Figures 10-13 used to interpret scaling, hardware sensitivity, ASP comparison, and ablations.</li>
+</ul>
+<hr>
+<p><em>Review written on 2026-04-16.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Distributed-Training/" rel="tag"># Distributed Training</a>
+              <a href="/tags/Pipeline-Parallelism/" rel="tag"># Pipeline Parallelism</a>
+              <a href="/tags/ML-Systems/" rel="tag"># ML Systems</a>
+              <a href="/tags/PipeDream/" rel="tag"># PipeDream</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/16/2026-04-16-PipeDream-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="prev" title="PipeDream：把 Pipeline Parallelism 做成真正可训练系统——深度技术评审">
+      <i class="fa fa-chevron-left"></i> PipeDream：把 Pipeline Parallelism 做成真正可训练系统——深度技术评审
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/19/2026-04-19-SpecGuard-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="next" title="SpecGuard：用于多步推理的验证感知推测解码">
+      SpecGuard：用于多步推理的验证感知推测解码 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Why-this-paper-still-matters-in-2026"><span class="nav-number">1.</span> <span class="nav-text">1. Why this paper still matters in 2026</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Prerequisites-background-I-want-a-reader-to-have-first"><span class="nav-number">2.</span> <span class="nav-text">2. Prerequisites: background I want a reader to have first</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-Why-distributed-training-exists-at-all"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 Why distributed training exists at all</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-Data-parallelism-and-why-communication-becomes-painful"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 Data parallelism and why communication becomes painful</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-Model-parallelism-and-why-it-wastes-hardware-when-used-naively"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 Model parallelism and why it wastes hardware when used naively</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-Why-training-is-harder-than-inference-forward-pass-plus-backward-pass"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 Why training is harder than inference: forward pass plus backward pass</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-Hardware-efficiency-vs-statistical-efficiency"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 Hardware efficiency vs. statistical efficiency</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-What-a-pipeline-bubble-is"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 What a pipeline bubble is</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-The-exact-problem-PipeDream-is-solving"><span class="nav-number">3.</span> <span class="nav-text">3. The exact problem PipeDream is solving</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Subproblem-A-partitioning"><span class="nav-number">3.1.</span> <span class="nav-text">Subproblem A: partitioning</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Subproblem-B-scheduling"><span class="nav-number">3.2.</span> <span class="nav-text">Subproblem B: scheduling</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Subproblem-C-parameter-consistency"><span class="nav-number">3.3.</span> <span class="nav-text">Subproblem C: parameter consistency</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Core-idea-in-one-paragraph"><span class="nav-number">4.</span> <span class="nav-text">4. Core idea in one paragraph</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Figure-1-explained-when-communication-starts-dominating-training"><span class="nav-number">5.</span> <span class="nav-text">5. Figure 1 explained: when communication starts dominating training</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Figure-4-explained-what-pipeline-parallel-training-actually-looks-like-over-time"><span class="nav-number">6.</span> <span class="nav-text">6. Figure 4 explained: what pipeline-parallel training actually looks like over time</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-The-architecture-idea-combine-model-parallelism-pipelining-and-selective-data-parallelism"><span class="nav-number">7.</span> <span class="nav-text">7. The architecture idea: combine model parallelism, pipelining, and selective data parallelism</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Partitioning-algorithm-in-detail"><span class="nav-number">8.</span> <span class="nav-text">8. Partitioning algorithm in detail</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-What-PipeDream-profiles"><span class="nav-number">8.1.</span> <span class="nav-text">8.1 What PipeDream profiles</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-What-optimization-objective-it-uses"><span class="nav-number">8.2.</span> <span class="nav-text">8.2 What optimization objective it uses</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-The-dynamic-programming-formulation"><span class="nav-number">8.3.</span> <span class="nav-text">8.3 The dynamic-programming formulation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-4-Why-stage-replication-matters"><span class="nav-number">8.4.</span> <span class="nav-text">8.4 Why stage replication matters</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-Scheduling-in-detail"><span class="nav-number">9.</span> <span class="nav-text">9. Scheduling in detail</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-NOAM-how-many-minibatches-should-be-in-flight"><span class="nav-number">9.1.</span> <span class="nav-text">9.1 NOAM: how many minibatches should be in flight</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-1F1B-scheduling"><span class="nav-number">9.2.</span> <span class="nav-text">9.2 1F1B scheduling</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-Why-deterministic-round-robin-routing-matters"><span class="nav-number">9.3.</span> <span class="nav-text">9.3 Why deterministic round-robin routing matters</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-Learning-correctness-under-pipeline-asynchrony"><span class="nav-number">10.</span> <span class="nav-text">10. Learning correctness under pipeline asynchrony</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-Why-naive-pipelining-breaks-SGD-semantics"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 Why naive pipelining breaks SGD semantics</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-Weight-stashing"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 Weight stashing</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-Vertical-sync"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 Vertical sync</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-4-Why-the-paper-keeps-weight-stashing-but-drops-vertical-sync-by-default"><span class="nav-number">10.4.</span> <span class="nav-text">10.4 Why the paper keeps weight stashing but drops vertical sync by default</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-Runtime-and-memory-management-design"><span class="nav-number">11.</span> <span class="nav-text">11. Runtime and memory-management design</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Static-GPU-memory-allocation"><span class="nav-number">11.1.</span> <span class="nav-text">Static GPU-memory allocation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Explicit-parameter-version-management"><span class="nav-number">11.2.</span> <span class="nav-text">Explicit parameter-version management</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Intermediate-state-lifetime-discipline"><span class="nav-number">11.3.</span> <span class="nav-text">Intermediate-state lifetime discipline</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Integration-with-existing-DL-frameworks"><span class="nav-number">11.4.</span> <span class="nav-text">Integration with existing DL frameworks</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-Experimental-setup"><span class="nav-number">12.</span> <span class="nav-text">12. Experimental setup</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Cluster-A"><span class="nav-number">12.1.</span> <span class="nav-text">Cluster-A</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Cluster-B"><span class="nav-number">12.2.</span> <span class="nav-text">Cluster-B</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-Results-and-what-they-really-mean"><span class="nav-number">13.</span> <span class="nav-text">13. Results and what they really mean</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#13-1-Table-1-the-headline-result"><span class="nav-number">13.1.</span> <span class="nav-text">13.1 Table 1: the headline result</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-2-Figure-10-VGG16-versus-Inception-v3-on-Cluster-A"><span class="nav-number">13.2.</span> <span class="nav-text">13.2 Figure 10: VGG16 versus Inception-v3 on Cluster-A</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-3-Figure-11-why-faster-GPUs-can-make-communication-look-worse"><span class="nav-number">13.3.</span> <span class="nav-text">13.3 Figure 11: why faster GPUs can make communication look worse</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-4-Figure-12-scaling-and-the-ASP-comparison"><span class="nav-number">13.4.</span> <span class="nav-text">13.4 Figure 12: scaling and the ASP comparison</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-5-Figure-13-why-straight-pipelines-are-not-enough"><span class="nav-number">13.5.</span> <span class="nav-text">13.5 Figure 13: why straight pipelines are not enough</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-6-S2VT-result-why-recurrent-models-benefit-strongly"><span class="nav-number">13.6.</span> <span class="nav-text">13.6 S2VT result: why recurrent models benefit strongly</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#14-What-I-think-is-genuinely-strong-in-this-paper"><span class="nav-number">14.</span> <span class="nav-text">14. What I think is genuinely strong in this paper</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Strength-1-it-optimizes-the-right-metric"><span class="nav-number">14.1.</span> <span class="nav-text">Strength 1: it optimizes the right metric</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Strength-2-it-does-not-oversell-one-parallelism-mode"><span class="nav-number">14.2.</span> <span class="nav-text">Strength 2: it does not oversell one parallelism mode</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Strength-3-it-addresses-semantics-not-just-mechanics"><span class="nav-number">14.3.</span> <span class="nav-text">Strength 3: it addresses semantics, not just mechanics</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Strength-4-the-system-design-is-layered-cleanly"><span class="nav-number">14.4.</span> <span class="nav-text">Strength 4: the system design is layered cleanly</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Strength-5-the-figures-support-the-argument-well"><span class="nav-number">14.5.</span> <span class="nav-text">Strength 5: the figures support the argument well</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#15-Limitations-and-boundary-conditions"><span class="nav-number">15.</span> <span class="nav-text">15. Limitations and boundary conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Limitation-1-the-optimizer-assumes-a-fairly-structured-cost-model"><span class="nav-number">15.1.</span> <span class="nav-text">Limitation 1: the optimizer assumes a fairly structured cost model</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Limitation-2-weight-staleness-is-reduced-not-eliminated"><span class="nav-number">15.2.</span> <span class="nav-text">Limitation 2: weight staleness is reduced, not eliminated</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Limitation-3-the-paper-predates-transformer-era-realities"><span class="nav-number">15.3.</span> <span class="nav-text">Limitation 3: the paper predates transformer-era realities</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Limitation-4-code-availability-is-weak-from-a-reproducibility-perspective"><span class="nav-number">15.4.</span> <span class="nav-text">Limitation 4: code availability is weak from a reproducibility perspective</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Limitation-5-no-explicit-failure-analysis-for-badly-imbalanced-or-dynamic-workloads"><span class="nav-number">15.5.</span> <span class="nav-text">Limitation 5: no explicit failure analysis for badly imbalanced or dynamic workloads</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#16-Reproducibility-and-practical-notes"><span class="nav-number">16.</span> <span class="nav-text">16. Reproducibility and practical notes</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#What-is-reproducible-from-the-paper"><span class="nav-number">16.1.</span> <span class="nav-text">What is reproducible from the paper</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#What-would-still-require-engineering-work"><span class="nav-number">16.2.</span> <span class="nav-text">What would still require engineering work</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Practical-implementation-advice"><span class="nav-number">16.3.</span> <span class="nav-text">Practical implementation advice</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#17-How-I-would-reinterpret-PipeDream-for-modern-LLM-systems"><span class="nav-number">17.</span> <span class="nav-text">17. How I would reinterpret PipeDream for modern LLM systems</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Still-directly-relevant"><span class="nav-number">17.1.</span> <span class="nav-text">Still directly relevant</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#What-modern-systems-add-on-top"><span class="nav-number">17.2.</span> <span class="nav-text">What modern systems add on top</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#The-historical-connection-I-would-emphasize"><span class="nav-number">17.3.</span> <span class="nav-text">The historical connection I would emphasize</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#18-Final-verdict"><span class="nav-number">18.</span> <span class="nav-text">18. Final verdict</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#19-References"><span class="nav-number">19.</span> <span class="nav-text">19. References</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#20-Appendix-A-short-FAQ"><span class="nav-number">20.</span> <span class="nav-text">20. Appendix A: short FAQ</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Q1-Is-PipeDream-the-same-thing-as-GPipe"><span class="nav-number">20.1.</span> <span class="nav-text">Q1. Is PipeDream the same thing as GPipe?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Q2-Why-does-the-paper-care-so-much-about-time-to-accuracy-instead-of-examples-per-second"><span class="nav-number">20.2.</span> <span class="nav-text">Q2. Why does the paper care so much about time to accuracy instead of examples per second?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Q3-Why-is-Inception-v3-less-impressive-than-VGG16-in-the-results"><span class="nav-number">20.3.</span> <span class="nav-text">Q3. Why is Inception-v3 less impressive than VGG16 in the results?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Q4-What-is-the-single-most-important-systems-idea-in-the-paper"><span class="nav-number">20.4.</span> <span class="nav-text">Q4. What is the single most important systems idea in the paper?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Q5-Would-I-still-recommend-reading-this-paper-today"><span class="nav-number">20.5.</span> <span class="nav-text">Q5. Would I still recommend reading this paper today?</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#21-Appendix-B-evidence-checklist"><span class="nav-number">21.</span> <span class="nav-text">21. Appendix B: evidence checklist</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

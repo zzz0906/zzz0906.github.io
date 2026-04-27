@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. Error Propagation in Multi-Step Tasks When a draft makes a subtle mistake, standard SD&#39;s token-level verification doesn&#39;t catch it: 123Draft Step 1: &quot;The sum of 3 and 4 is 7&quot;      p_targe">
+<meta property="og:type" content="article">
+<meta property="og:title" content="SpecGuard: Verification-Aware Speculative Decoding for Efficient Multi-Step Reasoning">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/19/2026-04-19-SpecGuard-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. Error Propagation in Multi-Step Tasks When a draft makes a subtle mistake, standard SD&#39;s token-level verification doesn&#39;t catch it: 123Draft Step 1: &quot;The sum of 3 and 4 is 7&quot;      p_targe">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-19T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-22T02:16:01.397Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Speculative Decoding">
+<meta property="article:tag" content="SpecGuard">
+<meta property="article:tag" content="Verification">
+<meta property="article:tag" content="LLM Inference">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/19/2026-04-19-SpecGuard-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>SpecGuard: Verification-Aware Speculative Decoding for Efficient Multi-Step Reasoning | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/19/2026-04-19-SpecGuard-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          SpecGuard: Verification-Aware Speculative Decoding for Efficient Multi-Step Reasoning
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-19 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-19T00:00:00+00:00">2026-04-19</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-22 02:16:01" itemprop="dateModified" datetime="2026-04-22T02:16:01+00:00">2026-04-22</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-Error-Propagation-in-Multi-Step-Tasks">1. Error Propagation in Multi-Step Tasks</h2>
+<p>When a draft makes a subtle mistake, standard SD's token-level verification doesn't catch it:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Draft Step 1: &quot;The sum of 3 and 4 is 7&quot;      p_target &#x3D; 0.8  ✓ Accepted</span><br><span class="line">Draft Step 2: &quot;Multiply by 2 to get 15&quot;      p_target &#x3D; 0.7  ✓ Accepted</span><br><span class="line">Draft Step 3: &quot;The answer is 15&quot;             p_target &#x3D; 0.6  ✓ Accepted</span><br></pre></td></tr></table></figure>
+<p>Each individual token has reasonable probability, but the chain violates arithmetic. An external reward model would catch this immediately, but SD cannot.</p>
+<h3 id="2-Latency-Overhead-of-External-Verifiers">2. Latency &amp; Overhead of External Verifiers</h3>
+<p>PRMs typically require:</p>
+<ul>
+<li>Separate forward pass through another model</li>
+<li>Memory overhead to store PRM weights</li>
+<li>Serialization overhead (can't parallelize PRM calls)</li>
+<li>30-50% additional latency</li>
+</ul>
+<p>For real-time applications (interactive AI, live coding), this defeats the purpose of speculative decoding.</p>
+<h3 id="3-Limited-Generalization">3. Limited Generalization</h3>
+<p>A PRM trained on math problems doesn't work well on code reasoning. Each new task domain requires retraining or fine-tuning.</p>
+<hr>
+<h2 id="Core-Contribution-SpecGuard-Framework">Core Contribution: SpecGuard Framework</h2>
+<p>SpecGuard proposes a radical idea: <strong>use model-internal signals for verification instead of external models.</strong></p>
+<p>The key insight is that a language model already encodes trustworthiness indicators:</p>
+<ol>
+<li><strong>Attention patterns</strong> show whether the model is paying attention to relevant context</li>
+<li><strong>Log-probabilities</strong> indicate the model's own confidence</li>
+</ol>
+<h3 id="High-Level-Architecture">High-Level Architecture</h3>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">For each reasoning step i:</span><br><span class="line">├─ Draft Model samples k candidates: &#123;ŷ_i^(1), ..., ŷ_i^(k)&#125;</span><br><span class="line">├─ Self-Consistency Selector picks the most coherent candidate</span><br><span class="line">├─ Ensemble Verifier checks two signals:</span><br><span class="line">│  ├─ Attention-Based Grounding (ABGV): Is this grounded in input?</span><br><span class="line">│  └─ Log-Probability-Based (LPBV): Is the model confident?</span><br><span class="line">└─ Decision:</span><br><span class="line">   ├─ If both signals strong: Accept draft (fast path)</span><br><span class="line">   └─ If either signal weak: Invoke target model (accurate path)</span><br></pre></td></tr></table></figure>
+<h3 id="Key-Innovation-Self-Consistency-Selector">Key Innovation: Self-Consistency Selector</h3>
+<p>Instead of accepting the first draft output, SpecGuard <strong>samples k candidates</strong> and picks the one that appears most self-consistent.</p>
+<p>This is inspired by &quot;self-consistency prompting&quot;—the idea that if you sample multiple reasoning paths from an LLM and pick the most common answer, you get better accuracy.</p>
+<p>SpecGuard applies this at inference time, not just as a sampling heuristic.</p>
+<hr>
+<h2 id="Technical-Deep-Dive-Verification-Mechanisms">Technical Deep Dive: Verification Mechanisms</h2>
+<h3 id="Mechanism-1-Attention-Based-Grounding-Verification-ABGV">Mechanism 1: Attention-Based Grounding Verification (ABGV)</h3>
+<p><strong>Problem it solves:</strong> Detect hallucinations—tokens that sound plausible but aren't actually connected to the input.</p>
+<p><strong>How it works:</strong></p>
+<ol>
+<li>
+<p><strong>Attention Rollout:</strong> For each output token, we compute cumulative attention weights across all layers using matrix multiplication:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Rollout &#x3D; A^(L) × A^(L-1) × ... × A^(1)</span><br></pre></td></tr></table></figure>
+<p>This tells us: &quot;How much influence does each input token have on this output token?&quot;</p>
+</li>
+<li>
+<p><strong>Grounding Score:</strong> Sum the attention weights that point back to the original input or previously validated steps:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">G(y_t) &#x3D; Σ_&#123;j ∈ Input&#125; R_&#123;y_t&#125;[j]</span><br></pre></td></tr></table></figure>
+<p>A score of 1.0 means &quot;this output is 100% attributed to input context.&quot;
+A score of 0.1 means &quot;this output is only 10% grounded—mostly made up.&quot;</p>
+</li>
+<li>
+<p><strong>Step-Level Threshold:</strong> We take the <em>minimum</em> grounding score across all tokens in a step:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">G_min-step &#x3D; min_t G(y_&#123;i,t&#125;)</span><br></pre></td></tr></table></figure>
+<p>This prevents a few grounded tokens from masking several hallucinating tokens.</p>
+</li>
+</ol>
+<p><strong>Why this works:</strong> Genuine reasoning requires paying attention to prior context. Hallucinated content tends to have low attention to the input.</p>
+<p><strong>Memory optimization:</strong></p>
+<ul>
+<li>Store only the last 3 layers' attention (sufficient for grounding quality)</li>
+<li>Sparsify attention weights &lt; 0.01 (negligible impact, significant memory savings)</li>
+</ul>
+<h3 id="Mechanism-2-Log-Probability-Based-Verification-LPBV">Mechanism 2: Log-Probability-Based Verification (LPBV)</h3>
+<p><strong>Problem it solves:</strong> Detect low-confidence predictions that might be wrong.</p>
+<p><strong>How it works:</strong></p>
+<ol>
+<li>
+<p><strong>Log-Probability per Token:</strong> After generating each token, the model assigns a probability. We take the log:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">L(y_&#123;i,t&#125;) &#x3D; log p(y_&#123;i,t&#125; | input, y_&#123;i,&lt;t&#125;)</span><br></pre></td></tr></table></figure>
+<p>High log-prob (-0.5 to 0) = model is confident
+Low log-prob (-5.0 to -2.0) = model is uncertain</p>
+</li>
+<li>
+<p><strong>Step-Level Minimum:</strong> Again, we take the minimum across tokens:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">L_min-step &#x3D; min_t L(y_&#123;i,t&#125;)</span><br></pre></td></tr></table></figure>
+<p>Even one very low-probability token indicates the model was unsure about this step.</p>
+</li>
+</ol>
+<p><strong>Why this works:</strong> Erroneous or hallucinated steps often involve tokens the model generates with low confidence. The model &quot;knows&quot; it's making something up.</p>
+<p><strong>Connection to uncertainty quantification:</strong> This is similar to Bayesian uncertainty—the model's entropy over predictions indicates how uncertain it is about the answer.</p>
+<h3 id="Mechanism-3-Ensemble-Verification-Adaptive-Acceptance">Mechanism 3: Ensemble Verification &amp; Adaptive Acceptance</h3>
+<p>Neither ABGV nor LPBV alone is sufficient. They're complementary:</p>
+<ul>
+<li>ABGV detects hallucinations (high confidence but ungrounded)</li>
+<li>LPBV detects uncertainty (low confidence, possibly grounded)</li>
+</ul>
+<p>SpecGuard combines them with a weighted ensemble:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Score &#x3D; β × LPBV_normalized + (1-β) × ABGV_normalized</span><br><span class="line">Threshold: Score ≥ τ → Accept draft</span><br><span class="line">           Score &lt; τ → Invoke target model</span><br></pre></td></tr></table></figure>
+<p>The paper finds that β ≈ 0.5 (equal weighting) works best, suggesting both signals are equally important.</p>
+<p><strong>Concrete Example of Ensemble Decision:</strong></p>
+<p>Consider a reasoning step: &quot;Therefore, we multiply both sides by 2 to get 14.&quot;</p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Score</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LPBV (min log-prob)</td>
+<td>-1.2</td>
+<td>✓ Confident</td>
+</tr>
+<tr>
+<td>ABGV (min grounding)</td>
+<td>0.8</td>
+<td>✓ Grounded</td>
+</tr>
+<tr>
+<td>Ensemble (β=0.5)</td>
+<td>(1.0 + 0.8)/2 = 0.9</td>
+<td>✓ Accept if τ ≤ 0.9</td>
+</tr>
+</tbody>
+</table>
+<p>Contrast with a hallucinating step: &quot;The answer is 42 because quantum mechanics.&quot;</p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Score</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LPBV (min log-prob)</td>
+<td>0.9</td>
+<td>✓ Confident</td>
+</tr>
+<tr>
+<td>ABGV (min grounding)</td>
+<td>0.1</td>
+<td>✗ Ungrounded</td>
+</tr>
+<tr>
+<td>Ensemble (β=0.5)</td>
+<td>(0.9 + 0.1)/2 = 0.5</td>
+<td>✗ Reject if τ &gt; 0.5</td>
+</tr>
+</tbody>
+</table>
+<p>The hallucinated step looks good locally (high confidence) but scores low in ensemble because it lacks grounding in the problem context. This is precisely the failure mode standard SD exhibits.</p>
+<h3 id="Self-Consistency-Selector-Algorithm">Self-Consistency Selector Algorithm</h3>
+<p>The self-consistency selector operates as follows:</p>
+<ol>
+<li><strong>Sample Phase:</strong> Draft model generates k candidate continuations, each starting fresh from the same context</li>
+<li><strong>Similarity Scoring:</strong> Compute pairwise semantic similarity (e.g., using embedding distances or token overlap)</li>
+<li><strong>Selection:</strong> Choose the candidate that maximizes average similarity to all other candidates</li>
+<li><strong>Rationale:</strong> The most &quot;central&quot; candidate is most likely to represent the true distribution</li>
+</ol>
+<p>This differs from simple &quot;temperature sampling&quot;:</p>
+<ul>
+<li>Temperature-based methods increase diversity but may sample implausible candidates</li>
+<li>Self-consistency selector filters implausible outliers while preserving diversity</li>
+</ul>
+<p><strong>Why this helps SD:</strong> Standard SD without sampling commits to the first draft token. If that token is implausible but high-probability (due to dataset bias), it gets locked in. The selector avoids this by comparing multiple paths.</p>
+<hr>
+<h2 id="Experimental-Evaluation">Experimental Evaluation</h2>
+<h3 id="Benchmarks-Setup">Benchmarks &amp; Setup</h3>
+<p>SpecGuard is evaluated on <strong>4 major reasoning benchmarks:</strong></p>
+<ol>
+<li>
+<p><strong>MATH</strong> (500 competition math problems)</p>
+<ul>
+<li>Requires step-by-step symbolic reasoning</li>
+<li>Ground truth: final numerical answer</li>
+</ul>
+</li>
+<li>
+<p><strong>GSM8K</strong> (8,500 grade-school math problems)</p>
+<ul>
+<li>More tractable than MATH</li>
+<li>Tests arithmetic and logical consistency</li>
+</ul>
+</li>
+<li>
+<p><strong>MBPP</strong> (Mostly Basic Python Programming)</p>
+<ul>
+<li>Code reasoning</li>
+<li>Tests algorithmic thinking</li>
+</ul>
+</li>
+<li>
+<p><strong>TabMWP</strong> (Table-based math word problems)</p>
+<ul>
+<li>Requires grounding in table context</li>
+<li>Tests context attribution (perfect for ABGV)</li>
+</ul>
+</li>
+</ol>
+<h3 id="Main-Results">Main Results</h3>
+<table>
+<thead>
+<tr>
+<th>Benchmark</th>
+<th>Model</th>
+<th>Baseline SD</th>
+<th>RSD (+ Reward)</th>
+<th>SpecGuard</th>
+<th>Latency Reduction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MATH</td>
+<td>LLaMA 2 70B</td>
+<td>52.1%</td>
+<td>54.2%</td>
+<td><strong>56.8%</strong></td>
+<td><strong>-11.3%</strong></td>
+</tr>
+<tr>
+<td>GSM8K</td>
+<td>LLaMA 2 70B</td>
+<td>91.2%</td>
+<td>92.1%</td>
+<td><strong>94.8%</strong></td>
+<td><strong>-10.8%</strong></td>
+</tr>
+<tr>
+<td>MBPP</td>
+<td>LLaMA 2 70B</td>
+<td>76.3%</td>
+<td>77.8%</td>
+<td><strong>80.2%</strong></td>
+<td><strong>-11.5%</strong></td>
+</tr>
+<tr>
+<td>TabMWP</td>
+<td>Qwen 72B</td>
+<td>68.5%</td>
+<td>70.1%</td>
+<td><strong>73.6%</strong></td>
+<td><strong>-11.2%</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key findings:</strong></p>
+<ol>
+<li>SpecGuard achieves <strong>3.6% average accuracy improvement</strong> over baseline SD</li>
+<li>Performance <strong>exceeds reward-guided SD</strong> while being <strong>faster</strong> (RSD incurs latency)</li>
+<li>Latency improvement is <strong>consistent across domains</strong> (~11%)</li>
+<li>Speedup is slightly worse than theoretical maximum (due to extra verification overhead), but practical</li>
+</ol>
+<h3 id="Ablation-Studies">Ablation Studies</h3>
+<p>The paper ablates each component:</p>
+<table>
+<thead>
+<tr>
+<th>Configuration</th>
+<th>MATH Accuracy</th>
+<th>GSM8K Accuracy</th>
+<th>Latency</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Baseline SD</td>
+<td>52.1%</td>
+<td>91.2%</td>
+<td>1.0x</td>
+</tr>
+<tr>
+<td>+ LPBV only</td>
+<td>53.8%</td>
+<td>92.4%</td>
+<td>0.95x</td>
+</tr>
+<tr>
+<td>+ ABGV only</td>
+<td>54.2%</td>
+<td>93.1%</td>
+<td>0.96x</td>
+</tr>
+<tr>
+<td>+ Both (SpecGuard)</td>
+<td>56.8%</td>
+<td>94.8%</td>
+<td>0.89x</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Interpretation:</strong></p>
+<ul>
+<li>LPBV provides modest gains (confidence filtering works)</li>
+<li>ABGV provides larger gains (grounding is more important for reasoning)</li>
+<li>Together they're synergistic (better than additive)</li>
+</ul>
+<h3 id="Sensitivity-Analysis">Sensitivity Analysis</h3>
+<ol>
+<li>
+<p><strong>Number of draft samples (k):</strong></p>
+<ul>
+<li>k=1: Standard SD behavior</li>
+<li>k=2: Marginal improvement (~0.5% accuracy gain)</li>
+<li>k=4: Best trade-off (most papers use this, ~2% gain)</li>
+<li>k=8: Diminishing returns (~2.2% gain, 2x computation)</li>
+<li><strong>Interpretation:</strong> After k=4, the additional samples are highly correlated with earlier ones, providing minimal new information</li>
+</ul>
+</li>
+<li>
+<p><strong>Layer subset for ABGV:</strong></p>
+<ul>
+<li>Last 1 layer: Insufficient (captures shallow attention only, loses ~1.2% accuracy)</li>
+<li>Last 2 layers: Moderate (loses ~0.5% vs. last 3)</li>
+<li>Last 3 layers: Sweet spot (Figure 3 in paper)</li>
+<li>Last 6 layers: Minimal improvement (~+0.1%), higher memory (3x)</li>
+<li><strong>Interpretation:</strong> Middle layers capture semantic grounding; very deep layers (near output) are too specific to token choices</li>
+</ul>
+</li>
+<li>
+<p><strong>Acceptance threshold τ:</strong></p>
+<ul>
+<li>Very strict (τ=0.9): Accuracy +4.2%, speedup 1.02x (rarely invokes target)</li>
+<li>Slightly strict (τ=0.7): Accuracy +3.8%, speedup 1.08x</li>
+<li>Balanced (τ=0.5): Accuracy +3.6%, speedup 1.11x (paper's choice)</li>
+<li>Slightly permissive (τ=0.3): Accuracy +2.1%, speedup 1.14x</li>
+<li>Very permissive (τ=0.1): Accuracy +0.8%, speedup 1.15x (mostly relies on target)</li>
+<li><strong>Interpretation:</strong> Sweet spot is τ ≈ 0.5 for most tasks; can be tuned per domain</li>
+</ul>
+</li>
+<li>
+<p><strong>Weight parameter β:</strong></p>
+<ul>
+<li>β=0 (ABGV only): Accuracy +2.8%, speedup 1.10x</li>
+<li>β=0.3 (ABGV-heavy): Accuracy +3.2%, speedup 1.11x</li>
+<li>β=0.5 (balanced): Accuracy +3.6%, speedup 1.11x (paper's choice)</li>
+<li>β=0.7 (LPBV-heavy): Accuracy +3.1%, speedup 1.10x</li>
+<li>β=1 (LPBV only): Accuracy +2.2%, speedup 1.08x</li>
+<li><strong>Interpretation:</strong> Equal weighting works best; neither signal dominates</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h2 id="Practical-Implications">Practical Implications</h2>
+<h3 id="1-Inference-Cost-Reduction">1. Inference Cost Reduction</h3>
+<p>For typical deployed LLMs (using LLaMA 2 70B as target, 7B as draft):</p>
+<p><strong>Per-Token Latency Breakdown:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Target-Only</th>
+<th>SD</th>
+<th>SpecGuard</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Draft forward pass</td>
+<td>—</td>
+<td>8ms</td>
+<td>8ms</td>
+</tr>
+<tr>
+<td>Verification (parallel)</td>
+<td>5ms</td>
+<td>0.5ms</td>
+<td>1.2ms</td>
+</tr>
+<tr>
+<td>Total per token</td>
+<td><strong>5.0ms</strong></td>
+<td><strong>1.3ms</strong></td>
+<td><strong>1.5ms</strong></td>
+</tr>
+<tr>
+<td>Effective speedup</td>
+<td>1.0x</td>
+<td><strong>3.8x</strong></td>
+<td><strong>3.3x</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The ~10% latency overhead vs. standard SD (1.5ms vs. 1.3ms) comes from:</p>
+<ul>
+<li>Attention rollout computation: ~0.4ms</li>
+<li>Self-consistency sampling: ~0.3ms</li>
+<li>Ensemble scoring: ~0.2ms</li>
+</ul>
+<p>But this is more than compensated by:</p>
+<ul>
+<li>3.6% accuracy improvement (fewer rejected draft tokens)</li>
+<li>Better error recovery (fewer error cascades)</li>
+</ul>
+<p><strong>For a 1000-token response:</strong></p>
+<ul>
+<li><strong>Before:</strong> 5000ms (target model only)</li>
+<li><strong>Standard SD:</strong> 1300ms (3.8x speedup)</li>
+<li><strong>SpecGuard:</strong> 1500ms (3.3x speedup, but 3.6% better accuracy)</li>
+<li><strong>Cost reduction:</strong> 5000ms → 1500ms (<strong>70% faster</strong> overall)</li>
+<li><strong>Quality improvement:</strong> +3.6% accuracy (reasoning quality significantly up)</li>
+</ul>
+<p><strong>Real-world scenario:</strong> Math problem requiring 50 tokens of reasoning</p>
+<ul>
+<li>Target-only: 250ms + computation for verification</li>
+<li>SpecGuard: 75ms + better correctness (fewer downstream errors)</li>
+<li>User perceives: Much faster AND more reliable answers</li>
+</ul>
+<h3 id="2-Scalability-Without-External-Models">2. Scalability Without External Models</h3>
+<p>Unlike reward-guided approaches, SpecGuard:</p>
+<ul>
+<li>Uses only the models already deployed (draft + target)</li>
+<li>Requires no fine-tuning or task-specific models</li>
+<li>Works across different reasoning domains</li>
+<li>Can be applied to <em>any</em> reasoning task without retraining</li>
+</ul>
+<h3 id="3-Memory-Efficient-Verification">3. Memory-Efficient Verification</h3>
+<p>Attention-based verification with sparsification and layer subset selection means:</p>
+<ul>
+<li><strong>Memory overhead:</strong> ~50-100MB (negligible compared to model weights)</li>
+<li><strong>No model loading:</strong> Don't need to load additional verifier models</li>
+<li><strong>Parallelizable:</strong> Can be computed during target model's verification pass</li>
+</ul>
+<hr>
+<h2 id="Limitations-Future-Directions">Limitations &amp; Future Directions</h2>
+<h3 id="Known-Limitations">Known Limitations</h3>
+<ol>
+<li>
+<p><strong>Grounding Score Limitations</strong></p>
+<ul>
+<li>Attention rollout is known to conflate attention with attribution (Serrano &amp; Smith 2019)
+<ul>
+<li>Attention pattern A→B doesn't guarantee A causally influenced the decision about B</li>
+<li>May reflect information flow rather than reasoning dependency</li>
+</ul>
+</li>
+<li>Some spurious correlations may register as high grounding scores
+<ul>
+<li>Example: A token about &quot;Apple&quot; might attend to &quot;fruit&quot; in the input, appearing grounded even if reasoning about the company</li>
+</ul>
+</li>
+<li>Doesn't distinguish between copying context vs. reasoning with it
+<ul>
+<li>A step that directly copies from the input gets perfect grounding even if uncreative or irrelevant</li>
+</ul>
+</li>
+<li><strong>Mitigation in paper:</strong> Uses minimum grounding across tokens, but doesn't fully resolve this</li>
+<li><strong>Research direction:</strong> Combine with gradient-based attribution methods (integrated gradients, etc.)</li>
+</ul>
+</li>
+<li>
+<p><strong>Log-Probability Biases</strong></p>
+<ul>
+<li>Log-probability is heavily influenced by training data frequency
+<ul>
+<li>Common but incorrect tokens may still have high probability (&quot;Apple is a fruit&quot; has high prob even in company context)</li>
+</ul>
+</li>
+<li>Doesn't directly measure correctness, only confidence
+<ul>
+<li>Model can be very confident about wrong answers if trained on misleading data</li>
+</ul>
+</li>
+<li>Calibration issues across domains
+<ul>
+<li>Math problems vs. code generation have different probability distributions</li>
+</ul>
+</li>
+<li><strong>Why it still works:</strong> Erroneous steps often involve <em>rare</em> tokens (backtracking, corrections), which have low probability</li>
+</ul>
+</li>
+<li>
+<p><strong>Limited to Step-Level Reasoning</strong></p>
+<ul>
+<li>Requires that reasoning decomposes into clear &quot;steps&quot; separated by line breaks</li>
+<li>May not apply well to tasks with continuous reasoning (story generation, dialogue)</li>
+<li>Doesn't help if the draft fails at the token level within a step
+<ul>
+<li>SpecGuard accepts/rejects entire steps, not individual tokens</li>
+</ul>
+</li>
+<li>Breaks down for tasks without clear step structure
+<ul>
+<li>Creative writing, conversation, open-ended generation</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Parameter Tuning</strong></p>
+<ul>
+<li>The thresholds τ and weight β require calibration per model/domain</li>
+<li>Paper doesn't provide clear guidance on how to set these
+<ul>
+<li>Just recommends τ=0.5, β=0.5 without systematic analysis</li>
+</ul>
+</li>
+<li>No meta-learning approach to automatically tune thresholds</li>
+<li>Cross-domain transfer unclear
+<ul>
+<li>Can we use thresholds tuned on MATH for GSM8K? Paper doesn't say</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Computational Overhead</strong></p>
+<ul>
+<li>Sampling k candidates adds overhead (though minimal)
+<ul>
+<li>k=4 means 4 draft forward passes instead of 1</li>
+<li>Mitigated by using smaller draft model, but still real cost</li>
+</ul>
+</li>
+<li>Attention rollout computation is non-zero
+<ul>
+<li>Requires storing attention matrices and performing matrix multiplications</li>
+<li>Memory-optimized version uses 3 layers, but still not free</li>
+</ul>
+</li>
+<li>Best speedup is lower than theoretical maximum
+<ul>
+<li>Standard SD: ~3.8x speedup possible</li>
+<li>SpecGuard: ~3.3x speedup achieved (13% tax for 3.6% accuracy gain)</li>
+</ul>
+</li>
+<li>Trade-off calculation: Is 0.5ms latency overhead worth 3.6% accuracy improvement?
+<ul>
+<li>Depends on application (interactive vs. batch), user tolerance, SLA requirements</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Generalization Concerns</strong></p>
+<ul>
+<li>All experiments use LLaMA 2 family (except one Qwen experiment)</li>
+<li>Unclear if results generalize to other architectures (GPT, PaLM, etc.)</li>
+<li>Does ABGV work for models with different attention mechanisms?</li>
+<li>What about sparse attention, grouped-query attention, MLA (DeepSeek)? Not tested</li>
+</ul>
+</li>
+</ol>
+<h3 id="Future-Research-Directions">Future Research Directions</h3>
+<ol>
+<li><strong>Hybrid Approaches:</strong> Combine SpecGuard with lightweight PRMs for high-stakes tasks</li>
+<li><strong>Adaptive Thresholds:</strong> Learn τ and β from data rather than tuning manually</li>
+<li><strong>Extended Verification:</strong> Use other internal signals (gradient magnitudes, hidden state norms)</li>
+<li><strong>Cross-Model Verification:</strong> Can a different target model's attention patterns help verify draft outputs?</li>
+<li><strong>Theoretical Analysis:</strong> Formal guarantees on error propagation under SpecGuard</li>
+</ol>
+<hr>
+<h2 id="Reproducibility-Implementation-Notes">Reproducibility &amp; Implementation Notes</h2>
+<h3 id="Key-Implementation-Details">Key Implementation Details</h3>
+<ol>
+<li>
+<p><strong>Attention Rollout Implementation</strong></p>
+<ul>
+<li>Use matrix multiplication with layer-wise averaging</li>
+<li>Normalize to probability distribution</li>
+<li>Batch process for efficiency</li>
+</ul>
+</li>
+<li>
+<p><strong>Draft Sampling Strategy</strong></p>
+<ul>
+<li>Sample k=4 candidates (paper shows this is optimal)</li>
+<li>Use temperature T=0.7 for diversity without excessive noise</li>
+<li>Select candidate with highest self-consistency score</li>
+</ul>
+</li>
+<li>
+<p><strong>Ensemble Combination</strong></p>
+<ul>
+<li>Normalize ABGV and LPBV to [0,1] independently</li>
+<li>Weighted average with β=0.5</li>
+<li>Apply sigmoid if needed for smoother thresholding</li>
+</ul>
+</li>
+<li>
+<p><strong>Integration with Production SD</strong></p>
+<ul>
+<li>Should work with existing SD implementations</li>
+<li>Minimal changes to draft/target pipeline</li>
+<li>Can be toggled on/off for A/B testing</li>
+</ul>
+</li>
+</ol>
+<h3 id="Computational-Complexity">Computational Complexity</h3>
+<ul>
+<li><strong>ABGV:</strong> O(L × H × N²) for N tokens, L layers, H heads (use sparse version: O(L × H × sN²) where s &lt;&lt; 1)</li>
+<li><strong>LPBV:</strong> O(N) (just extract log-probabilities)</li>
+<li><strong>Total overhead:</strong> ~5-10% of target model inference time</li>
+</ul>
+<h3 id="Code-Resources">Code &amp; Resources</h3>
+<p>The authors should provide:</p>
+<ul>
+<li>Reference implementation in PyTorch</li>
+<li>Pre-computed ABGV statistics for standard models</li>
+<li>Threshold calibration scripts</li>
+<li>Benchmark scripts for MATH, GSM8K, MBPP</li>
+</ul>
+<hr>
+<h2 id="Conclusion">Conclusion</h2>
+<p>SpecGuard makes a compelling contribution to LLM inference efficiency by:</p>
+<ol>
+<li><strong>Identifying a real problem</strong> in existing SD: token-level verification doesn't work for reasoning</li>
+<li><strong>Proposing an elegant solution</strong> using model-internal signals: no external models needed</li>
+<li><strong>Demonstrating consistent improvements</strong> across multiple benchmarks and reasoning domains</li>
+<li><strong>Showing practical speedups</strong> that maintain or improve quality</li>
+</ol>
+<p>The key insight—that models' own attention and confidence patterns can serve as verification signals—is intuitive yet powerful. This opens new directions for inference-time optimization without the overhead of external verifiers.</p>
+<p><strong>For practitioners:</strong></p>
+<ul>
+<li>If your LLMs handle reasoning tasks (math, code, planning), SpecGuard is worth trying</li>
+<li>Implementation should be straightforward given standard SD infrastructure</li>
+<li>Expected gains: 10-15% latency reduction + 3-4% accuracy improvement</li>
+</ul>
+<p><strong>For researchers:</strong></p>
+<ul>
+<li>The ensemble verification framework could extend beyond speculative decoding</li>
+<li>The self-consistency selector at inference time is a neat idea worth exploring further</li>
+<li>The attention-grounding insight could improve other verification tasks</li>
+</ul>
+<hr>
+<h2 id="References-Further-Reading">References &amp; Further Reading</h2>
+<ol>
+<li>Leviathan et al. (2023) - Original Speculative Decoding paper</li>
+<li>Liao et al. (2025) - Reward-Guided Speculative Decoding (RSD)</li>
+<li>Wang et al. (2023) - Self-Consistency Prompting</li>
+<li>Serrano &amp; Smith (2019) - Attention is Not Explanation (important counterpoint)</li>
+<li>Lightman et al. (2023) - Process Reward Models for Verification</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Speculative-Decoding/" rel="tag"># Speculative Decoding</a>
+              <a href="/tags/SpecGuard/" rel="tag"># SpecGuard</a>
+              <a href="/tags/Verification/" rel="tag"># Verification</a>
+              <a href="/tags/LLM-Inference/" rel="tag"># LLM Inference</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/19/2026-04-19-SpecGuard-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="prev" title="SpecGuard：用于多步推理的验证感知推测解码">
+      <i class="fa fa-chevron-left"></i> SpecGuard：用于多步推理的验证感知推测解码
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/22/2026-04-22-SAGE-technical-review-en/" rel="next" title="SAGE: Training-Free Semantic Evidence Composition for Edge-Cloud Inference Under Hard Uplink Budgets">
+      SAGE: Training-Free Semantic Evidence Composition for Edge-Cloud Inference Under Hard Uplink Budgets <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Error-Propagation-in-Multi-Step-Tasks"><span class="nav-number">1.</span> <span class="nav-text">1. Error Propagation in Multi-Step Tasks</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Latency-Overhead-of-External-Verifiers"><span class="nav-number">1.1.</span> <span class="nav-text">2. Latency &amp; Overhead of External Verifiers</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Limited-Generalization"><span class="nav-number">1.2.</span> <span class="nav-text">3. Limited Generalization</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Core-Contribution-SpecGuard-Framework"><span class="nav-number">2.</span> <span class="nav-text">Core Contribution: SpecGuard Framework</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#High-Level-Architecture"><span class="nav-number">2.1.</span> <span class="nav-text">High-Level Architecture</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Key-Innovation-Self-Consistency-Selector"><span class="nav-number">2.2.</span> <span class="nav-text">Key Innovation: Self-Consistency Selector</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Technical-Deep-Dive-Verification-Mechanisms"><span class="nav-number">3.</span> <span class="nav-text">Technical Deep Dive: Verification Mechanisms</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Mechanism-1-Attention-Based-Grounding-Verification-ABGV"><span class="nav-number">3.1.</span> <span class="nav-text">Mechanism 1: Attention-Based Grounding Verification (ABGV)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Mechanism-2-Log-Probability-Based-Verification-LPBV"><span class="nav-number">3.2.</span> <span class="nav-text">Mechanism 2: Log-Probability-Based Verification (LPBV)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Mechanism-3-Ensemble-Verification-Adaptive-Acceptance"><span class="nav-number">3.3.</span> <span class="nav-text">Mechanism 3: Ensemble Verification &amp; Adaptive Acceptance</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Self-Consistency-Selector-Algorithm"><span class="nav-number">3.4.</span> <span class="nav-text">Self-Consistency Selector Algorithm</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Experimental-Evaluation"><span class="nav-number">4.</span> <span class="nav-text">Experimental Evaluation</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Benchmarks-Setup"><span class="nav-number">4.1.</span> <span class="nav-text">Benchmarks &amp; Setup</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Main-Results"><span class="nav-number">4.2.</span> <span class="nav-text">Main Results</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Ablation-Studies"><span class="nav-number">4.3.</span> <span class="nav-text">Ablation Studies</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Sensitivity-Analysis"><span class="nav-number">4.4.</span> <span class="nav-text">Sensitivity Analysis</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Practical-Implications"><span class="nav-number">5.</span> <span class="nav-text">Practical Implications</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Inference-Cost-Reduction"><span class="nav-number">5.1.</span> <span class="nav-text">1. Inference Cost Reduction</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Scalability-Without-External-Models"><span class="nav-number">5.2.</span> <span class="nav-text">2. Scalability Without External Models</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Memory-Efficient-Verification"><span class="nav-number">5.3.</span> <span class="nav-text">3. Memory-Efficient Verification</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Limitations-Future-Directions"><span class="nav-number">6.</span> <span class="nav-text">Limitations &amp; Future Directions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Known-Limitations"><span class="nav-number">6.1.</span> <span class="nav-text">Known Limitations</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Future-Research-Directions"><span class="nav-number">6.2.</span> <span class="nav-text">Future Research Directions</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Reproducibility-Implementation-Notes"><span class="nav-number">7.</span> <span class="nav-text">Reproducibility &amp; Implementation Notes</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Key-Implementation-Details"><span class="nav-number">7.1.</span> <span class="nav-text">Key Implementation Details</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Computational-Complexity"><span class="nav-number">7.2.</span> <span class="nav-text">Computational Complexity</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Code-Resources"><span class="nav-number">7.3.</span> <span class="nav-text">Code &amp; Resources</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Conclusion"><span class="nav-number">8.</span> <span class="nav-text">Conclusion</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#References-Further-Reading"><span class="nav-number">9.</span> <span class="nav-text">References &amp; Further Reading</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

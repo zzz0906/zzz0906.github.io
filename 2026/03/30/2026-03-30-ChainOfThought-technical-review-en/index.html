@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="Chain-of-Thought prompting enables LLMs to perform complex reasoning by generating intermediate steps. Covers few-shot CoT, zero-shot CoT, and analysis across arithmetic, commonsense, and symbolic tas">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Chain-of-Thought Prompting Elicits Reasoning in LLMs — In-Depth Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/03/30/2026-03-30-ChainOfThought-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="Chain-of-Thought prompting enables LLMs to perform complex reasoning by generating intermediate steps. Covers few-shot CoT, zero-shot CoT, and analysis across arithmetic, commonsense, and symbolic tas">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-03-30T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-02T16:16:49.562Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="LLM">
+<meta property="article:tag" content="Deep Learning">
+<meta property="article:tag" content="Reasoning">
+<meta property="article:tag" content="Prompting">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/03/30/2026-03-30-ChainOfThought-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>Chain-of-Thought Prompting Elicits Reasoning in LLMs — In-Depth Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/03/30/2026-03-30-ChainOfThought-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Chain-of-Thought Prompting Elicits Reasoning in LLMs — In-Depth Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-03-30 00:00:00" itemprop="dateCreated datePublished" datetime="2026-03-30T00:00:00+00:00">2026-03-30</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-02 16:16:49" itemprop="dateModified" datetime="2026-04-02T16:16:49+00:00">2026-04-02</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">Chain-of-Thought prompting enables LLMs to perform complex reasoning by generating intermediate steps. Covers few-shot CoT, zero-shot CoT, and analysis across arithmetic, commonsense, and symbolic tasks.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-What-This-Paper-Does">1. What This Paper Does</h2>
+<p>Imagine you ask a very smart assistant to solve a math word problem. If you just say &quot;answer this,&quot; the assistant might blurt out a number without thinking it through—and often get it wrong. But if you first show the assistant a few examples of how to <em>think step by step</em>, suddenly it can solve much harder problems. That is the core insight of this paper.</p>
+<p>Wei et al. introduce <strong>chain-of-thought (CoT) prompting</strong>, a remarkably simple technique: instead of giving a language model plain input-output examples in a few-shot prompt, you include intermediate reasoning steps—a &quot;chain of thought&quot;—in each example. The model then learns to produce its own chain of thought before arriving at an answer. No fine-tuning, no new training data, no architectural changes—just a different way of writing your prompt.</p>
+<a id="more"></a>
+<p>The results are striking. On the GSM8K math word problem benchmark, a 540-billion-parameter PaLM model with just eight chain-of-thought exemplars achieves <strong>state-of-the-art accuracy of 58%</strong>, surpassing even a fine-tuned GPT-3 with a verifier (which scored 55%). The technique works across arithmetic reasoning, commonsense reasoning, and symbolic reasoning tasks.</p>
+<p>This paper is one of the most influential works in the modern LLM era. It fundamentally changed how practitioners interact with large language models and opened the door to an entire family of prompting-based reasoning methods (Tree of Thoughts, Self-Consistency, Least-to-Most, etc.). Understanding it deeply is essential for anyone working with or building on top of LLMs.</p>
+<hr>
+<h2 id="2-Prerequisites-What-You-Need-to-Know-First">2. Prerequisites: What You Need to Know First</h2>
+<p>Before diving into the technical details, let us build up the background knowledge you need. If you are already familiar with language models and prompting, feel free to skim this section—but we include it for completeness because the ideas here are foundational.</p>
+<h3 id="2-1-What-Is-a-Language-Model">2.1 What Is a Language Model?</h3>
+<p>A language model is a system that has been trained to predict the next word (or token) in a sequence of text. Modern large language models (LLMs) like GPT-3, PaLM, and LaMDA are built on the <strong>Transformer architecture</strong> (Vaswani et al., 2017) and trained on massive corpora of text from the internet, books, code, and other sources.</p>
+<p>The key insight is that by learning to predict &quot;what comes next,&quot; these models absorb a vast amount of knowledge about language, facts, reasoning patterns, and even some degree of logical structure. The larger the model (more parameters) and the more data it sees, the more capable it generally becomes.</p>
+<p><strong>Parameters</strong> are the internal numbers (weights) that the model learns during training. When we say &quot;PaLM 540B,&quot; we mean a model with 540 billion parameters—an extraordinarily large neural network.</p>
+<h3 id="2-2-What-Is-Prompting">2.2 What Is Prompting?</h3>
+<p><strong>Prompting</strong> is a way to use a language model without additional training. Instead of fine-tuning the model on new data, you provide it with a carefully crafted input (the &quot;prompt&quot;) that steers it toward producing the output you want.</p>
+<p><strong>Few-shot prompting</strong>, popularized by Brown et al. (2020) in the GPT-3 paper, works as follows: you include a few examples of input-output pairs at the beginning of your prompt, and then present a new input. The model, having seen the pattern, produces an output in the same format. For instance:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Q: What is 2 + 3? A: 5.</span><br><span class="line">Q: What is 7 + 8? A: 15.</span><br><span class="line">Q: What is 12 + 19? A: ___</span><br></pre></td></tr></table></figure>
+<p>The model sees the pattern and fills in &quot;31.&quot; This works surprisingly well for simple tasks, but breaks down for complex reasoning—the model tends to just guess an answer without working through the logic.</p>
+<h3 id="2-3-Why-Do-Language-Models-Struggle-with-Reasoning">2.3 Why Do Language Models Struggle with Reasoning?</h3>
+<p>Despite their impressive capabilities, language models have a fundamental limitation when it comes to multi-step reasoning: they generate output token by token, with each token conditioned on all previous tokens. When a model is asked to directly produce a final answer, it must effectively compress all the intermediate reasoning into a single forward pass through the network.</p>
+<p>Consider a problem like: &quot;A store had 23 apples. They used 20 to make lunch and bought 6 more. How many do they have?&quot; A human would naturally think: &quot;23 minus 20 is 3, then 3 plus 6 is 9.&quot; But a model trained to produce answers directly might output &quot;27&quot; (23 + 6 = 29, or some other incorrect shortcut) because it never explicitly performed the subtraction step.</p>
+<p>This is related to a deeper theoretical point: Transformer models process all tokens in parallel within a layer, and the number of &quot;reasoning steps&quot; they can perform is bounded by the number of layers. For problems requiring many sequential reasoning steps, the model's fixed depth becomes a bottleneck.</p>
+<h3 id="2-4-What-Are-Rationales-and-Intermediate-Steps">2.4 What Are Rationales and Intermediate Steps?</h3>
+<p>The idea of producing intermediate reasoning steps is not new to this paper. Prior work explored training models to generate <strong>rationales</strong>—natural language explanations that lead to the final answer:</p>
+<ul>
+<li><strong>Ling et al. (2017)</strong> trained models from scratch on math word problems with step-by-step solutions.</li>
+<li><strong>Cobbe et al. (2021)</strong> created the GSM8K dataset and fine-tuned GPT-3 to produce solution steps, then trained a separate &quot;verifier&quot; to check the solutions.</li>
+<li><strong>Nye et al. (2021)</strong> showed that predicting intermediate computation states (&quot;scratchpads&quot;) improves program execution prediction.</li>
+</ul>
+<p>The limitation of these approaches is that they require <strong>training data with rationales</strong>, which is expensive to create. You need humans to write out step-by-step solutions for thousands or millions of examples.</p>
+<h3 id="2-5-Scaling-Laws-and-Emergent-Abilities">2.5 Scaling Laws and Emergent Abilities</h3>
+<p>A crucial concept for understanding this paper is <strong>emergent abilities</strong> of language models. An emergent ability is one that is not present in smaller models but appears in larger ones—often quite suddenly.</p>
+<p>Research has shown that many capabilities (following instructions, few-shot learning, basic reasoning) only emerge once models reach a certain scale threshold. Below that threshold, performance is essentially random; above it, the model suddenly &quot;gets it.&quot; Wei et al. (2022b) documented this phenomenon extensively.</p>
+<p>Chain-of-thought prompting turns out to be one of these emergent abilities: it only works with models of approximately 100 billion parameters or more. Smaller models, when prompted with chain-of-thought examples, produce fluent but logically incorrect reasoning chains, actually performing <em>worse</em> than standard prompting.</p>
+<h3 id="2-6-The-Benchmarks">2.6 The Benchmarks</h3>
+<p>To understand the experiments, you need to know about the key benchmarks used:</p>
+<ul>
+<li>
+<p><strong>GSM8K</strong> (Cobbe et al., 2021): 8,500 grade school math word problems requiring 2-8 steps of arithmetic reasoning. This is the paper's flagship benchmark. Example: &quot;Janet's ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends with four. She sells the rest at $2 each. How much does she make every day?&quot;</p>
+</li>
+<li>
+<p><strong>SVAMP</strong> (Patel et al., 2021): Math word problems with structural variations designed to test robustness.</p>
+</li>
+<li>
+<p><strong>ASDiv</strong> (Miao et al., 2020): Diverse math word problems across different difficulty levels.</p>
+</li>
+<li>
+<p><strong>AQuA</strong> (Ling et al., 2017): Multiple-choice algebraic word problems.</p>
+</li>
+<li>
+<p><strong>MAWPS</strong> (Koncel-Kedziorski et al., 2016): A benchmark of easier math word problems, useful for baseline comparisons.</p>
+</li>
+<li>
+<p><strong>CSQA</strong> (Talmor et al., 2019): Commonsense questions about the world.</p>
+</li>
+<li>
+<p><strong>StrategyQA</strong> (Geva et al., 2021): Questions requiring multi-hop reasoning strategies (&quot;Was Aristotle's nationality the same as Plato's?&quot;).</p>
+</li>
+<li>
+<p><strong>BIG-bench</strong> tasks: Date Understanding and Sports Understanding—specialized reasoning tasks from Google's Beyond the Imitation Game benchmark.</p>
+</li>
+<li>
+<p><strong>SayCan</strong> (Ahn et al., 2022): Robot planning tasks mapping natural language instructions to action sequences.</p>
+</li>
+</ul>
+<hr>
+<h2 id="3-Core-Method-Chain-of-Thought-Prompting">3. Core Method: Chain-of-Thought Prompting</h2>
+<h3 id="3-1-The-Basic-Idea">3.1 The Basic Idea</h3>
+<p>The method is deceptively simple. In standard few-shot prompting, each exemplar is an (input, output) pair:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Q: Roger has 5 tennis balls. He buys 2 more cans of tennis balls. </span><br><span class="line">   Each can has 3 tennis balls. How many tennis balls does he have now?</span><br><span class="line">A: The answer is 11.</span><br></pre></td></tr></table></figure>
+<p>In chain-of-thought prompting, each exemplar becomes an (input, chain of thought, output) triple:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">Q: Roger has 5 tennis balls. He buys 2 more cans of tennis balls. </span><br><span class="line">   Each can has 3 tennis balls. How many tennis balls does he have now?</span><br><span class="line">A: Roger started with 5 balls. 2 cans of 3 tennis balls each is </span><br><span class="line">   6 tennis balls. 5 + 6 &#x3D; 11. The answer is 11.</span><br></pre></td></tr></table></figure>
+<p>That is it. The &quot;chain of thought&quot; is a series of natural language reasoning steps inserted between the question and the final answer. When the model sees several such examples in its prompt, it learns to produce its own chain of thought for the new question, and this intermediate reasoning dramatically improves accuracy.</p>
+<h3 id="3-2-Why-This-Works-Four-Key-Properties">3.2 Why This Works: Four Key Properties</h3>
+<p>The authors identify four properties that make chain-of-thought prompting attractive:</p>
+<p><strong>Property 1: Decomposition.</strong> Chain of thought allows the model to break multi-step problems into intermediate steps. This effectively allocates more computation to harder problems—the model generates more tokens (and thus performs more &quot;thinking&quot;) for complex questions.</p>
+<p>This is a profound point. In standard prompting, every problem gets the same amount of computation regardless of difficulty. Chain-of-thought prompting naturally adapts: a simple question might get a one-sentence chain of thought, while a complex question gets a paragraph of reasoning.</p>
+<p><strong>Property 2: Interpretability.</strong> The generated chain of thought provides a window into the model's reasoning process. If the model gets a wrong answer, you can examine the chain of thought to identify exactly where the reasoning went wrong—was it a calculation error? A misunderstanding of the problem? A missing step?</p>
+<p><strong>Property 3: Generality.</strong> Because chains of thought are expressed in natural language, the method is applicable to any task that humans can solve by thinking through steps: math, commonsense reasoning, symbolic manipulation, planning, and more.</p>
+<p><strong>Property 4: Simplicity.</strong> No fine-tuning, no new model training, no architectural changes. You just need to write a few examples with chains of thought and prepend them to your prompt. This makes the method immediately usable with any off-the-shelf large language model.</p>
+<h3 id="3-3-The-Prompt-Design">3.3 The Prompt Design</h3>
+<p>The authors manually wrote eight chain-of-thought exemplars for arithmetic reasoning tasks. These are actual step-by-step solutions written in natural language. A critical point is that <strong>no prompt engineering was performed</strong>—the authors simply wrote natural solutions without optimizing them for performance. This makes the results more impressive, as better-engineered prompts might yield even higher accuracy.</p>
+<p>For multiple-choice tasks (AQuA), four exemplars with solutions from the training set were used. For commonsense reasoning tasks, exemplars were written manually with appropriate chains of thought. For symbolic reasoning tasks, chains of thought described the step-by-step procedure.</p>
+<p>The authors used the same set of eight exemplars across all free-response arithmetic benchmarks, demonstrating that a single prompt can generalize across different datasets—you do not need task-specific prompt design.</p>
+<h3 id="3-4-Decoding-Strategy">3.4 Decoding Strategy</h3>
+<p>All experiments use <strong>greedy decoding</strong>—the model simply picks the most likely next token at each step. The authors note that follow-up work (Wang et al., 2022a, on Self-Consistency) shows that sampling multiple chains of thought and taking the majority vote on the final answer further improves performance. But the results in this paper use the simplest possible decoding strategy.</p>
+<hr>
+<h2 id="4-Experimental-Results-Arithmetic-Reasoning">4. Experimental Results: Arithmetic Reasoning</h2>
+<h3 id="4-1-Main-Results">4.1 Main Results</h3>
+<p>The arithmetic reasoning experiments are the heart of the paper. The authors evaluate five model families:</p>
+<ul>
+<li><strong>GPT-3</strong> (InstructGPT variants): 350M, 1.3B, 6.7B, 175B parameters</li>
+<li><strong>LaMDA</strong>: 422M, 2B, 8B, 68B, 137B parameters</li>
+<li><strong>PaLM</strong>: 8B, 62B, 540B parameters</li>
+<li><strong>UL2</strong>: 20B parameters</li>
+<li><strong>Codex</strong> (code-davinci-002)</li>
+</ul>
+<p>The results, presented in Figure 4 and Appendix Table 2, tell a compelling story:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>GSM8K (Standard)</th>
+<th>GSM8K (CoT)</th>
+<th>Improvement</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LaMDA 137B</td>
+<td>6.5%</td>
+<td>17.1%</td>
+<td>+10.6pp</td>
+</tr>
+<tr>
+<td>GPT-3 175B</td>
+<td>15.6%</td>
+<td>46.9%</td>
+<td>+31.3pp</td>
+</tr>
+<tr>
+<td>PaLM 62B</td>
+<td>18.1%</td>
+<td>33.7%</td>
+<td>+15.6pp</td>
+</tr>
+<tr>
+<td>PaLM 540B</td>
+<td>17.9%</td>
+<td><strong>56.9%</strong></td>
+<td>+39.0pp</td>
+</tr>
+<tr>
+<td>Codex</td>
+<td>19.7%</td>
+<td><strong>63.1%</strong></td>
+<td>+43.4pp</td>
+</tr>
+</tbody>
+</table>
+<p>On GSM8K, chain-of-thought prompting <strong>more than triples</strong> PaLM 540B's accuracy. On SVAMP, PaLM 540B achieves 79.0% with CoT versus 63.1% with standard prompting. On MAWPS, the gap narrows because the problems are simpler—but CoT still helps.</p>
+<p>Crucially, PaLM 540B with CoT prompting achieves 56.9% on GSM8K, <strong>surpassing the prior best of 55%</strong> (fine-tuned GPT-3 with a verifier trained on 8,000+ solutions). This is remarkable because CoT prompting uses no training data—just eight manually written examples.</p>
+<h3 id="4-2-The-Emergence-Phenomenon">4.2 The Emergence Phenomenon</h3>
+<p>The most important finding is that chain-of-thought prompting is an <strong>emergent ability of model scale</strong>:</p>
+<ul>
+<li>For models below ~10B parameters, CoT prompting <strong>hurts</strong> performance. Small models produce fluent but logically incorrect chains of thought, which leads them astray.</li>
+<li>The benefit appears only at around 100B parameters.</li>
+<li>The effect strengthens with scale: PaLM 540B benefits much more than PaLM 62B.</li>
+</ul>
+<p>This emergence pattern, shown in Figure 4, has profound implications. It suggests that the ability to follow logical reasoning steps in a chain of thought is not something that gradually improves with scale—it appears relatively suddenly once the model is large enough to reliably execute individual reasoning steps.</p>
+<p>The authors qualitatively examined why small models fail: they found that smaller models produce chains of thought that are grammatically correct but logically nonsensical. The model can mimic the <em>format</em> of step-by-step reasoning without actually <em>performing</em> the reasoning.</p>
+<h3 id="4-3-Error-Analysis">4.3 Error Analysis</h3>
+<p>The authors performed a detailed manual error analysis on LaMDA 137B's outputs on GSM8K:</p>
+<p><strong>Correct answers (50 samples):</strong> Of 50 cases where the model got the right answer, 48 had completely correct chains of thought. Only 2 arrived at the correct answer coincidentally through an incorrect chain of thought. This suggests that when CoT prompting works, it works for the right reasons—the model is genuinely performing step-by-step reasoning.</p>
+<p><strong>Incorrect answers (50 samples):</strong></p>
+<ul>
+<li><strong>46% had minor errors:</strong> Calculator mistakes (8%), symbol mapping errors (16%), or one reasoning step missing (22%). The chain of thought was largely correct but had a small flaw.</li>
+<li><strong>54% had major errors:</strong> Semantic misunderstanding (28%) or incoherent chain of thought (26%).</li>
+</ul>
+<p><strong>Scaling fixes errors:</strong> When the authors compared errors from PaLM 62B to PaLM 540B, they found that scaling to 540B fixed a large proportion of the &quot;one-step missing&quot; and &quot;semantic understanding&quot; errors. This suggests that continued scaling could further reduce errors.</p>
+<hr>
+<h2 id="5-Experimental-Results-Commonsense-Reasoning">5. Experimental Results: Commonsense Reasoning</h2>
+<h3 id="5-1-Setup-and-Benchmarks">5.1 Setup and Benchmarks</h3>
+<p>To show that chain-of-thought prompting is not limited to math, the authors evaluate on five commonsense reasoning benchmarks: CSQA, StrategyQA, Date Understanding, Sports Understanding, and SayCan (robot planning).</p>
+<p>For each benchmark, they manually wrote chain-of-thought exemplars. For example, for StrategyQA (&quot;Yes or no: Would a pear sink in water?&quot;), the chain of thought is: &quot;The density of a pear is about 0.6 g/cm³, which is less than water. Thus, a pear would float. So the answer is no.&quot;</p>
+<h3 id="5-2-Results">5.2 Results</h3>
+<p>The commonsense results (Figure 7, Table 4) show:</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>PaLM 540B Standard</th>
+<th>PaLM 540B CoT</th>
+<th>Improvement</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CSQA</td>
+<td>77.5%</td>
+<td>79.9%</td>
+<td>+2.4pp</td>
+</tr>
+<tr>
+<td>StrategyQA</td>
+<td>65.4%</td>
+<td><strong>75.6%</strong></td>
+<td>+10.2pp</td>
+</tr>
+<tr>
+<td>Date Understanding</td>
+<td>62.5%</td>
+<td><strong>77.0%</strong></td>
+<td>+14.5pp</td>
+</tr>
+<tr>
+<td>Sports Understanding</td>
+<td>90.4%</td>
+<td><strong>95.4%</strong></td>
+<td>+5.0pp</td>
+</tr>
+<tr>
+<td>SayCan (robot planning)</td>
+<td>—</td>
+<td>97.0%</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>Key observations:</p>
+<ul>
+<li><strong>StrategyQA</strong> sees the largest gain, reaching 75.6%—surpassing the prior supervised state of the art of 69.4%. This is impressive because StrategyQA requires multi-hop reasoning.</li>
+<li><strong>Sports Understanding</strong> reaches 95.4%, exceeding the performance of &quot;an unaided sports enthusiast&quot; (84%).</li>
+<li><strong>CSQA</strong> shows minimal improvement (+2.4pp), likely because the questions are more about knowledge retrieval than multi-step reasoning.</li>
+<li><strong>SayCan</strong> demonstrates that CoT can be used for robot action planning—a different modality than pure language reasoning.</li>
+</ul>
+<p>The commonsense results confirm that chain-of-thought prompting is broadly applicable wherever multi-step reasoning is needed, not just for mathematical computation.</p>
+<hr>
+<h2 id="6-Experimental-Results-Symbolic-Reasoning">6. Experimental Results: Symbolic Reasoning</h2>
+<h3 id="6-1-Two-Toy-Tasks">6.1 Two Toy Tasks</h3>
+<p>The authors design two symbolic reasoning tasks:</p>
+<p><strong>Last Letter Concatenation:</strong> Given a name like &quot;Amy Brown,&quot; concatenate the last letters of each word → &quot;yn.&quot; This requires the model to identify each word, extract its last letter, and concatenate them.</p>
+<p><strong>Coin Flip:</strong> Track the state of a coin through a series of flip/no-flip operations. &quot;A coin is heads up. Maybelle flips the coin. Shalonda does not flip the coin. Is the coin still heads up?&quot; → &quot;no.&quot;</p>
+<h3 id="6-2-In-Domain-and-Out-of-Domain-Results">6.2 In-Domain and Out-of-Domain Results</h3>
+<p>These tasks are interesting because they allow testing <strong>length generalization</strong>: the few-shot exemplars use 2-word names and 2-person coin flips, but evaluation includes 3-word and 4-word names, and 3-person and 4-person coin flips.</p>
+<p><strong>In-domain (same length as exemplars):</strong></p>
+<ul>
+<li>PaLM 540B with CoT achieves near-100% on both tasks.</li>
+<li>Standard prompting also performs well on coin flip for PaLM 540B, but poorly for smaller models and for letter concatenation.</li>
+</ul>
+<p><strong>Out-of-domain (longer sequences):</strong></p>
+<ul>
+<li>Standard prompting fails completely on longer sequences.</li>
+<li>CoT prompting shows <strong>upward scaling curves</strong>—larger models generalize better to longer sequences, though performance is lower than in-domain.</li>
+</ul>
+<p>This is significant: it suggests that chain-of-thought prompting does not just memorize specific patterns but actually enables some degree of <strong>algorithmic generalization</strong>—the model learns a procedure and can apply it to longer inputs than it has seen in the prompt.</p>
+<hr>
+<h2 id="7-Ablation-Studies-What-Makes-CoT-Work">7. Ablation Studies: What Makes CoT Work?</h2>
+<p>The ablation study (Figure 5) is one of the most insightful parts of the paper. The authors test three variations to understand <em>why</em> chain of thought helps:</p>
+<h3 id="7-1-Equation-Only">7.1 Equation Only</h3>
+<p><strong>Setup:</strong> Instead of a full natural language chain of thought, the model is prompted to output only the mathematical equation before the answer.</p>
+<p><strong>Result:</strong> On GSM8K, equation-only prompting shows minimal improvement. But on simpler datasets (SingleOp, which requires only one arithmetic step), equation-only does help.</p>
+<p><strong>Interpretation:</strong> For complex multi-step problems, the semantic understanding expressed in natural language reasoning steps is essential—you cannot skip straight to the equation. The natural language serves as a bridge between the problem statement and the mathematical computation.</p>
+<h3 id="7-2-Variable-Computation-Only">7.2 Variable Computation Only</h3>
+<p><strong>Setup:</strong> The model is prompted to output a sequence of dots (&quot;...&quot;) equal in length to the equation that would solve the problem. This tests whether simply generating more tokens (and thus performing more computation) is what helps.</p>
+<p><strong>Result:</strong> Performance is approximately the same as standard prompting—no improvement.</p>
+<p><strong>Interpretation:</strong> The benefit of chain-of-thought prompting is not simply about allocating more compute time. The content of the intermediate steps matters. The model needs to perform meaningful reasoning, not just burn tokens.</p>
+<h3 id="7-3-Chain-of-Thought-After-Answer">7.3 Chain of Thought After Answer</h3>
+<p><strong>Setup:</strong> The chain of thought is provided <em>after</em> the answer in the exemplars, so the model learns to give the answer first and then explain it.</p>
+<p><strong>Result:</strong> Performance drops back to baseline levels.</p>
+<p><strong>Interpretation:</strong> The chain of thought must come <em>before</em> the answer to be useful. This confirms that the model actually uses the intermediate reasoning steps to arrive at the answer, rather than the chain of thought simply &quot;activating relevant knowledge&quot; that helps the model guess better.</p>
+<p>These ablation results collectively demonstrate that chain-of-thought prompting works because it enables the model to perform genuine sequential reasoning, decomposing complex problems into manageable steps.</p>
+<hr>
+<h2 id="8-Robustness-Analysis">8. Robustness Analysis</h2>
+<h3 id="8-1-Different-Annotators">8.1 Different Annotators</h3>
+<p>Three different annotators (A, B, C) independently wrote chains of thought for the same exemplars. Despite significant stylistic differences, all three sets of chains of thought substantially outperformed standard prompting. The variance between annotators was smaller than the gap between CoT and standard prompting.</p>
+<h3 id="8-2-Concise-vs-Verbose">8.2 Concise vs. Verbose</h3>
+<p>A deliberately concise version of the chain of thought (shorter sentences, fewer details) was tested. It still outperformed standard prompting, though not quite as much as the fuller version. This suggests that even minimal step-by-step reasoning helps.</p>
+<h3 id="8-3-Different-Exemplars">8.3 Different Exemplars</h3>
+<p>Three sets of eight exemplars randomly sampled from the GSM8K training set (which includes solution steps) were tested. These performed comparably to the manually written exemplars, showing that the technique is not dependent on specifically crafted examples.</p>
+<h3 id="8-4-Exemplar-Order-and-Count">8.4 Exemplar Order and Count</h3>
+<p>Additional experiments (Appendix A.2) show that CoT prompting is robust to different orderings of exemplars and works with as few as 1-2 exemplars (though performance improves with more). This is noteworthy because standard few-shot prompting is known to be highly sensitive to exemplar ordering.</p>
+<hr>
+<h2 id="9-Limitations-and-Boundary-Conditions">9. Limitations and Boundary Conditions</h2>
+<p>The authors are admirably transparent about limitations:</p>
+<h3 id="9-1-Scale-Requirement">9.1 Scale Requirement</h3>
+<p>Chain-of-thought prompting <strong>only works with very large models</strong> (~100B+ parameters). This is a significant practical limitation because running 100B+ parameter models is expensive and requires specialized hardware. At the time of publication, such models were only available through API access from a few companies.</p>
+<h3 id="9-2-No-Guarantee-of-Correct-Reasoning">9.2 No Guarantee of Correct Reasoning</h3>
+<p>The model can produce plausible-sounding but incorrect chains of thought. The error analysis shows that 54% of incorrect answers on GSM8K involved major reasoning errors (not just calculation mistakes). A confident, well-formatted chain of thought can be completely wrong.</p>
+<h3 id="9-3-Not-Actually-Reasoning">9.3 Not Actually &quot;Reasoning&quot;</h3>
+<p>The authors explicitly note that while chain of thought &quot;emulates the thought processes of human reasoners, this does not answer whether the neural network is actually 'reasoning.'&quot; The model might be performing sophisticated pattern matching rather than true logical reasoning. This remains an open philosophical and empirical question.</p>
+<h3 id="9-4-Cost-of-Longer-Outputs">9.4 Cost of Longer Outputs</h3>
+<p>Chain-of-thought prompting increases the number of generated tokens, which increases inference cost and latency. For applications requiring real-time responses, this overhead may be significant.</p>
+<h3 id="9-5-Annotation-Cost-for-Fine-Tuning">9.5 Annotation Cost for Fine-Tuning</h3>
+<p>While the few-shot setting requires minimal annotation (just a handful of examples), using chain-of-thought for fine-tuning would require large-scale rationale datasets, which are expensive to create.</p>
+<h3 id="9-6-Task-Dependency">9.6 Task Dependency</h3>
+<p>CoT prompting helps most on multi-step reasoning tasks. For tasks that primarily require knowledge retrieval or pattern matching (like CSQA), the improvement is minimal. The technique is not a universal performance booster.</p>
+<hr>
+<h2 id="10-Reproducibility">10. Reproducibility</h2>
+<h3 id="10-1-Prompt-Availability">10.1 Prompt Availability</h3>
+<p>All exemplar prompts are provided in the appendix (Appendix G, Tables 20-21), making exact reproduction possible if you have access to the same models.</p>
+<h3 id="10-2-Model-Access">10.2 Model Access</h3>
+<p>The main results use GPT-3 (available via OpenAI API), LaMDA (Google internal), PaLM (Google internal), and Codex (available via OpenAI API at the time). Today, many open-source models of 100B+ scale exist (e.g., LLaMA 70B, Mixtral, Qwen), making reproduction more accessible.</p>
+<h3 id="10-3-Evaluation">10.3 Evaluation</h3>
+<p>The evaluation uses standard benchmarks with publicly available datasets. The evaluation metric is simple: exact match accuracy on the final answer. The authors use greedy decoding throughout, making results deterministic for a given prompt and model.</p>
+<h3 id="10-4-Key-Hyperparameters">10.4 Key Hyperparameters</h3>
+<ul>
+<li>Number of few-shot exemplars: 8 for most tasks, 4 for AQuA</li>
+<li>Decoding: greedy (temperature = 0)</li>
+<li>For LaMDA: results averaged over 5 random seeds (different exemplar orderings)</li>
+</ul>
+<hr>
+<h2 id="11-Impact-and-Legacy">11. Impact and Legacy</h2>
+<p>Chain-of-Thought Prompting is arguably the single most influential paper in the prompt engineering / LLM reasoning space. Its legacy includes:</p>
+<p><strong>Direct follow-ups:</strong></p>
+<ul>
+<li><strong>Self-Consistency</strong> (Wang et al., 2022): Sample multiple chains of thought, take majority vote → significantly improves over greedy CoT.</li>
+<li><strong>Zero-Shot CoT</strong> (Kojima et al., 2022): Simply appending &quot;Let's think step by step&quot; to a prompt, without any exemplars, also elicits chain-of-thought reasoning.</li>
+<li><strong>Least-to-Most Prompting</strong> (Zhou et al., 2022): Decompose complex problems into sub-problems.</li>
+<li><strong>Tree of Thoughts</strong> (Yao et al., 2023): Explore multiple reasoning branches.</li>
+<li><strong>Faithful CoT</strong> (Lyu et al., 2023): Generate code alongside natural language to ensure computational correctness.</li>
+</ul>
+<p><strong>Broader impact:</strong></p>
+<ul>
+<li>CoT prompting became standard practice in virtually all LLM applications requiring reasoning.</li>
+<li>OpenAI's o1/o3 models and Anthropic's Claude incorporate chain-of-thought reasoning natively.</li>
+<li>The idea that models should &quot;show their work&quot; influenced model training (RLHF on reasoning traces), evaluation (process reward models), and deployment practices.</li>
+<li>The observation about emergent abilities at scale helped shape the &quot;scaling laws&quot; narrative that drove investment in larger models.</li>
+</ul>
+<p><strong>Paradigm shift:</strong> Before this paper, the dominant view was that language models needed task-specific fine-tuning to perform reasoning. After this paper, the field shifted toward understanding what reasoning abilities are already latent in large models and how to elicit them through clever prompting.</p>
+<hr>
+<h2 id="12-My-Assessment">12. My Assessment</h2>
+<h3 id="Strengths">Strengths</h3>
+<ol>
+<li>
+<p><strong>Elegant simplicity.</strong> The method is trivial to implement and immediately applicable. This is rare in ML research, where methods often require complex infrastructure.</p>
+</li>
+<li>
+<p><strong>Comprehensive evaluation.</strong> The paper tests across three reasoning categories (arithmetic, commonsense, symbolic), five model families, and multiple model scales. The ablation study is particularly well-designed.</p>
+</li>
+<li>
+<p><strong>Honest analysis.</strong> The error analysis, limitations section, and ablation studies show genuine scientific rigor. The authors do not overclaim.</p>
+</li>
+<li>
+<p><strong>Massive practical impact.</strong> This is one of those rare papers that immediately changed how practitioners work.</p>
+</li>
+</ol>
+<h3 id="Weaknesses">Weaknesses</h3>
+<ol>
+<li>
+<p><strong>Scale requirement.</strong> The technique only works with the largest (and most expensive) models, limiting accessibility. Though this has partially been addressed as open-source models have grown larger.</p>
+</li>
+<li>
+<p><strong>No mechanistic understanding.</strong> The paper demonstrates that CoT works but offers limited insight into <em>why</em> at a mechanistic level. Why does scale matter? What internal representations enable chain-of-thought reasoning? These questions remain open.</p>
+</li>
+<li>
+<p><strong>Prompt sensitivity.</strong> While the robustness analysis is encouraging, CoT prompting performance still varies meaningfully across different prompt designs, which introduces unpredictability.</p>
+</li>
+<li>
+<p><strong>Benchmark limitations.</strong> The benchmarks, while diverse, are relatively constrained. GSM8K problems are grade-school level. Real-world reasoning tasks can be far more complex and ill-defined.</p>
+</li>
+</ol>
+<h3 id="Overall">Overall</h3>
+<p>This is a landmark paper that deserves its enormous citation count and influence. It demonstrated, with clean experiments and minimal machinery, that large language models contain latent reasoning abilities that can be unlocked through the simple act of asking them to show their work. The paper's contribution is less a technical advance and more a conceptual revelation—one that reshaped the entire field of LLM research and applications.</p>
+<p><strong>Rating: 9/10</strong> — Near-perfect as a scientific contribution. The simplicity of the method, rigor of evaluation, and magnitude of impact are exceptional. The only deductions are for the lack of mechanistic insight and the scale limitation.</p>
+<hr>
+<p><em>Reviewed by Zhongzhu Zhou, March 30, 2026.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/LLM/" rel="tag"># LLM</a>
+              <a href="/tags/Deep-Learning/" rel="tag"># Deep Learning</a>
+              <a href="/tags/Reasoning/" rel="tag"># Reasoning</a>
+              <a href="/tags/Prompting/" rel="tag"># Prompting</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/03/29/2026-03-29-RingAttention-technical-review-en/" rel="prev" title="Ring Attention: Blockwise Transformers for Near-Infinite Context — In-Depth Technical Review">
+      <i class="fa fa-chevron-left"></i> Ring Attention: Blockwise Transformers for Near-Infinite Context — In-Depth Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/03/31/2026-03-31-ConstitutionalAI-technical-review-en/" rel="next" title="Constitutional AI: Harmlessness from AI Feedback — In-Depth Technical Review">
+      Constitutional AI: Harmlessness from AI Feedback — In-Depth Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-What-This-Paper-Does"><span class="nav-number">1.</span> <span class="nav-text">1. What This Paper Does</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Prerequisites-What-You-Need-to-Know-First"><span class="nav-number">2.</span> <span class="nav-text">2. Prerequisites: What You Need to Know First</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-What-Is-a-Language-Model"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 What Is a Language Model?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-What-Is-Prompting"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 What Is Prompting?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-Why-Do-Language-Models-Struggle-with-Reasoning"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 Why Do Language Models Struggle with Reasoning?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-What-Are-Rationales-and-Intermediate-Steps"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 What Are Rationales and Intermediate Steps?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-Scaling-Laws-and-Emergent-Abilities"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 Scaling Laws and Emergent Abilities</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-The-Benchmarks"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 The Benchmarks</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Core-Method-Chain-of-Thought-Prompting"><span class="nav-number">3.</span> <span class="nav-text">3. Core Method: Chain-of-Thought Prompting</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-The-Basic-Idea"><span class="nav-number">3.1.</span> <span class="nav-text">3.1 The Basic Idea</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-Why-This-Works-Four-Key-Properties"><span class="nav-number">3.2.</span> <span class="nav-text">3.2 Why This Works: Four Key Properties</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-The-Prompt-Design"><span class="nav-number">3.3.</span> <span class="nav-text">3.3 The Prompt Design</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-Decoding-Strategy"><span class="nav-number">3.4.</span> <span class="nav-text">3.4 Decoding Strategy</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Experimental-Results-Arithmetic-Reasoning"><span class="nav-number">4.</span> <span class="nav-text">4. Experimental Results: Arithmetic Reasoning</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-Main-Results"><span class="nav-number">4.1.</span> <span class="nav-text">4.1 Main Results</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-The-Emergence-Phenomenon"><span class="nav-number">4.2.</span> <span class="nav-text">4.2 The Emergence Phenomenon</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-Error-Analysis"><span class="nav-number">4.3.</span> <span class="nav-text">4.3 Error Analysis</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Experimental-Results-Commonsense-Reasoning"><span class="nav-number">5.</span> <span class="nav-text">5. Experimental Results: Commonsense Reasoning</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-Setup-and-Benchmarks"><span class="nav-number">5.1.</span> <span class="nav-text">5.1 Setup and Benchmarks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Results"><span class="nav-number">5.2.</span> <span class="nav-text">5.2 Results</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Experimental-Results-Symbolic-Reasoning"><span class="nav-number">6.</span> <span class="nav-text">6. Experimental Results: Symbolic Reasoning</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Two-Toy-Tasks"><span class="nav-number">6.1.</span> <span class="nav-text">6.1 Two Toy Tasks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-In-Domain-and-Out-of-Domain-Results"><span class="nav-number">6.2.</span> <span class="nav-text">6.2 In-Domain and Out-of-Domain Results</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Ablation-Studies-What-Makes-CoT-Work"><span class="nav-number">7.</span> <span class="nav-text">7. Ablation Studies: What Makes CoT Work?</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-Equation-Only"><span class="nav-number">7.1.</span> <span class="nav-text">7.1 Equation Only</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-Variable-Computation-Only"><span class="nav-number">7.2.</span> <span class="nav-text">7.2 Variable Computation Only</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-Chain-of-Thought-After-Answer"><span class="nav-number">7.3.</span> <span class="nav-text">7.3 Chain of Thought After Answer</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Robustness-Analysis"><span class="nav-number">8.</span> <span class="nav-text">8. Robustness Analysis</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-Different-Annotators"><span class="nav-number">8.1.</span> <span class="nav-text">8.1 Different Annotators</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-Concise-vs-Verbose"><span class="nav-number">8.2.</span> <span class="nav-text">8.2 Concise vs. Verbose</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-Different-Exemplars"><span class="nav-number">8.3.</span> <span class="nav-text">8.3 Different Exemplars</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-4-Exemplar-Order-and-Count"><span class="nav-number">8.4.</span> <span class="nav-text">8.4 Exemplar Order and Count</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-Limitations-and-Boundary-Conditions"><span class="nav-number">9.</span> <span class="nav-text">9. Limitations and Boundary Conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-Scale-Requirement"><span class="nav-number">9.1.</span> <span class="nav-text">9.1 Scale Requirement</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-No-Guarantee-of-Correct-Reasoning"><span class="nav-number">9.2.</span> <span class="nav-text">9.2 No Guarantee of Correct Reasoning</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-Not-Actually-Reasoning"><span class="nav-number">9.3.</span> <span class="nav-text">9.3 Not Actually &quot;Reasoning&quot;</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-Cost-of-Longer-Outputs"><span class="nav-number">9.4.</span> <span class="nav-text">9.4 Cost of Longer Outputs</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-5-Annotation-Cost-for-Fine-Tuning"><span class="nav-number">9.5.</span> <span class="nav-text">9.5 Annotation Cost for Fine-Tuning</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-6-Task-Dependency"><span class="nav-number">9.6.</span> <span class="nav-text">9.6 Task Dependency</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-Reproducibility"><span class="nav-number">10.</span> <span class="nav-text">10. Reproducibility</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-Prompt-Availability"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 Prompt Availability</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-Model-Access"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 Model Access</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-Evaluation"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 Evaluation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-4-Key-Hyperparameters"><span class="nav-number">10.4.</span> <span class="nav-text">10.4 Key Hyperparameters</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-Impact-and-Legacy"><span class="nav-number">11.</span> <span class="nav-text">11. Impact and Legacy</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-My-Assessment"><span class="nav-number">12.</span> <span class="nav-text">12. My Assessment</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Strengths"><span class="nav-number">12.1.</span> <span class="nav-text">Strengths</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Weaknesses"><span class="nav-number">12.2.</span> <span class="nav-text">Weaknesses</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Overall"><span class="nav-number">12.3.</span> <span class="nav-text">Overall</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. 为什么这篇论文值得你认真读 如果让我用一句最朴素的话解释这篇论文，我会这么说：  LATS 的目标，是让语言模型代理别再“想到啥就一路冲到底”，而是像一个稳健的研究员一样，先比较几条路线，再选更靠谱的一条执行。  很多现有代理方法看起来“会思考”，但在复杂任务里经常出现同一种失败模式：  第一步选错方向； 后续每一步都建立在错误前提上； 中间即使拿到外部反馈，也不会真正改策略； 最后输出一个">
+<meta property="og:type" content="article">
+<meta property="og:title" content="LATS（Language Agent Tree Search）：把推理、行动、规划统一到同一个语言模型代理框架里 — 深度技术评审">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/11/2026-04-11-LATS-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. 为什么这篇论文值得你认真读 如果让我用一句最朴素的话解释这篇论文，我会这么说：  LATS 的目标，是让语言模型代理别再“想到啥就一路冲到底”，而是像一个稳健的研究员一样，先比较几条路线，再选更靠谱的一条执行。  很多现有代理方法看起来“会思考”，但在复杂任务里经常出现同一种失败模式：  第一步选错方向； 后续每一步都建立在错误前提上； 中间即使拿到外部反馈，也不会真正改策略； 最后输出一个">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-11T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-16T12:57:27.447Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Tree Search">
+<meta property="article:tag" content="LLM Agent">
+<meta property="article:tag" content="LATS">
+<meta property="article:tag" content="Reasoning">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/11/2026-04-11-LATS-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>LATS（Language Agent Tree Search）：把推理、行动、规划统一到同一个语言模型代理框架里 — 深度技术评审 | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/11/2026-04-11-LATS-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          LATS（Language Agent Tree Search）：把推理、行动、规划统一到同一个语言模型代理框架里 — 深度技术评审
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-11 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-11T00:00:00+00:00">2026-04-11</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-16 12:57:27" itemprop="dateModified" datetime="2026-04-16T12:57:27+00:00">2026-04-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-为什么这篇论文值得你认真读">1. 为什么这篇论文值得你认真读</h2>
+<p>如果让我用一句最朴素的话解释这篇论文，我会这么说：</p>
+<blockquote>
+<p><strong>LATS 的目标，是让语言模型代理别再“想到啥就一路冲到底”，而是像一个稳健的研究员一样，先比较几条路线，再选更靠谱的一条执行。</strong></p>
+</blockquote>
+<p>很多现有代理方法看起来“会思考”，但在复杂任务里经常出现同一种失败模式：</p>
+<ul>
+<li>第一步选错方向；</li>
+<li>后续每一步都建立在错误前提上；</li>
+<li>中间即使拿到外部反馈，也不会真正改策略；</li>
+<li>最后输出一个“局部看起来合理、全局其实失败”的结果。</li>
+</ul>
+<p>人类做难题通常不是这样。我们更像是：</p>
+<ol>
+<li>先想几种可能路径；</li>
+<li>试一条；</li>
+<li>发现不对就回退；</li>
+<li>再换一条；</li>
+<li>对比后再做最终决定。</li>
+</ol>
+<p>这篇论文的核心贡献，不是提出一个花哨提示词，而是给出一个<strong>统一框架</strong>，把三件事放到同一个闭环里：</p>
+<ul>
+<li><strong>Reasoning（推理）</strong>：模型内部语言思考；</li>
+<li><strong>Acting（行动）</strong>：与外部环境交互（检索、执行、点击等）；</li>
+<li><strong>Planning（规划）</strong>：用树搜索比较多条未来路径。</li>
+</ul>
+<p>更重要的是，它不是只在一个 benchmark 上“偶然涨分”。论文在多个不同类型任务上都展示了收益：</p>
+<ul>
+<li>多跳问答（HotPotQA）</li>
+<li>代码生成（HumanEval、MBPP）</li>
+<li>网页购物决策（WebShop）</li>
+<li>数学推理（Game of 24）</li>
+</ul>
+<p>这说明它更像一个“通用代理架构设计”，而不只是某道题的小技巧。</p>
+<hr>
+<a id="more"></a>
+<h2 id="2-前置知识：理解这篇论文前需要知道什么">2. 前置知识：理解这篇论文前需要知道什么</h2>
+<p>这一节我会尽量不跳步，默认读者几乎没有相关背景。</p>
+<h3 id="2-1-什么是“语言模型代理”（LM-Agent）">2.1 什么是“语言模型代理”（LM Agent）</h3>
+<p>普通语言模型通常是“一问一答”：</p>
+<ul>
+<li>输入一段文字；</li>
+<li>输出一段文字。</li>
+</ul>
+<p>而代理（Agent）是一个循环过程：</p>
+<ol>
+<li>读当前状态；</li>
+<li>先想一下；</li>
+<li>做一个动作；</li>
+<li>看外部反馈；</li>
+<li>再想；</li>
+<li>再行动。</li>
+</ol>
+<p>所以，代理的关键不是“会说话”，而是“会在反馈中迭代决策”。</p>
+<h3 id="2-2-推理、行动、规划三者到底差在哪">2.2 推理、行动、规划三者到底差在哪</h3>
+<p>这三个词很容易混。</p>
+<p><strong>推理（Reasoning）</strong>：模型在脑内做文字逻辑。</p>
+<p>例如：</p>
+<ul>
+<li>“A 在 B 东边，B 在 C 里，那么 A 大概率也在 C 的地理范围里。”</li>
+</ul>
+<p><strong>行动（Acting）</strong>：调用外部工具、访问环境、执行命令。</p>
+<p>例如：</p>
+<ul>
+<li>搜索百科词条；</li>
+<li>运行代码单元测试；</li>
+<li>在网页上点击购买按钮。</li>
+</ul>
+<p><strong>规划（Planning）</strong>：在执行前（或执行中）比较多条候选路径。</p>
+<p>例如：</p>
+<ul>
+<li>先搜人名再搜地点？</li>
+<li>还是先搜事件再回查人物？</li>
+</ul>
+<p>规划的目标是避免“一条路走到黑”。</p>
+<h3 id="2-3-为什么“只靠一条思维链”常常在难题上翻车">2.3 为什么“只靠一条思维链”常常在难题上翻车</h3>
+<p>很多提示方法（如基础 CoT）是按自回归方式一路生成：</p>
+<ul>
+<li>第 1 步写出来；</li>
+<li>第 2 步依赖第 1 步；</li>
+<li>第 3 步依赖第 2 步；</li>
+<li>……</li>
+</ul>
+<p>一旦前面某步错了，后面会发生<strong>误差传播（error propagation）</strong>。</p>
+<p>尤其在以下任务里更明显：</p>
+<ul>
+<li>步数多；</li>
+<li>分支多；</li>
+<li>需要外部证据校验；</li>
+<li>中间决策不可随便糊弄。</li>
+</ul>
+<p>这正是为什么需要搜索和回退机制。</p>
+<h3 id="2-4-什么叫外部环境与外部反馈">2.4 什么叫外部环境与外部反馈</h3>
+<p>这篇论文里的模型，不只是“自己想”。它会与环境交互。</p>
+<p>环境可能给出：</p>
+<ul>
+<li>检索结果；</li>
+<li>代码测试报错；</li>
+<li>网页状态变化；</li>
+<li>成功/失败奖励。</li>
+</ul>
+<p>外部反馈的价值在于：</p>
+<blockquote>
+<p>模型内部知识再强，也不该把所有问题都当成闭卷考试。</p>
+</blockquote>
+<p>当任务本身是开放世界、动态环境时，外部反馈往往是纠错关键。</p>
+<h3 id="2-5-什么是树搜索（生活化理解）">2.5 什么是树搜索（生活化理解）</h3>
+<p>想象你在岔路口：</p>
+<ul>
+<li>左转、右转、直走都可能到目的地。</li>
+</ul>
+<p>如果你永远只选“第一眼看起来顺眼”的路，可能会错过更优路径。</p>
+<p>树搜索的思想是：</p>
+<ul>
+<li>把每个决策状态当成一个节点；</li>
+<li>把每个可选动作当成边；</li>
+<li>逐步扩展并比较不同分支。</li>
+</ul>
+<h3 id="2-6-MCTS（蒙特卡洛树搜索）到底在做什么">2.6 MCTS（蒙特卡洛树搜索）到底在做什么</h3>
+<p>MCTS 可以理解成一个反复循环：</p>
+<ol>
+<li>先沿着“看起来比较好”的分支往下走；</li>
+<li>但也会刻意试一些还没探索够的分支；</li>
+<li>到达终点后根据结果回传评价；</li>
+<li>下一轮据此调整搜索重心。</li>
+</ol>
+<p>它的核心不是“永远贪心”，而是“在探索与利用之间做平衡”。</p>
+<h3 id="2-7-什么是“探索-vs-利用”">2.7 什么是“探索 vs 利用”</h3>
+<p><strong>利用（Exploitation）</strong>：继续走当前最优分支。<br>
+<strong>探索（Exploration）</strong>：尝试不确定但可能更优的分支。</p>
+<p>只利用会陷入局部最优；只探索会效率低下。</p>
+<p>好的搜索算法要做到“稳中有试探”。</p>
+<h3 id="2-8-价值函数（Value-Function）是什么意思">2.8 价值函数（Value Function）是什么意思</h3>
+<p>价值函数就是一个评分器：</p>
+<blockquote>
+<p>这个状态“看起来有多大希望最终成功”？</p>
+</blockquote>
+<p>它不需要 100% 准确，只要能在统计上把“更有希望的状态”排在前面，就能明显提升搜索效率。</p>
+<h3 id="2-9-自一致性（Self-Consistency）是什么">2.9 自一致性（Self-Consistency）是什么</h3>
+<p>如果模型从同一状态采样多次，很多结果都指向同一个候选动作/答案，那么这个候选更值得信任。</p>
+<p>这就是自一致性：</p>
+<ul>
+<li>不是只信一次采样，</li>
+<li>而是看“多次采样是否趋同”。</li>
+</ul>
+<h3 id="2-10-自我反思（Self-Reflection）在代理里有什么用">2.10 自我反思（Self-Reflection）在代理里有什么用</h3>
+<p>失败后让模型复盘：</p>
+<ul>
+<li>错在什么地方；</li>
+<li>哪一步决策不合理；</li>
+<li>下一次应如何改。</li>
+</ul>
+<p>这不是参数训练层面的学习，但在提示上下文里是有用的“语义梯度”。</p>
+<h3 id="2-11-为什么“可回退（rollback）”是这篇论文的关键前提">2.11 为什么“可回退（rollback）”是这篇论文的关键前提</h3>
+<p>传统强化学习很多环境很难回到中间状态，回退成本高。</p>
+<p>但在很多语言任务里，状态本质是文本历史：</p>
+<ul>
+<li>你只要恢复对应上下文，就能“回到过去”。</li>
+</ul>
+<p>论文强调这一点：</p>
+<blockquote>
+<p>在大量 LM 任务中，回退比想象中容易，这使树搜索在代理场景下更可落地。</p>
+</blockquote>
+<hr>
+<h2 id="3-LATS-具体要解决什么问题">3. LATS 具体要解决什么问题</h2>
+<p>论文对现有方法的不足归纳得很清楚，主要有三类。</p>
+<h3 id="问题-1：灵活性不足">问题 1：灵活性不足</h3>
+<p>CoT/ReAct 这类基础流程常常是单轨生成，缺乏系统化分支比较。</p>
+<h3 id="问题-2：对外部反馈利用不充分">问题 2：对外部反馈利用不充分</h3>
+<p>纯推理方法（CoT/ToT/RAP）更多依赖模型内部知识，容易出现事实错误与错误传播；而很多行动方法又不做足够的前瞻规划。</p>
+<h3 id="问题-3：适应性不足">问题 3：适应性不足</h3>
+<p>已有规划方法在“行动环境 + 外部反馈”上往往不能稳定发挥，或者缺乏从失败中持续改进的机制。</p>
+<p>所以 LATS 要回答的问题是：</p>
+<blockquote>
+<p><strong>能不能在一个统一框架下，把推理、行动、规划、反思、反馈整合起来，让语言模型代理在复杂任务上更稳健？</strong></p>
+</blockquote>
+<hr>
+<h2 id="4-方法总览（Figure-1）">4. 方法总览（Figure 1）</h2>
+<p>Figure 1 给出了最核心的系统图。</p>
+<p>LATS 不把语言模型只当“回答器”，而是把它在一个搜索闭环中复用为三类角色：</p>
+<ul>
+<li>代理（产生动作/思路）</li>
+<li>价值评估器（给状态打分）</li>
+<li>反思生成器（失败后总结）</li>
+</ul>
+<p>同时引入外部环境反馈，再由 MCTS 负责整体搜索控制。</p>
+<p>这个组合的意义在于：</p>
+<ul>
+<li>不是仅靠“模型更大”，</li>
+<li>而是通过“推理时结构化控制”提升决策质量。</li>
+</ul>
+<hr>
+<h2 id="5-技术细节深挖：LATS-是怎么工作的">5. 技术细节深挖：LATS 是怎么工作的</h2>
+<p>下面按论文的六个操作（Figure 2）逐步拆解。</p>
+<h2 id="5-1-状态、动作、观察的形式化定义">5.1 状态、动作、观察的形式化定义</h2>
+<p>论文把节点状态定义为：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>s</mi><mo>=</mo><mo stretchy="false">[</mo><mi>x</mi><mo separator="true">,</mo><msub><mi>a</mi><mrow><mn>1</mn><mo>⋯</mo><mi>i</mi></mrow></msub><mo separator="true">,</mo><msub><mi>o</mi><mrow><mn>1</mn><mo>⋯</mo><mi>i</mi></mrow></msub><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">s = [x, a_{1\cdots i}, o_{1\cdots i}]
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord mathnormal">x</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span><span class="minner mtight">⋯</span><span class="mord mathnormal mtight">i</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span><span class="minner mtight">⋯</span><span class="mord mathnormal mtight">i</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">]</span></span></span></span></span></p>
+<p>其中：</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span>：原始输入任务；</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mrow><mn>1</mn><mo>⋯</mo><mi>i</mi></mrow></msub></mrow><annotation encoding="application/x-tex">a_{1\cdots i}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span><span class="minner mtight">⋯</span><span class="mord mathnormal mtight">i</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>：已执行动作序列；</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>o</mi><mrow><mn>1</mn><mo>⋯</mo><mi>i</mi></mrow></msub></mrow><annotation encoding="application/x-tex">o_{1\cdots i}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span><span class="minner mtight">⋯</span><span class="mord mathnormal mtight">i</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>：已收到观察序列。</li>
+</ul>
+<p>在 ReAct 实例下，动作空间是：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mover accent="true"><mi>A</mi><mo>^</mo></mover><mo>=</mo><mi>A</mi><mo>∪</mo><mi>Z</mi></mrow><annotation encoding="application/x-tex">\hat{A} = A \cup Z
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9468em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9468em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">A</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1111em;"><span class="mord">^</span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">A</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">∪</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">Z</span></span></span></span></span></p>
+<p>即：</p>
+<ul>
+<li>外部可执行动作 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi></mrow><annotation encoding="application/x-tex">A</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">A</span></span></span></span>；</li>
+<li>语言思考轨迹 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Z</mi></mrow><annotation encoding="application/x-tex">Z</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">Z</span></span></span></span>。</li>
+</ul>
+<p>这意味着“思考”和“操作”都可作为搜索树分支的一部分。</p>
+<h2 id="5-2-Selection：用-UCT-在树上选点">5.2 Selection：用 UCT 在树上选点</h2>
+<p>选择阶段使用 UCT：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>U</mi><mi>C</mi><mi>T</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mo>=</mo><mi>V</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mo>+</mo><mi>w</mi><msqrt><mfrac><mrow><mi>ln</mi><mo>⁡</mo><mi>N</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo></mrow><mrow><mi>N</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo></mrow></mfrac></msqrt></mrow><annotation encoding="application/x-tex">UCT(s) = V(s) + w \sqrt{\frac{\ln N(p)}{N(s)} }
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">U</span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:3.04em;vertical-align:-1.1606em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8794em;"><span class="svg-align" style="top:-5em;"><span class="pstrut" style="height:5em;"></span><span class="mord" style="padding-left:1em;"><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop">ln</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mopen">(</span><span class="mord mathnormal">p</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span><span style="top:-3.8394em;"><span class="pstrut" style="height:5em;"></span><span class="hide-tail" style="min-width:1.02em;height:3.08em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="3.08em" viewBox="0 0 400000 3240" preserveAspectRatio="xMinYMin slice"><path d="M473,2793
+c339.3,-1799.3,509.3,-2700,510,-2702 l0 -0
+c3.3,-7.3,9.3,-11,18,-11 H400000v40H1017.7
+s-90.5,478,-276.2,1466c-185.7,988,-279.5,1483,-281.5,1485c-2,6,-10,9,-24,9
+c-8,0,-12,-0.7,-12,-2c0,-1.3,-5.3,-32,-16,-92c-50.7,-293.3,-119.7,-693.3,-207,-1200
+c0,-1.3,-5.3,8.7,-16,30c-10.7,21.3,-21.3,42.7,-32,64s-16,33,-16,33s-26,-26,-26,-26
+s76,-153,76,-153s77,-151,77,-151c0.7,0.7,35.7,202,105,604c67.3,400.7,102,602.7,104,
+606zM1001 80h400000v40H1017.7z"/></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.1606em;"><span></span></span></span></span></span></span></span></span></span></p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">V(s)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span></span>：当前节点价值；</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">N(s)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span></span>：节点访问次数；</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">N(p)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mopen">(</span><span class="mord mathnormal">p</span><span class="mclose">)</span></span></span></span>：父节点访问次数；</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi></mrow><annotation encoding="application/x-tex">w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span>：探索权重。</li>
+</ul>
+<p>最直观地说就是：</p>
+<ul>
+<li>第一项偏向“当前看起来更好”的分支；</li>
+<li>第二项偏向“还没怎么探索过”的分支。</li>
+</ul>
+<p>这样不容易被“早期偶然看起来不错”的分支绑死。</p>
+<h2 id="5-3-Expansion：每步采样多个候选动作">5.3 Expansion：每步采样多个候选动作</h2>
+<p>扩展阶段不是只出一个动作，而是采样 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span> 个候选。</p>
+<p>论文默认常用 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">n=5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span></span></span></span>。</p>
+<p>每个候选动作交给环境执行后，会得到对应观察，形成新的子节点。</p>
+<p>为什么这步关键？</p>
+<p>因为如果每步只采样 1 个动作，你几乎又回到了“单轨代理”。</p>
+<p>多候选采样是“真正有搜索”的起点。</p>
+<h2 id="5-4-Evaluation：LM-打分-自一致性打分">5.4 Evaluation：LM 打分 + 自一致性打分</h2>
+<p>LATS 的状态价值函数由两部分线性组合：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>V</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mo>=</mo><mi>λ</mi><mo>⋅</mo><mi>L</mi><mi>M</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mo>+</mo><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><mi>λ</mi><mo stretchy="false">)</mo><mo>⋅</mo><mi>S</mi><mi>C</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">V(s) = \lambda \cdot LM(s) + (1-\lambda) \cdot SC(s)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">λ</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">L</span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">λ</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span></span></span></p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>M</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">LM(s)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">L</span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span></span>：语言模型对该状态的评分；</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>C</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">SC(s)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span></span>：自一致性评分；</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>λ</mi></mrow><annotation encoding="application/x-tex">\lambda</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">λ</span></span></span></span>：权重超参数。</li>
+</ul>
+<p>这里的亮点是：</p>
+<ol>
+<li>不额外训练 critic 网络；</li>
+<li>直接复用大模型做“文本化价值评估”；</li>
+<li>再用自一致性缓和单次判断噪声。</li>
+</ol>
+<p>消融实验也验证了这个设计很关键：去掉 LM heuristic 会显著掉分。</p>
+<h2 id="5-5-Simulation：向前模拟直到终止状态">5.5 Simulation：向前模拟直到终止状态</h2>
+<p>从当前节点继续向下扩展，直到到达终止条件：</p>
+<ul>
+<li>成功完成任务；</li>
+<li>或失败结束。</li>
+</ul>
+<p>终止状态会提供更客观的成败信息，用于后续回传。</p>
+<h2 id="5-6-Backpropagation：把回报回传到路径节点">5.6 Backpropagation：把回报回传到路径节点</h2>
+<p>终止后把奖励沿路径回传，更新各节点价值与访问次数。</p>
+<p>直观地说：</p>
+<ul>
+<li>成功路径上的早期节点会“升值”；</li>
+<li>失败路径上的早期节点会“降温”。</li>
+</ul>
+<p>下一轮选择自然更倾向高价值路径。</p>
+<h2 id="5-7-Reflection：失败复盘-外部记忆">5.7 Reflection：失败复盘 + 外部记忆</h2>
+<p>若终止失败，LATS 触发反思生成：</p>
+<ul>
+<li>总结失败原因；</li>
+<li>给出改进建议；</li>
+<li>将失败轨迹与反思写入外部记忆。</li>
+</ul>
+<p>下一次搜索时，这些内容会被注入上下文，帮助规避重复错误。</p>
+<p>这一步是“语义级经验复用”，不需要梯度训练，也能形成跨轨迹改进。</p>
+<hr>
+<h2 id="6-为什么-LATS-不是“把-MCTS-和-ReAct-硬拼接”这么简单">6. 为什么 LATS 不是“把 MCTS 和 ReAct 硬拼接”这么简单</h2>
+<p>一个常见质疑是：</p>
+<blockquote>
+<p>不就是 MCTS + ReAct 吗？</p>
+</blockquote>
+<p>我认为这个质疑只说对了一半。</p>
+<p>LATS 的确借用了已有组件，但关键难点在于“适配与整合”，尤其体现在：</p>
+<ol>
+<li><strong>状态表示</strong>不是传统棋盘状态，而是文本历史 + 动作 + 观察 + 反思记忆；</li>
+<li><strong>价值估计</strong>不是训练型 critic，而是 LM 语言评分 + 自一致性混合；</li>
+<li><strong>外部反馈整合</strong>不是简单 append 观察，而是让反馈进入搜索闭环；</li>
+<li><strong>反思机制</strong>让失败信息以可读语义形式复用。</li>
+</ol>
+<p>论文里 ToT(ReAct) 与 RAP(ReAct) 的结果不理想，也从反面说明“简单拼接”确实不够。</p>
+<hr>
+<h2 id="7-实验设置">7. 实验设置</h2>
+<p>论文覆盖四类任务，分别代表不同代理能力需求。</p>
+<h3 id="7-1-HotPotQA">7.1 HotPotQA</h3>
+<p>多跳问答，需要检索多段证据并组合推理。</p>
+<p>可同时评估：</p>
+<ul>
+<li>内部推理能力；</li>
+<li>外部检索行动能力。</li>
+</ul>
+<h3 id="7-2-Programming（HumanEval-MBPP）">7.2 Programming（HumanEval / MBPP）</h3>
+<p>动作是生成程序；观察是编译与测试反馈。</p>
+<p>这类任务反馈信号强、可验证性高，是检验代理规划能力的好场景。</p>
+<h3 id="7-3-WebShop">7.3 WebShop</h3>
+<p>网页购物决策环境，动作包括搜索、点击、筛选、购买。</p>
+<p>相比纯问答，这更接近真实在线交互任务。</p>
+<h3 id="7-4-Game-of-24">7.4 Game of 24</h3>
+<p>纯数学推理任务，用于测试没有复杂外部工具时 LATS 是否仍有收益。</p>
+<h3 id="7-5-关键超参数（附录信息）">7.5 关键超参数（附录信息）</h3>
+<p>论文附录给出常用配置：</p>
+<ul>
+<li>扩展采样数 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">n=5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span></span></span></span>（默认常用）；</li>
+<li>探索权重 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">w=1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>（默认）；</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>λ</mi><mo>=</mo><mn>0.5</mn></mrow><annotation encoding="application/x-tex">\lambda=0.5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">λ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.5</span></span></span></span>（HotPotQA、Game of 24）；</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>λ</mi><mo>=</mo><mn>0.8</mn></mrow><annotation encoding="application/x-tex">\lambda=0.8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">λ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.8</span></span></span></span>（Programming、WebShop）。</li>
+</ul>
+<p>此外：</p>
+<ul>
+<li>HotPotQA 通常 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>50</mn></mrow><annotation encoding="application/x-tex">k=50</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">50</span></span></span></span> trajectories；</li>
+<li>Programming 常用 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">k=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span>；</li>
+<li>WebShop 常用 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>30</mn></mrow><annotation encoding="application/x-tex">k=30</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">30</span></span></span></span>。</li>
+</ul>
+<hr>
+<h2 id="8-核心结果解读（按图表逐项解释）">8. 核心结果解读（按图表逐项解释）</h2>
+<h2 id="8-1-HotPotQA：纯内部推理设置（Table-2）">8.1 HotPotQA：纯内部推理设置（Table 2）</h2>
+<p>GPT-3.5 的 Exact Match：</p>
+<ul>
+<li>Base LM：0.32</li>
+<li>CoT：0.34</li>
+<li>CoT-SC：0.38</li>
+<li>ToT：0.55</li>
+<li>RAP：0.60</li>
+<li><strong>LATS (CoT)：0.62</strong></li>
+</ul>
+<p>解读：</p>
+<ol>
+<li>单纯 CoT 提升有限；</li>
+<li>搜索型方法明显更强；</li>
+<li>LATS 在纯推理设置下仍优于 ToT/RAP，说明它并不依赖“必须有外部动作”才生效。</li>
+</ol>
+<h2 id="8-2-HotPotQA：带工具行动设置（Table-3）">8.2 HotPotQA：带工具行动设置（Table 3）</h2>
+<p>GPT-3.5 EM：</p>
+<ul>
+<li>ReAct：0.32</li>
+<li>ReAct(best of k)：0.38</li>
+<li>Reflexion：0.51</li>
+<li>ToT(ReAct)：0.39</li>
+<li>RAP(ReAct)：0.54</li>
+<li><strong>LATS(ReAct)：0.63</strong></li>
+<li>LATS(n=10)：0.65</li>
+<li><strong>LATS(CoT+ReAct)：0.71</strong></li>
+</ul>
+<p>这一组数据非常关键。</p>
+<p>特别值得注意的是：</p>
+<ul>
+<li>ToT(ReAct) 只有 0.39，说明“把 ToT 套在 ReAct 外面”并不自动有效；</li>
+<li>LATS 系统化整合后能到 0.63/0.71，证明适配设计本身才是关键。</li>
+</ul>
+<p>此外，CoT+ReAct 的混合策略表现最好，符合直觉：</p>
+<ul>
+<li>先用内部知识推一遍；</li>
+<li>不够再调用外部检索补证据。</li>
+</ul>
+<p>这是更接近人类问题求解的策略。</p>
+<h2 id="8-3-HumanEval：代码生成（Table-4）">8.3 HumanEval：代码生成（Table 4）</h2>
+<p>GPT-3.5 Pass@1：</p>
+<ul>
+<li>CoT：46.9</li>
+<li>ReAct：56.9</li>
+<li>Reflexion：68.1</li>
+<li>ToT：54.4</li>
+<li>RAP：63.1</li>
+<li><strong>LATS(ReAct)：83.8</strong></li>
+</ul>
+<p>GPT-4：</p>
+<ul>
+<li>Base LM：80.1</li>
+<li>Reflexion：91.0</li>
+<li><strong>LATS(ReAct)：92.7</strong></li>
+</ul>
+<p>这里的提升非常硬核，尤其 GPT-3.5 从 68.1（Reflexion）到 83.8（LATS）是一个量级上的进步。</p>
+<p>为什么代码任务提升这么明显？</p>
+<p>因为代码环境有高质量外部反馈：</p>
+<ul>
+<li>编译错误可定位；</li>
+<li>测试通过率可量化；</li>
+<li>候选程序之间可比较。</li>
+</ul>
+<p>这恰好是搜索框架最能发挥价值的场景。</p>
+<h2 id="8-4-MBPP：代码任务再验证（Table-5）">8.4 MBPP：代码任务再验证（Table 5）</h2>
+<p>GPT-3.5 Pass@1：</p>
+<ul>
+<li>CoT：54.9</li>
+<li>ReAct：67.0</li>
+<li>Reflexion：70.0</li>
+<li>ToT：65.8</li>
+<li>RAP：71.4</li>
+<li><strong>LATS(ReAct)：81.1</strong></li>
+</ul>
+<p>HumanEval 与 MBPP 双基准都显示同趋势，说明 LATS 在编程任务上的优势并非偶然。</p>
+<h2 id="8-5-WebShop：网页交互决策（Table-6）">8.5 WebShop：网页交互决策（Table 6）</h2>
+<p>Prompting 组：</p>
+<ul>
+<li>ReAct：Score 53.8，SR 28.0</li>
+<li>ReAct(best of k)：59.1，32.0</li>
+<li>Reflexion：64.2，35.0</li>
+<li><strong>LATS(ReAct)：75.9，38.0</strong></li>
+</ul>
+<p>训练组：</p>
+<ul>
+<li>IL：59.9，29.1</li>
+<li>IL+RL：62.4，28.7</li>
+<li>Fine-tuning：67.5，45.0</li>
+<li>Expert：82.1，59.6</li>
+</ul>
+<p>解读要客观：</p>
+<ul>
+<li>LATS 的平均得分提升很明显（75.9）；</li>
+<li>成功率也提升（到 38.0），但离专家和强训练方法仍有差距。</li>
+</ul>
+<p>这说明 LATS 是“有效增强”，不是“任务已被彻底解决”。</p>
+<h2 id="8-6-Game-of-24：纯推理数学任务（Table-7）">8.6 Game of 24：纯推理数学任务（Table 7）</h2>
+<p>GPT-3.5 Success Rate：</p>
+<ul>
+<li>CoT：0.08</li>
+<li>Reflexion：0.12</li>
+<li>ToT：0.20</li>
+<li>RAP：0.40</li>
+<li><strong>LATS(CoT)：0.44</strong></li>
+</ul>
+<p>这个结果的意义在于：即便没有复杂外部工具交互，LATS 的搜索+评估结构仍能带来收益。</p>
+<p>附录 Table 13 还显示：</p>
+<ul>
+<li>LATS(CoT, λ=1)：0.40</li>
+<li>LATS(CoT, 默认混合)：0.44</li>
+</ul>
+<p>说明自一致性分量并非摆设，确实提供增益。</p>
+<h2 id="8-7-消融实验：哪些组件真的有用（Table-8）">8.7 消融实验：哪些组件真的有用（Table 8）</h2>
+<p>HotPotQA（ReAct setting）：</p>
+<ul>
+<li>ToT(ReAct)：0.39</li>
+<li>RAP(ReAct)：0.54</li>
+<li>LATS(No LM Heuristic)：0.37</li>
+<li>LATS(DFS)：0.42</li>
+<li>LATS(No Reflection)：0.58</li>
+<li><strong>LATS(ReAct)：0.63</strong></li>
+</ul>
+<p>结论很明确：</p>
+<ol>
+<li><strong>LM Heuristic 非常关键</strong>（去掉几乎崩）；</li>
+<li><strong>反思有帮助</strong>（0.63→0.58）；</li>
+<li><strong>MCTS 型搜索优于 DFS 替代</strong>。</li>
+</ol>
+<p>附录还给出更多细节：</p>
+<ul>
+<li>降低探索权重（w=0.5）会掉分；</li>
+<li>深度从 7 降到 4 影响较小；</li>
+<li>LATS 随迭代增加增长更稳定（Figure 3）。</li>
+</ul>
+<h2 id="8-8-复杂度、token-开销与效率分析（Table-9-10）">8.8 复杂度、token 开销与效率分析（Table 9/10）</h2>
+<p>搜索方法常被质疑“太贵”。论文在这点上给了实证数据。</p>
+<p>Table 10（HotPotQA）显示在相同 k 下，LATS 常常以更少扩展节点得到更高性能。</p>
+<p>例如 k=50：</p>
+<ul>
+<li>ToT：性能 0.49，节点 84.05</li>
+<li>RAP：性能 0.54，节点 70.60</li>
+<li><strong>LATS：性能 0.61，节点 66.65</strong></li>
+</ul>
+<p>k=30：</p>
+<ul>
+<li>ToT：0.39，47.54</li>
+<li>RAP：0.50，37.71</li>
+<li><strong>LATS：0.52，34.12</strong></li>
+</ul>
+<p>k=10：</p>
+<ul>
+<li>ToT：0.34，33.97</li>
+<li>RAP：0.44，31.53</li>
+<li><strong>LATS：0.44，28.42</strong></li>
+</ul>
+<p>这说明 LATS 的提升并非单纯“暴力展开更多节点”换来的，搜索质量本身有改进。</p>
+<p>当然，它仍比简单提示法更耗推理资源，这点必须承认。</p>
+<hr>
+<h2 id="9-我认为这篇论文最有说服力的地方">9. 我认为这篇论文最有说服力的地方</h2>
+<h3 id="9-1-跨任务类型的稳定收益">9.1 跨任务类型的稳定收益</h3>
+<p>问答、代码、网页、数学都有效，这在代理论文里很难得。</p>
+<h3 id="9-2-不是靠某一个“神奇模块”">9.2 不是靠某一个“神奇模块”</h3>
+<p>它的提升来自系统级闭环：</p>
+<ul>
+<li>搜索</li>
+<li>价值评估</li>
+<li>外部反馈</li>
+<li>反思记忆</li>
+</ul>
+<p>整体一致性强。</p>
+<h3 id="9-3-编程结果很硬">9.3 编程结果很硬</h3>
+<p>HumanEval/MBPP 的提升幅度具有工程意义，不是统计波动级别。</p>
+<h3 id="9-4-消融设计扎实">9.4 消融设计扎实</h3>
+<p>作者展示了“去掉哪块会怎样”，有助于读者识别真正关键组件。</p>
+<h3 id="9-5-强调推理时结构（inference-time-structure）">9.5 强调推理时结构（inference-time structure）</h3>
+<p>它提醒我们：</p>
+<blockquote>
+<p>代理能力不只看模型参数量，也看推理控制结构。</p>
+</blockquote>
+<hr>
+<h2 id="10-局限性、边界条件与落地风险">10. 局限性、边界条件与落地风险</h2>
+<h2 id="10-1-计算成本上升是客观事实">10.1 计算成本上升是客观事实</h2>
+<p>相比 ReAct/Reflexion，LATS 更贵。</p>
+<p>适合用于：</p>
+<ul>
+<li>错误代价高；</li>
+<li>分支选择关键；</li>
+<li>有可利用反馈；</li>
+<li>延迟预算允许的任务。</li>
+</ul>
+<h2 id="10-2-回退假设并非所有环境都满足">10.2 回退假设并非所有环境都满足</h2>
+<p>很多文本任务可回退，但某些真实系统（强时序、不可逆操作）不一定能轻松重置。</p>
+<h2 id="10-3-部分评测设置偏理想化">10.3 部分评测设置偏理想化</h2>
+<p>HotPotQA 使用 oracle 反馈有其合理性，但真实世界反馈常更噪、更弱。</p>
+<h2 id="10-4-反思质量受模型与任务影响">10.4 反思质量受模型与任务影响</h2>
+<p>论文也提到在 WebShop 里反思可能偏泛化，帮助有限。</p>
+<h2 id="10-5-WebShop-仍有明显上限差距">10.5 WebShop 仍有明显上限差距</h2>
+<p>LATS 很强，但与专家水平仍有距离，不能夸大为“通用网页代理已解决”。</p>
+<hr>
+<h2 id="11-可复现实操清单">11. 可复现实操清单</h2>
+<p>如果我要认真复现，我会强制记录以下信息。</p>
+<h3 id="11-1-模型与提示细节">11.1 模型与提示细节</h3>
+<ul>
+<li>模型版本与 API 参数；</li>
+<li>agent prompt / value prompt / reflection prompt；</li>
+<li>温度、top-p、停止词；</li>
+<li>输出解析规则。</li>
+</ul>
+<h3 id="11-2-搜索超参数">11.2 搜索超参数</h3>
+<ul>
+<li>采样分支数 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span>；</li>
+<li>轨迹预算 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span>；</li>
+<li>探索权重 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi></mrow><annotation encoding="application/x-tex">w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span>；</li>
+<li>深度上限 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi></mrow><annotation encoding="application/x-tex">d</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">d</span></span></span></span>；</li>
+<li>价值函数权重 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>λ</mi></mrow><annotation encoding="application/x-tex">\lambda</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">λ</span></span></span></span>。</li>
+</ul>
+<h3 id="11-3-环境接口">11.3 环境接口</h3>
+<ul>
+<li>HotPotQA 的检索 API 细节；</li>
+<li>HumanEval/MBPP 的编译与测试执行脚本；</li>
+<li>WebShop 动作空间映射（参考 Table 12）；</li>
+<li>成功判定逻辑。</li>
+</ul>
+<h3 id="11-4-反思与记忆策略">11.4 反思与记忆策略</h3>
+<ul>
+<li>失败轨迹如何存储；</li>
+<li>反思文本保存数量；</li>
+<li>长上下文截断策略。</li>
+</ul>
+<h3 id="11-5-评测协议">11.5 评测协议</h3>
+<ul>
+<li>样本子集是否固定；</li>
+<li>HumanEval 使用 161 还是 164 题；</li>
+<li>pass@1 计算细则；</li>
+<li>多次运行方差。</li>
+</ul>
+<p>额外建议：</p>
+<ul>
+<li>记录成功轨迹平均 token 消耗与 wall-clock 延迟；</li>
+<li>这对真实部署同样重要。</li>
+</ul>
+<hr>
+<h2 id="12-给工程实践者的落地建议">12. 给工程实践者的落地建议</h2>
+<h3 id="建议-1：复杂任务别只靠“更长提示词”">建议 1：复杂任务别只靠“更长提示词”</h3>
+<p>当任务本身是多分支决策问题时，结构化搜索通常比继续堆 prompt 更有效。</p>
+<h3 id="建议-2：外部反馈要进入“决策环”而不只是“上下文”">建议 2：外部反馈要进入“决策环”而不只是“上下文”</h3>
+<p>许多弱代理系统只是把 observation 贴回 prompt。LATS 证明更好的做法是让反馈直接影响搜索选择。</p>
+<h3 id="建议-3：把-LM-当可编程评估器使用">建议 3：把 LM 当可编程评估器使用</h3>
+<p>让模型参与状态打分（而非只出答案）是很实用的工程范式。</p>
+<h3 id="建议-4：低成本经验复用很重要">建议 4：低成本经验复用很重要</h3>
+<p>反思机制不是参数学习，但在迭代任务中能降低重复踩坑概率。</p>
+<h3 id="建议-5：根据任务价值选择是否启用-LATS">建议 5：根据任务价值选择是否启用 LATS</h3>
+<p>我建议在以下场景优先用 LATS 类框架：</p>
+<ul>
+<li>单次错误成本高（例如代码修复、关键检索、复杂流程决策）；</li>
+<li>环境反馈信息量大；</li>
+<li>任务允许回退重试；</li>
+<li>延迟预算可接受。</li>
+</ul>
+<p>对简单任务，轻量方法通常更划算。</p>
+<hr>
+<h2 id="13-最终结论">13. 最终结论</h2>
+<p>我的结论很直接：</p>
+<blockquote>
+<p><strong>LATS 是当前“代理推理时控制结构”方向里非常有代表性的一篇工作。它最重要的价值，是把推理、行动、规划统一进一个可执行闭环。</strong></p>
+</blockquote>
+<p>它不是完美终局方案：</p>
+<ul>
+<li>成本更高；</li>
+<li>依赖可回退环境；</li>
+<li>反思质量不稳定；</li>
+<li>某些评测设置有理想化成分。</li>
+</ul>
+<p>但它给出了一个很关键的工程认知转向：</p>
+<blockquote>
+<p>代理能力提升，不一定只靠更大模型；也可以靠更好的推理时结构化控制。</p>
+</blockquote>
+<p>如果你在做代理系统，且遇到“每步都看似合理但整体经常失败”的问题，下一步要改的很可能不是再写一个更长 prompt，而是引入像 LATS 这样的搜索与价值控制机制。</p>
+<p>这篇论文最大的价值，就在这里。</p>
+<hr>
+<h2 id="14-参考文献">14. 参考文献</h2>
+<ol>
+<li>Andy Zhou, Kai Yan, Michal Shlapentokh-Rothman, Haohan Wang, Yu-Xiong Wang. <strong>Language Agent Tree Search Unifies Reasoning, Acting, and Planning in Language Models</strong>. ICML 2024. arXiv:2310.04406.</li>
+<li>Shunyu Yao et al. <strong>ReAct: Synergizing Reasoning and Acting in Language Models</strong>. ICLR 2023.</li>
+<li>Shunyu Yao et al. <strong>Tree of Thoughts: Deliberate Problem Solving with Large Language Models</strong>. NeurIPS 2023.</li>
+<li>Hao et al. <strong>Reasoning with Language Model is Planning with World Model</strong>. EMNLP 2023.</li>
+<li>Shinn et al. <strong>Reflexion: Language Agents with Verbal Reinforcement Learning</strong>. NeurIPS 2023.</li>
+<li>Wei et al. <strong>Chain-of-Thought Prompting Elicits Reasoning in Large Language Models</strong>. NeurIPS 2022.</li>
+<li>Wang et al. <strong>Self-Consistency Improves Chain of Thought Reasoning in Language Models</strong>. ICLR 2023.</li>
+<li>Chen et al. <strong>Evaluating Large Language Models Trained on Code</strong>. arXiv 2021.</li>
+<li>Austin et al. <strong>Program Synthesis with Large Language Models</strong>. NeurIPS 2022.</li>
+<li>Yao et al. <strong>WebShop: Towards Scalable Real-World Web Interaction with Grounded Language Agents</strong>. NeurIPS 2022.</li>
+</ol>
+<hr>
+<p><em>评审写于 2026-04-11。</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Tree-Search/" rel="tag"># Tree Search</a>
+              <a href="/tags/LLM-Agent/" rel="tag"># LLM Agent</a>
+              <a href="/tags/LATS/" rel="tag"># LATS</a>
+              <a href="/tags/Reasoning/" rel="tag"># Reasoning</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/10/2026-04-10-SVDLLM-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="prev" title="SVD-LLM：面向大语言模型压缩的“截断感知”奇异值分解方法 — 深度技术评审">
+      <i class="fa fa-chevron-left"></i> SVD-LLM：面向大语言模型压缩的“截断感知”奇异值分解方法 — 深度技术评审
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/11/2026-04-11-LATS-technical-review-en/" rel="next" title="Language Agent Tree Search (LATS): Unifying Reasoning, Acting, and Planning in Language Models — Deep Technical Review">
+      Language Agent Tree Search (LATS): Unifying Reasoning, Acting, and Planning in Language Models — Deep Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-为什么这篇论文值得你认真读"><span class="nav-number">1.</span> <span class="nav-text">1. 为什么这篇论文值得你认真读</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-前置知识：理解这篇论文前需要知道什么"><span class="nav-number">2.</span> <span class="nav-text">2. 前置知识：理解这篇论文前需要知道什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-什么是“语言模型代理”（LM-Agent）"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 什么是“语言模型代理”（LM Agent）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-推理、行动、规划三者到底差在哪"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 推理、行动、规划三者到底差在哪</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-为什么“只靠一条思维链”常常在难题上翻车"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 为什么“只靠一条思维链”常常在难题上翻车</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-什么叫外部环境与外部反馈"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 什么叫外部环境与外部反馈</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-什么是树搜索（生活化理解）"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 什么是树搜索（生活化理解）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-MCTS（蒙特卡洛树搜索）到底在做什么"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 MCTS（蒙特卡洛树搜索）到底在做什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-7-什么是“探索-vs-利用”"><span class="nav-number">2.7.</span> <span class="nav-text">2.7 什么是“探索 vs 利用”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-8-价值函数（Value-Function）是什么意思"><span class="nav-number">2.8.</span> <span class="nav-text">2.8 价值函数（Value Function）是什么意思</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-9-自一致性（Self-Consistency）是什么"><span class="nav-number">2.9.</span> <span class="nav-text">2.9 自一致性（Self-Consistency）是什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-10-自我反思（Self-Reflection）在代理里有什么用"><span class="nav-number">2.10.</span> <span class="nav-text">2.10 自我反思（Self-Reflection）在代理里有什么用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-11-为什么“可回退（rollback）”是这篇论文的关键前提"><span class="nav-number">2.11.</span> <span class="nav-text">2.11 为什么“可回退（rollback）”是这篇论文的关键前提</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-LATS-具体要解决什么问题"><span class="nav-number">3.</span> <span class="nav-text">3. LATS 具体要解决什么问题</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#问题-1：灵活性不足"><span class="nav-number">3.1.</span> <span class="nav-text">问题 1：灵活性不足</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#问题-2：对外部反馈利用不充分"><span class="nav-number">3.2.</span> <span class="nav-text">问题 2：对外部反馈利用不充分</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#问题-3：适应性不足"><span class="nav-number">3.3.</span> <span class="nav-text">问题 3：适应性不足</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-方法总览（Figure-1）"><span class="nav-number">4.</span> <span class="nav-text">4. 方法总览（Figure 1）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-技术细节深挖：LATS-是怎么工作的"><span class="nav-number">5.</span> <span class="nav-text">5. 技术细节深挖：LATS 是怎么工作的</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-1-状态、动作、观察的形式化定义"><span class="nav-number">6.</span> <span class="nav-text">5.1 状态、动作、观察的形式化定义</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-2-Selection：用-UCT-在树上选点"><span class="nav-number">7.</span> <span class="nav-text">5.2 Selection：用 UCT 在树上选点</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-3-Expansion：每步采样多个候选动作"><span class="nav-number">8.</span> <span class="nav-text">5.3 Expansion：每步采样多个候选动作</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-4-Evaluation：LM-打分-自一致性打分"><span class="nav-number">9.</span> <span class="nav-text">5.4 Evaluation：LM 打分 + 自一致性打分</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-5-Simulation：向前模拟直到终止状态"><span class="nav-number">10.</span> <span class="nav-text">5.5 Simulation：向前模拟直到终止状态</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-6-Backpropagation：把回报回传到路径节点"><span class="nav-number">11.</span> <span class="nav-text">5.6 Backpropagation：把回报回传到路径节点</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-7-Reflection：失败复盘-外部记忆"><span class="nav-number">12.</span> <span class="nav-text">5.7 Reflection：失败复盘 + 外部记忆</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-为什么-LATS-不是“把-MCTS-和-ReAct-硬拼接”这么简单"><span class="nav-number">13.</span> <span class="nav-text">6. 为什么 LATS 不是“把 MCTS 和 ReAct 硬拼接”这么简单</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-实验设置"><span class="nav-number">14.</span> <span class="nav-text">7. 实验设置</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-HotPotQA"><span class="nav-number">14.1.</span> <span class="nav-text">7.1 HotPotQA</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-Programming（HumanEval-MBPP）"><span class="nav-number">14.2.</span> <span class="nav-text">7.2 Programming（HumanEval &#x2F; MBPP）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-WebShop"><span class="nav-number">14.3.</span> <span class="nav-text">7.3 WebShop</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-Game-of-24"><span class="nav-number">14.4.</span> <span class="nav-text">7.4 Game of 24</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-5-关键超参数（附录信息）"><span class="nav-number">14.5.</span> <span class="nav-text">7.5 关键超参数（附录信息）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-核心结果解读（按图表逐项解释）"><span class="nav-number">15.</span> <span class="nav-text">8. 核心结果解读（按图表逐项解释）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-1-HotPotQA：纯内部推理设置（Table-2）"><span class="nav-number">16.</span> <span class="nav-text">8.1 HotPotQA：纯内部推理设置（Table 2）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-2-HotPotQA：带工具行动设置（Table-3）"><span class="nav-number">17.</span> <span class="nav-text">8.2 HotPotQA：带工具行动设置（Table 3）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-3-HumanEval：代码生成（Table-4）"><span class="nav-number">18.</span> <span class="nav-text">8.3 HumanEval：代码生成（Table 4）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-4-MBPP：代码任务再验证（Table-5）"><span class="nav-number">19.</span> <span class="nav-text">8.4 MBPP：代码任务再验证（Table 5）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-5-WebShop：网页交互决策（Table-6）"><span class="nav-number">20.</span> <span class="nav-text">8.5 WebShop：网页交互决策（Table 6）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-6-Game-of-24：纯推理数学任务（Table-7）"><span class="nav-number">21.</span> <span class="nav-text">8.6 Game of 24：纯推理数学任务（Table 7）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-7-消融实验：哪些组件真的有用（Table-8）"><span class="nav-number">22.</span> <span class="nav-text">8.7 消融实验：哪些组件真的有用（Table 8）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-8-复杂度、token-开销与效率分析（Table-9-10）"><span class="nav-number">23.</span> <span class="nav-text">8.8 复杂度、token 开销与效率分析（Table 9&#x2F;10）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-我认为这篇论文最有说服力的地方"><span class="nav-number">24.</span> <span class="nav-text">9. 我认为这篇论文最有说服力的地方</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-跨任务类型的稳定收益"><span class="nav-number">24.1.</span> <span class="nav-text">9.1 跨任务类型的稳定收益</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-不是靠某一个“神奇模块”"><span class="nav-number">24.2.</span> <span class="nav-text">9.2 不是靠某一个“神奇模块”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-编程结果很硬"><span class="nav-number">24.3.</span> <span class="nav-text">9.3 编程结果很硬</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-消融设计扎实"><span class="nav-number">24.4.</span> <span class="nav-text">9.4 消融设计扎实</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-5-强调推理时结构（inference-time-structure）"><span class="nav-number">24.5.</span> <span class="nav-text">9.5 强调推理时结构（inference-time structure）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-局限性、边界条件与落地风险"><span class="nav-number">25.</span> <span class="nav-text">10. 局限性、边界条件与落地风险</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-1-计算成本上升是客观事实"><span class="nav-number">26.</span> <span class="nav-text">10.1 计算成本上升是客观事实</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-2-回退假设并非所有环境都满足"><span class="nav-number">27.</span> <span class="nav-text">10.2 回退假设并非所有环境都满足</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-3-部分评测设置偏理想化"><span class="nav-number">28.</span> <span class="nav-text">10.3 部分评测设置偏理想化</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-4-反思质量受模型与任务影响"><span class="nav-number">29.</span> <span class="nav-text">10.4 反思质量受模型与任务影响</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-5-WebShop-仍有明显上限差距"><span class="nav-number">30.</span> <span class="nav-text">10.5 WebShop 仍有明显上限差距</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-可复现实操清单"><span class="nav-number">31.</span> <span class="nav-text">11. 可复现实操清单</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#11-1-模型与提示细节"><span class="nav-number">31.1.</span> <span class="nav-text">11.1 模型与提示细节</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-2-搜索超参数"><span class="nav-number">31.2.</span> <span class="nav-text">11.2 搜索超参数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-3-环境接口"><span class="nav-number">31.3.</span> <span class="nav-text">11.3 环境接口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-4-反思与记忆策略"><span class="nav-number">31.4.</span> <span class="nav-text">11.4 反思与记忆策略</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-5-评测协议"><span class="nav-number">31.5.</span> <span class="nav-text">11.5 评测协议</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-给工程实践者的落地建议"><span class="nav-number">32.</span> <span class="nav-text">12. 给工程实践者的落地建议</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#建议-1：复杂任务别只靠“更长提示词”"><span class="nav-number">32.1.</span> <span class="nav-text">建议 1：复杂任务别只靠“更长提示词”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#建议-2：外部反馈要进入“决策环”而不只是“上下文”"><span class="nav-number">32.2.</span> <span class="nav-text">建议 2：外部反馈要进入“决策环”而不只是“上下文”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#建议-3：把-LM-当可编程评估器使用"><span class="nav-number">32.3.</span> <span class="nav-text">建议 3：把 LM 当可编程评估器使用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#建议-4：低成本经验复用很重要"><span class="nav-number">32.4.</span> <span class="nav-text">建议 4：低成本经验复用很重要</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#建议-5：根据任务价值选择是否启用-LATS"><span class="nav-number">32.5.</span> <span class="nav-text">建议 5：根据任务价值选择是否启用 LATS</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-最终结论"><span class="nav-number">33.</span> <span class="nav-text">13. 最终结论</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#14-参考文献"><span class="nav-number">34.</span> <span class="nav-text">14. 参考文献</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

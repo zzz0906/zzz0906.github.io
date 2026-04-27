@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="ORPO 将监督微调和偏好优化合并到一个目标中，在不依赖参考模型的情况下实现更简单的对齐训练。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="ORPO：不用参考模型的一体化偏好优化 — 深度技术评审">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/07/2026-04-07-ORPO-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="ORPO 将监督微调和偏好优化合并到一个目标中，在不依赖参考模型的情况下实现更简单的对齐训练。">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-07T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-16T07:58:03.749Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Alignment">
+<meta property="article:tag" content="LLM Training">
+<meta property="article:tag" content="ORPO">
+<meta property="article:tag" content="Preference Optimization">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/07/2026-04-07-ORPO-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>ORPO：不用参考模型的一体化偏好优化 — 深度技术评审 | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/07/2026-04-07-ORPO-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          ORPO：不用参考模型的一体化偏好优化 — 深度技术评审
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-07 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-07T00:00:00+00:00">2026-04-07</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-16 07:58:03" itemprop="dateModified" datetime="2026-04-16T07:58:03+00:00">2026-04-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">ORPO 将监督微调和偏好优化合并到一个目标中，在不依赖参考模型的情况下实现更简单的对齐训练。</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-先用最通俗的话说：这篇论文到底在干什么？">1. 先用最通俗的话说：这篇论文到底在干什么？</h2>
+<p>我先不用公式，先讲一个最直观、最容易抓住的版本。</p>
+<p>你在教一个孩子回答问题。每次你给他两份答案：</p>
+<ul>
+<li>一份是“更好”的答案（更有礼貌、更准确、更符合要求）；</li>
+<li>一份是“更差”的答案（啰嗦、跑题、格式不对、甚至不安全）。</li>
+</ul>
+<p>你希望孩子同时学到两件事：</p>
+<ol>
+<li>多学好的答案；</li>
+<li>少学坏的答案。</li>
+</ol>
+<p>听起来很简单，对吧？</p>
+<p>但很多主流对齐流程并不是一步做完，而是多阶段：</p>
+<ul>
+<li>先做 SFT（监督微调）；</li>
+<li>再做 DPO 或 RLHF 这类偏好优化；</li>
+<li>其中常常还要多一个“参考模型”或“奖励模型”；</li>
+<li>工程链路变长，显存和算力开销变大。</li>
+</ul>
+<p>这篇论文提出一个非常务实的目标：</p>
+<blockquote>
+<p>能不能把“学会好答案 + 压制坏答案”合到同一个训练目标里，而且不依赖参考模型？</p>
+</blockquote>
+<p>它给出的答案就是 <strong>ORPO（Odds Ratio Preference Optimization）</strong>。</p>
+<a id="more"></a>
+<p>ORPO 的核心思想可以一句话概括：</p>
+<ul>
+<li>主体仍然保留 SFT 的负对数似然（NLL）学习；</li>
+<li>额外加一个“基于优势比（odds ratio）的偏好项”；</li>
+<li>让模型对 chosen 回答更偏爱、对 rejected 回答更不偏爱；</li>
+<li>全过程不需要额外参考模型，尽量一体化训练。</li>
+</ul>
+<p>这看上去像“小改动”，但影响很大，因为它直击三个现实痛点：</p>
+<ul>
+<li><strong>流程复杂度痛点</strong>：少一个阶段，工程更短；</li>
+<li><strong>训练稳定性痛点</strong>：比 PPO 风格 RLHF 更容易调；</li>
+<li><strong>资源成本痛点</strong>：少一份参考模型前向，内存和 FLOPs 压力更小。</li>
+</ul>
+<p>从结果看，它不是“讲道理”，而是“拿数字说话”：</p>
+<ul>
+<li>Phi-2 (2.7B) + ORPO：AlpacaEval 1.0 到 <strong>71.80%</strong>，AlpacaEval 2.0 到 <strong>6.35%</strong>；</li>
+<li>Llama-2 (7B) + ORPO：AlpacaEval 1.0 <strong>81.26%</strong>，AlpacaEval 2.0 <strong>9.44%</strong>；</li>
+<li>Mistral-ORPO-α (7B)：<strong>87.92% / 11.33%</strong>；</li>
+<li>Mistral-ORPO-β (7B)：<strong>91.41% / 12.20%</strong>，MT-Bench <strong>7.32</strong>。</li>
+</ul>
+<p>所以我对这篇论文的第一结论是：</p>
+<blockquote>
+<p>它不是“再发明一个复杂算法”，而是把对齐训练做了“降复杂度重构”，并且效果确实强。</p>
+</blockquote>
+<hr>
+<h2 id="2-前置知识：你需要先懂哪些概念？">2. 前置知识：你需要先懂哪些概念？</h2>
+<p>为了满足“先讲前置知识，再讲技术细节”的要求，我会把底层概念拆开讲清楚。</p>
+<h3 id="2-1-SFT（监督微调）是什么？">2.1 SFT（监督微调）是什么？</h3>
+<p>SFT 可以理解成“拿标准答案手把手教模型”。</p>
+<p>假设问题是：</p>
+<blockquote>
+<p>“请用三句话解释什么是光合作用。”</p>
+</blockquote>
+<p>你给模型一个理想回答，训练时就会告诉它：</p>
+<ul>
+<li>第一个词应该更像这个；</li>
+<li>第二个词也应该更像这个；</li>
+<li>一路到整段话，都尽量贴近标注答案。</li>
+</ul>
+<p>数学上通常就是最常见的“下一词预测负对数似然”。</p>
+<p>SFT 的长处：</p>
+<ul>
+<li>很擅长“把模型拉到目标领域”；</li>
+<li>很擅长“让模型学会某类说话风格和格式”。</li>
+</ul>
+<p>SFT 的短板：</p>
+<ul>
+<li>它主要奖励“好答案”；</li>
+<li>但不一定显式惩罚“坏答案”。</li>
+</ul>
+<p>这正是 ORPO 想补上的地方。</p>
+<h3 id="2-2-偏好数据（chosen-vs-rejected）是什么？">2.2 偏好数据（chosen vs rejected）是什么？</h3>
+<p>偏好数据通常长这样：</p>
+<ul>
+<li>输入提示词 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span>；</li>
+<li>一个更优回答 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>y</mi><mi>w</mi></msub></mrow><annotation encoding="application/x-tex">y_w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>（winner/chosen）；</li>
+<li>一个更差回答 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>y</mi><mi>l</mi></msub></mrow><annotation encoding="application/x-tex">y_l</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>（loser/rejected）。</li>
+</ul>
+<p>这比单一标准答案更“贴近真实人类判断”，因为人类往往更容易判断“二选一谁更好”，而不一定每次都能写出完美金标准答案。</p>
+<p>偏好数据能教会模型的，不只是“对或错”，而是更细颗粒度的价值排序：</p>
+<ul>
+<li>更完整 vs 更敷衍；</li>
+<li>更安全 vs 更冒险；</li>
+<li>更遵循格式 vs 更随意；</li>
+<li>更有帮助 vs 更空泛。</li>
+</ul>
+<h3 id="2-3-RLHF-是什么？为什么大家又爱又怕？">2.3 RLHF 是什么？为什么大家又爱又怕？</h3>
+<p>RLHF = Reinforcement Learning from Human Feedback。</p>
+<p>典型流程：</p>
+<ol>
+<li>先 SFT；</li>
+<li>再训练奖励模型（reward model）；</li>
+<li>最后用 PPO 之类强化学习，让策略模型去“刷奖励”。</li>
+</ol>
+<p>RLHF 很强，但工程上常见痛点也很实际：</p>
+<ul>
+<li>奖励模型和真实人类偏好可能存在偏差；</li>
+<li>PPO 超参数比较敏感；</li>
+<li>训练稳定性、KL 约束、采样策略都要细调；</li>
+<li>整体链路更重，调试成本更高。</li>
+</ul>
+<p>所以业界一直在找“更轻、但效果不错”的替代或补充路线。</p>
+<h3 id="2-4-DPO-是什么？与-ORPO-是什么关系？">2.4 DPO 是什么？与 ORPO 是什么关系？</h3>
+<p>DPO（Direct Preference Optimization）通常被看作“绕开 RL inner loop”的偏好优化方式。</p>
+<p>它相比 PPO 风格 RLHF 更简洁，但在常见实践里仍有这些要素：</p>
+<ul>
+<li>先 SFT；</li>
+<li>再跑偏好优化；</li>
+<li>常常还需要参考模型参与对比。</li>
+</ul>
+<p>ORPO 与 DPO 的关系不是“谁把谁完全否掉”，更像：</p>
+<ul>
+<li>DPO：倾向于“分阶段 + 参考对比”；</li>
+<li>ORPO：倾向于“同阶段一体化 + 无参考模型”。</li>
+</ul>
+<p>从工程角度看，ORPO 的卖点是“少一个角色、少一些开销、少一段流水线”。</p>
+<h3 id="2-5-概率、优势比（odds）、优势比率（odds-ratio）">2.5 概率、优势比（odds）、优势比率（odds ratio）</h3>
+<p>先用日常解释：</p>
+<ul>
+<li>概率 0.9：模型很想生成这个答案；</li>
+<li>概率 0.1：模型不太想生成这个答案。</li>
+</ul>
+<p>论文使用的 odds 是：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mrow><mi mathvariant="normal">o</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">s</mi></mrow><mi>θ</mi></msub><mo stretchy="false">(</mo><mi>y</mi><mo>∣</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mfrac><mrow><msub><mi>P</mi><mi>θ</mi></msub><mo stretchy="false">(</mo><mi>y</mi><mo>∣</mo><mi>x</mi><mo stretchy="false">)</mo></mrow><mrow><mn>1</mn><mo>−</mo><msub><mi>P</mi><mi>θ</mi></msub><mo stretchy="false">(</mo><mi>y</mi><mo>∣</mo><mi>x</mi><mo stretchy="false">)</mo></mrow></mfrac></mrow><annotation encoding="application/x-tex">\mathrm{odds}_\theta(y\mid x)=\frac{P_\theta(y\mid x)}{1-P_\theta(y\mid x)}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord"><span class="mord mathrm">odds</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.363em;vertical-align:-0.936em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>直觉上它表示：</p>
+<ul>
+<li>“生成这个答案”相对于“不给这个答案”的倾向强度。</li>
+</ul>
+<p>再比较 chosen 与 rejected，就得到 odds ratio：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mrow><mi mathvariant="normal">O</mi><mi mathvariant="normal">R</mi></mrow><mi>θ</mi></msub><mo stretchy="false">(</mo><msub><mi>y</mi><mi>w</mi></msub><mo separator="true">,</mo><msub><mi>y</mi><mi>l</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mfrac><mrow><msub><mrow><mi mathvariant="normal">o</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">s</mi></mrow><mi>θ</mi></msub><mo stretchy="false">(</mo><msub><mi>y</mi><mi>w</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="false">)</mo></mrow><mrow><msub><mrow><mi mathvariant="normal">o</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">s</mi></mrow><mi>θ</mi></msub><mo stretchy="false">(</mo><msub><mi>y</mi><mi>l</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="false">)</mo></mrow></mfrac></mrow><annotation encoding="application/x-tex">\mathrm{OR}_\theta(y_w,y_l\mid x)=
+\frac{\mathrm{odds}_\theta(y_w\mid x)}{\mathrm{odds}_\theta(y_l\mid x)}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord"><span class="mord mathrm">OR</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.363em;vertical-align:-0.936em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord"><span class="mord mathrm">odds</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord"><span class="mord mathrm">odds</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>它本质上在问：</p>
+<blockquote>
+<p>模型到底有多偏向好答案，而不是坏答案？</p>
+</blockquote>
+<h3 id="2-6-常见评测：AlpacaEval-MT-Bench-IFEval">2.6 常见评测：AlpacaEval / MT-Bench / IFEval</h3>
+<p>论文用到的核心评测你可以这样记：</p>
+<ul>
+<li><strong>AlpacaEval</strong>：偏单轮问答偏好；</li>
+<li><strong>MT-Bench</strong>：偏多轮对话能力，含写作、推理、数学、编码等子类；</li>
+<li><strong>IFEval</strong>：更看重“是否严格按指令约束生成”。</li>
+</ul>
+<p>另外它还用了 reward-model win rate，表示“让同一个奖励模型当裁判，ORPO vs 其他方法谁赢得更多”。</p>
+<p>这类指标不是完美真理，但能提供额外侧面证据。</p>
+<hr>
+<h2 id="3-论文提出的问题：为什么“只做-SFT”不够？">3. 论文提出的问题：为什么“只做 SFT”不够？</h2>
+<p>这篇论文最关键的洞察之一是：</p>
+<blockquote>
+<p>SFT 很重要，但仅有 SFT 会出现“好坏都一起涨概率”的问题。</p>
+</blockquote>
+<h3 id="3-1-从损失函数角度看-SFT-的盲区">3.1 从损失函数角度看 SFT 的盲区</h3>
+<p>标准交叉熵/NLL 主要做一件事：</p>
+<ul>
+<li>把 chosen 参考答案的 token 概率抬高。</li>
+</ul>
+<p>但它没有天然地、同等明确地做另一件事：</p>
+<ul>
+<li>把 rejected 答案的概率压低。</li>
+</ul>
+<p>在很多偏好任务里，chosen 和 rejected 都是“看起来像正常回答”的文本，只是 quality/faithfulness/safety 有差别。</p>
+<p>所以模型在学“领域语言风格”时，容易把两者都学会一些。</p>
+<h3 id="3-2-论文里的实证（Figure-3）">3.2 论文里的实证（Figure 3）</h3>
+<p>作者在 HH-RLHF 上做了一个很关键的观察实验：</p>
+<ul>
+<li>用 OPT-350M 只按 chosen 做 SFT；</li>
+<li>跟踪训练过程中 chosen 与 rejected 的 log probability。</li>
+</ul>
+<p>结果：两条曲线都上升。</p>
+<p>这说明 SFT 的确完成了“进入目标域”的任务，但并没有充分构建“优劣分离边界”。</p>
+<p>这就是 ORPO 出场的理由。</p>
+<h3 id="3-3-为什么这件事在对齐场景特别严重？">3.3 为什么这件事在对齐场景特别严重？</h3>
+<p>因为对齐不是“垃圾文本 vs 好文本”的粗分类，而是细粒度偏好比较：</p>
+<ul>
+<li>哪个更有帮助；</li>
+<li>哪个更诚实；</li>
+<li>哪个更遵守限制；</li>
+<li>哪个更稳妥。</li>
+</ul>
+<p>这种问题本质是“排序问题”，不是单点拟合问题。</p>
+<p>SFT 负责“把模型带到这个任务宇宙”，ORPO 负责“在这个宇宙里建立偏好方向”。</p>
+<hr>
+<h2 id="4-ORPO-方法细节（逐步推导，尽量不跳步）">4. ORPO 方法细节（逐步推导，尽量不跳步）</h2>
+<p>这一节进入正式技术。</p>
+<h3 id="4-1-序列平均对数似然">4.1 序列平均对数似然</h3>
+<p>论文先定义了输出序列的平均 log-likelihood：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>log</mi><mo>⁡</mo><msub><mi>P</mi><mi>θ</mi></msub><mo stretchy="false">(</mo><mi>y</mi><mo>∣</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mfrac><mn>1</mn><mi>m</mi></mfrac><munderover><mo>∑</mo><mrow><mi>t</mi><mo>=</mo><mn>1</mn></mrow><mi>m</mi></munderover><mi>log</mi><mo>⁡</mo><msub><mi>P</mi><mi>θ</mi></msub><mo stretchy="false">(</mo><msub><mi>y</mi><mi>t</mi></msub><mo>∣</mo><mi>x</mi><mo separator="true">,</mo><msub><mi>y</mi><mrow><mo>&lt;</mo><mi>t</mi></mrow></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\log P_\theta(y\mid x)=\frac{1}{m}\sum_{t=1}^{m}\log P_\theta(y_t\mid x,y_{&lt;t})
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">lo<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.9185em;vertical-align:-1.2671em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">m</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.6514em;"><span style="top:-1.8829em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">m</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.2671em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">lo<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">x</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mrel mtight">&lt;</span><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1774em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span></span></p>
+<p>这里 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi></mrow><annotation encoding="application/x-tex">m</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">m</span></span></span></span> 是回答长度。这个式子可以理解为：</p>
+<ul>
+<li>对每个 token 的“预测把握度”做平均；</li>
+<li>平均值越大，代表模型越“相信自己会这么回答”。</li>
+</ul>
+<h3 id="4-2-定义-odds">4.2 定义 odds</h3>
+<p>论文定义：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mrow><mi mathvariant="normal">o</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">s</mi></mrow><mi>θ</mi></msub><mo stretchy="false">(</mo><mi>y</mi><mo>∣</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mfrac><mrow><msub><mi>P</mi><mi>θ</mi></msub><mo stretchy="false">(</mo><mi>y</mi><mo>∣</mo><mi>x</mi><mo stretchy="false">)</mo></mrow><mrow><mn>1</mn><mo>−</mo><msub><mi>P</mi><mi>θ</mi></msub><mo stretchy="false">(</mo><mi>y</mi><mo>∣</mo><mi>x</mi><mo stretchy="false">)</mo></mrow></mfrac></mrow><annotation encoding="application/x-tex">\mathrm{odds}_\theta(y\mid x)=\frac{P_\theta(y\mid x)}{1-P_\theta(y\mid x)}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord"><span class="mord mathrm">odds</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.363em;vertical-align:-0.936em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>当 odds 很大时，模型明显偏向生成该答案。</p>
+<p>当 odds 接近 1 时，模型偏向不明显。</p>
+<h3 id="4-3-定义-chosen-rejected-的-odds-ratio">4.3 定义 chosen/rejected 的 odds ratio</h3>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mrow><mi mathvariant="normal">O</mi><mi mathvariant="normal">R</mi></mrow><mi>θ</mi></msub><mo stretchy="false">(</mo><msub><mi>y</mi><mi>w</mi></msub><mo separator="true">,</mo><msub><mi>y</mi><mi>l</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mfrac><mrow><msub><mrow><mi mathvariant="normal">o</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">s</mi></mrow><mi>θ</mi></msub><mo stretchy="false">(</mo><msub><mi>y</mi><mi>w</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="false">)</mo></mrow><mrow><msub><mrow><mi mathvariant="normal">o</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">s</mi></mrow><mi>θ</mi></msub><mo stretchy="false">(</mo><msub><mi>y</mi><mi>l</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="false">)</mo></mrow></mfrac></mrow><annotation encoding="application/x-tex">\mathrm{OR}_\theta(y_w,y_l\mid x)=
+\frac{\mathrm{odds}_\theta(y_w\mid x)}{\mathrm{odds}_\theta(y_l\mid x)}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord"><span class="mord mathrm">OR</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.363em;vertical-align:-0.936em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord"><span class="mord mathrm">odds</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord"><span class="mord mathrm">odds</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>如果这个值越大，说明“好答案相对坏答案”的优势越明显。</p>
+<h3 id="4-4-ORPO-的总目标函数">4.4 ORPO 的总目标函数</h3>
+<p>核心式子是：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi mathvariant="script">L</mi><mrow><mi mathvariant="normal">O</mi><mi mathvariant="normal">R</mi><mi mathvariant="normal">P</mi><mi mathvariant="normal">O</mi></mrow></msub><mo>=</mo><msub><mi mathvariant="double-struck">E</mi><mrow><mo stretchy="false">(</mo><mi>x</mi><mo separator="true">,</mo><msub><mi>y</mi><mi>w</mi></msub><mo separator="true">,</mo><msub><mi>y</mi><mi>l</mi></msub><mo stretchy="false">)</mo></mrow></msub><mrow><mo fence="true">[</mo><msub><mi mathvariant="script">L</mi><mrow><mi mathvariant="normal">S</mi><mi mathvariant="normal">F</mi><mi mathvariant="normal">T</mi></mrow></msub><mo>+</mo><mi>λ</mi><mtext> </mtext><msub><mi mathvariant="script">L</mi><mrow><mi mathvariant="normal">O</mi><mi mathvariant="normal">R</mi></mrow></msub><mo fence="true">]</mo></mrow></mrow><annotation encoding="application/x-tex">\mathcal{L}_{\mathrm{ORPO}}=
+\mathbb{E}_{(x,y_w,y_l)}\left[\mathcal{L}_{\mathrm{SFT}} + \lambda\,\mathcal{L}_{\mathrm{OR}}\right]
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathcal">L</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathrm mtight">ORPO</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1052em;vertical-align:-0.3552em;"></span><span class="mord"><span class="mord mathbb">E</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.5198em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathnormal mtight">x</span><span class="mpunct mtight">,</span><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1645em;"><span style="top:-2.357em;margin-left:-0.0359em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span><span class="mpunct mtight">,</span><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.3488em;margin-left:-0.0359em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1512em;"><span></span></span></span></span></span></span><span class="mclose mtight">)</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3552em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;">[</span><span class="mord"><span class="mord mathcal">L</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathrm mtight">SFT</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal">λ</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathcal">L</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathrm mtight">OR</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose delimcenter" style="top:0em;">]</span></span></span></span></span></span></p>
+<p>其中</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi mathvariant="script">L</mi><mrow><mi mathvariant="normal">S</mi><mi mathvariant="normal">F</mi><mi mathvariant="normal">T</mi></mrow></msub></mrow><annotation encoding="application/x-tex">\mathcal{L}_{\mathrm{SFT}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathcal">L</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathrm mtight">SFT</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>：普通 NLL（稳住领域适配能力）；</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi mathvariant="script">L</mi><mrow><mi mathvariant="normal">O</mi><mi mathvariant="normal">R</mi></mrow></msub></mrow><annotation encoding="application/x-tex">\mathcal{L}_{\mathrm{OR}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathcal">L</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathrm mtight">OR</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>：偏好分离项（拉开 chosen 与 rejected）；</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>λ</mi></mrow><annotation encoding="application/x-tex">\lambda</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">λ</span></span></span></span>：两者平衡系数。</li>
+</ul>
+<p>偏好项写作：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi mathvariant="script">L</mi><mrow><mi mathvariant="normal">O</mi><mi mathvariant="normal">R</mi></mrow></msub><mo>=</mo><mo>−</mo><mi>log</mi><mo>⁡</mo><mi>σ</mi><mrow><mo fence="true">(</mo><mi>log</mi><mo>⁡</mo><mfrac><mrow><msub><mrow><mi mathvariant="normal">o</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">s</mi></mrow><mi>θ</mi></msub><mo stretchy="false">(</mo><msub><mi>y</mi><mi>w</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="false">)</mo></mrow><mrow><msub><mrow><mi mathvariant="normal">o</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">d</mi><mi mathvariant="normal">s</mi></mrow><mi>θ</mi></msub><mo stretchy="false">(</mo><msub><mi>y</mi><mi>l</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="false">)</mo></mrow></mfrac><mo fence="true">)</mo></mrow></mrow><annotation encoding="application/x-tex">\mathcal{L}_{\mathrm{OR}} = -\log \sigma\left(
+\log \frac{\mathrm{odds}_\theta(y_w\mid x)}{\mathrm{odds}_\theta(y_l\mid x)}
+\right)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathcal">L</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathrm mtight">OR</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="mord">−</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">lo<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">(</span></span><span class="mop">lo<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord"><span class="mord mathrm">odds</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord"><span class="mord mathrm">odds</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">)</span></span></span></span></span></span></span></p>
+<p>它的直觉很清楚：</p>
+<ul>
+<li>当 chosen 相对 rejected 的优势比已经很高时，损失自然变小；</li>
+<li>当优势不足时，损失变大，推动模型继续拉开间距。</li>
+</ul>
+<h3 id="4-5-为什么这种“主项-轻偏好项”结构有吸引力？">4.5 为什么这种“主项 + 轻偏好项”结构有吸引力？</h3>
+<p>我认为它有三层优点：</p>
+<p>第一层，<strong>不抛弃 SFT 的价值</strong>。</p>
+<p>很多工程里，SFT 是“把模型教成人话助理”的关键步骤。ORPO 不是否定 SFT，而是给它加方向盘。</p>
+<p>第二层，<strong>偏好信号是相对式，而非绝对式</strong>。</p>
+<p>实际标注中，绝对分数难统一；二选一偏好更稳定。ORPO 直接拥抱这种数据结构。</p>
+<p>第三层，<strong>更接近“可维护工程目标函数”</strong>。</p>
+<p>没有额外参考模型参与训练图，部署和调参都更干净。</p>
+<h3 id="4-6-梯度解释（直觉版）">4.6 梯度解释（直觉版）</h3>
+<p>论文给出梯度分解，直觉上可以记成：</p>
+<ul>
+<li>一部分像“惩罚门控”：当模型还偏向 rejected 时，会更强地施压；</li>
+<li>另一部分像“对比驱动”：同时推动 chosen 增强、rejected 降低。</li>
+</ul>
+<p>这正对应了论文想修复的 Figure 3 问题：</p>
+<ul>
+<li>不是只把 chosen 往上推；</li>
+<li>还要有机制防止 rejected 一起被抬高。</li>
+</ul>
+<hr>
+<h2 id="5-关键技术讨论：为什么论文坚持用-odds-ratio，而不是-probability-ratio？">5. 关键技术讨论：为什么论文坚持用 odds ratio，而不是 probability ratio？</h2>
+<p>这是 ORPO 论文里很值得细读的一块。</p>
+<h3 id="5-1-看起来像“形式差异”，其实是“优化几何差异”">5.1 看起来像“形式差异”，其实是“优化几何差异”</h3>
+<p>论文第 7 节给出的核心观点是：</p>
+<ul>
+<li>在“偏好项直接并入 SFT”的训练语境里；</li>
+<li>概率比（probability ratio）可能导致过激的抑制行为；</li>
+<li>odds ratio 在这里更平稳、更合适。</li>
+</ul>
+<p>这不是说 probability ratio 永远不好，而是说在这个特定组合（SFT + 偏好）里，odds ratio 的梯度形态更适配。</p>
+<h3 id="5-2-Figure-6-的证据：分布范围与损失作用方式">5.2 Figure 6 的证据：分布范围与损失作用方式</h3>
+<p>Figure 6 把 log probability ratio 与 log odds ratio 的采样分布画出来。</p>
+<p>论文解释是：</p>
+<ul>
+<li>若直接把更“尖锐”的 ratio 输入 log-sigmoid 偏好损失，可能导致对 rejected 的抑制过猛；</li>
+<li>在模型尚处于域适配过程中，这种过猛抑制会伤害整体生成质量。</li>
+</ul>
+<p>换句话说：</p>
+<ul>
+<li>ORPO 不是只追求“把 rejected 压得越低越好”；</li>
+<li>而是追求“在保持 chosen 学习稳定的同时，建立适度但有效的偏好间隔”。</li>
+</ul>
+<h3 id="5-3-Figure-7-Figure-8：训练轨迹更健康">5.3 Figure 7 / Figure 8：训练轨迹更健康</h3>
+<p>论文展示了 ORPO 训练中：</p>
+<ul>
+<li>chosen 的概率趋势保持可用；</li>
+<li>rejected 的概率逐步下降；</li>
+<li>odds ratio 持续上升。</li>
+</ul>
+<p>这组图和 Figure 3 构成前后呼应：</p>
+<ul>
+<li>Figure 3：只做 SFT 会“两边都涨”；</li>
+<li>Figure 7/8：ORPO 可以把优劣方向拉开。</li>
+</ul>
+<p>我认为这组证据逻辑链是完整的。</p>
+<hr>
+<h2 id="6-实验设置：作者到底怎么做实验的？">6. 实验设置：作者到底怎么做实验的？</h2>
+<p>为了写得可复现，我把论文给出的关键设置尽量整理成“可以执行的理解”。</p>
+<h3 id="6-1-模型规模覆盖">6.1 模型规模覆盖</h3>
+<p>论文覆盖了这些模型族：</p>
+<ul>
+<li>OPT：125M / 350M / 1.3B；</li>
+<li>Phi-2：2.7B；</li>
+<li>Llama-2：7B；</li>
+<li>Mistral：7B。</li>
+</ul>
+<p>这意味着它不是“只在一个模型上试出一个点”，而是有跨尺度与跨家族验证。</p>
+<h3 id="6-2-数据集与清洗">6.2 数据集与清洗</h3>
+<p>使用数据集：</p>
+<ul>
+<li>HH-RLHF；</li>
+<li>UltraFeedback（二值偏好版）；</li>
+<li>还用了 cleaned UltraFeedback 版本（用于更强 Mistral 结果）。</li>
+</ul>
+<p>过滤规则包括：</p>
+<ul>
+<li>chosen/rejected 相同的样本去掉；</li>
+<li>chosen 或 rejected 为空的样本去掉；</li>
+<li>过长输入做截断或过滤。</li>
+</ul>
+<p>这些看起来“平淡无奇”，但对齐训练里这类清洗往往决定下限。</p>
+<h3 id="6-3-训练硬件与并行实现">6.3 训练硬件与并行实现</h3>
+<p>论文给出了较具体的工程信息：</p>
+<ul>
+<li>FlashAttention-2 加速；</li>
+<li>OPT 与 Phi-2 用 DeepSpeed ZeRO-2；</li>
+<li>Llama-2 / Mistral 用 FSDP；</li>
+<li>7B 用 4 张 A100；</li>
+<li>2.7B 用 2 张 A100；</li>
+<li>小模型实验用 4 张 A6000。</li>
+</ul>
+<p>从这个信息看，实验并非“不可触及大厂专属集群”。</p>
+<h3 id="6-4-训练参数（重点）">6.4 训练参数（重点）</h3>
+<p><strong>SFT：</strong></p>
+<ul>
+<li>lr = 1e-5；</li>
+<li>epoch = 1。</li>
+</ul>
+<p><strong>DPO：</strong></p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mo>=</mo><mn>0.1</mn></mrow><annotation encoding="application/x-tex">\beta = 0.1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05278em;">β</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.1</span></span></span></span>；</li>
+<li>lr = 5e-6；</li>
+<li>epoch = 3（按评估损失选最好 checkpoint）。</li>
+</ul>
+<p><strong>PPO（RLHF）</strong>（Table 5）：</p>
+<ul>
+<li>ppo_epoch = 4；</li>
+<li>init_kl_coef = 0.1；</li>
+<li>horizon = 2000；</li>
+<li>batch_size = 64；</li>
+<li>mini_batch_size = 8；</li>
+<li>output_min_length = 128；</li>
+<li>output_max_length = 512；</li>
+<li>lr = 1e-5；</li>
+<li>gamma = 0.99。</li>
+</ul>
+<p><strong>ORPO：</strong></p>
+<ul>
+<li>lr = 8e-6；</li>
+<li>epoch = 10；</li>
+<li>关键可调项是 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>λ</mi></mrow><annotation encoding="application/x-tex">\lambda</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">λ</span></span></span></span>。</li>
+</ul>
+<p>这组对比非常能体现 ORPO 的工程定位：</p>
+<ul>
+<li>目标不是“零超参”；</li>
+<li>目标是“尽量在保有效果的前提下缩短链路和调参面”。</li>
+</ul>
+<hr>
+<h2 id="7-结果详解：不仅看“赢了”，还要看“怎么赢、赢在哪”">7. 结果详解：不仅看“赢了”，还要看“怎么赢、赢在哪”</h2>
+<h3 id="7-1-Table-1：单轮指令跟随能力">7.1 Table 1：单轮指令跟随能力</h3>
+<p>我先把关键数字集中写一下。</p>
+<p>Phi-2 系：</p>
+<ul>
+<li>Phi-2 + SFT：48.37% / 0.11%；</li>
+<li>Phi-2 + SFT + DPO：50.63% / 0.78%；</li>
+<li>Phi-2 + ORPO：<strong>71.80% / 6.35%</strong>。</li>
+</ul>
+<p>Llama 系：</p>
+<ul>
+<li>Llama-2 Chat 7B：71.34% / 4.96%；</li>
+<li>Llama-2 Chat 13B：81.09% / 7.70%；</li>
+<li>Llama-2 + ORPO 7B：<strong>81.26% / 9.44%</strong>。</li>
+</ul>
+<p>Mistral 系：</p>
+<ul>
+<li>Zephyr-α：85.76% / 8.35%；</li>
+<li>Zephyr-β：90.60% / 10.99%；</li>
+<li>Mistral-ORPO-α：<strong>87.92% / 11.33%</strong>；</li>
+<li>Mistral-ORPO-β：<strong>91.41% / 12.20%</strong>。</li>
+</ul>
+<p>这组数字告诉我们：</p>
+<ul>
+<li>ORPO 在多模型族上并非偶然增益；</li>
+<li>在 7B 档位，结果很有竞争力；</li>
+<li>数据清洗（β 版本）会显著影响上限。</li>
+</ul>
+<h3 id="7-2-Figure-4-Figure-12：MT-Bench-多轮能力">7.2 Figure 4 / Figure 12：MT-Bench 多轮能力</h3>
+<p>论文报告：</p>
+<ul>
+<li>Mistral-ORPO-α：7.23；</li>
+<li>Mistral-ORPO-β：7.32。</li>
+</ul>
+<p>并给出分类项分数（写作、角色扮演、人文、推理、数学、编码等）。</p>
+<p>论文也很诚实地指出：</p>
+<ul>
+<li>在 coding/math 等硬约束问题上仍有短板；</li>
+<li>可能与训练数据覆盖不足有关。</li>
+</ul>
+<p>这说明 ORPO 不是“万能键”，而是偏好对齐的一把高性价比工具。</p>
+<h3 id="7-3-Table-6：IFEval">7.3 Table 6：IFEval</h3>
+<p>Mistral-ORPO-α：</p>
+<ul>
+<li>Prompt-Strict 0.5009；</li>
+<li>Prompt-Loose 0.5083；</li>
+<li>Inst-Strict 0.5995；</li>
+<li>Inst-Loose 0.6163。</li>
+</ul>
+<p>Mistral-ORPO-β：</p>
+<ul>
+<li>Prompt-Strict 0.5287；</li>
+<li>Prompt-Loose 0.5564；</li>
+<li>Inst-Strict 0.6355；</li>
+<li>Inst-Loose 0.6619。</li>
+</ul>
+<p>说明：</p>
+<ul>
+<li>更干净偏好数据不仅提升“聊天讨喜度”，也提升“按指令执行度”。</li>
+</ul>
+<h3 id="7-4-Tables-2-3：reward-model-win-rate">7.4 Tables 2/3：reward model win rate</h3>
+<p>在 HH-RLHF 和 UltraFeedback 上，ORPO 相比 SFT、DPO、PPO 的胜率给出了一条关键趋势：</p>
+<ul>
+<li>ORPO 稳定优于 SFT；</li>
+<li>对 PPO 往往也有优势；</li>
+<li>对 DPO 的胜率随着模型规模增大而变强（尤其在 1.3B 上更明显）。</li>
+</ul>
+<p>这点非常关键，因为它暗示 ORPO 不是“小模型玩具”，而可能在更大模型上更有潜力。</p>
+<h3 id="7-5-Figure-5-Figure-11：奖励分布">7.5 Figure 5 / Figure 11：奖励分布</h3>
+<p>图里显示不同训练法对应输出的奖励分布位置。</p>
+<p>论文结论是：</p>
+<ul>
+<li>ORPO 分布整体更偏右（更高奖励期望）；</li>
+<li>PPO 分布出现一些异常形态，可能对应 reward mismatch 和 RL 不稳定问题。</li>
+</ul>
+<p>我个人的保守解读：</p>
+<ul>
+<li>这类图很有说明力，但仍依赖奖励模型本身；</li>
+<li>应与人工评测和其他基准联合看，不应单独绝对化。</li>
+</ul>
+<h3 id="7-6-Table-4：多样性">7.6 Table 4：多样性</h3>
+<p>论文把多样性分为两类：</p>
+<ul>
+<li>per-input diversity（同一问题多次采样的差异）；</li>
+<li>across-input diversity（不同问题间回答风格差异）。</li>
+</ul>
+<p>ORPO 在同输入场景下常表现出更高相似度（即更低随机发散）。</p>
+<p>这不一定是坏事。</p>
+<p>在助手产品里，我们往往希望：</p>
+<ul>
+<li>同一个问题别每次人格漂移太大；</li>
+<li>不同问题仍能体现任务特异性。</li>
+</ul>
+<p>从论文结果看，ORPO 更接近这种“稳而不死板”的目标。</p>
+<hr>
+<h2 id="8-消融实验（λ）非常重要：它决定你要的助手性格">8. 消融实验（λ）非常重要：它决定你要的助手性格</h2>
+<p>很多人看论文只看主表，但我认为 ORPO 论文里最实用的信息之一就是 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>λ</mi></mrow><annotation encoding="application/x-tex">\lambda</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">λ</span></span></span></span> 消融。</p>
+<h3 id="8-1-Figure-9：不同-λ-的概率轨迹">8.1 Figure 9：不同 λ 的概率轨迹</h3>
+<p>论文测了 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>λ</mi><mo>∈</mo><mo stretchy="false">{</mo><mn>0.1</mn><mo separator="true">,</mo><mn>0.5</mn><mo separator="true">,</mo><mn>1.0</mn><mo stretchy="false">}</mo></mrow><annotation encoding="application/x-tex">\lambda\in\{0.1,0.5,1.0\}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7335em;vertical-align:-0.0391em;"></span><span class="mord mathnormal">λ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">{</span><span class="mord">0.1</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">0.5</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1.0</span><span class="mclose">}</span></span></span></span>，观察 chosen/rejected 的 log probability 变化。</p>
+<p>大体趋势：</p>
+<ul>
+<li>λ 小：更多在抬 chosen，rejected 压制较弱；</li>
+<li>λ 中：抬 chosen 与压 rejected 同时发生；</li>
+<li>λ 大：分离更激进，可能出现“过度偏好化”。</li>
+</ul>
+<h3 id="8-2-Figure-10：不同-λ-的-MT-Bench-分类影响">8.2 Figure 10：不同 λ 的 MT-Bench 分类影响</h3>
+<p>论文指出：</p>
+<ul>
+<li>更高 λ 在开放式生成（如人文、角色扮演）可能更讨喜；</li>
+<li>但在数学、抽取、强确定性推理中可能变差。</li>
+</ul>
+<p>这条结论对工程极有价值，因为它告诉我们：</p>
+<blockquote>
+<p>ORPO 不是“一个固定最佳 λ”，而是一个要按产品目标调优的家族方法。</p>
+</blockquote>
+<p>如果你的产品是“聊天陪伴型”，可能偏大 λ；</p>
+<p>如果你的产品是“工具/推理型”，可能偏中小 λ。</p>
+<h3 id="8-3-我给实践者的-λ-调参建议">8.3 我给实践者的 λ 调参建议</h3>
+<p>从论文信息和常识结合，我建议：</p>
+<ul>
+<li>第一步：先用 0.1 或 0.2 起跑，确保基础能力不塌；</li>
+<li>第二步：看 deterministic benchmark（数学、抽取、代码）是否下降；</li>
+<li>第三步：若开放式质量不足，再逐步加 λ；</li>
+<li>第四步：总是按“业务任务分布”选 λ，而非只看一个总分。</li>
+</ul>
+<hr>
+<h2 id="9-这篇论文真正的贡献在哪里？（我的观点）">9. 这篇论文真正的贡献在哪里？（我的观点）</h2>
+<p>我不认为 ORPO 的贡献只是“改了个损失写法”。</p>
+<p>我认为它有四个更本质的价值。</p>
+<h3 id="9-1-贡献一：重新定义-SFT-在对齐中的地位">9.1 贡献一：重新定义 SFT 在对齐中的地位</h3>
+<p>很多实践里，SFT 被当作必须但低价值的“热身”。</p>
+<p>ORPO 论文把它重新放回中心：</p>
+<ul>
+<li>SFT 负责域适配与风格基础；</li>
+<li>偏好项负责优劣分离；</li>
+<li>二者在同一目标里协同，而不是强行拆阶段。</li>
+</ul>
+<p>这在方法论上非常重要。</p>
+<h3 id="9-2-贡献二：把“偏好优化”变成更可维护工程对象">9.2 贡献二：把“偏好优化”变成更可维护工程对象</h3>
+<p>从平台工程角度看，少一个参考模型意味着：</p>
+<ul>
+<li>更省显存；</li>
+<li>更省前向计算；</li>
+<li>训练图更简单；</li>
+<li>线上/线下调试负担更低。</li>
+</ul>
+<p>很多时候，能稳定跑起来比理论上最优更关键。</p>
+<h3 id="9-3-贡献三：给出较完整的“证据链”">9.3 贡献三：给出较完整的“证据链”</h3>
+<p>这篇论文不是只有 leaderboard 打榜，而是把论证链条基本闭合了：</p>
+<ul>
+<li>先给问题现象（SFT 双升）;</li>
+<li>再给方法结构（ORPO）;</li>
+<li>再给理论讨论（为何 odds ratio）;</li>
+<li>再给主结果 + 控制实验 + 消融 + 分布图 + 多样性图。</li>
+</ul>
+<p>我认为这比“只给一个总分”更可信。</p>
+<h3 id="9-4-贡献四：对开源模型后训练特别实用">9.4 贡献四：对开源模型后训练特别实用</h3>
+<p>如果你是中小团队，没有超大预算，也想把 2B/7B 开源底座做成可用助手，ORPO 的价值很直接：</p>
+<ul>
+<li>工程负担可控；</li>
+<li>结果有竞争力；</li>
+<li>数据质量提升时，收益明显。</li>
+</ul>
+<hr>
+<h2 id="10-局限性与边界条件（必须讲清楚）">10. 局限性与边界条件（必须讲清楚）</h2>
+<p>高质量评审不能只夸优点。下面这些边界我认为必须明确。</p>
+<h3 id="10-1-模型规模上限仍有限">10.1 模型规模上限仍有限</h3>
+<p>核心亮点在 7B 级别非常强，但还不是“超大规模商业闭源模型”全域验证。</p>
+<p>所以我们不能把“在这篇论文里 ORPO 很好”直接推导成“任何场景 ORPO 都最优”。</p>
+<h3 id="10-2-评测裁判仍以模型判分为主">10.2 评测裁判仍以模型判分为主</h3>
+<p>AlpacaEval、MT-Bench、reward-model win rate 都有“模型裁判”成分。</p>
+<p>这在学术上很常见、也很有用，但仍不是完整人工盲测。最终产品上线前应补充人工真实任务评估。</p>
+<h3 id="10-3-ORPO-并没有减少对偏好数据质量的依赖">10.3 ORPO 并没有减少对偏好数据质量的依赖</h3>
+<p>它减少的是“训练流程复杂度”，不是“数据复杂度”。</p>
+<p>如果偏好数据本身不干净、偏差大，ORPO 同样会被喂偏。</p>
+<h3 id="10-4-λ-设置错误会带来能力侧偏">10.4 λ 设置错误会带来能力侧偏</h3>
+<p>论文消融已经显示：</p>
+<ul>
+<li>λ 过大可能伤害确定性任务；</li>
+<li>λ 过小可能优劣分离不足。</li>
+</ul>
+<p>所以 ORPO 需要按任务分布调参，而不是“一键默认”。</p>
+<h3 id="10-5-coding-math-短板提醒">10.5 coding/math 短板提醒</h3>
+<p>论文自己在 MT-Bench 分类里也承认编码和数学相对弱。</p>
+<p>这提醒我们：</p>
+<ul>
+<li>ORPO 不等于代码专家训练；</li>
+<li>如果业务目标是代码代理或数学推理，仍需额外针对性数据与目标设计。</li>
+</ul>
+<hr>
+<h2 id="11-可复现与落地建议（给工程团队的清单）">11. 可复现与落地建议（给工程团队的清单）</h2>
+<p>这一节我尽量写成“看完能执行”的清单。</p>
+<h3 id="11-1-最小可执行-ORPO-流程">11.1 最小可执行 ORPO 流程</h3>
+<ol>
+<li>准备基础模型（如 2.7B/7B）。</li>
+<li>准备 pairwise 偏好数据：prompt + chosen + rejected。</li>
+<li>建立 SFT 主损失（NLL on chosen）。</li>
+<li>加入 OR 偏好项，系数设为 λ。</li>
+<li>训练中同时监控：
+<ul>
+<li>chosen/rejected log probability；</li>
+<li>训练/验证损失；</li>
+<li>关键 benchmark 指标。</li>
+</ul>
+</li>
+<li>做 λ 小范围网格搜索（例如 0.1 / 0.2 / 0.5 / 1.0）。</li>
+<li>评估时分开看：
+<ul>
+<li>开放式任务；</li>
+<li>确定性任务。</li>
+</ul>
+</li>
+</ol>
+<h3 id="11-2-训练监控建议">11.2 训练监控建议</h3>
+<p>我建议每次都画四条曲线：</p>
+<ul>
+<li>chosen log prob 均值；</li>
+<li>rejected log prob 均值；</li>
+<li>二者差值（margin）；</li>
+<li>下游验证集表现。</li>
+</ul>
+<p>如果看到“chosen 与 rejected 同时一起上升”，说明又回到 Figure 3 风险。</p>
+<p>如果看到“rejected 急速下降、chosen 也被拖垮”，说明 λ 可能太大或数据分布有问题。</p>
+<h3 id="11-3-数据质量建议（比算法还重要）">11.3 数据质量建议（比算法还重要）</h3>
+<p>建议至少做这些处理：</p>
+<ul>
+<li>去重与近重复清理；</li>
+<li>明显错误标注对抽检；</li>
+<li>prompt 长度与回答长度分桶检查；</li>
+<li>过滤空回答、极短无效回答；</li>
+<li>统一模板化（系统提示、用户提示、回答格式一致）。</li>
+</ul>
+<p>论文中 α/β 版本差异已经证明：</p>
+<blockquote>
+<p>数据干净度提升会显著放大 ORPO 效果。</p>
+</blockquote>
+<h3 id="11-4-什么时候优先尝试-ORPO？">11.4 什么时候优先尝试 ORPO？</h3>
+<p>我建议在以下条件下优先尝试：</p>
+<ul>
+<li>你已有中等质量偏好数据；</li>
+<li>你不想维护重型 RLHF 管线；</li>
+<li>你在资源敏感环境下做后训练；</li>
+<li>你希望快速迭代到一个“可用且稳定”的助手版本。</li>
+</ul>
+<h3 id="11-5-什么时候仍考虑-DPO-RLHF？">11.5 什么时候仍考虑 DPO/RLHF？</h3>
+<p>如果你已有成熟 RLHF 平台且团队对其很熟，或者你在做更复杂策略约束，DPO/RLHF 仍是合理选择。</p>
+<p>ORPO 的价值不在“消灭所有其他方法”，而在“给出一条高性价比主干路线”。</p>
+<hr>
+<h2 id="12-图表导读（满足“证据讨论”要求）">12. 图表导读（满足“证据讨论”要求）</h2>
+<p>下面我给出一个“读图读表路线图”，每项都说清楚为什么重要。</p>
+<h3 id="12-1-Figure-1（AlpacaEval-总览柱状图）">12.1 Figure 1（AlpacaEval 总览柱状图）</h3>
+<p>为什么看：</p>
+<ul>
+<li>一眼看 ORPO 与主流对比位次；</li>
+<li>支撑“7B 级别竞争力”论点。</li>
+</ul>
+<p>重点看：</p>
+<ul>
+<li>Mistral-ORPO-β 到 12.20%（AlpacaEval 2.0）；</li>
+<li>与 Zephyr/Llama-chat 的相对位置。</li>
+</ul>
+<h3 id="12-2-Figure-2（RLHF-DPO-ORPO-结构对比示意）">12.2 Figure 2（RLHF/DPO/ORPO 结构对比示意）</h3>
+<p>为什么看：</p>
+<ul>
+<li>方法本体并非神秘公式，而是流程重构；</li>
+<li>这张图把“无参考模型的一体化”说透。</li>
+</ul>
+<p>重点看：</p>
+<ul>
+<li>ORPO 把偏好项直接并入 NLL 路径。</li>
+</ul>
+<h3 id="12-3-Figure-3（SFT-下-chosen-rejected-概率轨迹）">12.3 Figure 3（SFT 下 chosen/rejected 概率轨迹）</h3>
+<p>为什么看：</p>
+<ul>
+<li>是问题定义核心证据；</li>
+<li>说明“只学 chosen”可能不够。</li>
+</ul>
+<p>重点看：</p>
+<ul>
+<li>rejected 概率随训练也在上升。</li>
+</ul>
+<h3 id="12-4-Table-1（AlpacaEval-主结果表）">12.4 Table 1（AlpacaEval 主结果表）</h3>
+<p>为什么看：</p>
+<ul>
+<li>主结果最集中、最可比较；</li>
+<li>横跨 Phi-2 / Llama-2 / Mistral。</li>
+</ul>
+<p>重点看：</p>
+<ul>
+<li>Phi-2 的显著跃升；</li>
+<li>Llama-2 7B ORPO 相对 chat baseline；</li>
+<li>Mistral-ORPO-β 的顶尖表现。</li>
+</ul>
+<h3 id="12-5-Figure-4-与-Figure-12（MT-Bench-分类与总分）">12.5 Figure 4 与 Figure 12（MT-Bench 分类与总分）</h3>
+<p>为什么看：</p>
+<ul>
+<li>避免“只看单轮”误判；</li>
+<li>可看到类别级优劣。</li>
+</ul>
+<p>重点看：</p>
+<ul>
+<li>ORPO 在写作/对话类竞争力；</li>
+<li>coding/math 短板边界。</li>
+</ul>
+<h3 id="12-6-Tables-2-与-3（Reward-Win-Rate）">12.6 Tables 2 与 3（Reward Win Rate）</h3>
+<p>为什么看：</p>
+<ul>
+<li>控制实验对比 SFT/DPO/PPO；</li>
+<li>跨模型规模观察趋势。</li>
+</ul>
+<p>重点看：</p>
+<ul>
+<li>ORPO 对 SFT 稳定优势；</li>
+<li>对 DPO 的规模趋势变化。</li>
+</ul>
+<h3 id="12-7-Figure-5-与-Figure-11（奖励分布图）">12.7 Figure 5 与 Figure 11（奖励分布图）</h3>
+<p>为什么看：</p>
+<ul>
+<li>不是单个均值，而是整体分布位移；</li>
+<li>可观察不同方法稳定性形态。</li>
+</ul>
+<p>重点看：</p>
+<ul>
+<li>ORPO 分布右移；</li>
+<li>PPO 形态异常线索。</li>
+</ul>
+<h3 id="12-8-Table-4（多样性）">12.8 Table 4（多样性）</h3>
+<p>为什么看：</p>
+<ul>
+<li>判断模型是不是“变稳但变死”；</li>
+<li>评估对话体验一致性和任务敏感性的平衡。</li>
+</ul>
+<p>重点看：</p>
+<ul>
+<li>ORPO 的同输入稳定性变化；</li>
+<li>跨输入差异保留情况。</li>
+</ul>
+<h3 id="12-9-Figure-6（probability-ratio-vs-odds-ratio）">12.9 Figure 6（probability ratio vs odds ratio）</h3>
+<p>为什么看：</p>
+<ul>
+<li>解释“为什么选 odds ratio 不是玄学”；</li>
+<li>直接关联优化几何与训练行为。</li>
+</ul>
+<p>重点看：</p>
+<ul>
+<li>两种比率分布范围和斜率效应差异。</li>
+</ul>
+<h3 id="12-10-Figure-9-与-Figure-10（λ-消融）">12.10 Figure 9 与 Figure 10（λ 消融）</h3>
+<p>为什么看：</p>
+<ul>
+<li>直接告诉你如何调参；</li>
+<li>显示不同任务类别对 λ 的敏感方向。</li>
+</ul>
+<p>重点看：</p>
+<ul>
+<li>λ 增大导致偏好分离更强；</li>
+<li>但确定性任务可能受损。</li>
+</ul>
+<hr>
+<h2 id="13-给初学者的“真正落地理解”">13. 给初学者的“真正落地理解”</h2>
+<p>如果你今天刚接触这条路线，我建议记住下面五句“可执行认知”。</p>
+<ol>
+<li>SFT 不是废物，它是基底。</li>
+<li>偏好优化不是替代 SFT，而是补足 SFT 没有显式做的“优劣分离”。</li>
+<li>ORPO 的价值是“简单且有效”，不是“绝对最强神话”。</li>
+<li>数据质量和 λ 调参决定你能走多远。</li>
+<li>最终目标是产品行为质量，不是单个榜单分数。</li>
+</ol>
+<hr>
+<h2 id="14-我的总评（研究价值-工程价值）">14. 我的总评（研究价值 + 工程价值）</h2>
+<h3 id="14-1-研究价值">14.1 研究价值</h3>
+<p>这篇论文把一个经常被忽略的问题讲明白了：</p>
+<ul>
+<li>为什么 SFT 会出现“好坏同涨”；</li>
+<li>如何用 odds ratio 在同一目标里补上“坏样式抑制”；</li>
+<li>为什么这个形式在并入 SFT 时更合适。</li>
+</ul>
+<p>它给出了从现象到方法再到实证的完整叙事。</p>
+<h3 id="14-2-工程价值">14.2 工程价值</h3>
+<p>对后训练工程团队而言，ORPO 的价值非常现实：</p>
+<ul>
+<li>更短的训练流水线；</li>
+<li>更可控的资源消耗；</li>
+<li>不错的指标表现；</li>
+<li>明确可解释的调参旋钮（λ）。</li>
+</ul>
+<p>这让它非常适合作为开源模型对齐阶段的“主干 baseline”。</p>
+<h3 id="14-3-一句话总结">14.3 一句话总结</h3>
+<p>如果让我给这篇论文下最终一句话结论，我会写：</p>
+<blockquote>
+<p>ORPO 用一个足够简洁的目标函数，把“学好答案”和“远离坏答案”放进同一条训练路径，在效果、成本、稳定性之间给出了非常务实的平衡点。</p>
+</blockquote>
+<hr>
+<h2 id="参考文献">参考文献</h2>
+<ol>
+<li>Hong, J., Lee, N., Thorne, J. <strong>ORPO: Monolithic Preference Optimization without Reference Model.</strong> arXiv:2403.07691, 2024.</li>
+<li>Rafailov, R. et al. <strong>Direct Preference Optimization (DPO).</strong> 2023.</li>
+<li>Ouyang, L. et al. <strong>Training language models to follow instructions with human feedback.</strong> 2022.</li>
+<li>Bai, Y. et al. <strong>HH-RLHF / Constitutional AI</strong> related papers, 2022.</li>
+<li>Tunstall, L. et al. <strong>UltraFeedback</strong> related resources, 2023.</li>
+</ol>
+<hr>
+<p><em>评审写于 2026-04-07。</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Alignment/" rel="tag"># Alignment</a>
+              <a href="/tags/LLM-Training/" rel="tag"># LLM Training</a>
+              <a href="/tags/ORPO/" rel="tag"># ORPO</a>
+              <a href="/tags/Preference-Optimization/" rel="tag"># Preference Optimization</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/04/2026-04-04-SwitchTransformer-technical-review-en/" rel="prev" title="Switch Transformers: Scaling to Trillion-Parameter Sparse Models — In-Depth Technical Review">
+      <i class="fa fa-chevron-left"></i> Switch Transformers: Scaling to Trillion-Parameter Sparse Models — In-Depth Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/07/2026-04-07-ORPO-technical-review-en/" rel="next" title="ORPO: Monolithic Preference Optimization without Reference Model — In-Depth Technical Review">
+      ORPO: Monolithic Preference Optimization without Reference Model — In-Depth Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-先用最通俗的话说：这篇论文到底在干什么？"><span class="nav-number">1.</span> <span class="nav-text">1. 先用最通俗的话说：这篇论文到底在干什么？</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-前置知识：你需要先懂哪些概念？"><span class="nav-number">2.</span> <span class="nav-text">2. 前置知识：你需要先懂哪些概念？</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-SFT（监督微调）是什么？"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 SFT（监督微调）是什么？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-偏好数据（chosen-vs-rejected）是什么？"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 偏好数据（chosen vs rejected）是什么？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-RLHF-是什么？为什么大家又爱又怕？"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 RLHF 是什么？为什么大家又爱又怕？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-DPO-是什么？与-ORPO-是什么关系？"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 DPO 是什么？与 ORPO 是什么关系？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-概率、优势比（odds）、优势比率（odds-ratio）"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 概率、优势比（odds）、优势比率（odds ratio）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-常见评测：AlpacaEval-MT-Bench-IFEval"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 常见评测：AlpacaEval &#x2F; MT-Bench &#x2F; IFEval</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-论文提出的问题：为什么“只做-SFT”不够？"><span class="nav-number">3.</span> <span class="nav-text">3. 论文提出的问题：为什么“只做 SFT”不够？</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-从损失函数角度看-SFT-的盲区"><span class="nav-number">3.1.</span> <span class="nav-text">3.1 从损失函数角度看 SFT 的盲区</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-论文里的实证（Figure-3）"><span class="nav-number">3.2.</span> <span class="nav-text">3.2 论文里的实证（Figure 3）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-为什么这件事在对齐场景特别严重？"><span class="nav-number">3.3.</span> <span class="nav-text">3.3 为什么这件事在对齐场景特别严重？</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-ORPO-方法细节（逐步推导，尽量不跳步）"><span class="nav-number">4.</span> <span class="nav-text">4. ORPO 方法细节（逐步推导，尽量不跳步）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-序列平均对数似然"><span class="nav-number">4.1.</span> <span class="nav-text">4.1 序列平均对数似然</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-定义-odds"><span class="nav-number">4.2.</span> <span class="nav-text">4.2 定义 odds</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-定义-chosen-rejected-的-odds-ratio"><span class="nav-number">4.3.</span> <span class="nav-text">4.3 定义 chosen&#x2F;rejected 的 odds ratio</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-4-ORPO-的总目标函数"><span class="nav-number">4.4.</span> <span class="nav-text">4.4 ORPO 的总目标函数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-5-为什么这种“主项-轻偏好项”结构有吸引力？"><span class="nav-number">4.5.</span> <span class="nav-text">4.5 为什么这种“主项 + 轻偏好项”结构有吸引力？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-6-梯度解释（直觉版）"><span class="nav-number">4.6.</span> <span class="nav-text">4.6 梯度解释（直觉版）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-关键技术讨论：为什么论文坚持用-odds-ratio，而不是-probability-ratio？"><span class="nav-number">5.</span> <span class="nav-text">5. 关键技术讨论：为什么论文坚持用 odds ratio，而不是 probability ratio？</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-看起来像“形式差异”，其实是“优化几何差异”"><span class="nav-number">5.1.</span> <span class="nav-text">5.1 看起来像“形式差异”，其实是“优化几何差异”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Figure-6-的证据：分布范围与损失作用方式"><span class="nav-number">5.2.</span> <span class="nav-text">5.2 Figure 6 的证据：分布范围与损失作用方式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-Figure-7-Figure-8：训练轨迹更健康"><span class="nav-number">5.3.</span> <span class="nav-text">5.3 Figure 7 &#x2F; Figure 8：训练轨迹更健康</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-实验设置：作者到底怎么做实验的？"><span class="nav-number">6.</span> <span class="nav-text">6. 实验设置：作者到底怎么做实验的？</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-模型规模覆盖"><span class="nav-number">6.1.</span> <span class="nav-text">6.1 模型规模覆盖</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-数据集与清洗"><span class="nav-number">6.2.</span> <span class="nav-text">6.2 数据集与清洗</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-训练硬件与并行实现"><span class="nav-number">6.3.</span> <span class="nav-text">6.3 训练硬件与并行实现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-训练参数（重点）"><span class="nav-number">6.4.</span> <span class="nav-text">6.4 训练参数（重点）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-结果详解：不仅看“赢了”，还要看“怎么赢、赢在哪”"><span class="nav-number">7.</span> <span class="nav-text">7. 结果详解：不仅看“赢了”，还要看“怎么赢、赢在哪”</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-Table-1：单轮指令跟随能力"><span class="nav-number">7.1.</span> <span class="nav-text">7.1 Table 1：单轮指令跟随能力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-Figure-4-Figure-12：MT-Bench-多轮能力"><span class="nav-number">7.2.</span> <span class="nav-text">7.2 Figure 4 &#x2F; Figure 12：MT-Bench 多轮能力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-Table-6：IFEval"><span class="nav-number">7.3.</span> <span class="nav-text">7.3 Table 6：IFEval</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-Tables-2-3：reward-model-win-rate"><span class="nav-number">7.4.</span> <span class="nav-text">7.4 Tables 2&#x2F;3：reward model win rate</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-5-Figure-5-Figure-11：奖励分布"><span class="nav-number">7.5.</span> <span class="nav-text">7.5 Figure 5 &#x2F; Figure 11：奖励分布</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-6-Table-4：多样性"><span class="nav-number">7.6.</span> <span class="nav-text">7.6 Table 4：多样性</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-消融实验（λ）非常重要：它决定你要的助手性格"><span class="nav-number">8.</span> <span class="nav-text">8. 消融实验（λ）非常重要：它决定你要的助手性格</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-Figure-9：不同-λ-的概率轨迹"><span class="nav-number">8.1.</span> <span class="nav-text">8.1 Figure 9：不同 λ 的概率轨迹</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-Figure-10：不同-λ-的-MT-Bench-分类影响"><span class="nav-number">8.2.</span> <span class="nav-text">8.2 Figure 10：不同 λ 的 MT-Bench 分类影响</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-我给实践者的-λ-调参建议"><span class="nav-number">8.3.</span> <span class="nav-text">8.3 我给实践者的 λ 调参建议</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-这篇论文真正的贡献在哪里？（我的观点）"><span class="nav-number">9.</span> <span class="nav-text">9. 这篇论文真正的贡献在哪里？（我的观点）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-贡献一：重新定义-SFT-在对齐中的地位"><span class="nav-number">9.1.</span> <span class="nav-text">9.1 贡献一：重新定义 SFT 在对齐中的地位</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-贡献二：把“偏好优化”变成更可维护工程对象"><span class="nav-number">9.2.</span> <span class="nav-text">9.2 贡献二：把“偏好优化”变成更可维护工程对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-贡献三：给出较完整的“证据链”"><span class="nav-number">9.3.</span> <span class="nav-text">9.3 贡献三：给出较完整的“证据链”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-贡献四：对开源模型后训练特别实用"><span class="nav-number">9.4.</span> <span class="nav-text">9.4 贡献四：对开源模型后训练特别实用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-局限性与边界条件（必须讲清楚）"><span class="nav-number">10.</span> <span class="nav-text">10. 局限性与边界条件（必须讲清楚）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-模型规模上限仍有限"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 模型规模上限仍有限</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-评测裁判仍以模型判分为主"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 评测裁判仍以模型判分为主</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-ORPO-并没有减少对偏好数据质量的依赖"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 ORPO 并没有减少对偏好数据质量的依赖</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-4-λ-设置错误会带来能力侧偏"><span class="nav-number">10.4.</span> <span class="nav-text">10.4 λ 设置错误会带来能力侧偏</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-5-coding-math-短板提醒"><span class="nav-number">10.5.</span> <span class="nav-text">10.5 coding&#x2F;math 短板提醒</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-可复现与落地建议（给工程团队的清单）"><span class="nav-number">11.</span> <span class="nav-text">11. 可复现与落地建议（给工程团队的清单）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#11-1-最小可执行-ORPO-流程"><span class="nav-number">11.1.</span> <span class="nav-text">11.1 最小可执行 ORPO 流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-2-训练监控建议"><span class="nav-number">11.2.</span> <span class="nav-text">11.2 训练监控建议</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-3-数据质量建议（比算法还重要）"><span class="nav-number">11.3.</span> <span class="nav-text">11.3 数据质量建议（比算法还重要）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-4-什么时候优先尝试-ORPO？"><span class="nav-number">11.4.</span> <span class="nav-text">11.4 什么时候优先尝试 ORPO？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-5-什么时候仍考虑-DPO-RLHF？"><span class="nav-number">11.5.</span> <span class="nav-text">11.5 什么时候仍考虑 DPO&#x2F;RLHF？</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-图表导读（满足“证据讨论”要求）"><span class="nav-number">12.</span> <span class="nav-text">12. 图表导读（满足“证据讨论”要求）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#12-1-Figure-1（AlpacaEval-总览柱状图）"><span class="nav-number">12.1.</span> <span class="nav-text">12.1 Figure 1（AlpacaEval 总览柱状图）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-2-Figure-2（RLHF-DPO-ORPO-结构对比示意）"><span class="nav-number">12.2.</span> <span class="nav-text">12.2 Figure 2（RLHF&#x2F;DPO&#x2F;ORPO 结构对比示意）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-3-Figure-3（SFT-下-chosen-rejected-概率轨迹）"><span class="nav-number">12.3.</span> <span class="nav-text">12.3 Figure 3（SFT 下 chosen&#x2F;rejected 概率轨迹）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-4-Table-1（AlpacaEval-主结果表）"><span class="nav-number">12.4.</span> <span class="nav-text">12.4 Table 1（AlpacaEval 主结果表）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-5-Figure-4-与-Figure-12（MT-Bench-分类与总分）"><span class="nav-number">12.5.</span> <span class="nav-text">12.5 Figure 4 与 Figure 12（MT-Bench 分类与总分）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-6-Tables-2-与-3（Reward-Win-Rate）"><span class="nav-number">12.6.</span> <span class="nav-text">12.6 Tables 2 与 3（Reward Win Rate）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-7-Figure-5-与-Figure-11（奖励分布图）"><span class="nav-number">12.7.</span> <span class="nav-text">12.7 Figure 5 与 Figure 11（奖励分布图）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-8-Table-4（多样性）"><span class="nav-number">12.8.</span> <span class="nav-text">12.8 Table 4（多样性）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-9-Figure-6（probability-ratio-vs-odds-ratio）"><span class="nav-number">12.9.</span> <span class="nav-text">12.9 Figure 6（probability ratio vs odds ratio）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-10-Figure-9-与-Figure-10（λ-消融）"><span class="nav-number">12.10.</span> <span class="nav-text">12.10 Figure 9 与 Figure 10（λ 消融）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-给初学者的“真正落地理解”"><span class="nav-number">13.</span> <span class="nav-text">13. 给初学者的“真正落地理解”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#14-我的总评（研究价值-工程价值）"><span class="nav-number">14.</span> <span class="nav-text">14. 我的总评（研究价值 + 工程价值）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#14-1-研究价值"><span class="nav-number">14.1.</span> <span class="nav-text">14.1 研究价值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-2-工程价值"><span class="nav-number">14.2.</span> <span class="nav-text">14.2 工程价值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-3-一句话总结"><span class="nav-number">14.3.</span> <span class="nav-text">14.3 一句话总结</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#参考文献"><span class="nav-number">15.</span> <span class="nav-text">参考文献</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

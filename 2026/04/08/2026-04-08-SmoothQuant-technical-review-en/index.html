@@ -1,0 +1,1448 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="SmoothQuant migrates activation outliers into weights so large language models can run accurate W8A8 inference efficiently on real hardware.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models — In-Depth Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/08/2026-04-08-SmoothQuant-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="SmoothQuant migrates activation outliers into weights so large language models can run accurate W8A8 inference efficiently on real hardware.">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-08T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-08T16:24:04.928Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Efficient Inference">
+<meta property="article:tag" content="Quantization">
+<meta property="article:tag" content="SmoothQuant">
+<meta property="article:tag" content="INT8">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/08/2026-04-08-SmoothQuant-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models — In-Depth Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/08/2026-04-08-SmoothQuant-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models — In-Depth Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2026-04-08 00:00:00 / Modified: 16:24:04" itemprop="dateCreated datePublished" datetime="2026-04-08T00:00:00+00:00">2026-04-08</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/Efficient-ML/" itemprop="url" rel="index"><span itemprop="name">Efficient ML</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">SmoothQuant migrates activation outliers into weights so large language models can run accurate W8A8 inference efficiently on real hardware.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-Why-This-Paper-Matters">1. Why This Paper Matters</h2>
+<p>If you only remember one sentence from this review, I want it to be this:</p>
+<blockquote>
+<p><strong>SmoothQuant is important because it turns a seemingly annoying numerical issue—activation outliers—into a clean systems trick that real hardware can actually use.</strong></p>
+</blockquote>
+<p>Large language models are expensive for two reasons:</p>
+<ol>
+<li>they store a huge amount of weights, and</li>
+<li>they repeatedly move those weights and activations through matrix multiplications.</li>
+</ol>
+<p>That means memory footprint, memory bandwidth, and integer-kernel friendliness are not side details. They are central engineering constraints.</p>
+<a id="more"></a>
+<p>Before SmoothQuant, the community already knew something frustrating:</p>
+<ul>
+<li>weights in LLMs are often fairly quantization-friendly,</li>
+<li>activations are much less friendly,</li>
+<li>and once models get very large, a small number of activation channels become extreme outliers.</li>
+</ul>
+<p>Those outliers wreck simple INT8 activation quantization. You can preserve accuracy by keeping some values in FP16, but then you lose the clean hardware path. In other words, you can get <strong>accuracy</strong> or <strong>efficiency</strong>, but not both at once.</p>
+<p>SmoothQuant is the paper that says: maybe we do not need to preserve the original activation distribution as-is. Maybe we can <strong>reshape the numerical difficulty offline</strong>, move some of that difficulty into the weights, and keep the runtime computation fully compatible with efficient INT8 matrix multiplication.</p>
+<p>That is why this paper became influential. It is not merely another compression trick. It is a good example of a paper that simultaneously understands:</p>
+<ul>
+<li>numerical analysis,</li>
+<li>Transformer structure,</li>
+<li>GPU kernel constraints,</li>
+<li>and production serving requirements.</li>
+</ul>
+<p>The headline results are strong and easy to remember:</p>
+<ul>
+<li>negligible accuracy loss on very large LLMs,</li>
+<li>up to <strong>1.56× speedup</strong>,</li>
+<li>about <strong>2× memory reduction</strong>,</li>
+<li>and the ability to serve a <strong>530B</strong> model within a single 8-GPU node.</li>
+</ul>
+<p>For a beginner, the big lesson is this: in systems for LLM inference, the best idea is often not “invent a fancier model,” but “change the representation so existing hardware becomes happy.” SmoothQuant is exactly that kind of paper.</p>
+<hr>
+<h2 id="2-Prerequisites-What-I-Think-You-Need-First">2. Prerequisites: What I Think You Need First</h2>
+<p>I am going to explain this from the ground up. If someone has never worked on quantization before, I still want them to be able to follow the paper.</p>
+<h3 id="2-1-What-a-linear-layer-really-does">2.1 What a linear layer really does</h3>
+<p>At the heart of an LLM, a lot of the work is just matrix multiplication.</p>
+<p>A linear layer is usually written as:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>Y</mi><mo>=</mo><mi>X</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">Y = XW
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">Y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span></span></p>
+<p>Here:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi></mrow><annotation encoding="application/x-tex">X</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span></span></span></span> is the input activation matrix</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi></mrow><annotation encoding="application/x-tex">W</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span> is the weight matrix</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Y</mi></mrow><annotation encoding="application/x-tex">Y</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">Y</span></span></span></span> is the output matrix</li>
+</ul>
+<p>If that feels abstract, here is the simple picture:</p>
+<ul>
+<li>the model receives a batch of token representations,</li>
+<li>each token representation is a vector of numbers,</li>
+<li>the linear layer mixes those numbers using learned weights,</li>
+<li>and the result becomes the input to the next operation.</li>
+</ul>
+<p>In a Transformer, these linear layers appear everywhere:</p>
+<ul>
+<li>Q, K, V projections in attention,</li>
+<li>output projection after attention,</li>
+<li>up-projection and down-projection in the feed-forward network,</li>
+<li>and sometimes additional projection layers depending on the architecture.</li>
+</ul>
+<p>Why does this matter for quantization? Because linear layers dominate both parameter count and compute cost. If you can quantize these layers well, you can change the economics of the whole model.</p>
+<h3 id="2-2-What-quantization-means-in-plain-language">2.2 What quantization means in plain language</h3>
+<p>Quantization means storing or computing with lower-precision numbers.</p>
+<p>Instead of using FP16 values, we might use INT8 values. The usual uniform symmetric quantization formula is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mover accent="true"><mi>X</mi><mo>ˉ</mo></mover><mtext>INT8</mtext></msub><mo>=</mo><mrow><mo fence="true">⌊</mo><mfrac><msub><mi>X</mi><mtext>FP16</mtext></msub><mi mathvariant="normal">Δ</mi></mfrac><mo fence="true">⌉</mo></mrow><mo separator="true">,</mo><mspace width="2em"/><mi mathvariant="normal">Δ</mi><mo>=</mo><mfrac><mrow><mi>max</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>X</mi><mi mathvariant="normal">∣</mi><mo stretchy="false">)</mo></mrow><mrow><msup><mn>2</mn><mrow><mi>N</mi><mo>−</mo><mn>1</mn></mrow></msup><mo>−</mo><mn>1</mn></mrow></mfrac></mrow><annotation encoding="application/x-tex">\bar{X}_{\text{INT8} } = \left\lfloor \frac{X_{\text{FP16} }}{\Delta} \right\rceil, \qquad \Delta = \frac{\max(|X|)}{2^{N-1}-1}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9701em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8201em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">ˉ</span></span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0785em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">INT8</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">⌊</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3603em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">Δ</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0785em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">FP16</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">⌉</span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:2em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">Δ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.1963em;vertical-align:-0.7693em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7673em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord">1</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop">max</span><span class="mopen">(</span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="mord">∣</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.7693em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>where:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Δ</mi></mrow><annotation encoding="application/x-tex">\Delta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span></span></span></span> is the scale,</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span></span></span></span> is the bit-width, and</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">⌊</mo><mo>⋅</mo><mo stretchy="false">⌉</mo></mrow><annotation encoding="application/x-tex">\lfloor \cdot \rceil</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">⌊</span><span class="mord">⋅</span><span class="mclose">⌉</span></span></span></span> means rounding to the nearest integer.</li>
+</ul>
+<p>For INT8, you only have 256 discrete levels in total, typically centered around zero for symmetric quantization.</p>
+<p>An analogy I like: imagine you originally measured things with a fine scientific ruler, then you replace it with a much coarser ruler. If all values are moderate and nicely spread, the coarse ruler is okay. But if one giant outlier forces the ruler to cover a huge range, then all ordinary values get packed into a tiny part of that range, and your effective precision becomes terrible.</p>
+<p>That is exactly what happens to activations in large models.</p>
+<h3 id="2-3-Why-weights-and-activations-are-not-the-same-problem">2.3 Why weights and activations are not the same problem</h3>
+<p>A beginner often asks: “If weights can be quantized, why not activations too?”</p>
+<p>Because the distributions behave differently.</p>
+<p>In this paper, the authors emphasize that:</p>
+<ul>
+<li><strong>weights are relatively smooth and flat</strong>, so INT8 quantization is often easy,</li>
+<li><strong>activations contain strong outliers</strong>, so INT8 quantization can be hard.</li>
+</ul>
+<p>This distinction matters. Quantizing weights is mostly a storage problem plus some compute adaptation. Quantizing activations is a runtime signal-processing problem. Activations depend on the actual input tokens and can change from sample to sample.</p>
+<p>SmoothQuant is built on this asymmetry:</p>
+<blockquote>
+<p>weights are easy, activations are hard.</p>
+</blockquote>
+<p>Once you see that, the name “SmoothQuant” makes sense. The method is trying to smooth the hard part.</p>
+<h3 id="2-4-Why-outliers-are-such-a-headache">2.4 Why outliers are such a headache</h3>
+<p>The paper shows that activation outliers can be about <strong>100× larger</strong> than most other activation values. This is disastrous for per-tensor quantization.</p>
+<p>Suppose one channel has a huge magnitude. Because the scale <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Δ</mi></mrow><annotation encoding="application/x-tex">\Delta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span></span></span></span> is based on the maximum absolute value, that outlier stretches the quantization range for the whole tensor. Then the non-outlier channels get only a few useful quantization bins.</p>
+<p>The paper gives a very intuitive effective-level argument. If one channel has maximum magnitude <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>m</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">m_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> and the whole tensor has maximum magnitude <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi></mrow><annotation encoding="application/x-tex">m</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">m</span></span></span></span>, the effective quantization levels for that channel are roughly:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msup><mn>2</mn><mn>8</mn></msup><mo>⋅</mo><mfrac><msub><mi>m</mi><mi>i</mi></msub><mi>m</mi></mfrac></mrow><annotation encoding="application/x-tex">2^8 \cdot \frac{m_i}{m}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8641em;"></span><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">8</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.7936em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.1076em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">m</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>If <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>m</mi><mi>i</mi></msub><mo>≪</mo><mi>m</mi></mrow><annotation encoding="application/x-tex">m_i \ll m</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6891em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≪</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">m</span></span></span></span>, that channel effectively gets only a tiny number of useful levels. That is why many ordinary values become poorly represented.</p>
+<p>A good beginner mental model is this:</p>
+<ul>
+<li>one giant value forces the “camera exposure” for the whole tensor,</li>
+<li>everything else becomes underexposed.</li>
+</ul>
+<h3 id="2-5-Static-vs-dynamic-quantization">2.5 Static vs dynamic quantization</h3>
+<p>The paper discusses two basic styles:</p>
+<p><strong>Static quantization</strong></p>
+<ul>
+<li>collect calibration statistics offline,</li>
+<li>compute scales once,</li>
+<li>reuse them at runtime.</li>
+</ul>
+<p><strong>Dynamic quantization</strong></p>
+<ul>
+<li>compute or update scales at runtime based on the current activations.</li>
+</ul>
+<p>Dynamic quantization is often more accurate, because the scale adapts to the actual input. But it also adds runtime overhead.</p>
+<p>For systems people, this is an important tradeoff:</p>
+<ul>
+<li>static is cheaper and simpler for fast serving,</li>
+<li>dynamic is more adaptive but can be slower.</li>
+</ul>
+<p>SmoothQuant is compatible with both, and one of its neat contributions is to provide multiple efficiency levels depending on how aggressive you want to be.</p>
+<h3 id="2-6-Why-hardware-constraints-matter">2.6 Why hardware constraints matter</h3>
+<p>This is one of the most important prerequisites in the whole paper.</p>
+<p>A lot of seemingly reasonable quantization ideas fail because they do not map cleanly to high-throughput hardware kernels.</p>
+<p>The paper explains that efficient INT8 GEMM kernels can tolerate scaling on the <strong>outer dimensions</strong> of the matrix multiplication, but not arbitrary scaling inserted inside the hottest computation path. In Figure 3, the authors compare:</p>
+<ul>
+<li>per-tensor quantization,</li>
+<li>per-token quantization,</li>
+<li>per-channel quantization.</li>
+</ul>
+<p>Per-channel activation quantization is numerically attractive, but it is not hardware-friendly for standard INT8 GEMM execution. That means a method can look great on paper and still be unattractive in deployment.</p>
+<p>This paper is refreshingly honest about that. It does not say “per-channel activation quantization is best, therefore use it.” It says:</p>
+<ol>
+<li>per-channel activation quantization would solve the numerical problem,</li>
+<li>but hardware does not like it,</li>
+<li>so let us find an equivalent transformation that gets a similar effect while preserving a fast kernel path.</li>
+</ol>
+<p>That is the whole logic of SmoothQuant.</p>
+<hr>
+<h2 id="3-The-Core-Problem-SmoothQuant-Tries-to-Solve">3. The Core Problem SmoothQuant Tries to Solve</h2>
+<p>The paper is trying to solve a very specific engineering bottleneck:</p>
+<blockquote>
+<p><strong>How can we get fully hardware-efficient W8A8 quantization for large language models without destroying accuracy?</strong></p>
+</blockquote>
+<p>Here W8A8 means:</p>
+<ul>
+<li>weights in 8-bit integers,</li>
+<li>activations in 8-bit integers.</li>
+</ul>
+<p>This is attractive because if both sides are INT8, we can use efficient integer GEMM kernels. That improves throughput and reduces memory usage.</p>
+<p>The problem is that naive activation quantization fails badly on large LLMs.</p>
+<p>Table 1 in the paper tells the story clearly. For OPT models from 6.7B up to 175B:</p>
+<ul>
+<li>FP16 average accuracy stays around 64.9% to 71.6%,</li>
+<li>INT8 per-tensor activation quantization collapses to around 32%–40%,</li>
+<li>INT8 per-token is only slightly better,</li>
+<li>INT8 per-channel basically recovers FP16 accuracy—but is not compatible with the desired fast GEMM path.</li>
+</ul>
+<p>That is the trap.</p>
+<p>So the paper asks a clever question:</p>
+<blockquote>
+<p>Can we transform the model so activations <em>become</em> easy to quantize, without changing the linear layer mathematically?</p>
+</blockquote>
+<p>The answer is yes. That answer is SmoothQuant.</p>
+<hr>
+<h2 id="4-The-Key-Observations-Behind-the-Method">4. The Key Observations Behind the Method</h2>
+<p>I think this paper is built on four observations, and each one matters.</p>
+<h3 id="Observation-1-Weights-are-easy-to-quantize">Observation 1: Weights are easy to quantize</h3>
+<p>The authors show that weight distributions are relatively flat and uniform. Prior work had already hinted that INT8 or even INT4 weight quantization can often work reasonably well. So the weight side is not the main bottleneck.</p>
+<h3 id="Observation-2-Activations-are-hard-to-quantize">Observation 2: Activations are hard to quantize</h3>
+<p>The input activations to certain linear layers contain strong outliers. These outliers dominate the max-based scale and cause poor effective resolution for the rest of the tensor.</p>
+<h3 id="Observation-3-The-outliers-persist-in-fixed-channels">Observation 3: The outliers persist in fixed channels</h3>
+<p>This is a very important detail from Figure 4.</p>
+<p>The paper shows that outliers are not just random one-off spikes at arbitrary locations. Instead, they often appear in a relatively fixed subset of channels. For a given channel, the variation across tokens is comparatively small, while the variation across channels for a given token is large.</p>
+<p>That means the problem has structure. It is not pure noise.</p>
+<p>If the outlier channels are persistent, then an offline transformation based on channel statistics becomes plausible.</p>
+<h3 id="Observation-4-Per-channel-activation-quantization-would-work-but-hardware-does-not-want-it">Observation 4: Per-channel activation quantization would work, but hardware does not want it</h3>
+<p>Table 1 is the evidence here. Per-channel activation quantization nearly matches FP16. So the numerical target is clear. But that solution is operationally ugly for fast INT8 GEMM kernels.</p>
+<p>This is the paper’s central pivot:</p>
+<ul>
+<li>the authors first identify what numerically works,</li>
+<li>then redesign the computation so a hardware-friendly implementation approximates the same benefit.</li>
+</ul>
+<p>That is very good research style. They do not stop at diagnosing the problem.</p>
+<hr>
+<h2 id="5-SmoothQuant-Method-Details">5. SmoothQuant Method Details</h2>
+<p>Now let us slow down and go through the actual mechanism carefully.</p>
+<h3 id="5-1-The-mathematically-equivalent-transformation">5.1 The mathematically equivalent transformation</h3>
+<p>For a linear layer,</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>Y</mi><mo>=</mo><mi>X</mi><mi>W</mi></mrow><annotation encoding="application/x-tex">Y = XW
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">Y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span></span></p>
+<p>SmoothQuant introduces a per-channel scaling vector <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><msub><mi>C</mi><mi>i</mi></msub></msup></mrow><annotation encoding="application/x-tex">s \in \mathbb{R}^{C_i}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5782em;vertical-align:-0.0391em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8413em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8413em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.07153em;">C</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:-0.0715em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span> and rewrites the computation as:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>Y</mi><mo>=</mo><mo stretchy="false">(</mo><mi>X</mi><mtext> </mtext><mrow><mi mathvariant="normal">d</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">g</mi></mrow><mo stretchy="false">(</mo><mi>s</mi><msup><mo stretchy="false">)</mo><mrow><mo>−</mo><mn>1</mn></mrow></msup><mo stretchy="false">)</mo><mo>⋅</mo><mo stretchy="false">(</mo><mrow><mi mathvariant="normal">d</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">g</mi></mrow><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mi>W</mi><mo stretchy="false">)</mo><mo>=</mo><mover accent="true"><mi>X</mi><mo>^</mo></mover><mover accent="true"><mi>W</mi><mo>^</mo></mover></mrow><annotation encoding="application/x-tex">Y = (X\,\mathrm{diag}(s)^{-1}) \cdot (\mathrm{diag}(s)W) = \hat{X}\hat{W}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">Y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1141em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathrm" style="margin-right:0.01389em;">diag</span></span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose"><span class="mclose">)</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord"><span class="mord mathrm" style="margin-right:0.01389em;">diag</span></span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9468em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9468em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">^</span></span></span></span></span></span></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9468em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.25em;"><span class="mord">^</span></span></span></span></span></span></span></span></span></span></span></p>
+<p>This is Equation (3) in the paper.</p>
+<p>This transformation is mathematically exact. Nothing about the underlying function changes. The output is identical in exact arithmetic.</p>
+<p>That is the first beautiful part of the paper:</p>
+<ul>
+<li>divide each activation channel by a channel-wise factor,</li>
+<li>multiply the corresponding weight channel by the same factor,</li>
+<li>preserve the same linear map.</li>
+</ul>
+<p>So why is this useful?</p>
+<p>Because we can choose <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span> so that the activation channels become smoother and easier to quantize. The price is that some scale variance moves into the weights. But since weights are easier to quantize, this trade is favorable.</p>
+<p>The paper literally describes this as <strong>migrating quantization difficulty from activations to weights</strong>.</p>
+<p>That phrasing is excellent. It tells you exactly what is happening.</p>
+<h3 id="5-2-Why-smoothing-helps">5.2 Why smoothing helps</h3>
+<p>Suppose one activation channel has a much larger maximum value than the others. If I divide that channel by a larger scale factor, I shrink it. If I do that channel by channel, I can make the activation magnitudes more balanced.</p>
+<p>Balanced activations mean:</p>
+<ul>
+<li>fewer extreme outliers,</li>
+<li>smaller range mismatch across channels,</li>
+<li>better effective use of INT8 levels.</li>
+</ul>
+<p>Figure 2 gives the intuition visually:</p>
+<ul>
+<li>before smoothing, activation outliers stretch the quantization range,</li>
+<li>after smoothing, the activation becomes easy to quantize,</li>
+<li>and the weight becomes a bit less uniform, but still manageable.</li>
+</ul>
+<p>Figure 4 makes this more concrete. Before SmoothQuant:</p>
+<ul>
+<li>activations have a few channels with very large values,</li>
+<li>weights are already fairly flat.</li>
+</ul>
+<p>After SmoothQuant:</p>
+<ul>
+<li>activation outliers are heavily reduced,</li>
+<li>weight variation increases, but remains quantization-friendly.</li>
+</ul>
+<p>I think this is the right trade. If you have to move difficulty somewhere, move it to the side that can tolerate it better.</p>
+<h3 id="5-3-How-the-smoothing-factor-is-chosen">5.3 How the smoothing factor is chosen</h3>
+<p>A naive idea would be to fully equalize activations by setting the scale for channel <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>j</mi></mrow><annotation encoding="application/x-tex">j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.854em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05724em;">j</span></span></span></span> based only on activation magnitude. But that would push too much difficulty into the weights.</p>
+<p>The paper instead introduces a migration-strength hyperparameter <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> and defines:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>s</mi><mi>j</mi></msub><mo>=</mo><mfrac><mrow><mi>max</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><msub><mi>X</mi><mi>j</mi></msub><mi mathvariant="normal">∣</mi><msup><mo stretchy="false">)</mo><mi>α</mi></msup></mrow><mrow><mi>max</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><msub><mi>W</mi><mi>j</mi></msub><mi mathvariant="normal">∣</mi><msup><mo stretchy="false">)</mo><mrow><mn>1</mn><mo>−</mo><mi>α</mi></mrow></msup></mrow></mfrac></mrow><annotation encoding="application/x-tex">s_j = \frac{\max(|X_j|)^\alpha}{\max(|W_j|)^{1-\alpha} }
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.3991em;vertical-align:-0.9721em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop">max</span><span class="mopen">(</span><span class="mord">∣</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mord">∣</span><span class="mclose"><span class="mclose">)</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7401em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span><span class="mbin mtight">−</span><span class="mord mathnormal mtight" style="margin-right:0.0037em;">α</span></span></span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop">max</span><span class="mopen">(</span><span class="mord">∣</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0785em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mord">∣</span><span class="mclose"><span class="mclose">)</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6644em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0037em;">α</span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.9721em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>This is Equation (4).</p>
+<p>Interpretation:</p>
+<ul>
+<li>if <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> is larger, you prioritize smoothing activations more aggressively,</li>
+<li>if <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> is smaller, you keep weights easier and transfer less difficulty.</li>
+</ul>
+<p>The authors report:</p>
+<ul>
+<li><strong><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>=</mo><mn>0.5</mn></mrow><annotation encoding="application/x-tex">\alpha = 0.5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.5</span></span></span></span></strong> works well for OPT and BLOOM,</li>
+<li><strong><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>=</mo><mn>0.75</mn></mrow><annotation encoding="application/x-tex">\alpha = 0.75</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.75</span></span></span></span></strong> works better for GLM-130B, whose activations are harder to quantize.</li>
+</ul>
+<p>Figure 10 shows a sweet spot around <strong>0.4–0.6</strong> on OPT-175B. Too small means activations remain hard; too large means weights become hard. The best region balances both.</p>
+<p>This is another thing I like about the paper: it does not pretend there is a magical universal constant. It acknowledges that model families differ.</p>
+<h3 id="5-4-An-intuitive-toy-example">5.4 An intuitive toy example</h3>
+<p>Let me restate the idea with made-up numbers.</p>
+<p>Suppose activation channel 1 has maximum value 100, and most other channels are around 1 to 3. If we do naive INT8 quantization, that 100 determines the range, so the smaller channels waste most of the available bins.</p>
+<p>Now suppose we divide channel 1 by 50 and multiply the corresponding weight channel by 50. The computation stays mathematically equivalent:</p>
+<ul>
+<li>the activation now looks much less extreme,</li>
+<li>the weight gets bigger in that channel,</li>
+<li>but weights were already easier to quantize.</li>
+</ul>
+<p>So instead of suffering one impossible activation tensor, we create:</p>
+<ul>
+<li>a much easier activation tensor,</li>
+<li>and a still-manageable weight tensor.</li>
+</ul>
+<p>That is exactly the spirit of SmoothQuant.</p>
+<h3 id="5-5-Offline-fusion-into-previous-layers">5.5 Offline fusion into previous layers</h3>
+<p>A practical concern is obvious: if we insert extra scaling operations at runtime, are we really making the system faster?</p>
+<p>The paper handles this well. Because the input <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi></mrow><annotation encoding="application/x-tex">X</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span></span></span></span> often comes from previous linear operations or layer norms, the smoothing factors can often be <strong>fused offline</strong> into upstream parameters. In other words, the runtime graph does not need an extra expensive operation in the hot path.</p>
+<p>For residual branches, the authors mention adding extra scaling to the residual branch when needed, similar to prior work.</p>
+<p>This detail matters a lot. The difference between “a mathematically neat idea” and “a production-friendly idea” often comes down to whether you can fuse it away.</p>
+<h3 id="5-6-Applying-SmoothQuant-to-Transformer-blocks">5.6 Applying SmoothQuant to Transformer blocks</h3>
+<p>Figure 6 gives the precision mapping for a Transformer block.</p>
+<p>The basic design is:</p>
+<ul>
+<li>use INT8 for compute-heavy operators:
+<ul>
+<li>linear layers,</li>
+<li>batched matrix multiplication in attention,</li>
+</ul>
+</li>
+<li>keep lightweight elementwise operations in FP16:
+<ul>
+<li>ReLU or equivalent activation,</li>
+<li>softmax,</li>
+<li>layer norm.</li>
+</ul>
+</li>
+</ul>
+<p>This is a very sane compromise. The paper is not trying to quantize every last operation just for ideological purity. It quantizes the operations that dominate cost.</p>
+<p>That is usually how real systems work.</p>
+<hr>
+<h2 id="6-Experimental-Setup">6. Experimental Setup</h2>
+<p>The evaluation section is broad enough that it is worth summarizing carefully.</p>
+<h3 id="6-1-Model-families">6.1 Model families</h3>
+<p>The core experiments cover:</p>
+<ul>
+<li><strong>OPT</strong></li>
+<li><strong>BLOOM</strong></li>
+<li><strong>GLM-130B</strong></li>
+</ul>
+<p>The paper also later reports results for:</p>
+<ul>
+<li>instruction-tuned OPT-IML-30B,</li>
+<li>LLaMA,</li>
+<li>Llama-2,</li>
+<li>Falcon,</li>
+<li>Mistral,</li>
+<li>Mixtral,</li>
+<li>and MT-NLG 530B.</li>
+</ul>
+<p>I like this breadth. It makes the paper much more convincing than if it had only shown a single architecture.</p>
+<h3 id="6-2-Benchmarks">6.2 Benchmarks</h3>
+<p>For OPT and BLOOM, the paper uses seven zero-shot tasks plus WikiText:</p>
+<ul>
+<li>LAMBADA</li>
+<li>HellaSwag</li>
+<li>PIQA</li>
+<li>WinoGrande</li>
+<li>OpenBookQA</li>
+<li>RTE</li>
+<li>COPA</li>
+<li>WikiText</li>
+</ul>
+<p>For GLM-130B, they use:</p>
+<ul>
+<li>LAMBADA</li>
+<li>MMLU</li>
+<li>MNLI</li>
+<li>QNLI</li>
+</ul>
+<p>The authors note that some tasks appear in GLM-130B’s training set, so they choose a different evaluation suite there. That is a small but important sign that they are paying attention to fair measurement.</p>
+<h3 id="6-3-Baselines">6.3 Baselines</h3>
+<p>Table 2 compares SmoothQuant against:</p>
+<ul>
+<li><strong>W8A8 naive quantization</strong>: per-tensor weight, per-tensor dynamic activation</li>
+<li><strong>ZeroQuant</strong>: group-wise weight, per-token dynamic activation</li>
+<li><strong>LLM.int8()</strong>: per-channel weight, per-token dynamic activation + FP16 outliers</li>
+<li><strong>Outlier Suppression</strong>: per-tensor static approach</li>
+</ul>
+<p>SmoothQuant itself is presented in three efficiency levels:</p>
+<ul>
+<li><strong>SmoothQuant-O1</strong>: per-tensor weight, per-token dynamic activation</li>
+<li><strong>SmoothQuant-O2</strong>: per-tensor weight, per-tensor dynamic activation</li>
+<li><strong>SmoothQuant-O3</strong>: per-tensor weight, per-tensor static activation</li>
+</ul>
+<p>The progression from O1 to O3 is basically:</p>
+<ul>
+<li>less fine-grained,</li>
+<li>more hardware-friendly,</li>
+<li>lower latency,</li>
+<li>potentially slightly more accuracy pressure.</li>
+</ul>
+<p>This is a very useful framing for practitioners.</p>
+<h3 id="6-4-Calibration-and-implementation">6.4 Calibration and implementation</h3>
+<p>The paper calibrates smoothing factors and static quantization scales using <strong>512 random sentences from the Pile validation set</strong>.</p>
+<p>Implementation is done in two environments:</p>
+<ol>
+<li><strong>PyTorch + HuggingFace</strong> for proof-of-concept</li>
+<li><strong>FasterTransformer</strong> for high-performance serving</li>
+</ol>
+<p>In both backends they use CUTLASS INT8 GEMM kernels.</p>
+<p>This is good practice. If you only report results in PyTorch, readers can always suspect the method will not survive contact with an optimized serving stack. SmoothQuant goes further and shows it still works in a systems-grade backend.</p>
+<hr>
+<h2 id="7-Results-and-What-They-Mean">7. Results and What They Mean</h2>
+<h2 id="7-1-Why-naive-activation-quantization-fails">7.1 Why naive activation quantization fails</h2>
+<p>Table 1 is one of the most educational tables in the paper.</p>
+<p>For OPT models from 6.7B to 175B, average accuracy is roughly:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th style="text-align:right">OPT-6.7B</th>
+<th style="text-align:right">OPT-13B</th>
+<th style="text-align:right">OPT-30B</th>
+<th style="text-align:right">OPT-66B</th>
+<th style="text-align:right">OPT-175B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FP16</td>
+<td style="text-align:right">64.9%</td>
+<td style="text-align:right">65.6%</td>
+<td style="text-align:right">67.9%</td>
+<td style="text-align:right">69.5%</td>
+<td style="text-align:right">71.6%</td>
+</tr>
+<tr>
+<td>INT8 per-tensor</td>
+<td style="text-align:right">39.9%</td>
+<td style="text-align:right">33.0%</td>
+<td style="text-align:right">32.8%</td>
+<td style="text-align:right">33.1%</td>
+<td style="text-align:right">32.3%</td>
+</tr>
+<tr>
+<td>INT8 per-token</td>
+<td style="text-align:right">42.5%</td>
+<td style="text-align:right">33.0%</td>
+<td style="text-align:right">33.1%</td>
+<td style="text-align:right">32.9%</td>
+<td style="text-align:right">31.7%</td>
+</tr>
+<tr>
+<td>INT8 per-channel</td>
+<td style="text-align:right">64.8%</td>
+<td style="text-align:right">65.6%</td>
+<td style="text-align:right">68.0%</td>
+<td style="text-align:right">69.4%</td>
+<td style="text-align:right">71.4%</td>
+</tr>
+</tbody>
+</table>
+<p>The message is blunt:</p>
+<ul>
+<li>naive activation quantization is catastrophic,</li>
+<li>per-token alone is not enough,</li>
+<li>per-channel would solve it,</li>
+<li>but hardware compatibility blocks the straightforward solution.</li>
+</ul>
+<p>This table is basically the motivation for the entire paper.</p>
+<h2 id="7-2-OPT-175B-the-stress-test">7.2 OPT-175B: the stress test</h2>
+<p>Table 3 is, in my opinion, the most important accuracy table.</p>
+<p>For <strong>OPT-175B</strong>, the paper compares many methods across seven zero-shot tasks plus WikiText perplexity.</p>
+<p>A few representative numbers:</p>
+<ul>
+<li><strong>FP16</strong> average accuracy: <strong>66.9%</strong>, WikiText perplexity <strong>10.99</strong></li>
+<li><strong>LLM.int8()</strong> average accuracy: <strong>66.7%</strong>, WikiText perplexity <strong>11.10</strong></li>
+<li><strong>SmoothQuant-O3</strong> average accuracy: <strong>66.8%</strong>, WikiText perplexity <strong>11.17</strong></li>
+</ul>
+<p>Meanwhile the naive baselines fall apart:</p>
+<ul>
+<li>W8A8 average accuracy: <strong>35.5%</strong>, perplexity <strong>93080</strong></li>
+<li>ZeroQuant average accuracy: <strong>35.8%</strong>, perplexity <strong>84648</strong></li>
+<li>Outlier Suppression average accuracy: <strong>36.0%</strong>, perplexity <strong>96151</strong></li>
+</ul>
+<p>That is an enormous gap.</p>
+<p>What does this mean in plain language?</p>
+<p>It means SmoothQuant preserves the behavior of a 175B model almost perfectly while using a much more hardware-friendly representation.</p>
+<p>That is exactly the kind of result practitioners care about. If your quantization method only works on 7B toy cases, that is nice academically. If it survives at 175B, people pay attention.</p>
+<h2 id="7-3-Scaling-across-model-families">7.3 Scaling across model families</h2>
+<p>Table 4 shows that SmoothQuant is not just an OPT-specific trick.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th style="text-align:right">OPT-175B</th>
+<th style="text-align:right">BLOOM-176B</th>
+<th style="text-align:right">GLM-130B*</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FP16</td>
+<td style="text-align:right">71.6%</td>
+<td style="text-align:right">68.2%</td>
+<td style="text-align:right">73.8%</td>
+</tr>
+<tr>
+<td>W8A8</td>
+<td style="text-align:right">32.3%</td>
+<td style="text-align:right">64.2%</td>
+<td style="text-align:right">26.9%</td>
+</tr>
+<tr>
+<td>ZeroQuant</td>
+<td style="text-align:right">31.7%</td>
+<td style="text-align:right">67.4%</td>
+<td style="text-align:right">26.7%</td>
+</tr>
+<tr>
+<td>LLM.int8()</td>
+<td style="text-align:right">71.4%</td>
+<td style="text-align:right">68.0%</td>
+<td style="text-align:right">73.8%</td>
+</tr>
+<tr>
+<td>Outlier Suppression</td>
+<td style="text-align:right">31.7%</td>
+<td style="text-align:right">54.1%</td>
+<td style="text-align:right">63.5%</td>
+</tr>
+<tr>
+<td>SmoothQuant-O1</td>
+<td style="text-align:right">71.2%</td>
+<td style="text-align:right">68.3%</td>
+<td style="text-align:right">73.7%</td>
+</tr>
+<tr>
+<td>SmoothQuant-O2</td>
+<td style="text-align:right">71.1%</td>
+<td style="text-align:right">68.4%</td>
+<td style="text-align:right">72.5%</td>
+</tr>
+<tr>
+<td>SmoothQuant-O3</td>
+<td style="text-align:right">71.1%</td>
+<td style="text-align:right">67.4%</td>
+<td style="text-align:right">72.8%</td>
+</tr>
+</tbody>
+</table>
+<p>The interesting part is not just that SmoothQuant works. It is that <strong>different models have different quantization difficulty</strong>.</p>
+<p>The paper points out:</p>
+<ul>
+<li>BLOOM-176B is easier to quantize,</li>
+<li>GLM-130B is harder,</li>
+<li>static O3 causes only about a 1% drop on GLM-130B,</li>
+<li>and choosing a larger <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> helps when activations are more troublesome.</li>
+</ul>
+<p>I like this nuance. Good papers admit that “one method for everything” is not perfectly true.</p>
+<h2 id="7-4-Results-on-instruction-tuned-and-newer-models">7.4 Results on instruction-tuned and newer models</h2>
+<p>Table 5 studies <strong>OPT-IML-30B</strong>, an instruction-tuned model:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th style="text-align:right">LAMBADA</th>
+<th style="text-align:right">WikiText</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FP16</td>
+<td style="text-align:right">69.12%</td>
+<td style="text-align:right">14.26</td>
+</tr>
+<tr>
+<td>W8A8</td>
+<td style="text-align:right">4.21%</td>
+<td style="text-align:right">576.53</td>
+</tr>
+<tr>
+<td>ZeroQuant</td>
+<td style="text-align:right">5.12%</td>
+<td style="text-align:right">455.12</td>
+</tr>
+<tr>
+<td>LLM.int8()</td>
+<td style="text-align:right">69.14%</td>
+<td style="text-align:right">14.27</td>
+</tr>
+<tr>
+<td>Outlier Suppression</td>
+<td style="text-align:right">0.00%</td>
+<td style="text-align:right">9485.62</td>
+</tr>
+<tr>
+<td>SmoothQuant-O3</td>
+<td style="text-align:right">69.77%</td>
+<td style="text-align:right">14.37</td>
+</tr>
+</tbody>
+</table>
+<p>This is another nice result. The method is not tied to purely vanilla pretraining-only models.</p>
+<p>Table 6 shows LLaMA perplexity at sequence length 512:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align:right">FP16</th>
+<th style="text-align:right">W8A8 SmoothQuant</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LLaMA-7B</td>
+<td style="text-align:right">11.51</td>
+<td style="text-align:right">11.56</td>
+</tr>
+<tr>
+<td>LLaMA-13B</td>
+<td style="text-align:right">10.05</td>
+<td style="text-align:right">10.08</td>
+</tr>
+<tr>
+<td>LLaMA-30B</td>
+<td style="text-align:right">7.53</td>
+<td style="text-align:right">7.56</td>
+</tr>
+<tr>
+<td>LLaMA-65B</td>
+<td style="text-align:right">6.17</td>
+<td style="text-align:right">6.20</td>
+</tr>
+</tbody>
+</table>
+<p>Table 7 extends to more recent families on WikiText-2 with sequence length 2048:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align:right">FP16 PPL</th>
+<th style="text-align:right">W8A8 SmoothQuant PPL</th>
+<th style="text-align:right"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Llama-2-7B</td>
+<td style="text-align:right">5.474</td>
+<td style="text-align:right">5.515</td>
+<td style="text-align:right">0.85</td>
+</tr>
+<tr>
+<td>Llama-2-13B</td>
+<td style="text-align:right">4.950</td>
+<td style="text-align:right">4.929</td>
+<td style="text-align:right">0.85</td>
+</tr>
+<tr>
+<td>Llama-2-70B</td>
+<td style="text-align:right">3.320</td>
+<td style="text-align:right">3.359</td>
+<td style="text-align:right">0.9</td>
+</tr>
+<tr>
+<td>Falcon-7B</td>
+<td style="text-align:right">6.590</td>
+<td style="text-align:right">6.629</td>
+<td style="text-align:right">0.6</td>
+</tr>
+<tr>
+<td>Falcon-40B</td>
+<td style="text-align:right">5.228</td>
+<td style="text-align:right">5.255</td>
+<td style="text-align:right">0.7</td>
+</tr>
+<tr>
+<td>Mistral-7B</td>
+<td style="text-align:right">5.253</td>
+<td style="text-align:right">5.277</td>
+<td style="text-align:right">0.8</td>
+</tr>
+<tr>
+<td>Mixtral-8x7B</td>
+<td style="text-align:right">3.842</td>
+<td style="text-align:right">3.893</td>
+<td style="text-align:right">0.8</td>
+</tr>
+</tbody>
+</table>
+<p>These results are particularly useful for readers today because they suggest the core idea remained relevant beyond the original 2023 model set.</p>
+<h2 id="7-5-Speedup-and-memory-reduction">7.5 Speedup and memory reduction</h2>
+<p>Accuracy alone is not enough for this paper. Its real ambition is hardware efficiency.</p>
+<h3 id="PyTorch-implementation-Figure-8">PyTorch implementation: Figure 8</h3>
+<p>The paper reports that SmoothQuant-O3 achieves up to:</p>
+<ul>
+<li><strong>1.51× speedup</strong></li>
+<li><strong>1.96× memory saving</strong></li>
+</ul>
+<p>on OPT models in the PyTorch implementation.</p>
+<p>The trend is important:</p>
+<ul>
+<li>SmoothQuant is consistently faster than FP16,</li>
+<li><strong>LLM.int8() is often slower than FP16</strong>, because mixed-precision outlier handling adds overhead.</li>
+</ul>
+<p>This is an essential lesson. A quantization method that “preserves accuracy” but slows inference is not necessarily useful in deployment.</p>
+<h3 id="FasterTransformer-implementation-Figure-9-and-Table-11">FasterTransformer implementation: Figure 9 and Table 11</h3>
+<p>In FasterTransformer, SmoothQuant-O3 pushes performance even further. The paper reports up to <strong>1.56× speedup</strong> for OPT-13B and OPT-30B on single GPU.</p>
+<p>Table 11 gives concrete latencies:</p>
+<table>
+<thead>
+<tr>
+<th>Model / Seq Len</th>
+<th style="text-align:right">FP16</th>
+<th style="text-align:right">LLM.int8()</th>
+<th style="text-align:right">SQ-O1</th>
+<th style="text-align:right">SQ-O2</th>
+<th style="text-align:right">SQ-O3</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OPT-13B / 256</td>
+<td style="text-align:right">152.6 ms</td>
+<td style="text-align:right">237.1 ms</td>
+<td style="text-align:right">124.5 ms</td>
+<td style="text-align:right">120.5 ms</td>
+<td style="text-align:right"><strong>112.1 ms</strong></td>
+</tr>
+<tr>
+<td>OPT-13B / 512</td>
+<td style="text-align:right">296.3 ms</td>
+<td style="text-align:right">371.5 ms</td>
+<td style="text-align:right">243.3 ms</td>
+<td style="text-align:right">235.1 ms</td>
+<td style="text-align:right"><strong>223.1 ms</strong></td>
+</tr>
+<tr>
+<td>OPT-30B / 256</td>
+<td style="text-align:right">343.0 ms</td>
+<td style="text-align:right">387.9 ms</td>
+<td style="text-align:right">246.7 ms</td>
+<td style="text-align:right">240.2 ms</td>
+<td style="text-align:right"><strong>227.6 ms</strong></td>
+</tr>
+<tr>
+<td>OPT-30B / 512</td>
+<td style="text-align:right">659.9 ms</td>
+<td style="text-align:right">654.9 ms</td>
+<td style="text-align:right">490.7 ms</td>
+<td style="text-align:right">478.3 ms</td>
+<td style="text-align:right"><strong>458.4 ms</strong></td>
+</tr>
+</tbody>
+</table>
+<p>This table is nice because it clearly demonstrates the latency hierarchy:</p>
+<ul>
+<li>coarser quantization is faster,</li>
+<li>static is faster than dynamic,</li>
+<li>SmoothQuant is faster than FP16,</li>
+<li>mixed-precision LLM.int8() is often slower.</li>
+</ul>
+<h3 id="Decoding-stage-Table-8">Decoding stage: Table 8</h3>
+<p>The paper also measures autoregressive decoding, which is exactly the stage that matters for chat-style inference.</p>
+<p>Representative examples:</p>
+<p><strong>OPT-30B, 1 GPU</strong></p>
+<ul>
+<li>batch 1, seq 512: <strong>422 ms → 314 ms</strong> (<strong>1.35×</strong>) and <strong>57 GB → 30 GB</strong> (<strong>1.91×</strong>)</li>
+<li>batch 16, seq 512: <strong>2488 ms → 1753 ms</strong> (<strong>1.42×</strong>) and <strong>69 GB → 44 GB</strong> (<strong>1.59×</strong>)</li>
+</ul>
+<p><strong>OPT-175B, 8 GPUs</strong></p>
+<ul>
+<li>batch 16, seq 1024: <strong>4133 ms → 3231 ms</strong> (<strong>1.28×</strong>) and <strong>56 GB → 37 GB</strong> (<strong>1.52×</strong>)</li>
+</ul>
+<p>This matters because many papers only discuss prefill/context stage and ignore generation latency. SmoothQuant does not.</p>
+<h2 id="7-6-Serving-a-530B-model-within-one-node">7.6 Serving a 530B model within one node</h2>
+<p>This is one of the most dramatic systems claims in the paper.</p>
+<p>Table 9 says SmoothQuant can quantize <strong>MT-NLG 530B</strong> to W8A8 with negligible accuracy loss:</p>
+<table>
+<thead>
+<tr>
+<th>Precision</th>
+<th style="text-align:right">LAMBADA</th>
+<th style="text-align:right">HellaSwag</th>
+<th style="text-align:right">PIQA</th>
+<th style="text-align:right">WinoGrande</th>
+<th style="text-align:right">Average</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FP16</td>
+<td style="text-align:right">76.6%</td>
+<td style="text-align:right">62.1%</td>
+<td style="text-align:right">81.0%</td>
+<td style="text-align:right">72.9%</td>
+<td style="text-align:right">73.1%</td>
+</tr>
+<tr>
+<td>INT8</td>
+<td style="text-align:right">77.2%</td>
+<td style="text-align:right">60.4%</td>
+<td style="text-align:right">80.7%</td>
+<td style="text-align:right">74.1%</td>
+<td style="text-align:right">73.1%</td>
+</tr>
+</tbody>
+</table>
+<p>Table 10 shows the systems consequence:</p>
+<table>
+<thead>
+<tr>
+<th>Seq Len</th>
+<th>Precision</th>
+<th style="text-align:right">GPUs</th>
+<th style="text-align:right">Latency</th>
+<th style="text-align:right">Memory</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>128</td>
+<td>FP16</td>
+<td style="text-align:right">16</td>
+<td style="text-align:right">232 ms</td>
+<td style="text-align:right">1040 GB</td>
+</tr>
+<tr>
+<td>128</td>
+<td>INT8</td>
+<td style="text-align:right">8</td>
+<td style="text-align:right">253 ms</td>
+<td style="text-align:right">527 GB</td>
+</tr>
+<tr>
+<td>256</td>
+<td>FP16</td>
+<td style="text-align:right">16</td>
+<td style="text-align:right">451 ms</td>
+<td style="text-align:right">1054 GB</td>
+</tr>
+<tr>
+<td>256</td>
+<td>INT8</td>
+<td style="text-align:right">8</td>
+<td style="text-align:right">434 ms</td>
+<td style="text-align:right">533 GB</td>
+</tr>
+<tr>
+<td>512</td>
+<td>FP16</td>
+<td style="text-align:right">16</td>
+<td style="text-align:right">838 ms</td>
+<td style="text-align:right">1068 GB</td>
+</tr>
+<tr>
+<td>512</td>
+<td>INT8</td>
+<td style="text-align:right">8</td>
+<td style="text-align:right">839 ms</td>
+<td style="text-align:right">545 GB</td>
+</tr>
+<tr>
+<td>1024</td>
+<td>FP16</td>
+<td style="text-align:right">16</td>
+<td style="text-align:right">1707 ms</td>
+<td style="text-align:right">1095 GB</td>
+</tr>
+<tr>
+<td>1024</td>
+<td>INT8</td>
+<td style="text-align:right">8</td>
+<td style="text-align:right">1689 ms</td>
+<td style="text-align:right">570 GB</td>
+</tr>
+</tbody>
+</table>
+<p>So the paper is not merely saying “we save a bit of memory.” It is saying:</p>
+<blockquote>
+<p><strong>we can cut the GPU count in half for a 530B model while keeping similar latency.</strong></p>
+</blockquote>
+<p>That is a major operational difference.</p>
+<h2 id="7-7-Ablation-on-migration-strength">7.7 Ablation on migration strength</h2>
+<p>Figure 10 studies the migration-strength parameter <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span>.</p>
+<p>The result is exactly what you would hope:</p>
+<ul>
+<li>if <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> is too small, activations stay difficult,</li>
+<li>if <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> is too large, weights become difficult,</li>
+<li>the sweet spot is around <strong>0.4–0.6</strong> for OPT-175B.</li>
+</ul>
+<p>This is reassuring because it matches the conceptual story. The method works when the difficulty is balanced, not when it is pushed completely to one side.</p>
+<hr>
+<h2 id="8-What-I-Think-Is-Clever-About-This-Paper">8. What I Think Is Clever About This Paper</h2>
+<p>Several things.</p>
+<h3 id="8-1-It-solves-the-right-problem">8.1 It solves the right problem</h3>
+<p>The paper does not ask, “Can I invent a more exotic quantizer?” It asks, “Why does the hardware-friendly quantizer fail, and can I modify the representation so it stops failing?”</p>
+<p>That is a better question.</p>
+<h3 id="8-2-It-finds-structure-in-the-outliers">8.2 It finds structure in the outliers</h3>
+<p>A less insightful paper would stop at “activations have outliers.” SmoothQuant goes further and observes that those outliers persist in particular channels. That structural fact is what makes offline channel-wise smoothing possible.</p>
+<h3 id="8-3-It-uses-exact-equivalence-not-approximation-for-the-transformation">8.3 It uses exact equivalence, not approximation, for the transformation</h3>
+<p>The transformation itself does not change the linear function. That means the method is not gambling with the model’s semantics at that step. The only approximation comes from quantization after the transformation.</p>
+<p>That is elegant.</p>
+<h3 id="8-4-It-respects-systems-reality">8.4 It respects systems reality</h3>
+<p>I keep coming back to this because it matters.</p>
+<p>The paper could have celebrated per-channel activation quantization and stopped. Instead, it directly confronts the issue that per-channel activation scaling does not map well to fast GEMM kernels.</p>
+<p>In LLM serving, “fast in theory” is not good enough. SmoothQuant understands that.</p>
+<h3 id="8-5-It-offers-a-continuum-not-a-single-rigid-mode">8.5 It offers a continuum, not a single rigid mode</h3>
+<p>The O1 / O2 / O3 settings are useful because different deployments care about different points on the latency–accuracy curve.</p>
+<p>I generally trust papers more when they provide a spectrum of tradeoffs rather than one magic setting.</p>
+<hr>
+<h2 id="9-Limitations-and-Boundary-Conditions">9. Limitations and Boundary Conditions</h2>
+<p>No paper is universal, and SmoothQuant is not universal either.</p>
+<h3 id="9-1-It-is-mainly-an-INT8-paper">9.1 It is mainly an INT8 paper</h3>
+<p>This paper is about making <strong>W8A8</strong> work. That is extremely useful, but it is not the same as aggressive low-bit compression like W4A16 or INT4/INT3 full-stack quantization.</p>
+<p>If your goal is the most extreme memory reduction possible, SmoothQuant is not the final answer. Later work such as AWQ, GPTQ variants, KV-cache quantization, and 4-bit serving methods goes after lower precision.</p>
+<h3 id="9-2-It-depends-on-calibration-statistics">9.2 It depends on calibration statistics</h3>
+<p>The method estimates activation scales using calibration data. That means distribution shift still matters. Static quantization always carries some risk if real serving traffic differs from calibration traffic.</p>
+<p>The paper shows this in a mild form with GLM-130B, where static O3 is slightly worse than more adaptive settings.</p>
+<h3 id="9-3-It-does-not-quantize-everything">9.3 It does not quantize everything</h3>
+<p>The paper intentionally leaves some lightweight operations in FP16, such as softmax and layer norm. I think this is the correct engineering choice, but it means the method is not a pure all-INT8 end-to-end story.</p>
+<h3 id="9-4-Model-families-need-different-alpha">9.4 Model families need different <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span></h3>
+<p>The paper already shows this:</p>
+<ul>
+<li>0.5 is good for OPT/BLOOM,</li>
+<li>0.75 is used for GLM-130B,</li>
+<li>later model families use even larger values in some cases.</li>
+</ul>
+<p>So there is some tuning burden.</p>
+<h3 id="9-5-It-focuses-on-inference-not-training">9.5 It focuses on inference, not training</h3>
+<p>SmoothQuant is a serving/inference paper. It is not trying to reduce training cost, optimizer state, or training-time communication overhead.</p>
+<h3 id="9-6-The-outlier-story-is-highly-useful-but-not-the-whole-quantization-story">9.6 The outlier story is highly useful, but not the whole quantization story</h3>
+<p>Even if outliers are a major bottleneck, they are not the only source of quantization error. Different architectures, normalization schemes, and token distributions can all matter.</p>
+<p>So I would treat SmoothQuant as a foundational systems technique, not as the final general theory of LLM quantization.</p>
+<hr>
+<h2 id="10-Reproducibility-and-Practical-Notes">10. Reproducibility and Practical Notes</h2>
+<p>From a reproducibility standpoint, I would rate this paper as fairly good.</p>
+<h3 id="10-1-Positives">10.1 Positives</h3>
+<ul>
+<li>The paper provides the core equations clearly.</li>
+<li>It explains the calibration procedure.</li>
+<li>It defines the baselines and quantization settings in Table 2.</li>
+<li>It includes backend details: HuggingFace, FasterTransformer, CUTLASS INT8 GEMM.</li>
+<li>The code is public on GitHub.</li>
+</ul>
+<p>That is enough for a strong practitioner to reproduce the main idea.</p>
+<h3 id="10-2-What-you-still-need-in-practice">10.2 What you still need in practice</h3>
+<p>If I were implementing this in a real serving stack, I would still need to answer:</p>
+<ul>
+<li>exactly which layers to smooth in each architecture,</li>
+<li>how to fuse the scales cleanly into upstream parameters,</li>
+<li>how to choose calibration prompts that match the production distribution,</li>
+<li>how to select <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> efficiently for a new model family,</li>
+<li>how to validate quality beyond perplexity and zero-shot benchmarks.</li>
+</ul>
+<h3 id="10-3-Practical-deployment-advice">10.3 Practical deployment advice</h3>
+<p>If I had to turn this into a deployment checklist, it would look like this:</p>
+<ol>
+<li>start from a known-good FP16 checkpoint,</li>
+<li>collect a calibration set that resembles expected traffic,</li>
+<li>sweep a small set of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> values,</li>
+<li>validate both quality and latency,</li>
+<li>prefer coarser/static settings only if the accuracy hit is acceptable,</li>
+<li>benchmark context stage and decoding stage separately,</li>
+<li>watch for architecture-specific trouble layers.</li>
+</ol>
+<h3 id="10-4-What-kind-of-hardware-benefits-the-most">10.4 What kind of hardware benefits the most?</h3>
+<p>The paper’s message strongly suggests that SmoothQuant is especially valuable when:</p>
+<ul>
+<li>you have strong INT8 kernel support,</li>
+<li>matrix multiplication dominates runtime,</li>
+<li>memory bandwidth and model footprint are important bottlenecks,</li>
+<li>and mixed-precision outlier handling would otherwise break the fast path.</li>
+</ul>
+<p>That is exactly the setting of modern accelerator-backed LLM serving.</p>
+<hr>
+<h2 id="11-Where-This-Paper-Sits-in-the-Bigger-Quantization-Picture">11. Where This Paper Sits in the Bigger Quantization Picture</h2>
+<p>I think SmoothQuant sits at a very important junction between earlier and later quantization work.</p>
+<h3 id="11-1-Compared-with-LLM-int8">11.1 Compared with LLM.int8()</h3>
+<p>LLM.int8() says:</p>
+<ul>
+<li>keep the hard outliers in higher precision,</li>
+<li>quantize the rest.</li>
+</ul>
+<p>That preserves quality, but the mixed-precision path is operationally expensive.</p>
+<p>SmoothQuant says:</p>
+<ul>
+<li>do not preserve the problematic activation distribution as-is,</li>
+<li>reshape it offline,</li>
+<li>then run a uniform fast INT8 kernel path.</li>
+</ul>
+<p>So SmoothQuant wins on hardware friendliness.</p>
+<h3 id="11-2-Compared-with-GPTQ">11.2 Compared with GPTQ</h3>
+<p>GPTQ focuses mainly on <strong>weight-only</strong> quantization and uses more sophisticated error compensation for low-bit weights. That is a different operating point.</p>
+<p>I would summarize the difference like this:</p>
+<ul>
+<li><strong>GPTQ</strong>: how do I quantize weights very aggressively while preserving model quality?</li>
+<li><strong>SmoothQuant</strong>: how do I make both weights and activations quantizable so INT8 inference becomes fast and practical?</li>
+</ul>
+<p>Both are important. They solve related but different problems.</p>
+<h3 id="11-3-Compared-with-AWQ">11.3 Compared with AWQ</h3>
+<p>AWQ is a natural comparison because it also rebalances quantization difficulty using a scaling idea. But the goals differ.</p>
+<ul>
+<li><strong>SmoothQuant</strong> targets <strong>W8A8</strong> and is trying to tame activation outliers so fully INT8 kernels become feasible.</li>
+<li><strong>AWQ</strong> targets low-bit <strong>weight-only</strong> quantization, especially W4A16, and uses activation-aware scaling to protect salient weight channels.</li>
+</ul>
+<p>I think SmoothQuant is the cleaner “systems deployment” story for INT8, while AWQ is more about aggressive weight compression for memory-bound inference.</p>
+<h3 id="11-4-Why-this-paper-aged-well">11.4 Why this paper aged well</h3>
+<p>Many papers matter for a year and then vanish. SmoothQuant aged well because the core idea is not tied to one benchmark. It addresses a structural issue:</p>
+<ul>
+<li>LLMs have activation outliers,</li>
+<li>hardware likes regular integer kernels,</li>
+<li>equivalent transformations can move numerical pain around.</li>
+</ul>
+<p>That is a durable concept.</p>
+<hr>
+<h2 id="12-Conclusion">12. Conclusion</h2>
+<p>Let me end with the simplest possible summary.</p>
+<p>SmoothQuant starts from a frustrating fact:</p>
+<ul>
+<li>LLM activations are hard to quantize,</li>
+<li>especially because of persistent outlier channels,</li>
+<li>and naive W8A8 quantization destroys accuracy.</li>
+</ul>
+<p>Instead of giving up and keeping a messy mixed-precision runtime, the paper introduces a simple, exact channel-wise transformation:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>Y</mi><mo>=</mo><mi>X</mi><mi>W</mi><mo>=</mo><mo stretchy="false">(</mo><mi>X</mi><mtext> </mtext><mrow><mi mathvariant="normal">d</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">g</mi></mrow><mo stretchy="false">(</mo><mi>s</mi><msup><mo stretchy="false">)</mo><mrow><mo>−</mo><mn>1</mn></mrow></msup><mo stretchy="false">)</mo><mo stretchy="false">(</mo><mrow><mi mathvariant="normal">d</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">g</mi></mrow><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mi>W</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">Y = XW = (X\,\mathrm{diag}(s)^{-1})(\mathrm{diag}(s)W)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">Y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1141em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathrm" style="margin-right:0.01389em;">diag</span></span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose"><span class="mclose">)</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mclose">)</span><span class="mopen">(</span><span class="mord"><span class="mord mathrm" style="margin-right:0.01389em;">diag</span></span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mclose">)</span></span></span></span></span></p>
+<p>This moves some quantization difficulty from activations to weights. Since weights are easier to quantize, both sides become manageable enough for efficient INT8 execution.</p>
+<p>The experimental results show three things very convincingly:</p>
+<ol>
+<li><strong>accuracy is preserved</strong>, even on extremely large models like OPT-175B,</li>
+<li><strong>latency and memory improve meaningfully</strong>, not just marginally,</li>
+<li><strong>the method scales to real systems</strong>, including serving a 530B model with half the GPU count.</li>
+</ol>
+<p>My overall judgment is straightforward:</p>
+<blockquote>
+<p><strong>This is a very strong paper because it bridges theory, numerics, and deployment reality unusually well.</strong></p>
+</blockquote>
+<p>If you are new to LLM systems, SmoothQuant is one of the best papers to study because it teaches an enduring engineering principle:</p>
+<blockquote>
+<p>when hardware and numerics disagree, sometimes the right move is not a more complicated kernel, but a smarter equivalent representation.</p>
+</blockquote>
+<p>That is exactly what SmoothQuant delivers.</p>
+<hr>
+<h2 id="13-References">13. References</h2>
+<ol>
+<li>Guangxuan Xiao, Ji Lin, Mickael Seznec, Hao Wu, Julien Demouth, and Song Han. <em>SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models</em>. ICML 2023.</li>
+<li>Tim Dettmers, Mike Lewis, Younes Belkada, and Luke Zettlemoyer. <em>LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale</em>. 2022.</li>
+<li>Elias Frantar, Saleh Ashkboos, Torsten Hoefler, and Dan Alistarh. <em>GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers</em>. 2022.</li>
+<li>Ji Lin et al. <em>AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration</em>. MLSys 2024.</li>
+<li>Zhewei Yao et al. <em>ZeroQuant: Efficient and Affordable Post-Training Quantization for Large-Scale Transformers</em>. 2022.</li>
+</ol>
+<hr>
+<p><em>Review written on 2026-04-08.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Efficient-Inference/" rel="tag"># Efficient Inference</a>
+              <a href="/tags/Quantization/" rel="tag"># Quantization</a>
+              <a href="/tags/SmoothQuant/" rel="tag"># SmoothQuant</a>
+              <a href="/tags/INT8/" rel="tag"># INT8</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/08/2026-04-08-SmoothQuant-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="prev" title="SmoothQuant：大型语言模型的精准高效训练后量化 — 深度技术评审">
+      <i class="fa fa-chevron-left"></i> SmoothQuant：大型语言模型的精准高效训练后量化 — 深度技术评审
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/09/2026-04-09-DistServe-technical-review-en/" rel="next" title="DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving — Deep Technical Review">
+      DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving — Deep Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Why-This-Paper-Matters"><span class="nav-number">1.</span> <span class="nav-text">1. Why This Paper Matters</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Prerequisites-What-I-Think-You-Need-First"><span class="nav-number">2.</span> <span class="nav-text">2. Prerequisites: What I Think You Need First</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-What-a-linear-layer-really-does"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 What a linear layer really does</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-What-quantization-means-in-plain-language"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 What quantization means in plain language</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-Why-weights-and-activations-are-not-the-same-problem"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 Why weights and activations are not the same problem</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-Why-outliers-are-such-a-headache"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 Why outliers are such a headache</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-Static-vs-dynamic-quantization"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 Static vs dynamic quantization</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-Why-hardware-constraints-matter"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 Why hardware constraints matter</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-The-Core-Problem-SmoothQuant-Tries-to-Solve"><span class="nav-number">3.</span> <span class="nav-text">3. The Core Problem SmoothQuant Tries to Solve</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-The-Key-Observations-Behind-the-Method"><span class="nav-number">4.</span> <span class="nav-text">4. The Key Observations Behind the Method</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Observation-1-Weights-are-easy-to-quantize"><span class="nav-number">4.1.</span> <span class="nav-text">Observation 1: Weights are easy to quantize</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Observation-2-Activations-are-hard-to-quantize"><span class="nav-number">4.2.</span> <span class="nav-text">Observation 2: Activations are hard to quantize</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Observation-3-The-outliers-persist-in-fixed-channels"><span class="nav-number">4.3.</span> <span class="nav-text">Observation 3: The outliers persist in fixed channels</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Observation-4-Per-channel-activation-quantization-would-work-but-hardware-does-not-want-it"><span class="nav-number">4.4.</span> <span class="nav-text">Observation 4: Per-channel activation quantization would work, but hardware does not want it</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-SmoothQuant-Method-Details"><span class="nav-number">5.</span> <span class="nav-text">5. SmoothQuant Method Details</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-The-mathematically-equivalent-transformation"><span class="nav-number">5.1.</span> <span class="nav-text">5.1 The mathematically equivalent transformation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Why-smoothing-helps"><span class="nav-number">5.2.</span> <span class="nav-text">5.2 Why smoothing helps</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-How-the-smoothing-factor-is-chosen"><span class="nav-number">5.3.</span> <span class="nav-text">5.3 How the smoothing factor is chosen</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-An-intuitive-toy-example"><span class="nav-number">5.4.</span> <span class="nav-text">5.4 An intuitive toy example</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-5-Offline-fusion-into-previous-layers"><span class="nav-number">5.5.</span> <span class="nav-text">5.5 Offline fusion into previous layers</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-6-Applying-SmoothQuant-to-Transformer-blocks"><span class="nav-number">5.6.</span> <span class="nav-text">5.6 Applying SmoothQuant to Transformer blocks</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Experimental-Setup"><span class="nav-number">6.</span> <span class="nav-text">6. Experimental Setup</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Model-families"><span class="nav-number">6.1.</span> <span class="nav-text">6.1 Model families</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Benchmarks"><span class="nav-number">6.2.</span> <span class="nav-text">6.2 Benchmarks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-Baselines"><span class="nav-number">6.3.</span> <span class="nav-text">6.3 Baselines</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-Calibration-and-implementation"><span class="nav-number">6.4.</span> <span class="nav-text">6.4 Calibration and implementation</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Results-and-What-They-Mean"><span class="nav-number">7.</span> <span class="nav-text">7. Results and What They Mean</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-1-Why-naive-activation-quantization-fails"><span class="nav-number">8.</span> <span class="nav-text">7.1 Why naive activation quantization fails</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-2-OPT-175B-the-stress-test"><span class="nav-number">9.</span> <span class="nav-text">7.2 OPT-175B: the stress test</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-3-Scaling-across-model-families"><span class="nav-number">10.</span> <span class="nav-text">7.3 Scaling across model families</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-4-Results-on-instruction-tuned-and-newer-models"><span class="nav-number">11.</span> <span class="nav-text">7.4 Results on instruction-tuned and newer models</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-5-Speedup-and-memory-reduction"><span class="nav-number">12.</span> <span class="nav-text">7.5 Speedup and memory reduction</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#PyTorch-implementation-Figure-8"><span class="nav-number">12.1.</span> <span class="nav-text">PyTorch implementation: Figure 8</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#FasterTransformer-implementation-Figure-9-and-Table-11"><span class="nav-number">12.2.</span> <span class="nav-text">FasterTransformer implementation: Figure 9 and Table 11</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Decoding-stage-Table-8"><span class="nav-number">12.3.</span> <span class="nav-text">Decoding stage: Table 8</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-6-Serving-a-530B-model-within-one-node"><span class="nav-number">13.</span> <span class="nav-text">7.6 Serving a 530B model within one node</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-7-Ablation-on-migration-strength"><span class="nav-number">14.</span> <span class="nav-text">7.7 Ablation on migration strength</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-What-I-Think-Is-Clever-About-This-Paper"><span class="nav-number">15.</span> <span class="nav-text">8. What I Think Is Clever About This Paper</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-It-solves-the-right-problem"><span class="nav-number">15.1.</span> <span class="nav-text">8.1 It solves the right problem</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-It-finds-structure-in-the-outliers"><span class="nav-number">15.2.</span> <span class="nav-text">8.2 It finds structure in the outliers</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-It-uses-exact-equivalence-not-approximation-for-the-transformation"><span class="nav-number">15.3.</span> <span class="nav-text">8.3 It uses exact equivalence, not approximation, for the transformation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-4-It-respects-systems-reality"><span class="nav-number">15.4.</span> <span class="nav-text">8.4 It respects systems reality</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-5-It-offers-a-continuum-not-a-single-rigid-mode"><span class="nav-number">15.5.</span> <span class="nav-text">8.5 It offers a continuum, not a single rigid mode</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-Limitations-and-Boundary-Conditions"><span class="nav-number">16.</span> <span class="nav-text">9. Limitations and Boundary Conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-It-is-mainly-an-INT8-paper"><span class="nav-number">16.1.</span> <span class="nav-text">9.1 It is mainly an INT8 paper</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-It-depends-on-calibration-statistics"><span class="nav-number">16.2.</span> <span class="nav-text">9.2 It depends on calibration statistics</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-It-does-not-quantize-everything"><span class="nav-number">16.3.</span> <span class="nav-text">9.3 It does not quantize everything</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-Model-families-need-different-alpha"><span class="nav-number">16.4.</span> <span class="nav-text">9.4 Model families need different α\alphaα</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-5-It-focuses-on-inference-not-training"><span class="nav-number">16.5.</span> <span class="nav-text">9.5 It focuses on inference, not training</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-6-The-outlier-story-is-highly-useful-but-not-the-whole-quantization-story"><span class="nav-number">16.6.</span> <span class="nav-text">9.6 The outlier story is highly useful, but not the whole quantization story</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-Reproducibility-and-Practical-Notes"><span class="nav-number">17.</span> <span class="nav-text">10. Reproducibility and Practical Notes</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-Positives"><span class="nav-number">17.1.</span> <span class="nav-text">10.1 Positives</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-What-you-still-need-in-practice"><span class="nav-number">17.2.</span> <span class="nav-text">10.2 What you still need in practice</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-Practical-deployment-advice"><span class="nav-number">17.3.</span> <span class="nav-text">10.3 Practical deployment advice</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-4-What-kind-of-hardware-benefits-the-most"><span class="nav-number">17.4.</span> <span class="nav-text">10.4 What kind of hardware benefits the most?</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-Where-This-Paper-Sits-in-the-Bigger-Quantization-Picture"><span class="nav-number">18.</span> <span class="nav-text">11. Where This Paper Sits in the Bigger Quantization Picture</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#11-1-Compared-with-LLM-int8"><span class="nav-number">18.1.</span> <span class="nav-text">11.1 Compared with LLM.int8()</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-2-Compared-with-GPTQ"><span class="nav-number">18.2.</span> <span class="nav-text">11.2 Compared with GPTQ</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-3-Compared-with-AWQ"><span class="nav-number">18.3.</span> <span class="nav-text">11.3 Compared with AWQ</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-4-Why-this-paper-aged-well"><span class="nav-number">18.4.</span> <span class="nav-text">11.4 Why this paper aged well</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-Conclusion"><span class="nav-number">19.</span> <span class="nav-text">12. Conclusion</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-References"><span class="nav-number">20.</span> <span class="nav-text">13. References</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

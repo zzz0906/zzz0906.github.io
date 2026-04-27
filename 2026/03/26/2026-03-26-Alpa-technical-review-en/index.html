@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="Alpa automates the search for optimal parallelism strategies combining data, tensor, and pipeline parallelism. Covers the ILP formulation, inter-operator DP, and compilation framework.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Alpa: Automating Inter- and Intra-Operator Parallelism — In-Depth Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/03/26/2026-03-26-Alpa-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="Alpa automates the search for optimal parallelism strategies combining data, tensor, and pipeline parallelism. Covers the ILP formulation, inter-operator DP, and compilation framework.">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-03-26T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-02T16:16:49.494Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Deep Learning">
+<meta property="article:tag" content="Distributed Training">
+<meta property="article:tag" content="Auto Parallelism">
+<meta property="article:tag" content="Model Parallelism">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/03/26/2026-03-26-Alpa-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>Alpa: Automating Inter- and Intra-Operator Parallelism — In-Depth Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/03/26/2026-03-26-Alpa-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Alpa: Automating Inter- and Intra-Operator Parallelism — In-Depth Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-03-26 00:00:00" itemprop="dateCreated datePublished" datetime="2026-03-26T00:00:00+00:00">2026-03-26</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-02 16:16:49" itemprop="dateModified" datetime="2026-04-02T16:16:49+00:00">2026-04-02</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">Alpa automates the search for optimal parallelism strategies combining data, tensor, and pipeline parallelism. Covers the ILP formulation, inter-operator DP, and compilation framework.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="Abstract">Abstract</h2>
+<p>Training extremely large deep learning models — with billions or even hundreds of billions of parameters — on distributed GPU clusters is one of the most challenging engineering problems in modern machine learning. Today, achieving high throughput requires manually combining multiple forms of parallelism (data, tensor/operator, pipeline) in ways that are specific to both the model architecture and the cluster topology. This manual process demands deep systems expertise and does not generalize across different models or hardware setups. <strong>Alpa</strong> is a compiler system that automates this entire process. It introduces a new hierarchical view of parallelism — distinguishing between <em>intra-operator</em> and <em>inter-operator</em> parallelism — and uses a combination of Integer Linear Programming (ILP) and Dynamic Programming (DP) to automatically generate near-optimal execution plans. Evaluated on GPT-3, GShard MoE, and Wide-ResNet at up to 64 GPUs, Alpa matches or outperforms hand-tuned systems like Megatron-LM and DeepSpeed, and generalizes to models that have no manually-designed parallelization strategies at all.</p>
+<a id="more"></a>
+<hr>
+<h2 id="1-Prerequisites-What-to-Know-Before-Reading-This-Paper">1. Prerequisites: What to Know Before Reading This Paper</h2>
+<p>Before diving into Alpa's design, you need to understand several foundational concepts. This section will bring you up to speed, even if you have only a general familiarity with deep learning.</p>
+<h3 id="1-1-Deep-Learning-Computation-as-a-Dataflow-Graph">1.1 Deep Learning Computation as a Dataflow Graph</h3>
+<p>When we write a deep learning model in frameworks like PyTorch or TensorFlow, the computation is internally represented as a <strong>dataflow graph</strong>. In this graph:</p>
+<ul>
+<li><strong>Nodes</strong> represent computational operations (operators), such as matrix multiplication, convolution, element-wise addition, layer normalization, etc.</li>
+<li><strong>Edges</strong> represent multi-dimensional arrays called <strong>tensors</strong> that flow between operations.</li>
+</ul>
+<p>Training one iteration involves three phases: (1) a <strong>forward pass</strong> that pushes a batch of data through the graph to compute a loss value, (2) a <strong>backward pass</strong> that computes gradients via backpropagation, and (3) a <strong>weight update</strong> step that adjusts model parameters using the computed gradients (typically via an optimizer like Adam or SGD).</p>
+<p>The key insight is that everything — forward computation, backward computation, and weight updates — can be expressed as operators working on tensors. This graph-level representation is what Alpa's compiler operates on.</p>
+<h3 id="1-2-Why-We-Need-Parallelism-Memory-and-Compute-Constraints">1.2 Why We Need Parallelism: Memory and Compute Constraints</h3>
+<p>A single GPU has limited memory (e.g., 16 GB on an NVIDIA V100) and limited compute throughput. Modern large models have parameter counts that far exceed what one device can hold:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Parameters</th>
+<th>Approximate Memory (FP16)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPT-2</td>
+<td>1.5B</td>
+<td>~3 GB (params only)</td>
+</tr>
+<tr>
+<td>GPT-3</td>
+<td>175B</td>
+<td>~350 GB (params only)</td>
+</tr>
+<tr>
+<td>GPT-3 + optimizer states</td>
+<td>175B</td>
+<td>~1.4 TB</td>
+</tr>
+</tbody>
+</table>
+<p>Even when a model fits on one GPU, training can be excruciatingly slow because GPUs can only process one batch at a time. Parallelism across multiple GPUs lets us split the work — either the data, the model, or both — to achieve reasonable training times.</p>
+<h3 id="1-3-The-Three-Classical-Forms-of-Parallelism">1.3 The Three Classical Forms of Parallelism</h3>
+<p>Prior to Alpa, the ML systems community recognized three main parallelization strategies:</p>
+<p><strong>Data Parallelism (DP):</strong> Each GPU holds a complete copy of the model. Different GPUs process different portions of the training batch. After computing gradients, all GPUs synchronize their gradients (usually via all-reduce) so that every copy stays identical. Data parallelism is simple and scales well, but requires the entire model to fit on each GPU.</p>
+<p><strong>Operator (Tensor Model) Parallelism (TMP/OP):</strong> Instead of replicating the model, we split individual operators across GPUs. For example, a large matrix multiplication <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mo>=</mo><mi>A</mi><mo>×</mo><mi>B</mi></mrow><annotation encoding="application/x-tex">C = A \times B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">A</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span> can be split by partitioning the weight matrix <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span> column-wise across GPUs, so each GPU computes a portion of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi></mrow><annotation encoding="application/x-tex">C</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span></span></span></span>. This reduces memory per GPU but requires heavy inter-GPU communication at every operator boundary. Systems like Megatron-LM use hand-designed tensor parallelism strategies for transformer layers.</p>
+<p><strong>Pipeline Parallelism (PP):</strong> We divide the model into sequential stages and assign each stage to a different GPU (or group of GPUs). To overlap computation, we split the batch into smaller <strong>microbatches</strong> and pipeline them through the stages. This reduces communication volume (only activations between stages are sent point-to-point) but introduces <strong>pipeline bubbles</strong> — periods where some GPUs sit idle waiting for data.</p>
+<h3 id="1-4-The-Combinatorial-Explosion-Problem">1.4 The Combinatorial Explosion Problem</h3>
+<p>The real challenge is that these three parallelism forms must be <strong>combined</strong> to train the largest models. Megatron-LM famously uses &quot;3D parallelism&quot; — DP + TMP + PP together. But the number of possible configurations is enormous:</p>
+<ul>
+<li>How many data-parallel replicas?</li>
+<li>Which axes to partition each operator along?</li>
+<li>How to split the model into pipeline stages?</li>
+<li>How to assign devices to stages?</li>
+<li>What mesh shape (e.g., 2×4 vs. 1×8) for each group of devices?</li>
+</ul>
+<p>These decisions are deeply interdependent. Changing the pipeline stage boundaries changes the memory requirements, which changes whether a particular tensor parallelism plan is feasible, which in turn affects data parallelism degree. Manually navigating this space requires strong ML and systems expertise and produces solutions that are specific to one model and one cluster.</p>
+<h3 id="1-5-Integer-Linear-Programming-ILP-and-Dynamic-Programming-DP">1.5 Integer Linear Programming (ILP) and Dynamic Programming (DP)</h3>
+<p>Alpa uses two optimization algorithms that come from operations research and computer science:</p>
+<p><strong>Integer Linear Programming (ILP):</strong> An optimization framework where the objective function and constraints are linear, but variables are restricted to integers. ILP solvers (like the CBC solver Alpa uses) can find globally optimal solutions, though worst-case runtime is exponential. In practice, the ILP problems Alpa constructs are tractable (solvable in seconds to minutes).</p>
+<p><strong>Dynamic Programming (DP):</strong> A technique for solving problems with <strong>optimal substructure</strong> — the optimal solution to the whole problem can be built from optimal solutions to subproblems. DP works by building a table of subproblem solutions bottom-up, avoiding redundant computation. Alpa uses DP for the inter-operator parallelism decisions.</p>
+<h3 id="1-6-Cluster-Topology-and-Communication-Bandwidth-Hierarchy">1.6 Cluster Topology and Communication Bandwidth Hierarchy</h3>
+<p>Modern GPU clusters have a hierarchical communication structure:</p>
+<ul>
+<li><strong>Within a node (intra-node):</strong> GPUs are connected via NVLink or NVSwitch, providing 100–600 GB/s of bandwidth.</li>
+<li><strong>Between nodes (inter-node):</strong> Nodes communicate over Ethernet or InfiniBand, typically 10–100 Gbps (1–12.5 GB/s).</li>
+</ul>
+<p>There is often a 10–50× difference in bandwidth between intra-node and inter-node links. This asymmetry is crucial to Alpa's design: communication-heavy parallelism (intra-operator) should be mapped to fast intra-node links, while communication-light parallelism (inter-operator/pipeline) should be mapped across slower inter-node links.</p>
+<hr>
+<h2 id="2-What-This-Paper-Does-The-Core-Idea">2. What This Paper Does (The Core Idea)</h2>
+<h3 id="2-1-A-New-View-Intra-Operator-vs-Inter-Operator-Parallelism">2.1 A New View: Intra-Operator vs. Inter-Operator Parallelism</h3>
+<p>Alpa's central conceptual contribution is to <strong>re-categorize</strong> all parallelism approaches into two orthogonal types, based on whether they partition individual operators:</p>
+<p><strong>Intra-Operator Parallelism:</strong> Any approach that partitions the computation of a single operator across devices. This includes:</p>
+<ul>
+<li><strong>Data parallelism</strong> (partitioning along the batch dimension)</li>
+<li><strong>Operator/tensor parallelism</strong> (partitioning along weight dimensions, as in Megatron-LM)</li>
+<li><strong>ZeRO optimizer</strong> (partitioning optimizer states and weight updates)</li>
+</ul>
+<p>All of these share a common trait: they involve splitting tensors along some axis and using <strong>collective communication</strong> (all-reduce, all-gather, all-to-all) to coordinate.</p>
+<p><strong>Inter-Operator Parallelism:</strong> Any approach that assigns different operators to different devices without partitioning individual operators. This includes:</p>
+<ul>
+<li><strong>Pipeline parallelism</strong> (splitting the model into stages and pipelining microbatches)</li>
+<li><strong>Device placement</strong> (assigning different model parts to different GPUs)</li>
+</ul>
+<p>Inter-operator parallelism uses only <strong>point-to-point communication</strong> between adjacent stages, which can be lightweight if sliced properly. However, it introduces pipeline bubbles (idle time).</p>
+<p>This reclassification is more than cosmetic. The two types have fundamentally different communication characteristics that map naturally onto the hierarchical cluster topology:</p>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Intra-Operator</th>
+<th>Inter-Operator</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Communication pattern</td>
+<td>Collective (all-reduce, all-gather)</td>
+<td>Point-to-point (send/recv)</td>
+</tr>
+<tr>
+<td>Communication volume</td>
+<td>High (every operator boundary)</td>
+<td>Low (only between stages)</td>
+</tr>
+<tr>
+<td>Device utilization</td>
+<td>High (all devices work simultaneously)</td>
+<td>Lower (pipeline bubbles)</td>
+</tr>
+<tr>
+<td>Best suited for</td>
+<td>Fast intra-node links</td>
+<td>Slower inter-node links</td>
+</tr>
+</tbody>
+</table>
+<h3 id="2-2-Hierarchical-Optimization">2.2 Hierarchical Optimization</h3>
+<p>Based on this reclassification, Alpa constructs a <strong>hierarchical</strong> execution plan:</p>
+<ol>
+<li><strong>At the inter-operator level:</strong> The compiler slices the model into pipeline stages and the cluster into device meshes. It assigns each stage to a mesh.</li>
+<li><strong>At the intra-operator level:</strong> For each stage-mesh pair, the compiler finds the best way to partition individual operators within that mesh.</li>
+</ol>
+<p>The hierarchical decomposition is what makes the problem tractable. Instead of searching through a joint space that grows exponentially, Alpa solves two smaller problems:</p>
+<ul>
+<li>The <strong>intra-op problem</strong> (ILP): Given a fixed subgraph and a fixed device mesh, find the best operator partitioning plan.</li>
+<li>The <strong>inter-op problem</strong> (DP): Given the costs from the intra-op optimizer, find the best way to slice the model and cluster.</li>
+</ul>
+<p>The inter-op optimizer calls the intra-op optimizer as a subroutine for each candidate stage-mesh pair, creating a two-level optimization loop.</p>
+<h3 id="2-3-How-Alpa-Differs-from-Prior-Work">2.3 How Alpa Differs from Prior Work</h3>
+<p><strong>vs. Megatron-LM (manual 3D parallelism):</strong> Megatron-LM requires domain experts to manually design tensor parallelism strategies specific to transformer architectures. It assumes all pipeline stages are identical and uses the same TP/DP configuration uniformly. Alpa automates everything and allows heterogeneous stage sizes and per-stage parallelism plans.</p>
+<p><strong>vs. FlexFlow/Tofu (limited auto-parallelism):</strong> FlexFlow uses MCMC random search over a combined data+operator parallelism space but does not include pipeline parallelism. Tofu handles only linear graphs on a single node. Alpa covers the full space.</p>
+<p><strong>vs. PipeDream/DAPPLE (pipeline-focused):</strong> These systems automate pipeline + data parallelism but do not include operator parallelism within stages. Alpa includes all three.</p>
+<hr>
+<h2 id="3-Method-Details">3. Method Details</h2>
+<h3 id="3-1-Intra-Operator-Parallelism-The-ILP-Formulation">3.1 Intra-Operator Parallelism: The ILP Formulation</h3>
+<p>The intra-op pass takes a computational subgraph and a device mesh as input, and outputs the optimal parallel algorithm for every operator. The key abstractions are:</p>
+<h4 id="3-1-1-Device-Mesh">3.1.1 Device Mesh</h4>
+<p>A device mesh is a 2-dimensional logical view of physical devices. For example, 16 GPUs across 2 nodes could be viewed as a 2×8 mesh (2 rows = nodes, 8 columns = GPUs per node) or a 4×4 mesh, etc. The two mesh dimensions can have different communication bandwidths.</p>
+<h4 id="3-1-2-Sharding-Specs">3.1.2 Sharding Specs</h4>
+<p>Each tensor is described by a <strong>sharding spec</strong> that says how it is distributed across the mesh. For an N-dimensional tensor on a 2D mesh, each tensor dimension can be:</p>
+<ul>
+<li><strong>S</strong> (Sharded): Partitioned along that axis, with a superscript indicating which mesh dimension (e.g., <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>S</mi><mn>0</mn></msup></mrow><annotation encoding="application/x-tex">S^0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">0</span></span></span></span></span></span></span></span></span></span></span> = split along mesh dimension 0)</li>
+<li><strong>R</strong> (Replicated): Fully copied across all devices</li>
+</ul>
+<p>For example, for a matrix on a 2×2 mesh: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>S</mi><mn>0</mn></msup><mi>R</mi></mrow><annotation encoding="application/x-tex">S^0R</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">0</span></span></span></span></span></span></span></span><span class="mord mathnormal" style="margin-right:0.00773em;">R</span></span></span></span> means row-partitioned (split along mesh dim 0, replicated along mesh dim 1). <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>S</mi><mn>0</mn></msup><msup><mi>S</mi><mn>1</mn></msup></mrow><annotation encoding="application/x-tex">S^0S^1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">0</span></span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span></span></span></span></span></span></span></span> means both row- and column-partitioned. <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>R</mi></mrow><annotation encoding="application/x-tex">RR</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.00773em;">R</span><span class="mord mathnormal" style="margin-right:0.00773em;">R</span></span></span></span> means fully replicated on all 4 devices.</p>
+<p>The paper's Table 1 exhaustively lists all sharding specs for a 2D tensor on a 2×2 mesh — there are 10 possible specs.</p>
+<h4 id="3-1-3-Parallel-Algorithms-for-an-Operator">3.1.3 Parallel Algorithms for an Operator</h4>
+<p>Each operator (e.g., matrix multiplication <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>C</mi><mrow><mi>b</mi><mo separator="true">,</mo><mi>i</mi><mo separator="true">,</mo><mi>j</mi></mrow></msub><mo>=</mo><msub><mo>∑</mo><mi>k</mi></msub><msub><mi>A</mi><mrow><mi>b</mi><mo separator="true">,</mo><mi>i</mi><mo separator="true">,</mo><mi>k</mi></mrow></msub><msub><mi>B</mi><mrow><mi>b</mi><mo separator="true">,</mo><mi>k</mi><mo separator="true">,</mo><mi>j</mi></mrow></msub></mrow><annotation encoding="application/x-tex">C_{b,i,j} = \sum_k A_{b,i,k} B_{b,k,j}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">b</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight">i</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0497em;vertical-align:-0.2997em;"></span><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1864em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2997em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">A</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">b</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight">i</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0502em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">b</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span>) has multiple possible <strong>parallel algorithms</strong>, each corresponding to a different choice of which loop dimensions to parallelize across which mesh dimensions.</p>
+<p>For a batched matmul, Table 3 in the paper lists 7 algorithms. For example:</p>
+<ul>
+<li>Algorithm #1: Map loop <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi><mo>→</mo></mrow><annotation encoding="application/x-tex">i \to</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span></span></span></span> mesh dim 0, loop <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>j</mi><mo>→</mo></mrow><annotation encoding="application/x-tex">j \to</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.854em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05724em;">j</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span></span></span></span> mesh dim 1 → Output spec <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><msup><mi>S</mi><mn>0</mn></msup><msup><mi>S</mi><mn>1</mn></msup></mrow><annotation encoding="application/x-tex">RS^0S^1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord mathnormal" style="margin-right:0.00773em;">R</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">0</span></span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span></span></span></span></span></span></span></span>, zero communication cost.</li>
+<li>Algorithm #2: Map loop <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi><mo>→</mo></mrow><annotation encoding="application/x-tex">i \to</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span></span></span></span> mesh dim 0, loop <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>→</mo></mrow><annotation encoding="application/x-tex">k \to</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span></span></span></span> mesh dim 1 → Output spec <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><msup><mi>S</mi><mn>0</mn></msup><mi>R</mi></mrow><annotation encoding="application/x-tex">RS^0R</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord mathnormal" style="margin-right:0.00773em;">R</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">0</span></span></span></span></span></span></span></span><span class="mord mathnormal" style="margin-right:0.00773em;">R</span></span></span></span>, requires all-reduce of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mi mathvariant="normal">/</mi><msub><mi>n</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">M/n_1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mord">/</span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> bytes along mesh dimension 1.</li>
+</ul>
+<h4 id="3-1-4-Resharding-Costs">3.1.4 Resharding Costs</h4>
+<p>When the output sharding spec of one operator does not match the input spec required by the next operator, a <strong>resharding</strong> operation is needed. This involves communication (all-gather, all-to-all, etc.). Table 2 in the paper lists resharding costs — for example, going from <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>S</mi><mn>0</mn></msup><mi>R</mi></mrow><annotation encoding="application/x-tex">S^0R</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">0</span></span></span></span></span></span></span></span><span class="mord mathnormal" style="margin-right:0.00773em;">R</span></span></span></span> to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>R</mi></mrow><annotation encoding="application/x-tex">RR</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.00773em;">R</span><span class="mord mathnormal" style="margin-right:0.00773em;">R</span></span></span></span> requires an all-gather of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi></mrow><annotation encoding="application/x-tex">M</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span></span></span></span> bytes along mesh dim 0.</p>
+<h4 id="3-1-5-The-ILP-Objective">3.1.5 The ILP Objective</h4>
+<p>Given computational graph <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mo>=</mo><mo stretchy="false">(</mo><mi>V</mi><mo separator="true">,</mo><mi>E</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">G = (V, E)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">G</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.05764em;">E</span><span class="mclose">)</span></span></span></span>, for each node <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>v</mi></mrow><annotation encoding="application/x-tex">v</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">v</span></span></span></span> with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>k</mi><mi>v</mi></msub></mrow><annotation encoding="application/x-tex">k_v</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0315em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> possible algorithms, define:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>s</mi><mi>v</mi></msub><mo>∈</mo><mo stretchy="false">{</mo><mn>0</mn><mo separator="true">,</mo><mn>1</mn><msup><mo stretchy="false">}</mo><msub><mi>k</mi><mi>v</mi></msub></msup></mrow><annotation encoding="application/x-tex">s_v \in \{0,1\}^{k_v}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6891em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0991em;vertical-align:-0.25em;"></span><span class="mopen">{</span><span class="mord">0</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mclose"><span class="mclose">}</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1645em;"><span style="top:-2.357em;margin-left:-0.0315em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span>: one-hot decision vector (which algorithm to pick)</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>c</mi><mi>v</mi></msub><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><msub><mi>k</mi><mi>v</mi></msub></msup></mrow><annotation encoding="application/x-tex">c_v \in \mathbb{R}^{k_v}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6891em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">c</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8491em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1645em;"><span style="top:-2.357em;margin-left:-0.0315em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span>: communication cost vector</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mi>v</mi></msub><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><msub><mi>k</mi><mi>v</mi></msub></msup></mrow><annotation encoding="application/x-tex">d_v \in \mathbb{R}^{k_v}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8491em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1645em;"><span style="top:-2.357em;margin-left:-0.0315em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span>: compute cost vector</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>R</mi><mrow><mi>v</mi><mi>u</mi></mrow></msub><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><msub><mi>k</mi><mi>v</mi></msub><mo>×</mo><msub><mi>k</mi><mi>u</mi></msub></mrow></msup></mrow><annotation encoding="application/x-tex">R_{vu} \in \mathbb{R}^{k_v \times k_u}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.00773em;">R</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0077em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span><span class="mord mathnormal mtight">u</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8491em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1645em;"><span style="top:-2.357em;margin-left:-0.0315em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span><span class="mbin mtight">×</span><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1645em;"><span style="top:-2.357em;margin-left:-0.0315em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">u</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span>: resharding cost matrix between connected nodes</li>
+</ul>
+<p>The objective is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><munder><mrow><mi>min</mi><mo>⁡</mo></mrow><mi>s</mi></munder><munder><mo>∑</mo><mrow><mi>v</mi><mo>∈</mo><mi>V</mi></mrow></munder><msubsup><mi>s</mi><mi>v</mi><mi>T</mi></msubsup><mo stretchy="false">(</mo><msub><mi>c</mi><mi>v</mi></msub><mo>+</mo><msub><mi>d</mi><mi>v</mi></msub><mo stretchy="false">)</mo><mo>+</mo><munder><mo>∑</mo><mrow><mo stretchy="false">(</mo><mi>v</mi><mo separator="true">,</mo><mi>u</mi><mo stretchy="false">)</mo><mo>∈</mo><mi>E</mi></mrow></munder><msubsup><mi>s</mi><mi>v</mi><mi>T</mi></msubsup><msub><mi>R</mi><mrow><mi>v</mi><mi>u</mi></mrow></msub><msub><mi>s</mi><mi>u</mi></msub></mrow><annotation encoding="application/x-tex">\min_s \sum_{v \in V} s_v^T (c_v + d_v) + \sum_{(v,u) \in E} s_v^T R_{vu} s_u
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:2.3717em;vertical-align:-1.3217em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6679em;"><span style="top:-2.4em;margin-left:0em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">s</span></span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span><span class="mop">min</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.7em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.8557em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span><span class="mrel mtight">∈</span><span class="mord mathnormal mtight" style="margin-right:0.22222em;">V</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.3217em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8913em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">c</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.566em;vertical-align:-1.516em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.809em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight">u</span><span class="mclose mtight">)</span><span class="mrel mtight">∈</span><span class="mord mathnormal mtight" style="margin-right:0.05764em;">E</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.516em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8913em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.00773em;">R</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0077em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span><span class="mord mathnormal mtight">u</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">u</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>The first term minimizes compute and communication costs within each operator. The second term minimizes resharding costs between operators. The quadratic term <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>s</mi><mi>v</mi><mi>T</mi></msubsup><msub><mi>R</mi><mrow><mi>v</mi><mi>u</mi></mrow></msub><msub><mi>s</mi><mi>u</mi></msub></mrow><annotation encoding="application/x-tex">s_v^T R_{vu} s_u</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0883em;vertical-align:-0.247em;"></span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8413em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.00773em;">R</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0077em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span><span class="mord mathnormal mtight">u</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">u</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is linearized by introducing auxiliary variables, making it a standard ILP solvable by off-the-shelf solvers (CBC).</p>
+<p><strong>Practical simplifications:</strong></p>
+<ul>
+<li>Compute costs <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mi>v</mi></msub></mrow><annotation encoding="application/x-tex">d_v</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">v</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> are set to zero for most operators (heavy ops like matmul always partition work evenly; lightweight ops have negligible cost).</li>
+<li>Communication costs are estimated analytically (bytes / bandwidth) rather than profiled.</li>
+<li>Computationally trivial operators are merged into their heavy operands to reduce graph size.</li>
+<li>Post-ILP optimization replaces all-reduce with reduce-scatter + all-gather to achieve weight-update sharding (ZeRO-style) automatically.</li>
+</ul>
+<h3 id="3-2-Inter-Operator-Parallelism-The-DP-Formulation">3.2 Inter-Operator Parallelism: The DP Formulation</h3>
+<p>The inter-op pass takes the full computational graph and the cluster configuration, and decides:</p>
+<ol>
+<li>How to slice operators into pipeline stages</li>
+<li>How to slice the cluster into device meshes</li>
+<li>How to assign stages to meshes</li>
+</ol>
+<h4 id="3-2-1-The-Objective">3.2.1 The Objective</h4>
+<p>Given operators <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>o</mi><mn>1</mn></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>o</mi><mi>K</mi></msub></mrow><annotation encoding="application/x-tex">o_1, \ldots, o_K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.07153em;">K</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> in topological order, sliced into <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi></mrow><annotation encoding="application/x-tex">S</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05764em;">S</span></span></span></span> stages <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>s</mi><mn>1</mn></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>s</mi><mi>S</mi></msub></mrow><annotation encoding="application/x-tex">s_1, \ldots, s_S</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05764em;">S</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>, with each stage <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>s</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">s_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> assigned to a submesh of size <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>n</mi><mi>i</mi></msub><mo>×</mo><msub><mi>m</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">n_i \times m_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>, and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span> microbatches for pipelining, the total latency is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msup><mi>T</mi><mo>∗</mo></msup><mo>=</mo><munder><mrow><mi>min</mi><mo>⁡</mo></mrow><mrow><msub><mi>s</mi><mn>1</mn></msub><mo separator="true">,</mo><mi mathvariant="normal">.</mi><mi mathvariant="normal">.</mi><mi mathvariant="normal">.</mi><mo separator="true">,</mo><msub><mi>s</mi><mi>S</mi></msub><mo separator="true">;</mo><mo stretchy="false">(</mo><msub><mi>n</mi><mn>1</mn></msub><mo separator="true">,</mo><msub><mi>m</mi><mn>1</mn></msub><mo stretchy="false">)</mo><mo separator="true">,</mo><mi mathvariant="normal">.</mi><mi mathvariant="normal">.</mi><mi mathvariant="normal">.</mi><mo separator="true">,</mo><mo stretchy="false">(</mo><msub><mi>n</mi><mi>S</mi></msub><mo separator="true">,</mo><msub><mi>m</mi><mi>S</mi></msub><mo stretchy="false">)</mo></mrow></munder><mrow><mo fence="true">{</mo><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>S</mi></munderover><msub><mi>t</mi><mi>i</mi></msub><mo>+</mo><mo stretchy="false">(</mo><mi>B</mi><mo>−</mo><mn>1</mn><mo stretchy="false">)</mo><mo>⋅</mo><munder><mrow><mi>max</mi><mo>⁡</mo></mrow><mrow><mn>1</mn><mo>≤</mo><mi>j</mi><mo>≤</mo><mi>S</mi></mrow></munder><mo stretchy="false">{</mo><msub><mi>t</mi><mi>j</mi></msub><mo stretchy="false">}</mo><mo fence="true">}</mo></mrow></mrow><annotation encoding="application/x-tex">T^* = \min_{s_1,...,s_S; (n_1,m_1),...,(n_S,m_S)} \left\{ \sum_{i=1}^{S} t_i + (B-1) \cdot \max_{1 \leq j \leq S}\{t_j\} \right\}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7387em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7387em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">∗</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3.106em;vertical-align:-1.2777em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6679em;"><span style="top:-2.309em;margin-left:0em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3173em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span><span class="mpunct mtight">,</span><span class="mord mtight">...</span><span class="mpunct mtight">,</span><span class="mord mtight"><span class="mord mathnormal mtight">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.3567em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05764em;">S</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1433em;"><span></span></span></span></span></span></span><span class="mpunct mtight">;</span><span class="mopen mtight">(</span><span class="mord mtight"><span class="mord mathnormal mtight">n</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3173em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span><span class="mpunct mtight">,</span><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3173em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span><span class="mclose mtight">)</span><span class="mpunct mtight">,</span><span class="mord mtight">...</span><span class="mpunct mtight">,</span><span class="mopen mtight">(</span><span class="mord mtight"><span class="mord mathnormal mtight">n</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.3567em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05764em;">S</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1433em;"><span></span></span></span></span></span></span><span class="mpunct mtight">,</span><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.3567em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05764em;">S</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1433em;"><span></span></span></span></span></span></span><span class="mclose mtight">)</span></span></span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span><span class="mop">min</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.966em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size4">{</span></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8283em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05764em;">S</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.2777em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord">1</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.4306em;"><span style="top:-2.3557em;margin-left:0em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span><span class="mrel mtight">≤</span><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span><span class="mrel mtight">≤</span><span class="mord mathnormal mtight" style="margin-right:0.05764em;">S</span></span></span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span><span class="mop">max</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.8804em;"><span></span></span></span></span></span><span class="mopen">{</span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose">}</span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size4">}</span></span></span></span></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>t</mi><mi>i</mi></msub><mo>=</mo><msub><mi>t</mi><mtext>intra</mtext></msub><mo stretchy="false">(</mo><msub><mi>s</mi><mi>i</mi></msub><mo separator="true">,</mo><mtext>Mesh</mtext><mo stretchy="false">(</mo><msub><mi>n</mi><mi>i</mi></msub><mo separator="true">,</mo><msub><mi>m</mi><mi>i</mi></msub><mo stretchy="false">)</mo><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">t_i = t_{\text{intra}}(s_i, \text{Mesh}(n_i, m_i))</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7651em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3175em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">intra</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord text"><span class="mord">Mesh</span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">))</span></span></span></span> is the execution latency of stage <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi></mrow><annotation encoding="application/x-tex">i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span></span></span></span> on its assigned mesh (determined by the intra-op pass).</p>
+<p>The first term is the latency of the first microbatch traversing the entire pipeline. The second term is the time for the remaining <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>−</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">B-1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> microbatches, bounded by the slowest stage (the <strong>pipeline bottleneck</strong>). This captures the classic pipeline parallelism insight: the ideal pipeline balances all stages to minimize the bottleneck.</p>
+<h4 id="3-2-2-Constraints">3.2.2 Constraints</h4>
+<p>Two key constraints:</p>
+<ol>
+<li><strong>Colocation:</strong> Forward and backward operators of the same layer are assigned to the same submesh (avoiding expensive cross-mesh activation transfer).</li>
+<li><strong>Full coverage:</strong> All submeshes must exactly cover the entire cluster — no wasted devices: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>S</mi></msubsup><msub><mi>n</mi><mi>i</mi></msub><mo>⋅</mo><msub><mi>m</mi><mi>i</mi></msub><mo>=</mo><mi>N</mi><mo>⋅</mo><mi>M</mi></mrow><annotation encoding="application/x-tex">\sum_{i=1}^{S} n_i \cdot m_i = N \cdot M</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.2809em;vertical-align:-0.2997em;"></span><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.9812em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.2029em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05764em;">S</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2997em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span></span></span></span>.</li>
+</ol>
+<h4 id="3-2-3-Submesh-Shapes">3.2.3 Submesh Shapes</h4>
+<p>To make the DP tractable, Alpa restricts submesh shapes to two types:</p>
+<ul>
+<li><strong>1D submeshes:</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mn>1</mn><mo separator="true">,</mo><mn>1</mn><mo stretchy="false">)</mo><mo separator="true">,</mo><mo stretchy="false">(</mo><mn>1</mn><mo separator="true">,</mo><mn>2</mn><mo stretchy="false">)</mo><mo separator="true">,</mo><mo stretchy="false">(</mo><mn>1</mn><mo separator="true">,</mo><mn>4</mn><mo stretchy="false">)</mo><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><mo stretchy="false">(</mo><mn>1</mn><mo separator="true">,</mo><mi>M</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(1,1), (1,2), (1,4), \ldots, (1,M)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mclose">)</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">2</span><span class="mclose">)</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">4</span><span class="mclose">)</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mclose">)</span></span></span></span> — subsets of GPUs within a single node</li>
+<li><strong>2D submeshes:</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mn>2</mn><mo separator="true">,</mo><mi>M</mi><mo stretchy="false">)</mo><mo separator="true">,</mo><mo stretchy="false">(</mo><mn>3</mn><mo separator="true">,</mo><mi>M</mi><mo stretchy="false">)</mo><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><mo stretchy="false">(</mo><mi>N</mi><mo separator="true">,</mo><mi>M</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(2,M), (3,M), \ldots, (N,M)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">2</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mclose">)</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mopen">(</span><span class="mord">3</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mclose">)</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mclose">)</span></span></span></span> — using all GPUs per node across multiple nodes</li>
+</ul>
+<p>The paper proves (Theorem 1 in Appendix A) that any combination of these shapes can always fully cover an <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>×</mo><mi>M</mi></mrow><annotation encoding="application/x-tex">N \times M</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span></span></span></span> cluster mesh. This restriction also aligns with the bandwidth hierarchy: 2D submeshes that span the full second dimension maximize the use of fast intra-node connections.</p>
+<h4 id="3-2-4-The-DP-Recurrence">3.2.4 The DP Recurrence</h4>
+<p>Define <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mo stretchy="false">(</mo><mi>s</mi><mo separator="true">,</mo><mi>k</mi><mo separator="true">,</mo><mi>d</mi><mo separator="true">;</mo><msub><mi>t</mi><mi>max</mi><mo>⁡</mo></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">F(s, k, d; t_{\max})</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">F</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">d</span><span class="mpunct">;</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">a</span><span class="mtight">x</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span> = minimum total latency when slicing operators <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>o</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">o_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> through <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>o</mi><mi>K</mi></msub></mrow><annotation encoding="application/x-tex">o_K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.07153em;">K</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> into <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span> stages using <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi></mrow><annotation encoding="application/x-tex">d</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">d</span></span></span></span> devices, subject to no stage exceeding latency <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>t</mi><mi>max</mi><mo>⁡</mo></msub></mrow><annotation encoding="application/x-tex">t_{\max}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7651em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">a</span><span class="mtight">x</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>.</p>
+<p>Base case: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mo stretchy="false">(</mo><mn>0</mn><mo separator="true">,</mo><mi>K</mi><mo>+</mo><mn>1</mn><mo separator="true">,</mo><mn>0</mn><mo separator="true">;</mo><msub><mi>t</mi><mi>max</mi><mo>⁡</mo></msub><mo stretchy="false">)</mo><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">F(0, K+1, 0; t_{\max}) = 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">F</span><span class="mopen">(</span><span class="mord">0</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">0</span><span class="mpunct">;</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">a</span><span class="mtight">x</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0</span></span></span></span></p>
+<p>Recurrence:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>F</mi><mo stretchy="false">(</mo><mi>s</mi><mo separator="true">,</mo><mi>k</mi><mo separator="true">,</mo><mi>d</mi><mo separator="true">;</mo><msub><mi>t</mi><mi>max</mi><mo>⁡</mo></msub><mo stretchy="false">)</mo><mo>=</mo><munder><mrow><mi>min</mi><mo>⁡</mo></mrow><mstyle scriptlevel="1"><mtable rowspacing="0.1em" columnalign="center" columnspacing="1em"><mtr><mtd><mstyle scriptlevel="1" displaystyle="false"><mrow><mi>k</mi><mo>≤</mo><mi>i</mi><mo>≤</mo><mi>K</mi></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="1" displaystyle="false"><mrow><msub><mi>n</mi><mi>s</mi></msub><mo>⋅</mo><msub><mi>m</mi><mi>s</mi></msub><mo>≤</mo><mi>d</mi></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="1" displaystyle="false"><mrow><msub><mi>t</mi><mtext>intra</mtext></msub><mo stretchy="false">(</mo><mo>…</mo><mo stretchy="false">)</mo><mo>≤</mo><msub><mi>t</mi><mi>max</mi><mo>⁡</mo></msub></mrow></mstyle></mtd></mtr></mtable></mstyle></munder><mrow><mo fence="true">{</mo><msub><mi>t</mi><mtext>intra</mtext></msub><mo stretchy="false">(</mo><mo stretchy="false">(</mo><msub><mi>o</mi><mi>k</mi></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>o</mi><mi>i</mi></msub><mo stretchy="false">)</mo><mo separator="true">,</mo><mtext>Mesh</mtext><mo stretchy="false">(</mo><msub><mi>n</mi><mi>s</mi></msub><mo separator="true">,</mo><msub><mi>m</mi><mi>s</mi></msub><mo stretchy="false">)</mo><mo separator="true">,</mo><mi>s</mi><mo stretchy="false">)</mo><mo>+</mo><mi>F</mi><mo stretchy="false">(</mo><mi>s</mi><mo>−</mo><mn>1</mn><mo separator="true">,</mo><mi>i</mi><mo>+</mo><mn>1</mn><mo separator="true">,</mo><mi>d</mi><mo>−</mo><msub><mi>n</mi><mi>s</mi></msub><mo>⋅</mo><msub><mi>m</mi><mi>s</mi></msub><mo separator="true">;</mo><msub><mi>t</mi><mi>max</mi><mo>⁡</mo></msub><mo stretchy="false">)</mo><mo fence="true">}</mo></mrow></mrow><annotation encoding="application/x-tex">F(s, k, d; t_{\max}) = \min_{\substack{k \leq i \leq K \\ n_s \cdot m_s \leq d \\ t_{\text{intra}}(\ldots) \leq t_{\max}}} \left\{ t_{\text{intra}}((o_k, \ldots, o_i), \text{Mesh}(n_s, m_s), s) + F(s-1, i+1, d - n_s \cdot m_s; t_{\max}) \right\}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">F</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">d</span><span class="mpunct">;</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">a</span><span class="mtight">x</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.9402em;vertical-align:-2.1902em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6679em;"><span style="top:-1.834em;margin-left:0em;"><span class="pstrut" style="height:3.1371em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mtable"><span class="col-align-c"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.6244em;"><span style="top:-3.68em;"><span class="pstrut" style="height:2.75em;"></span><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mrel mtight">≤</span><span class="mord mathnormal mtight">i</span><span class="mrel mtight">≤</span><span class="mord mathnormal mtight" style="margin-right:0.07153em;">K</span></span></span><span style="top:-2.8056em;"><span class="pstrut" style="height:2.75em;"></span><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight">n</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1645em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">s</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span><span class="mbin mtight">⋅</span><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1645em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">s</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span><span class="mrel mtight">≤</span><span class="mord mathnormal mtight">d</span></span></span><span style="top:-1.8756em;"><span class="pstrut" style="height:2.75em;"></span><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.334em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">intra</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span><span class="mopen mtight">(</span><span class="minner mtight">…</span><span class="mclose mtight">)</span><span class="mrel mtight">≤</span><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1645em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">a</span><span class="mtight">x</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.1244em;"><span></span></span></span></span></span></span></span></span></span></span><span style="top:-3.1371em;"><span class="pstrut" style="height:3.1371em;"></span><span><span class="mop">min</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:2.1902em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;">{</span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3175em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">intra</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">((</span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord text"><span class="mord">Mesh</span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">s</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">s</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">F</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">d</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">s</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">s</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">;</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">a</span><span class="mtight">x</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mclose delimcenter" style="top:0em;">}</span></span></span></span></span></span></p>
+<p>The optimal latency is: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>T</mi><mo>∗</mo></msup><mo stretchy="false">(</mo><msub><mi>t</mi><mi>max</mi><mo>⁡</mo></msub><mo stretchy="false">)</mo><mo>=</mo><msub><mrow><mi>min</mi><mo>⁡</mo></mrow><mi>s</mi></msub><mo stretchy="false">{</mo><mi>F</mi><mo stretchy="false">(</mo><mi>s</mi><mo separator="true">,</mo><mn>0</mn><mo separator="true">,</mo><mi>N</mi><mo>⋅</mo><mi>M</mi><mo separator="true">;</mo><msub><mi>t</mi><mi>max</mi><mo>⁡</mo></msub><mo stretchy="false">)</mo><mo stretchy="false">}</mo><mo>+</mo><mo stretchy="false">(</mo><mi>B</mi><mo>−</mo><mn>1</mn><mo stretchy="false">)</mo><mo>⋅</mo><msub><mi>t</mi><mi>max</mi><mo>⁡</mo></msub></mrow><annotation encoding="application/x-tex">T^*(t_{\max}) = \min_s \{F(s, 0, N \cdot M; t_{\max})\} + (B-1) \cdot t_{\max}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6887em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">∗</span></span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">a</span><span class="mtight">x</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop"><span class="mop">min</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">s</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">{</span><span class="mord mathnormal" style="margin-right:0.13889em;">F</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">0</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mpunct">;</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">a</span><span class="mtight">x</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)}</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7651em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">a</span><span class="mtight">x</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span></p>
+<p>The DP enumerates <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>t</mi><mi>max</mi><mo>⁡</mo></msub></mrow><annotation encoding="application/x-tex">t_{\max}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7651em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">a</span><span class="mtight">x</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> from small to large, with early termination when <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>⋅</mo><msub><mi>t</mi><mi>max</mi><mo>⁡</mo></msub></mrow><annotation encoding="application/x-tex">B \cdot t_{\max}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7651em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">a</span><span class="mtight">x</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> exceeds the current best <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>T</mi><mo>∗</mo></msup></mrow><annotation encoding="application/x-tex">T^*</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6887em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6887em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">∗</span></span></span></span></span></span></span></span></span></span></span>.</p>
+<h4 id="3-2-5-Operator-Clustering">3.2.5 Operator Clustering</h4>
+<p>Real computation graphs can have tens of thousands of operators, making the DP infeasible (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><msup><mi>K</mi><mn>5</mn></msup><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(K^5)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0641em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">5</span></span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span> complexity with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span> operators). Alpa clusters operators into <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi></mrow><annotation encoding="application/x-tex">L</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">L</span></span></span></span> &quot;layers&quot; (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mo>≪</mo><mi>K</mi></mrow><annotation encoding="application/x-tex">L \ll K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal">L</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≪</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span>) using another DP that minimizes the maximum cross-layer communication while balancing computation per layer.</p>
+<p>The clustering DP uses function <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mo stretchy="false">(</mo><mi>k</mi><mo separator="true">,</mo><mi>r</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">G(k, r)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">G</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="mclose">)</span></span></span></span> = minimum of the maximal data received by any single layer when clustering operators <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>o</mi><mn>1</mn></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>o</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">o_1, \ldots, o_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> into <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi></mrow><annotation encoding="application/x-tex">r</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">r</span></span></span></span> layers, with a FLOP balance constraint ensuring each layer's FLOP is within <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mn>1</mn><mo>+</mo><mi>δ</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(1+\delta)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.03785em;">δ</span><span class="mclose">)</span></span></span></span> times the average.</p>
+<h3 id="3-3-Runtime-Orchestration">3.3 Runtime Orchestration</h3>
+<p>After the compilation passes produce the execution plan, Alpa's runtime handles:</p>
+<h4 id="3-3-1-Cross-Mesh-Resharding">3.3.1 Cross-Mesh Resharding</h4>
+<p>When adjacent pipeline stages live on different device meshes with different shapes and sharding specs, Alpa must transfer tensors between them. This is a <strong>many-to-many multicast</strong> problem — not a simple send/recv.</p>
+<p>Alpa uses a two-pass approach:</p>
+<ol>
+<li><strong>First pass:</strong> Compute which source devices hold which tiles needed by which destination devices. Generate point-to-point send/recv operations.</li>
+<li><strong>Second pass:</strong> Identify opportunities where the destination sharding has replicated dimensions. In these cases, send the data once to the destination mesh and use fast <strong>local all-gather</strong> within the mesh, rather than sending redundant copies across the slow inter-mesh link.</li>
+</ol>
+<p>As shown in Figure 6 of the paper, this &quot;local all-gather&quot; optimization provides up to 2× speedup on 32 GPUs for Wide-ResNet by moving communication from slow inter-node links to fast intra-node NVLink.</p>
+<h4 id="3-3-2-MPMD-Execution">3.3.2 MPMD Execution</h4>
+<p>Unlike SPMD systems (where all devices run the same program), Alpa uses <strong>Multiple Program Multiple Data (MPMD)</strong> at the inter-op level — each device mesh executes different instructions. Alpa generates static instruction lists for each mesh (including compute, communicate, allocate/deallocate memory, synchronize), dispatches them before execution begins, and avoids runtime coordination overhead.</p>
+<h3 id="3-4-The-API">3.4 The API</h3>
+<p>Alpa's user-facing API is remarkably simple (see Figure 4 in the paper). Developers just add a <code>@parallelize</code> decorator to their Jax training function. On first call, Alpa traces the function to obtain the Jax IR, runs both compilation passes, and replaces the original function with the parallel version. No manual parallelism annotations needed.</p>
+<hr>
+<h2 id="4-Experiment-Setup">4. Experiment Setup</h2>
+<h3 id="4-1-Hardware">4.1 Hardware</h3>
+<p>All experiments run on an Amazon EC2 cluster of <strong>8 p3.16xlarge instances</strong> with:</p>
+<ul>
+<li><strong>64 GPUs total</strong> (8 NVIDIA V100 16GB per node)</li>
+<li><strong>NVLink</strong> intra-node (high bandwidth, ~160 GB/s between pairs)</li>
+<li><strong>25 Gbps Ethernet</strong> inter-node (~3.1 GB/s)</li>
+<li>64 vCPUs and 488 GB RAM per node</li>
+</ul>
+<p>This creates a clear two-level bandwidth hierarchy — approximately 50× faster communication within a node vs. between nodes.</p>
+<h3 id="4-2-Models-Table-4">4.2 Models (Table 4)</h3>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Task</th>
+<th>Batch Size</th>
+<th>Parameter Range</th>
+<th>Precision</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPT-3</td>
+<td>Language modeling</td>
+<td>1024</td>
+<td>0.35B–39B</td>
+<td>FP16</td>
+</tr>
+<tr>
+<td>GShard MoE</td>
+<td>Language modeling</td>
+<td>1024</td>
+<td>0.38B–70B</td>
+<td>FP16</td>
+</tr>
+<tr>
+<td>Wide-ResNet</td>
+<td>Image classification</td>
+<td>1536</td>
+<td>0.25B–13B</td>
+<td>FP32</td>
+</tr>
+</tbody>
+</table>
+<p>Models are scaled alongside GPUs (weak scaling) — larger models use more GPUs. Detailed specifications are in Appendix B (Tables 6-8).</p>
+<h3 id="4-3-Baselines">4.3 Baselines</h3>
+<ul>
+<li><strong>GPT-3:</strong> Megatron-LM v2 — state-of-the-art hand-tuned system for transformer LMs combining DP + TMP + PP with grid-searched parameters.</li>
+<li><strong>MoE:</strong> DeepSpeed — hand-crafted expert parallelism + ZeRO data parallelism. No pipeline parallelism support.</li>
+<li><strong>Wide-ResNet:</strong> PP-DP baseline (Alpa with only pipeline + data parallelism, mimicking PipeDream/DAPPLE).</li>
+<li>For all models: Alpa with only intra-op parallelism (&quot;Intra-op only&quot;) and only inter-op parallelism (&quot;Inter-op only&quot;).</li>
+</ul>
+<h3 id="4-4-Metric">4.4 Metric</h3>
+<p>Aggregated <strong>PFLOPS</strong> (peta floating-point operations per second) across the cluster. Since models scale with GPU count (weak scaling), PFLOPS is the correct metric for comparing scaling efficiency.</p>
+<hr>
+<h2 id="5-Results-Analysis">5. Results &amp; Analysis</h2>
+<h3 id="5-1-GPT-3-Figure-7a">5.1 GPT-3 (Figure 7a)</h3>
+<p>Alpa <strong>matches or slightly outperforms</strong> Megatron-LM on all GPU counts (1 to 64). Both achieve near-linear weak scaling. Key observations:</p>
+<ul>
+<li>&quot;Intra-op only&quot; degrades above 16 GPUs because cross-node collective communication becomes a bottleneck.</li>
+<li>&quot;Inter-op only&quot; surprisingly maintains linear scaling to 64 GPUs.</li>
+<li>Alpa achieves slight improvements over Megatron-LM by automatically discovering <strong>weight update sharding</strong> (ZeRO-style), which Megatron-LM does not support.</li>
+</ul>
+<p>Investigation of the auto-generated plans reveals they closely resemble Megatron-LM's best hand-tuned configurations: evenly-sized stages, batch-dimension partitioning when memory allows, and non-batch partitioning under memory pressure.</p>
+<h3 id="5-2-GShard-MoE-Figure-7b">5.2 GShard MoE (Figure 7b)</h3>
+<p>Alpa dramatically outperforms DeepSpeed:</p>
+<ul>
+<li><strong>3.5× speedup on 2 nodes (16 GPUs)</strong></li>
+<li><strong>9.7× speedup on 4 nodes (32 GPUs)</strong></li>
+</ul>
+<p>DeepSpeed collapses beyond 1 node because its intra-op-only strategy cannot handle the low inter-node bandwidth. &quot;Intra-op only&quot; fails similarly. &quot;Inter-op only&quot; runs out of memory on 32+ GPUs due to imbalanced stage slicing for MoE models. Only Alpa's full hierarchical approach scales effectively.</p>
+<h3 id="5-3-Wide-ResNet-Figure-7c">5.3 Wide-ResNet (Figure 7c)</h3>
+<p>Wide-ResNet is heterogeneous — activation tensors shrink while weight tensors grow through the network, creating imbalanced memory and compute profiles across layers. No manually-designed parallelization strategy exists.</p>
+<ul>
+<li>&quot;PP-DP&quot; and &quot;Inter-op only&quot; run out of memory for large models (cannot partition weights).</li>
+<li>&quot;Intra-op only&quot; fails across nodes (communication bottleneck).</li>
+<li>Alpa achieves <strong>80% linear scaling efficiency on 32 GPUs</strong> and successfully trains models up to 13B parameters.</li>
+</ul>
+<p>The case study (Figure 12) reveals Alpa's non-trivial strategy: 3 stages with 4, 4, and 8 GPUs respectively. Data parallelism dominates early stages (large activations), while the last stage uses a complex convolution partitioning scheme (large weights). This strategy would be nearly impossible to design manually.</p>
+<h3 id="5-4-Intra-Op-Ablation-Figure-8">5.4 Intra-Op Ablation (Figure 8)</h3>
+<p>Comparing Alpa's ILP solver against alternatives on a single node (8 GPUs):</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Data parallelism</td>
+<td>Runs out of memory quickly</td>
+</tr>
+<tr>
+<td>ZeRO-2</td>
+<td>Solves memory but doesn't optimize communication</td>
+</tr>
+<tr>
+<td>ZeRO-3</td>
+<td>Same issue — always communicates all gradients</td>
+</tr>
+<tr>
+<td>Heuristic (GSPMD-style)</td>
+<td>Partitions everything but can increase communication</td>
+</tr>
+<tr>
+<td><strong>ILP (Alpa)</strong></td>
+<td>Near-linear scaling; minimizes communication overhead</td>
+</tr>
+</tbody>
+</table>
+<p>The ILP consistently finds the best plan because it globally optimizes the partitioning of every operator to minimize total communication.</p>
+<h3 id="5-5-Inter-Op-Ablation-Figure-9">5.5 Inter-Op Ablation (Figure 9)</h3>
+<p>Comparing Alpa's DP algorithm against rule-based slicing:</p>
+<ul>
+<li><strong>Equal operator:</strong> Assigns equal numbers of operators per stage. Alpa's DP outperforms it because communication-aware clustering groups related operators together.</li>
+<li><strong>Equal layer:</strong> Forces equal numbers of model layers per stage. Matches Alpa's DP on homogeneous models (GPT) but loses on heterogeneous models. For Wide-ResNet on 32 GPUs, Alpa's DP outperforms &quot;Equal layer&quot; by <strong>1.6×</strong> and &quot;Equal operator&quot; by <strong>2.6×</strong>.</li>
+</ul>
+<h3 id="5-6-Compilation-Time-Figure-10-Table-5">5.6 Compilation Time (Figure 10, Table 5)</h3>
+<p>For the largest model (GPT-3 39B on 64 GPUs):</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Compilation (parallelized)</td>
+<td>1582.66 s</td>
+</tr>
+<tr>
+<td>Profiling</td>
+<td>804.48 s</td>
+</tr>
+<tr>
+<td>Stage Construction DP</td>
+<td>1.65 s</td>
+</tr>
+<tr>
+<td>Other</td>
+<td>4.47 s</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>2393.26 s (~40 min)</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Without optimizations (operator clustering + early pruning), compilation would exceed 40 hours. The 40-minute compilation time is acceptable since actual training runs for weeks.</p>
+<h3 id="5-7-Cross-Mesh-Resharding-Figure-11">5.7 Cross-Mesh Resharding (Figure 11)</h3>
+<p>The local all-gather optimization provides a <strong>2× speedup</strong> on 32 GPUs for Wide-ResNet over naive send/recv, by moving repeated data transfers from slow inter-node links to fast intra-node NVLink.</p>
+<hr>
+<h2 id="6-Limitations-Boundary-Conditions">6. Limitations &amp; Boundary Conditions</h2>
+<h3 id="6-1-Acknowledged-Limitations">6.1 Acknowledged Limitations</h3>
+<p>The authors explicitly identify several limitations:</p>
+<ol>
+<li>
+<p><strong>No cross-stage communication cost modeling:</strong> The DP does not account for data transfer costs between pipeline stages. While typically small, this could matter in pathological cases.</p>
+</li>
+<li>
+<p><strong>Number of microbatches is a hyperparameter:</strong> The DP optimizes stage assignment for a given <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span> but does not jointly optimize <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span>. Users must search over <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span> separately.</p>
+</li>
+<li>
+<p><strong>Static linear pipeline schedule only:</strong> Alpa assumes a linear pipeline (stages execute sequentially). It cannot handle dynamic schedules or parallel branches in the computational graph.</p>
+</li>
+<li>
+<p><strong>No computation-communication overlap optimization:</strong> Alpa does not optimize for overlapping compute with communication, which is an important practical optimization in systems like Megatron-LM.</p>
+</li>
+<li>
+<p><strong>Static graphs only:</strong> All tensor shapes must be known at compile time. Dynamic shapes (e.g., variable-length sequences) are not supported.</p>
+</li>
+</ol>
+<h3 id="6-2-Additional-Observations">6.2 Additional Observations</h3>
+<ul>
+<li>
+<p><strong>Suboptimality of hierarchical decomposition:</strong> Alpa's two-level approach is not guaranteed to find the globally optimal plan. The ILP within each stage is optimal, but the decomposition into stages may miss plans that are globally better.</p>
+</li>
+<li>
+<p><strong>Scaling to very large clusters:</strong> The evaluation maxes out at 64 GPUs. Modern training setups use thousands of GPUs. While the compilation time scales linearly, the quality of the auto-generated plans at massive scale is not evaluated.</p>
+</li>
+<li>
+<p><strong>MoE-specific optimizations:</strong> DeepSpeed's poor performance in the evaluation is partly because it lacks pipeline parallelism for MoE. A fairer comparison would be against a system that combines all three parallelism types for MoE models.</p>
+</li>
+<li>
+<p><strong>Submesh shape restriction:</strong> The restriction to 1D submeshes within a node and full-width 2D submeshes excludes shapes like <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mn>2</mn><mo separator="true">,</mo><mn>4</mn><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(2, 4)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">2</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">4</span><span class="mclose">)</span></span></span></span> on an 8-GPU node. While the paper argues these are inferior, this is not formally proven for all cases.</p>
+</li>
+</ul>
+<hr>
+<h2 id="7-Reproducibility-Practical-Notes">7. Reproducibility &amp; Practical Notes</h2>
+<h3 id="7-1-Code-Availability">7.1 Code Availability</h3>
+<p>Alpa is open-source at <a href="https://github.com/alpa-projects/alpa" target="_blank" rel="noopener">https://github.com/alpa-projects/alpa</a>. The implementation consists of ~16K lines of Python and ~6K lines of C++, built on top of Jax (frontend) and XLA (backend). Communication uses NCCL, and the distributed runtime uses Ray actors.</p>
+<h3 id="7-2-Reproducibility">7.2 Reproducibility</h3>
+<p>The experimental setup is well-documented: specific EC2 instance types, model configurations (Appendix B), and parameter search procedures. The evaluation uses standard models (GPT-3, MoE, Wide-ResNet) with public architectures. However, reproducing the exact results requires access to 8× p3.16xlarge instances, which costs approximately $196/hour on AWS.</p>
+<h3 id="7-3-Practical-Considerations">7.3 Practical Considerations</h3>
+<p><strong>Compilation cost:</strong> The 40-minute compilation time for a 39B model is a one-time cost, acceptable for week-long training runs. But for rapid experimentation with different model architectures, this could be a bottleneck.</p>
+<p><strong>Integration:</strong> Alpa requires models to be written in Jax. PyTorch users (the majority of the ML community) cannot directly use it. This has limited adoption despite the strong technical contributions.</p>
+<p><strong>Cost model accuracy:</strong> Alpa's ILP uses analytical cost estimates (bytes/bandwidth) rather than profiled measurements. This works well for the tested configurations but may be less accurate on hardware with non-uniform bandwidth characteristics or when communication and compute overlap significantly.</p>
+<p><strong>Impact and legacy:</strong> Alpa's first author (Lianmin Zheng) later led the development of vLLM, the dominant open-source LLM inference system. Many ideas from Alpa — particularly the hierarchical parallelism view and automatic plan generation — have influenced subsequent systems like DeepSpeed's auto-parallelism features and Unity (the successor to FlexFlow). The paper received the OSDI 2022 Jay Lepreau Best Paper Award.</p>
+<hr>
+<h2 id="References">References</h2>
+<ol>
+<li>Narayanan et al. &quot;Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM.&quot; SC 2021.</li>
+<li>Rajbhandari et al. &quot;ZeRO: Memory Optimizations Toward Training Trillion Parameter Models.&quot; SC 2020.</li>
+<li>Huang et al. &quot;GPipe: Efficient Training of Giant Neural Networks Using Pipeline Parallelism.&quot; NeurIPS 2019.</li>
+<li>Narayanan et al. &quot;PipeDream: Generalized Pipeline Parallelism for DNN Training.&quot; SOSP 2019.</li>
+<li>Jia et al. &quot;Beyond Data and Model Parallelism for Deep Neural Networks&quot; (FlexFlow). SysML 2019.</li>
+<li>Lepikhin et al. &quot;GShard: Scaling Giant Models with Conditional Computation and Automatic Sharding.&quot; 2020.</li>
+<li>Xu et al. &quot;GSPMD: General and Scalable Parallelization for ML Computation Graphs.&quot; 2021.</li>
+<li>Li et al. &quot;TeraPipe: Token-Level Pipeline Parallelism for Training Large-Scale Language Models.&quot; 2021.</li>
+</ol>
+<hr>
+<p><em>Review written on 2026-03-26.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Deep-Learning/" rel="tag"># Deep Learning</a>
+              <a href="/tags/Distributed-Training/" rel="tag"># Distributed Training</a>
+              <a href="/tags/Auto-Parallelism/" rel="tag"># Auto Parallelism</a>
+              <a href="/tags/Model-Parallelism/" rel="tag"># Model Parallelism</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/03/25/2026-03-25-GPTQ-technical-review-en/" rel="prev" title="GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers — In-Depth Technical Review">
+      <i class="fa fa-chevron-left"></i> GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers — In-Depth Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/03/27/2026-03-27-GaLore-technical-review-en/" rel="next" title="GaLore: Memory-Efficient LLM Training by Gradient Low-Rank Projection — In-Depth Technical Review">
+      GaLore: Memory-Efficient LLM Training by Gradient Low-Rank Projection — In-Depth Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Abstract"><span class="nav-number">1.</span> <span class="nav-text">Abstract</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Prerequisites-What-to-Know-Before-Reading-This-Paper"><span class="nav-number">2.</span> <span class="nav-text">1. Prerequisites: What to Know Before Reading This Paper</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-Deep-Learning-Computation-as-a-Dataflow-Graph"><span class="nav-number">2.1.</span> <span class="nav-text">1.1 Deep Learning Computation as a Dataflow Graph</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-Why-We-Need-Parallelism-Memory-and-Compute-Constraints"><span class="nav-number">2.2.</span> <span class="nav-text">1.2 Why We Need Parallelism: Memory and Compute Constraints</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-The-Three-Classical-Forms-of-Parallelism"><span class="nav-number">2.3.</span> <span class="nav-text">1.3 The Three Classical Forms of Parallelism</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-4-The-Combinatorial-Explosion-Problem"><span class="nav-number">2.4.</span> <span class="nav-text">1.4 The Combinatorial Explosion Problem</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-5-Integer-Linear-Programming-ILP-and-Dynamic-Programming-DP"><span class="nav-number">2.5.</span> <span class="nav-text">1.5 Integer Linear Programming (ILP) and Dynamic Programming (DP)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-6-Cluster-Topology-and-Communication-Bandwidth-Hierarchy"><span class="nav-number">2.6.</span> <span class="nav-text">1.6 Cluster Topology and Communication Bandwidth Hierarchy</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-What-This-Paper-Does-The-Core-Idea"><span class="nav-number">3.</span> <span class="nav-text">2. What This Paper Does (The Core Idea)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-A-New-View-Intra-Operator-vs-Inter-Operator-Parallelism"><span class="nav-number">3.1.</span> <span class="nav-text">2.1 A New View: Intra-Operator vs. Inter-Operator Parallelism</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-Hierarchical-Optimization"><span class="nav-number">3.2.</span> <span class="nav-text">2.2 Hierarchical Optimization</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-How-Alpa-Differs-from-Prior-Work"><span class="nav-number">3.3.</span> <span class="nav-text">2.3 How Alpa Differs from Prior Work</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Method-Details"><span class="nav-number">4.</span> <span class="nav-text">3. Method Details</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-Intra-Operator-Parallelism-The-ILP-Formulation"><span class="nav-number">4.1.</span> <span class="nav-text">3.1 Intra-Operator Parallelism: The ILP Formulation</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#3-1-1-Device-Mesh"><span class="nav-number">4.1.1.</span> <span class="nav-text">3.1.1 Device Mesh</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-1-2-Sharding-Specs"><span class="nav-number">4.1.2.</span> <span class="nav-text">3.1.2 Sharding Specs</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-1-3-Parallel-Algorithms-for-an-Operator"><span class="nav-number">4.1.3.</span> <span class="nav-text">3.1.3 Parallel Algorithms for an Operator</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-1-4-Resharding-Costs"><span class="nav-number">4.1.4.</span> <span class="nav-text">3.1.4 Resharding Costs</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-1-5-The-ILP-Objective"><span class="nav-number">4.1.5.</span> <span class="nav-text">3.1.5 The ILP Objective</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-Inter-Operator-Parallelism-The-DP-Formulation"><span class="nav-number">4.2.</span> <span class="nav-text">3.2 Inter-Operator Parallelism: The DP Formulation</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#3-2-1-The-Objective"><span class="nav-number">4.2.1.</span> <span class="nav-text">3.2.1 The Objective</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-2-2-Constraints"><span class="nav-number">4.2.2.</span> <span class="nav-text">3.2.2 Constraints</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-2-3-Submesh-Shapes"><span class="nav-number">4.2.3.</span> <span class="nav-text">3.2.3 Submesh Shapes</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-2-4-The-DP-Recurrence"><span class="nav-number">4.2.4.</span> <span class="nav-text">3.2.4 The DP Recurrence</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-2-5-Operator-Clustering"><span class="nav-number">4.2.5.</span> <span class="nav-text">3.2.5 Operator Clustering</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-Runtime-Orchestration"><span class="nav-number">4.3.</span> <span class="nav-text">3.3 Runtime Orchestration</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#3-3-1-Cross-Mesh-Resharding"><span class="nav-number">4.3.1.</span> <span class="nav-text">3.3.1 Cross-Mesh Resharding</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-3-2-MPMD-Execution"><span class="nav-number">4.3.2.</span> <span class="nav-text">3.3.2 MPMD Execution</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-The-API"><span class="nav-number">4.4.</span> <span class="nav-text">3.4 The API</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Experiment-Setup"><span class="nav-number">5.</span> <span class="nav-text">4. Experiment Setup</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-Hardware"><span class="nav-number">5.1.</span> <span class="nav-text">4.1 Hardware</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-Models-Table-4"><span class="nav-number">5.2.</span> <span class="nav-text">4.2 Models (Table 4)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-Baselines"><span class="nav-number">5.3.</span> <span class="nav-text">4.3 Baselines</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-4-Metric"><span class="nav-number">5.4.</span> <span class="nav-text">4.4 Metric</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Results-Analysis"><span class="nav-number">6.</span> <span class="nav-text">5. Results &amp; Analysis</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-GPT-3-Figure-7a"><span class="nav-number">6.1.</span> <span class="nav-text">5.1 GPT-3 (Figure 7a)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-GShard-MoE-Figure-7b"><span class="nav-number">6.2.</span> <span class="nav-text">5.2 GShard MoE (Figure 7b)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-Wide-ResNet-Figure-7c"><span class="nav-number">6.3.</span> <span class="nav-text">5.3 Wide-ResNet (Figure 7c)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-Intra-Op-Ablation-Figure-8"><span class="nav-number">6.4.</span> <span class="nav-text">5.4 Intra-Op Ablation (Figure 8)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-5-Inter-Op-Ablation-Figure-9"><span class="nav-number">6.5.</span> <span class="nav-text">5.5 Inter-Op Ablation (Figure 9)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-6-Compilation-Time-Figure-10-Table-5"><span class="nav-number">6.6.</span> <span class="nav-text">5.6 Compilation Time (Figure 10, Table 5)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-7-Cross-Mesh-Resharding-Figure-11"><span class="nav-number">6.7.</span> <span class="nav-text">5.7 Cross-Mesh Resharding (Figure 11)</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Limitations-Boundary-Conditions"><span class="nav-number">7.</span> <span class="nav-text">6. Limitations &amp; Boundary Conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Acknowledged-Limitations"><span class="nav-number">7.1.</span> <span class="nav-text">6.1 Acknowledged Limitations</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Additional-Observations"><span class="nav-number">7.2.</span> <span class="nav-text">6.2 Additional Observations</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Reproducibility-Practical-Notes"><span class="nav-number">8.</span> <span class="nav-text">7. Reproducibility &amp; Practical Notes</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-Code-Availability"><span class="nav-number">8.1.</span> <span class="nav-text">7.1 Code Availability</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-Reproducibility"><span class="nav-number">8.2.</span> <span class="nav-text">7.2 Reproducibility</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-Practical-Considerations"><span class="nav-number">8.3.</span> <span class="nav-text">7.3 Practical Considerations</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#References"><span class="nav-number">9.</span> <span class="nav-text">References</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

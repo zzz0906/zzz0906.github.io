@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="A detailed technical review of the vLLM paper, which introduces PagedAttention—a novel attention algorithm inspired by OS virtual memory paging—to eliminate KV cache memory waste and dramatically incr">
+<meta property="og:type" content="article">
+<meta property="og:title" content="vLLM and PagedAttention: Efficient Memory Management for Large Language Model Serving — Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/02/19/2026-02-19-vLLM-PagedAttention-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="A detailed technical review of the vLLM paper, which introduces PagedAttention—a novel attention algorithm inspired by OS virtual memory paging—to eliminate KV cache memory waste and dramatically incr">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-02-19T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-03-23T18:05:37.594Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="vLLM">
+<meta property="article:tag" content="PagedAttention">
+<meta property="article:tag" content="KV Cache">
+<meta property="article:tag" content="LLM Serving">
+<meta property="article:tag" content="Memory Management">
+<meta property="article:tag" content="Virtual Memory">
+<meta property="article:tag" content="Paging">
+<meta property="article:tag" content="Attention">
+<meta property="article:tag" content="Throughput">
+<meta property="article:tag" content="CUDA">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/02/19/2026-02-19-vLLM-PagedAttention-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>vLLM and PagedAttention: Efficient Memory Management for Large Language Model Serving — Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/02/19/2026-02-19-vLLM-PagedAttention-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          vLLM and PagedAttention: Efficient Memory Management for Large Language Model Serving — Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-02-19 00:00:00" itemprop="dateCreated datePublished" datetime="2026-02-19T00:00:00+00:00">2026-02-19</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-03-23 18:05:37" itemprop="dateModified" datetime="2026-03-23T18:05:37+00:00">2026-03-23</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/AI-Research/" itemprop="url" rel="index"><span itemprop="name">AI Research</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/AI-Research/Systems-for-ML/" itemprop="url" rel="index"><span itemprop="name">Systems for ML</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">A detailed technical review of the vLLM paper, which introduces PagedAttention—a novel attention algorithm inspired by OS virtual memory paging—to eliminate KV cache memory waste and dramatically increase LLM serving throughput.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="vLLM-and-PagedAttention-Efficient-Memory-Management-for-Large-Language-Model-Serving-—-Detailed-Technical-Review">vLLM and PagedAttention: Efficient Memory Management for Large Language Model Serving — Detailed Technical Review</h1>
+<p><strong>Paper</strong>: Efficient Memory Management for Large Language Model Serving with PagedAttention<br>
+<strong>Authors</strong>: Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Liang Zheng, Cody Hao Yu, Joseph E. Gonzalez, Hao Zhang, Ion Stoica<br>
+<strong>Affiliation</strong>: UC Berkeley, Stanford University<br>
+<strong>Published</strong>: SOSP 2023 (arXiv: 2309.06180)<br>
+<strong>Reviewer</strong>: Zhongzhu Zhou<br>
+<strong>Review Date</strong>: February 19, 2026</p>
+<hr>
+<h2 id="I-Prerequisites-What-You-Need-to-Know">I. Prerequisites: What You Need to Know</h2>
+<p>This section builds up all the foundational concepts needed to understand why vLLM matters and how PagedAttention works. Even if you are new to LLM serving systems, this section will give you the complete background.</p>
+<a id="more"></a>
+<h3 id="1-1-Autoregressive-Language-Model-Inference">1.1 Autoregressive Language Model Inference</h3>
+<p>Large Language Models (LLMs) like GPT, OPT, and LLaMA generate text one token at a time. Given an input prompt (e.g., &quot;The capital of France is&quot;), the model predicts the next token (&quot;Paris&quot;), appends it to the input, and repeats. This process has two phases:</p>
+<p><strong>Prefill phase</strong>: The model processes the entire input prompt in parallel, computing attention over all prompt tokens. This produces the initial key-value (KV) representations for the prompt.</p>
+<p><strong>Decode phase</strong>: The model generates one new token per forward pass. At each step, only the new token's query needs to attend to all previous tokens' keys and values. This is the bottleneck because it is sequential—you cannot generate token 5 until token 4 exists.</p>
+<p>The decode phase is <strong>memory-bound</strong> rather than compute-bound: the GPU spends most of its time loading KV cache from memory rather than performing actual computation.</p>
+<h3 id="1-2-The-Attention-Mechanism-and-KV-Cache">1.2 The Attention Mechanism and KV Cache</h3>
+<p>The self-attention mechanism computes:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>Attention</mtext><mo stretchy="false">(</mo><mi>Q</mi><mo separator="true">,</mo><mi>K</mi><mo separator="true">,</mo><mi>V</mi><mo stretchy="false">)</mo><mo>=</mo><mtext>Softmax</mtext><mrow><mo fence="true">(</mo><mfrac><mrow><mi>Q</mi><msup><mi>K</mi><mi mathvariant="normal">⊤</mi></msup></mrow><msqrt><msub><mi>d</mi><mi>k</mi></msub></msqrt></mfrac><mo fence="true">)</mo></mrow><mi>V</mi></mrow><annotation encoding="application/x-tex">\text{Attention}(Q, K, V) = \text{Softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right) V
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">Attention</span></span><span class="mopen">(</span><span class="mord mathnormal">Q</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.4761em;vertical-align:-0.95em;"></span><span class="mord text"><span class="mord">Softmax</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.5261em;"><span style="top:-2.2528em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8572em;"><span class="svg-align" style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord" style="padding-left:0.833em;"><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-2.8172em;"><span class="pstrut" style="height:3em;"></span><span class="hide-tail" style="min-width:0.853em;height:1.08em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="1.08em" viewBox="0 0 400000 1080" preserveAspectRatio="xMinYMin slice"><path d="M95,702
+c-2.7,0,-7.17,-2.7,-13.5,-8c-5.8,-5.3,-9.5,-10,-9.5,-14
+c0,-2,0.3,-3.3,1,-4c1.3,-2.7,23.83,-20.7,67.5,-54
+c44.2,-33.3,65.8,-50.3,66.5,-51c1.3,-1.3,3,-2,5,-2c4.7,0,8.7,3.3,12,10
+s173,378,173,378c0.7,0,35.3,-71,104,-213c68.7,-142,137.5,-285,206.5,-429
+c69,-144,104.5,-217.7,106.5,-221
+l0 -0
+c5.3,-9.3,12,-14,20,-14
+H400000v40H845.2724
+s-225.272,467,-225.272,467s-235,486,-235,486c-2.7,4.7,-9,7,-19,7
+c-6,0,-10,-1,-12,-3s-194,-422,-194,-422s-65,47,-65,47z
+M834 80h400000v40h-400000z"/></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1828em;"><span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">Q</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.93em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">)</span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span></span></span></span></span></p>
+<p>During generation, at each new time step <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi></mrow><annotation encoding="application/x-tex">t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6151em;"></span><span class="mord mathnormal">t</span></span></span></span>, we only need the new query vector <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>q</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">q_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> but must attend to all past keys <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>K</mi><mrow><mn>1</mn><mo>:</mo><mi>t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">K_{1:t}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span><span class="mrel mtight">:</span><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> and values <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>V</mi><mrow><mn>1</mn><mo>:</mo><mi>t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">V_{1:t}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span><span class="mrel mtight">:</span><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>. Recomputing all past key-value pairs at every step would be <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><msup><mi>t</mi><mn>2</mn></msup><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(t^2)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0641em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span> per token—wasteful because the past keys and values never change.</p>
+<p><strong>Solution: KV cache</strong>. We store all previously computed key-value pairs in GPU memory. When generating token <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi></mrow><annotation encoding="application/x-tex">t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6151em;"></span><span class="mord mathnormal">t</span></span></span></span>, we compute only the new <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>k</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">k_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0315em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>v</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">v_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>, append them to the cache, and use the full cache for the attention computation. This reduces generation to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><mi>t</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(t)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mord mathnormal">t</span><span class="mclose">)</span></span></span></span> per token.</p>
+<h3 id="1-3-KV-Cache-Memory-Why-It-Dominates">1.3 KV Cache Memory: Why It Dominates</h3>
+<p>The KV cache is enormous. For a single request, the KV cache size is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>KV cache size</mtext><mo>=</mo><mn>2</mn><mo>×</mo><mi>L</mi><mo>×</mo><mi>H</mi><mo>×</mo><msub><mi>d</mi><mi>h</mi></msub><mo>×</mo><mi>s</mi><mo>×</mo><mtext>sizeof(dtype)</mtext></mrow><annotation encoding="application/x-tex">\text{KV cache size} = 2 \times L \times H \times d_h \times s \times \text{sizeof(dtype)}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord text"><span class="mord">KV cache size</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">2</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">L</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">h</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">sizeof(dtype)</span></span></span></span></span></span></p>
+<p>where:</p>
+<ul>
+<li>Factor 2: one for keys, one for values</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi></mrow><annotation encoding="application/x-tex">L</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">L</span></span></span></span>: number of Transformer layers (e.g., 96 for OPT-175B)</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi></mrow><annotation encoding="application/x-tex">H</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.08125em;">H</span></span></span></span>: number of attention heads (e.g., 96)</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mi>h</mi></msub></mrow><annotation encoding="application/x-tex">d_h</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">h</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>: dimension per head (e.g., 128)</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span>: sequence length (e.g., 2048 tokens)</li>
+<li>sizeof(dtype): bytes per element (2 for FP16)</li>
+</ul>
+<p><strong>Concrete example</strong>: For OPT-13B with 40 layers, 40 heads, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mi>h</mi></msub><mo>=</mo><mn>128</mn></mrow><annotation encoding="application/x-tex">d_h = 128</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">h</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">128</span></span></span></span>, sequence length 2048 in FP16:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mn>2</mn><mo>×</mo><mn>40</mn><mo>×</mo><mn>40</mn><mo>×</mo><mn>128</mn><mo>×</mo><mn>2048</mn><mo>×</mo><mn>2</mn><mtext> bytes</mtext><mo>=</mo><mn>1.6</mn><mtext> GB per request</mtext></mrow><annotation encoding="application/x-tex">2 \times 40 \times 40 \times 128 \times 2048 \times 2 \text{ bytes} = 1.6 \text{ GB per request}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">2</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">40</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">40</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">128</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">2048</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord">2</span><span class="mord text"><span class="mord"> bytes</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8778em;vertical-align:-0.1944em;"></span><span class="mord">1.6</span><span class="mord text"><span class="mord"> GB per request</span></span></span></span></span></span></p>
+<p>An A100 GPU with 80GB memory can hold the model weights (~26GB for OPT-13B in FP16) plus KV cache for only ~33 concurrent requests. The KV cache quickly becomes the memory bottleneck.</p>
+<h3 id="1-4-The-Memory-Waste-Problem-in-Existing-Systems">1.4 The Memory Waste Problem in Existing Systems</h3>
+<p>Before vLLM, LLM serving systems pre-allocated contiguous memory blocks for each request's KV cache. Since we don't know how many tokens a request will generate in advance, systems must reserve memory for the <strong>maximum possible</strong> sequence length (e.g., 2048 tokens).</p>
+<p>This leads to three types of memory waste:</p>
+<p><strong>Internal fragmentation</strong>: A request that only generates 100 tokens still has 2048 tokens' worth of memory reserved. The unused 1948 slots are wasted.</p>
+<p><strong>External fragmentation</strong>: As requests arrive and complete, the free memory becomes scattered into non-contiguous chunks. A new request needing 500 contiguous slots might fail even though 500 slots exist in total—just not consecutively.</p>
+<p><strong>Reservation waste</strong>: Systems that reserve for the maximum length waste memory proportional to the difference between the maximum and actual output length.</p>
+<p>The paper reports that existing systems waste <strong>60–80% of KV cache memory</strong>. This directly limits throughput because fewer concurrent requests can be served.</p>
+<h3 id="1-5-Virtual-Memory-and-Paging-in-Operating-Systems">1.5 Virtual Memory and Paging in Operating Systems</h3>
+<p>The key inspiration for PagedAttention comes from how operating systems manage memory. In early computers, each program needed a contiguous block of physical memory. This led to the same fragmentation problems described above. The solution was <strong>virtual memory with paging</strong>:</p>
+<ol>
+<li><strong>Virtual addresses</strong>: Each program sees a contiguous virtual address space, regardless of physical memory layout.</li>
+<li><strong>Pages</strong>: Memory is divided into fixed-size pages (e.g., 4KB).</li>
+<li><strong>Page table</strong>: A mapping from virtual page numbers to physical page locations.</li>
+<li><strong>Non-contiguous allocation</strong>: Physical pages can be scattered anywhere—the page table handles the translation.</li>
+</ol>
+<p>This eliminates both internal fragmentation (pages are small, so waste per allocation is bounded) and external fragmentation (any free page anywhere can be used).</p>
+<p><strong>PagedAttention applies this same idea to KV cache memory</strong>: instead of storing each request's KV cache in a contiguous block, it divides the cache into fixed-size &quot;blocks&quot; and maps them via a &quot;block table.&quot;</p>
+<h3 id="1-6-Serving-System-Architecture-and-Batching">1.6 Serving System Architecture and Batching</h3>
+<p>LLM serving systems handle multiple concurrent requests. Key concepts:</p>
+<p><strong>Dynamic batching</strong>: Instead of processing requests one at a time, the system batches multiple requests together to better utilize GPU parallelism.</p>
+<p><strong>Iteration-level scheduling</strong> (introduced by Orca): Rather than waiting for all requests in a batch to finish, the scheduler can evict completed requests and add new ones at each generation step. This prevents short requests from being blocked by long ones.</p>
+<p><strong>Throughput vs. latency</strong>: Higher throughput means serving more requests per second. The key to throughput is maximizing the number of requests that can be processed simultaneously, which requires efficient memory management.</p>
+<h3 id="1-7-Copy-on-Write-CoW">1.7 Copy-on-Write (CoW)</h3>
+<p>Copy-on-write is an OS optimization technique. When a process forks, the child initially shares the parent's memory pages. Only when either process tries to <strong>write</strong> to a shared page is a copy made. This saves memory when data is mostly read-only.</p>
+<p>In LLM serving, this is relevant for <strong>parallel sampling</strong> and <strong>beam search</strong>, where multiple output sequences share the same prompt. Their KV cache for the prompt tokens is identical and can be shared until they diverge.</p>
+<hr>
+<h2 id="II-What-This-Paper-Does-Core-Contributions">II. What This Paper Does: Core Contributions</h2>
+<h3 id="2-1-The-Core-Problem">2.1 The Core Problem</h3>
+<p>Existing LLM serving systems waste 60–80% of KV cache memory due to fragmentation and over-reservation. Since the KV cache is the primary memory bottleneck, this waste directly translates to lower throughput—fewer requests can be batched together, and the GPU is underutilized.</p>
+<h3 id="2-2-Three-Key-Contributions">2.2 Three Key Contributions</h3>
+<ol>
+<li>
+<p><strong>PagedAttention</strong>: A new attention algorithm that stores KV cache in non-contiguous, fixed-size blocks and accesses them through a block table—directly inspired by OS virtual memory paging.</p>
+</li>
+<li>
+<p><strong>Block-level memory management</strong>: A memory manager that allocates, frees, and shares KV cache blocks on demand, eliminating both internal and external fragmentation.</p>
+</li>
+<li>
+<p><strong>vLLM serving system</strong>: An end-to-end LLM serving engine built around PagedAttention, achieving 2–4× throughput improvements over state-of-the-art systems.</p>
+</li>
+</ol>
+<hr>
+<h2 id="III-Methodology-in-Depth">III. Methodology in Depth</h2>
+<h3 id="3-1-PagedAttention-The-Core-Algorithm">3.1 PagedAttention: The Core Algorithm</h3>
+<p>PagedAttention partitions each sequence's KV cache into <strong>blocks</strong>, where each block holds the key-value pairs for a fixed number of tokens <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span> (the block size, e.g., <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>=</mo><mn>16</mn></mrow><annotation encoding="application/x-tex">B = 16</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">16</span></span></span></span>).</p>
+<p>For a sequence with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span> tokens, the KV cache requires <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">⌈</mo><mi>s</mi><mi mathvariant="normal">/</mi><mi>B</mi><mo stretchy="false">⌉</mo></mrow><annotation encoding="application/x-tex">\lceil s/B \rceil</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">⌈</span><span class="mord mathnormal">s</span><span class="mord">/</span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mclose">⌉</span></span></span></span> blocks. These blocks need not be contiguous in physical GPU memory.</p>
+<p><strong>How attention is computed</strong>: Given query vector <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>q</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">q_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> for the new token, and the KV cache stored in blocks <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">{</mo><mo stretchy="false">(</mo><msub><mi>K</mi><mi>j</mi></msub><mo separator="true">,</mo><msub><mi>V</mi><mi>j</mi></msub><mo stretchy="false">)</mo><msubsup><mo stretchy="false">}</mo><mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow><mrow><mo stretchy="false">⌈</mo><mi>t</mi><mi mathvariant="normal">/</mi><mi>B</mi><mo stretchy="false">⌉</mo></mrow></msubsup></mrow><annotation encoding="application/x-tex">\{(K_j, V_j)\}_{j=1}^{\lceil t/B \rceil}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.4578em;vertical-align:-0.413em;"></span><span class="mopen">{(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mclose"><span class="mclose">}</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.0448em;"><span style="top:-2.4231em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.2198em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">⌈</span><span class="mord mathnormal mtight">t</span><span class="mord mtight">/</span><span class="mord mathnormal mtight" style="margin-right:0.05017em;">B</span><span class="mclose mtight">⌉</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.413em;"><span></span></span></span></span></span></span></span></span></span>, the attention output is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>A</mi><mi>j</mi></msub><mo>=</mo><mfrac><mrow><mi>exp</mi><mo>⁡</mo><mo stretchy="false">(</mo><msub><mi>q</mi><mi>t</mi></msub><msubsup><mi>K</mi><mi>j</mi><mi mathvariant="normal">⊤</mi></msubsup><mi mathvariant="normal">/</mi><msqrt><msub><mi>d</mi><mi>h</mi></msub></msqrt><mo stretchy="false">)</mo></mrow><mrow><munder><mo>∑</mo><msup><mi>j</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup></munder><mi>exp</mi><mo>⁡</mo><mo stretchy="false">(</mo><msub><mi>q</mi><mi>t</mi></msub><msubsup><mi>K</mi><msup><mi>j</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mi mathvariant="normal">⊤</mi></msubsup><mi mathvariant="normal">/</mi><msqrt><msub><mi>d</mi><mi>h</mi></msub></msqrt><mo stretchy="false">)</mo></mrow></mfrac></mrow><annotation encoding="application/x-tex">A_j = \frac{\exp(q_t K_j^\top / \sqrt{d_h})}{\sum_{j&#x27;} \exp(q_t K_{j&#x27;}^\top / \sqrt{d_h})}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">A</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.825em;vertical-align:-1.183em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.642em;"><span style="top:-2.2528em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1783em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6828em;"><span style="top:-2.786em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.4358em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">exp</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8309em;"><span style="top:-2.4068em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6828em;"><span style="top:-2.786em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span></span></span></span><span style="top:-3.0448em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.4293em;"><span></span></span></span></span></span></span><span class="mord">/</span><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8572em;"><span class="svg-align" style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord" style="padding-left:0.833em;"><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">h</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-2.8172em;"><span class="pstrut" style="height:3em;"></span><span class="hide-tail" style="min-width:0.853em;height:1.08em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="1.08em" viewBox="0 0 400000 1080" preserveAspectRatio="xMinYMin slice"><path d="M95,702
+c-2.7,0,-7.17,-2.7,-13.5,-8c-5.8,-5.3,-9.5,-10,-9.5,-14
+c0,-2,0.3,-3.3,1,-4c1.3,-2.7,23.83,-20.7,67.5,-54
+c44.2,-33.3,65.8,-50.3,66.5,-51c1.3,-1.3,3,-2,5,-2c4.7,0,8.7,3.3,12,10
+s173,378,173,378c0.7,0,35.3,-71,104,-213c68.7,-142,137.5,-285,206.5,-429
+c69,-144,104.5,-217.7,106.5,-221
+l0 -0
+c5.3,-9.3,12,-14,20,-14
+H400000v40H845.2724
+s-225.272,467,-225.272,467s-235,486,-235,486c-2.7,4.7,-9,7,-19,7
+c-6,0,-10,-1,-12,-3s-194,-422,-194,-422s-65,47,-65,47z
+M834 80h400000v40h-400000z"/></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1828em;"><span></span></span></span></span></span><span class="mclose">)</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.7848em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop">exp</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-2.4413em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3948em;"><span></span></span></span></span></span></span><span class="mord">/</span><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8572em;"><span class="svg-align" style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord" style="padding-left:0.833em;"><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">h</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-2.8172em;"><span class="pstrut" style="height:3em;"></span><span class="hide-tail" style="min-width:0.853em;height:1.08em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="1.08em" viewBox="0 0 400000 1080" preserveAspectRatio="xMinYMin slice"><path d="M95,702
+c-2.7,0,-7.17,-2.7,-13.5,-8c-5.8,-5.3,-9.5,-10,-9.5,-14
+c0,-2,0.3,-3.3,1,-4c1.3,-2.7,23.83,-20.7,67.5,-54
+c44.2,-33.3,65.8,-50.3,66.5,-51c1.3,-1.3,3,-2,5,-2c4.7,0,8.7,3.3,12,10
+s173,378,173,378c0.7,0,35.3,-71,104,-213c68.7,-142,137.5,-285,206.5,-429
+c69,-144,104.5,-217.7,106.5,-221
+l0 -0
+c5.3,-9.3,12,-14,20,-14
+H400000v40H845.2724
+s-225.272,467,-225.272,467s-235,486,-235,486c-2.7,4.7,-9,7,-19,7
+c-6,0,-10,-1,-12,-3s-194,-422,-194,-422s-65,47,-65,47z
+M834 80h400000v40h-400000z"/></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1828em;"><span></span></span></span></span></span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.183em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>o</mi><mi>t</mi></msub><mo>=</mo><munder><mo>∑</mo><mi>j</mi></munder><msub><mi>A</mi><mi>j</mi></msub><msub><mi>V</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">o_t = \sum_j A_j V_j
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.4638em;vertical-align:-1.4138em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.4138em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">A</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>The computation proceeds block-by-block:</p>
+<ol>
+<li>For each block <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>j</mi></mrow><annotation encoding="application/x-tex">j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.854em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05724em;">j</span></span></span></span>, compute the attention scores <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>q</mi><mi>t</mi></msub><msubsup><mi>K</mi><mi>j</mi><mi mathvariant="normal">⊤</mi></msubsup><mi mathvariant="normal">/</mi><msqrt><msub><mi>d</mi><mi>h</mi></msub></msqrt></mrow><annotation encoding="application/x-tex">q_t K_j^\top / \sqrt{d_h}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.252em;vertical-align:-0.3948em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-2.4413em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3948em;"><span></span></span></span></span></span></span><span class="mord">/</span><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8572em;"><span class="svg-align" style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord" style="padding-left:0.833em;"><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">h</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-2.8172em;"><span class="pstrut" style="height:3em;"></span><span class="hide-tail" style="min-width:0.853em;height:1.08em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="1.08em" viewBox="0 0 400000 1080" preserveAspectRatio="xMinYMin slice"><path d="M95,702
+c-2.7,0,-7.17,-2.7,-13.5,-8c-5.8,-5.3,-9.5,-10,-9.5,-14
+c0,-2,0.3,-3.3,1,-4c1.3,-2.7,23.83,-20.7,67.5,-54
+c44.2,-33.3,65.8,-50.3,66.5,-51c1.3,-1.3,3,-2,5,-2c4.7,0,8.7,3.3,12,10
+s173,378,173,378c0.7,0,35.3,-71,104,-213c68.7,-142,137.5,-285,206.5,-429
+c69,-144,104.5,-217.7,106.5,-221
+l0 -0
+c5.3,-9.3,12,-14,20,-14
+H400000v40H845.2724
+s-225.272,467,-225.272,467s-235,486,-235,486c-2.7,4.7,-9,7,-19,7
+c-6,0,-10,-1,-12,-3s-194,-422,-194,-422s-65,47,-65,47z
+M834 80h400000v40h-400000z"/></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1828em;"><span></span></span></span></span></span></span></span></span></li>
+<li>Track the running maximum for numerical stability (online softmax)</li>
+<li>Compute weighted sum of values across all blocks</li>
+</ol>
+<p>This is essentially standard attention but with key-value pairs gathered from potentially non-contiguous memory locations via the block table.</p>
+<h3 id="3-2-Block-Table-The-Translation-Layer">3.2 Block Table: The Translation Layer</h3>
+<p>Each sequence maintains a <strong>block table</strong> that maps logical block indices to physical block locations:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>BlockTable</mtext><mo stretchy="false">[</mo><mtext>sequence_id</mtext><mo stretchy="false">]</mo><mo stretchy="false">[</mo><mtext>logical_block_idx</mtext><mo stretchy="false">]</mo><mo>=</mo><mtext>physical_block_ptr</mtext></mrow><annotation encoding="application/x-tex">\text{BlockTable}[\text{sequence\_id}][\text{logical\_block\_idx}] = \text{physical\_block\_ptr}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.06em;vertical-align:-0.31em;"></span><span class="mord text"><span class="mord">BlockTable</span></span><span class="mopen">[</span><span class="mord text"><span class="mord">sequence_id</span></span><span class="mclose">]</span><span class="mopen">[</span><span class="mord text"><span class="mord">logical_block_idx</span></span><span class="mclose">]</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0044em;vertical-align:-0.31em;"></span><span class="mord text"><span class="mord">physical_block_ptr</span></span></span></span></span></span></p>
+<p><strong>Example</strong>: Suppose we have a prompt &quot;Four score and seven years ago our&quot; tokenized into 7 tokens, with block size <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">B = 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span>:</p>
+<ul>
+<li>Logical block 0 (tokens 0–3): might be stored at physical block 7</li>
+<li>Logical block 1 (tokens 4–6): might be stored at physical block 1</li>
+</ul>
+<p>When new tokens are generated, they fill the current last block. When the last block is full, a new physical block is allocated and appended to the block table.</p>
+<p><strong>On-demand allocation</strong>: Unlike pre-allocation schemes, vLLM allocates new blocks only when needed. This means a request only uses memory proportional to its actual current sequence length, not its maximum possible length.</p>
+<h3 id="3-3-Memory-Management">3.3 Memory Management</h3>
+<p>The block manager maintains a <strong>free block pool</strong>—a list of all unallocated physical blocks. Operations:</p>
+<ul>
+<li><strong>Allocate</strong>: Pop a block from the free pool and assign it to a sequence.</li>
+<li><strong>Free</strong>: When a sequence completes, return all its blocks to the free pool.</li>
+<li><strong>Share</strong>: For parallel sampling/beam search, multiple sequences can point to the same physical block via their block tables.</li>
+<li><strong>Copy-on-Write</strong>: When a shared block needs to be modified (i.e., a new token is written to it), a copy is made first. Reference counting tracks how many sequences share each block.</li>
+</ul>
+<p><strong>Near-zero waste</strong>: Internal fragmentation is bounded by <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>−</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">B - 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> tokens per sequence (the last block may not be full). With <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>=</mo><mn>16</mn></mrow><annotation encoding="application/x-tex">B = 16</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">16</span></span></span></span> and sequences of hundreds of tokens, this waste is negligible (~1%). External fragmentation is eliminated entirely because any free block can be used for any request.</p>
+<h3 id="3-4-Supporting-Decoding-Algorithms">3.4 Supporting Decoding Algorithms</h3>
+<p>vLLM abstracts all decoding algorithms through three primitive operations:</p>
+<p><strong>fork(seq)</strong>: Create a new sequence that shares the existing sequence's KV cache blocks. The reference counts of shared blocks are incremented. Used at the start of parallel sampling or beam search.</p>
+<p><strong>append(seq, token)</strong>: Append a new token to the sequence. If the last block is full, allocate a new block. If the last block is shared (reference count &gt; 1), copy-on-write: allocate a new block, copy the old block's data, then append.</p>
+<p><strong>free(seq)</strong>: Delete a sequence and decrement reference counts of its blocks. Blocks with reference count 0 are returned to the free pool.</p>
+<p><strong>Parallel sampling</strong>: Given a prompt, we fork it <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span> times to create <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span> parallel sequences. They all share the prompt's KV cache blocks. As each sequence generates different tokens, copy-on-write creates separate blocks only for divergent tokens.</p>
+<p><strong>Beam search</strong>: More complex sharing patterns where beams may share variable-length prefixes. As beams are pruned and expanded, fork and free operations dynamically manage the sharing.</p>
+<h3 id="3-5-Scheduling-Policy">3.5 Scheduling Policy</h3>
+<p>vLLM uses <strong>First-Come-First-Served (FCFS)</strong> scheduling with the following mechanism:</p>
+<ol>
+<li>When GPU memory is insufficient for a new request, vLLM does <strong>not</strong> preempt running requests. Instead, new requests wait in a queue.</li>
+<li>When all running requests are blocked (insufficient memory), vLLM applies <strong>preemption</strong>: the most recently arrived request is paused and its blocks are either (a) swapped to CPU memory or (b) recomputed later.</li>
+<li>Preempted sequences are rescheduled when memory becomes available.</li>
+</ol>
+<p>This approach ensures fairness (earlier requests get priority) and prevents starvation.</p>
+<h3 id="3-6-GPU-Kernel-Optimizations">3.6 GPU Kernel Optimizations</h3>
+<p>The paper describes three critical kernel-level optimizations:</p>
+<p><strong>1. Fused reshape and block write</strong>: When a new KV pair is computed, it must be reshaped and written to the correct block via the block table. These operations are fused into a single GPU kernel to minimize launch overhead.</p>
+<p><strong>2. Fused block read and attention</strong>: The attention computation must read KV data from non-contiguous blocks. The paper adapts FasterTransformer's attention kernel to read KV cache according to the block table and perform attention on the fly. Each GPU warp (32 threads) is assigned to read one block, ensuring coalesced memory access.</p>
+<p><strong>3. Fused block copy</strong>: Copy-on-write operations may involve copying multiple non-contiguous blocks. Instead of issuing separate <code>cudaMemcpyAsync</code> calls for each block, a custom kernel batches all copy operations into a single kernel launch.</p>
+<hr>
+<h2 id="IV-Experimental-Results">IV. Experimental Results</h2>
+<h3 id="4-1-Setup">4.1 Setup</h3>
+<p><strong>Models</strong>: OPT-13B (1 A100 GPU), OPT-66B (4 A100 GPUs), OPT-175B (8 A100 GPUs), LLaMA-13B (1 A100 GPU).</p>
+<p><strong>Datasets</strong>:</p>
+<ul>
+<li>ShareGPT: real ChatGPT conversations (long, high variance; avg input 161 tokens, avg output 338 tokens)</li>
+<li>Alpaca: instruction-following dataset (short, low variance; avg input 19 tokens, avg output 58 tokens)</li>
+</ul>
+<p><strong>Baselines</strong>:</p>
+<ul>
+<li><strong>FasterTransformer</strong>: Optimized inference engine with static batching (max batch size pre-set).</li>
+<li><strong>Orca (Max)</strong>: Reserves maximum sequence length (2048) for every request.</li>
+<li><strong>Orca (Pow2)</strong>: Over-reserves by at most 2× (e.g., 32 slots for 25 actual tokens).</li>
+<li><strong>Orca (Oracle)</strong>: Knows the exact output length in advance—an <strong>infeasible upper bound</strong>.</li>
+</ul>
+<h3 id="4-2-Basic-Sampling-Single-Output-per-Request">4.2 Basic Sampling (Single Output per Request)</h3>
+<p>On the <strong>ShareGPT</strong> dataset, vLLM sustains:</p>
+<ul>
+<li><strong>1.7×–2.7× higher request rates</strong> than Orca (Oracle)—the infeasible upper bound</li>
+<li><strong>2.7×–8× higher request rates</strong> than Orca (Max)</li>
+<li><strong>Up to 22× higher request rates</strong> than FasterTransformer</li>
+</ul>
+<p>On <strong>OPT-13B</strong> with ShareGPT (2 req/s): vLLM batches an average of <strong>30.42 requests</strong> simultaneously, compared to 13.62 for Orca (Oracle), 9.81 for Orca (Pow2), and 7.00 for Orca (Max). This 2.2–4.3× improvement in batch size directly translates to proportional throughput gains.</p>
+<p>On the <strong>Alpaca</strong> dataset (shorter sequences), vLLM still demonstrates significant improvements. The one exception is OPT-175B on Alpaca, where the large GPU memory (8 A100s) and short sequences mean even Orca can batch many requests—the bottleneck becomes compute rather than memory.</p>
+<h3 id="4-3-Parallel-Sampling">4.3 Parallel Sampling</h3>
+<p>With parallel sampling (multiple output sequences per prompt), vLLM's memory sharing via copy-on-write becomes increasingly beneficial:</p>
+<p><strong>Memory savings from KV block sharing</strong>:</p>
+<ul>
+<li>Parallel size 2: <strong>6.1%</strong> memory saving</li>
+<li>Parallel size 4: <strong>8.5%</strong> memory saving</li>
+<li>Parallel size 6: <strong>9.8%</strong> memory saving</li>
+</ul>
+<p>vLLM's throughput advantage over Orca grows with the parallel size because the shared prompt KV cache avoids redundant storage.</p>
+<h3 id="4-4-Beam-Search">4.4 Beam Search</h3>
+<p>Beam search offers even greater sharing potential because beams frequently share long prefixes:</p>
+<p><strong>Memory savings from KV block sharing</strong>:</p>
+<ul>
+<li>Beam width 2: <strong>37.6%</strong> memory saving</li>
+<li>Beam width 4: <strong>53.1%</strong> memory saving</li>
+<li>Beam width 6: <strong>55.2%</strong> memory saving</li>
+</ul>
+<p>With beam width 6, vLLM achieves <strong>2.3× higher throughput</strong> than Orca (Oracle) on OPT-13B/Alpaca, compared to only 1.3× for basic sampling. The improvement scales with the amount of potential sharing.</p>
+<h3 id="4-5-Chatbot-Serving-LLaMA-13B">4.5 Chatbot Serving (LLaMA-13B)</h3>
+<p>Using LLaMA-13B on ShareGPT traces, vLLM achieves <strong>2× higher throughput</strong> than Orca systems while maintaining the same latency. This demonstrates practical real-world applicability.</p>
+<hr>
+<h2 id="V-Analysis-Why-PagedAttention-Works-So-Well">V. Analysis: Why PagedAttention Works So Well</h2>
+<h3 id="5-1-Eliminating-Memory-Waste">5.1 Eliminating Memory Waste</h3>
+<p>The fundamental reason for vLLM's superiority is waste elimination:</p>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th>Internal Fragmentation</th>
+<th>External Fragmentation</th>
+<th>Reservation Waste</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Orca (Max)</td>
+<td>None</td>
+<td>Severe</td>
+<td>Extreme (reserves max length)</td>
+</tr>
+<tr>
+<td>Orca (Pow2)</td>
+<td>None</td>
+<td>Moderate</td>
+<td>Moderate (up to 2× over-reserve)</td>
+</tr>
+<tr>
+<td>Orca (Oracle)</td>
+<td>None</td>
+<td>Moderate</td>
+<td>None (infeasible)</td>
+</tr>
+<tr>
+<td><strong>vLLM</strong></td>
+<td><strong>≤ <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>−</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">B-1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> tokens</strong></td>
+<td><strong>None</strong></td>
+<td><strong>None</strong></td>
+</tr>
+</tbody>
+</table>
+<p>vLLM is the only system that achieves near-zero waste across all three categories, and it does so <strong>without</strong> requiring knowledge of future output lengths.</p>
+<h3 id="5-2-Memory-Utilization-Translates-to-Throughput">5.2 Memory Utilization Translates to Throughput</h3>
+<p>Higher memory efficiency → larger batch sizes → better GPU utilization → higher throughput. The relationship is approximately linear: a 2× reduction in per-request memory waste allows ~2× more concurrent requests, which delivers ~2× throughput improvement (until compute becomes the bottleneck).</p>
+<h3 id="5-3-The-Oracle-Comparison">5.3 The &quot;Oracle&quot; Comparison</h3>
+<p>The most striking result is that vLLM outperforms Orca (Oracle)—a system with perfect knowledge of output lengths. This happens because:</p>
+<ol>
+<li>Orca (Oracle) still suffers from <strong>external fragmentation</strong> (contiguous allocation leaves gaps).</li>
+<li>vLLM's block-level allocation eliminates external fragmentation entirely.</li>
+<li>vLLM's internal fragmentation (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>&lt;</mo><mi>B</mi></mrow><annotation encoding="application/x-tex">&lt; B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5782em;vertical-align:-0.0391em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span> tokens) is much smaller than Orca's external fragmentation.</li>
+</ol>
+<hr>
+<h2 id="VI-Limitations-and-Boundary-Conditions">VI. Limitations and Boundary Conditions</h2>
+<h3 id="6-1-Block-Size-Sensitivity">6.1 Block Size Sensitivity</h3>
+<p>The choice of block size <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span> involves a tradeoff:</p>
+<ul>
+<li><strong>Small <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span></strong>: Less internal fragmentation but more block table entries and higher bookkeeping overhead.</li>
+<li><strong>Large <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span></strong>: Lower overhead but more wasted memory in the last block.</li>
+</ul>
+<p>The paper uses <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>=</mo><mn>16</mn></mrow><annotation encoding="application/x-tex">B = 16</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">16</span></span></span></span> as a reasonable default but does not extensively study the sensitivity.</p>
+<h3 id="6-2-Attention-Kernel-Overhead">6.2 Attention Kernel Overhead</h3>
+<p>Non-contiguous memory access patterns in PagedAttention are inherently less cache-friendly than contiguous access. The paper reports that PagedAttention's kernel is <strong>20–26% slower</strong> than FasterTransformer's optimized kernel for individual attention computations. However, this overhead is amply compensated by the throughput gains from larger batch sizes.</p>
+<h3 id="6-3-CPU-Overhead-of-Block-Management">6.3 CPU Overhead of Block Management</h3>
+<p>The block manager, scheduler, and block table operations run on the CPU. At extremely high request rates, CPU scheduling could become a bottleneck. The paper does not explore this regime in detail.</p>
+<h3 id="6-4-Limited-to-KV-Cache-Optimization">6.4 Limited to KV Cache Optimization</h3>
+<p>vLLM optimizes only the KV cache memory. It does not address memory optimization for model weights, activations, or optimizer states during training. It is a serving-time optimization.</p>
+<h3 id="6-5-Single-Node-Scope">6.5 Single-Node Scope</h3>
+<p>The paper evaluates up to 8 GPUs on a single node. Distributed serving across multiple nodes with PagedAttention is left to future work. (Note: subsequent vLLM releases have added distributed support.)</p>
+<h3 id="6-6-No-Quantization-Integration">6.6 No Quantization Integration</h3>
+<p>The paper does not combine PagedAttention with KV cache quantization (e.g., FP8 or INT4 KV cache). Combining these techniques could yield multiplicative memory savings.</p>
+<hr>
+<h2 id="VII-Impact-and-Significance">VII. Impact and Significance</h2>
+<h3 id="7-1-Paradigm-Shift-in-LLM-Serving">7.1 Paradigm Shift in LLM Serving</h3>
+<p>vLLM and PagedAttention fundamentally changed how the community thinks about LLM serving. Before this work, memory management was considered a secondary concern compared to compute optimization. This paper demonstrated that <strong>memory management is the primary bottleneck</strong> for LLM serving throughput and that solutions can be borrowed from decades-old OS concepts.</p>
+<h3 id="7-2-Industry-Adoption">7.2 Industry Adoption</h3>
+<p>vLLM has become one of the most widely adopted open-source LLM serving frameworks, with adoption by major companies and cloud providers. Its API compatibility with OpenAI's interface made it a drop-in replacement for many deployments.</p>
+<h3 id="7-3-Research-Influence">7.3 Research Influence</h3>
+<p>PagedAttention inspired a wave of follow-up work on KV cache optimization, including:</p>
+<ul>
+<li>KV cache compression and quantization</li>
+<li>Prefix caching across requests</li>
+<li>Speculative decoding integration</li>
+<li>Disaggregated prefill and decode</li>
+<li>Token-level (rather than block-level) memory management</li>
+</ul>
+<h3 id="7-4-Connection-to-OS-Principles">7.4 Connection to OS Principles</h3>
+<p>The paper beautifully demonstrates that classical systems concepts (virtual memory, paging, copy-on-write) can be adapted to modern ML systems. It serves as an exemplar for cross-pollination between systems and ML research.</p>
+<hr>
+<h2 id="VIII-Reproducibility">VIII. Reproducibility</h2>
+<h3 id="8-1-Code-Availability">8.1 Code Availability</h3>
+<p>vLLM is open-source: <a href="https://github.com/vllm-project/vllm" target="_blank" rel="noopener">https://github.com/vllm-project/vllm</a></p>
+<h3 id="8-2-System-Specifications">8.2 System Specifications</h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Framework</td>
+<td>8.5K lines Python + 2K lines C++/CUDA</td>
+</tr>
+<tr>
+<td>Frontend</td>
+<td>FastAPI (OpenAI-compatible API)</td>
+</tr>
+<tr>
+<td>Hardware</td>
+<td>NVIDIA A100 GPUs (Google Cloud A2 instances)</td>
+</tr>
+<tr>
+<td>Models</td>
+<td>OPT-13B/66B/175B, LLaMA-13B</td>
+</tr>
+<tr>
+<td>Block size <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span></td>
+<td>16 tokens</td>
+</tr>
+<tr>
+<td>Scheduler</td>
+<td>FCFS with swapping-based preemption</td>
+</tr>
+<tr>
+<td>Evaluation traces</td>
+<td>1-hour traces (15 min for OPT-175B)</td>
+</tr>
+<tr>
+<td>Request arrival</td>
+<td>Poisson distribution with varying rates</td>
+</tr>
+</tbody>
+</table>
+<h3 id="8-3-Baseline-Implementations">8.3 Baseline Implementations</h3>
+<p>Since Orca is not publicly available, the authors implemented their own version with three memory allocation strategies (Max, Pow2, Oracle). FasterTransformer was used with a custom dynamic batching scheduler.</p>
+<hr>
+<h2 id="IX-Conclusion">IX. Conclusion</h2>
+<p>vLLM and PagedAttention represent a landmark contribution to LLM serving systems. By recognizing that KV cache memory management is the critical throughput bottleneck and applying the elegant abstraction of OS-style paging, the paper achieves 2–4× throughput improvements over state-of-the-art systems—even outperforming systems with perfect output length prediction. The core insight that non-contiguous, block-level memory management can eliminate fragmentation without significant computational overhead has become the foundation for modern LLM serving infrastructure. The work stands as a powerful example of how classical systems principles can solve contemporary AI challenges.</p>
+<hr>
+<h2 id="References">References</h2>
+<ol>
+<li>Kwon, W., Li, Z., Zhuang, S., et al. (2023). &quot;Efficient Memory Management for Large Language Model Serving with PagedAttention.&quot; SOSP 2023. arXiv:2309.06180.</li>
+<li>Yu, G.-I., et al. (2022). &quot;Orca: A Distributed Serving System for Transformer-Based Generative Models.&quot; OSDI 2022.</li>
+<li>NVIDIA. FasterTransformer. <a href="https://github.com/NVIDIA/FasterTransformer" target="_blank" rel="noopener">https://github.com/NVIDIA/FasterTransformer</a>.</li>
+<li>Vaswani, A., et al. (2017). &quot;Attention Is All You Need.&quot; NeurIPS 2017.</li>
+<li>Zhang, S., et al. (2022). &quot;OPT: Open Pre-trained Transformer Language Models.&quot; arXiv:2205.01068.</li>
+<li>Touvron, H., et al. (2023). &quot;LLaMA: Open and Efficient Foundation Language Models.&quot; arXiv:2302.13971.</li>
+<li>Tanenbaum, A. S. (2007). Modern Operating Systems. Pearson Education.</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/KV-Cache/" rel="tag"># KV Cache</a>
+              <a href="/tags/LLM-Serving/" rel="tag"># LLM Serving</a>
+              <a href="/tags/PagedAttention/" rel="tag"># PagedAttention</a>
+              <a href="/tags/vLLM/" rel="tag"># vLLM</a>
+              <a href="/tags/Memory-Management/" rel="tag"># Memory Management</a>
+              <a href="/tags/Systems/" rel="tag"># Systems</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/02/18/2026-02-18-GLM5-AgenticEngineering-technical-review-en-hexo/" rel="prev" title="GLM-5 Technical Review: From Vibe Coding to Agentic Engineering">
+      <i class="fa fa-chevron-left"></i> GLM-5 Technical Review: From Vibe Coding to Agentic Engineering
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/02/19/2026-02-19-AdaLoRA-technical-review-en/" rel="next" title="AdaLoRA: Adaptive Budget Allocation for Parameter-Efficient Fine-Tuning — Technical Review">
+      AdaLoRA: Adaptive Budget Allocation for Parameter-Efficient Fine-Tuning — Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#vLLM-and-PagedAttention-Efficient-Memory-Management-for-Large-Language-Model-Serving-—-Detailed-Technical-Review"><span class="nav-number">1.</span> <span class="nav-text">vLLM and PagedAttention: Efficient Memory Management for Large Language Model Serving — Detailed Technical Review</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#I-Prerequisites-What-You-Need-to-Know"><span class="nav-number">1.1.</span> <span class="nav-text">I. Prerequisites: What You Need to Know</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-Autoregressive-Language-Model-Inference"><span class="nav-number">1.1.1.</span> <span class="nav-text">1.1 Autoregressive Language Model Inference</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-The-Attention-Mechanism-and-KV-Cache"><span class="nav-number">1.1.2.</span> <span class="nav-text">1.2 The Attention Mechanism and KV Cache</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-KV-Cache-Memory-Why-It-Dominates"><span class="nav-number">1.1.3.</span> <span class="nav-text">1.3 KV Cache Memory: Why It Dominates</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-4-The-Memory-Waste-Problem-in-Existing-Systems"><span class="nav-number">1.1.4.</span> <span class="nav-text">1.4 The Memory Waste Problem in Existing Systems</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-5-Virtual-Memory-and-Paging-in-Operating-Systems"><span class="nav-number">1.1.5.</span> <span class="nav-text">1.5 Virtual Memory and Paging in Operating Systems</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-6-Serving-System-Architecture-and-Batching"><span class="nav-number">1.1.6.</span> <span class="nav-text">1.6 Serving System Architecture and Batching</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-7-Copy-on-Write-CoW"><span class="nav-number">1.1.7.</span> <span class="nav-text">1.7 Copy-on-Write (CoW)</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#II-What-This-Paper-Does-Core-Contributions"><span class="nav-number">1.2.</span> <span class="nav-text">II. What This Paper Does: Core Contributions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-The-Core-Problem"><span class="nav-number">1.2.1.</span> <span class="nav-text">2.1 The Core Problem</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-Three-Key-Contributions"><span class="nav-number">1.2.2.</span> <span class="nav-text">2.2 Three Key Contributions</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#III-Methodology-in-Depth"><span class="nav-number">1.3.</span> <span class="nav-text">III. Methodology in Depth</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-PagedAttention-The-Core-Algorithm"><span class="nav-number">1.3.1.</span> <span class="nav-text">3.1 PagedAttention: The Core Algorithm</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-Block-Table-The-Translation-Layer"><span class="nav-number">1.3.2.</span> <span class="nav-text">3.2 Block Table: The Translation Layer</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-Memory-Management"><span class="nav-number">1.3.3.</span> <span class="nav-text">3.3 Memory Management</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-Supporting-Decoding-Algorithms"><span class="nav-number">1.3.4.</span> <span class="nav-text">3.4 Supporting Decoding Algorithms</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-Scheduling-Policy"><span class="nav-number">1.3.5.</span> <span class="nav-text">3.5 Scheduling Policy</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-6-GPU-Kernel-Optimizations"><span class="nav-number">1.3.6.</span> <span class="nav-text">3.6 GPU Kernel Optimizations</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#IV-Experimental-Results"><span class="nav-number">1.4.</span> <span class="nav-text">IV. Experimental Results</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-Setup"><span class="nav-number">1.4.1.</span> <span class="nav-text">4.1 Setup</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-Basic-Sampling-Single-Output-per-Request"><span class="nav-number">1.4.2.</span> <span class="nav-text">4.2 Basic Sampling (Single Output per Request)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-Parallel-Sampling"><span class="nav-number">1.4.3.</span> <span class="nav-text">4.3 Parallel Sampling</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-4-Beam-Search"><span class="nav-number">1.4.4.</span> <span class="nav-text">4.4 Beam Search</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-5-Chatbot-Serving-LLaMA-13B"><span class="nav-number">1.4.5.</span> <span class="nav-text">4.5 Chatbot Serving (LLaMA-13B)</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#V-Analysis-Why-PagedAttention-Works-So-Well"><span class="nav-number">1.5.</span> <span class="nav-text">V. Analysis: Why PagedAttention Works So Well</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-Eliminating-Memory-Waste"><span class="nav-number">1.5.1.</span> <span class="nav-text">5.1 Eliminating Memory Waste</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Memory-Utilization-Translates-to-Throughput"><span class="nav-number">1.5.2.</span> <span class="nav-text">5.2 Memory Utilization Translates to Throughput</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-The-Oracle-Comparison"><span class="nav-number">1.5.3.</span> <span class="nav-text">5.3 The &quot;Oracle&quot; Comparison</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#VI-Limitations-and-Boundary-Conditions"><span class="nav-number">1.6.</span> <span class="nav-text">VI. Limitations and Boundary Conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Block-Size-Sensitivity"><span class="nav-number">1.6.1.</span> <span class="nav-text">6.1 Block Size Sensitivity</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Attention-Kernel-Overhead"><span class="nav-number">1.6.2.</span> <span class="nav-text">6.2 Attention Kernel Overhead</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-CPU-Overhead-of-Block-Management"><span class="nav-number">1.6.3.</span> <span class="nav-text">6.3 CPU Overhead of Block Management</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-Limited-to-KV-Cache-Optimization"><span class="nav-number">1.6.4.</span> <span class="nav-text">6.4 Limited to KV Cache Optimization</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-5-Single-Node-Scope"><span class="nav-number">1.6.5.</span> <span class="nav-text">6.5 Single-Node Scope</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-6-No-Quantization-Integration"><span class="nav-number">1.6.6.</span> <span class="nav-text">6.6 No Quantization Integration</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#VII-Impact-and-Significance"><span class="nav-number">1.7.</span> <span class="nav-text">VII. Impact and Significance</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-Paradigm-Shift-in-LLM-Serving"><span class="nav-number">1.7.1.</span> <span class="nav-text">7.1 Paradigm Shift in LLM Serving</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-Industry-Adoption"><span class="nav-number">1.7.2.</span> <span class="nav-text">7.2 Industry Adoption</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-Research-Influence"><span class="nav-number">1.7.3.</span> <span class="nav-text">7.3 Research Influence</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-Connection-to-OS-Principles"><span class="nav-number">1.7.4.</span> <span class="nav-text">7.4 Connection to OS Principles</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#VIII-Reproducibility"><span class="nav-number">1.8.</span> <span class="nav-text">VIII. Reproducibility</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-Code-Availability"><span class="nav-number">1.8.1.</span> <span class="nav-text">8.1 Code Availability</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-System-Specifications"><span class="nav-number">1.8.2.</span> <span class="nav-text">8.2 System Specifications</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-Baseline-Implementations"><span class="nav-number">1.8.3.</span> <span class="nav-text">8.3 Baseline Implementations</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#IX-Conclusion"><span class="nav-number">1.9.</span> <span class="nav-text">IX. Conclusion</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#References"><span class="nav-number">1.10.</span> <span class="nav-text">References</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

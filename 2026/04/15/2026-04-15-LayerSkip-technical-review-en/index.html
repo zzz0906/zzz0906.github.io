@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. Why this paper matters If I had to explain this paper to a non-specialist in one sentence, I would say:  The paper teaches a large language model to make decent predictions from earlier layers, the">
+<meta property="og:type" content="article">
+<meta property="og:title" content="LayerSkip: Enabling Early Exit Inference and Self-Speculative Decoding — Deep Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/15/2026-04-15-LayerSkip-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. Why this paper matters If I had to explain this paper to a non-specialist in one sentence, I would say:  The paper teaches a large language model to make decent predictions from earlier layers, the">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-15T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-16T12:57:27.475Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Efficient Inference">
+<meta property="article:tag" content="LayerSkip">
+<meta property="article:tag" content="Early Exit">
+<meta property="article:tag" content="Speculative Decoding">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/15/2026-04-15-LayerSkip-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>LayerSkip: Enabling Early Exit Inference and Self-Speculative Decoding — Deep Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/15/2026-04-15-LayerSkip-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          LayerSkip: Enabling Early Exit Inference and Self-Speculative Decoding — Deep Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-15 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-15T00:00:00+00:00">2026-04-15</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-16 12:57:27" itemprop="dateModified" datetime="2026-04-16T12:57:27+00:00">2026-04-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/Efficient-ML/" itemprop="url" rel="index"><span itemprop="name">Efficient ML</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-Why-this-paper-matters">1. Why this paper matters</h2>
+<p>If I had to explain this paper to a non-specialist in one sentence, I would say:</p>
+<blockquote>
+<p>The paper teaches a large language model to make decent predictions from earlier layers, then uses the remaining layers as a built-in checker so that inference becomes faster without needing a second draft model.</p>
+</blockquote>
+<p>That sounds simple, but it addresses a very real systems bottleneck.</p>
+<p>Modern LLM inference is expensive because each generated token usually pays for the full depth of the model. If a model has 32 or 40 transformer layers, then every next token runs through essentially all of them. That is painful for three reasons:</p>
+<ul>
+<li>latency is high,</li>
+<li>GPU cost is high,</li>
+<li>memory pressure becomes a serious deployment constraint.</li>
+</ul>
+<p>A lot of acceleration work tries to reduce one of these costs by quantization, sparsity, pruning, or a separate draft model. Those are useful directions. But they all come with trade-offs:</p>
+<ul>
+<li>quantization can hurt quality or require hardware-aware kernels,</li>
+<li>sparsity often needs special kernels to pay off,</li>
+<li>separate-model speculative decoding doubles some engineering complexity and increases memory footprint.</li>
+</ul>
+<p>What LayerSkip tries to do is elegant in a systems sense:</p>
+<ol>
+<li>train one model so its intermediate layers are more predictive,</li>
+<li>let those early layers draft tokens,</li>
+<li>let the later layers verify and correct them,</li>
+<li>reuse shared computation and cache because draft and verification come from the same network.</li>
+</ol>
+<p>I like this paper because it sits exactly at the boundary of <strong>model training design</strong> and <strong>serving systems design</strong>. It is not merely “here is a trick that is 3% better on one benchmark.” It is asking a deeper question:</p>
+<blockquote>
+<p>Can we train the model so that its internal depth becomes more usable at inference time?</p>
+</blockquote>
+<p>That is a powerful framing. Instead of treating inference optimization as something that happens only after training, the authors redesign training so that faster inference becomes natural.</p>
+<p>The headline results justify paying attention:</p>
+<ul>
+<li>up to <strong>2.16×</strong> speedup on CNN/DM summarization,</li>
+<li>up to <strong>1.82×</strong> speedup on coding,</li>
+<li><strong>2.0×</strong> speedup on TOPv2 semantic parsing,</li>
+<li>and code/checkpoints are open sourced.</li>
+</ul>
+<p>For an inference paper, that is already respectable. But the deeper contribution is conceptual: the paper turns one deep model into an <strong>ensemble of sub-models of different depths</strong> plus a built-in verifier.</p>
+<hr>
+<a id="more"></a>
+<h2 id="2-Prerequisites-What-you-need-to-know-first">2. Prerequisites: What you need to know first</h2>
+<p>This section is intentionally written for readers who may know almost nothing about LLM serving.</p>
+<h3 id="2-1-Why-LLM-inference-is-expensive">2.1 Why LLM inference is expensive</h3>
+<p>A language model generates text one token at a time.</p>
+<p>Suppose the model wants to produce the sentence:</p>
+<blockquote>
+<p>The cat sat on the mat.</p>
+</blockquote>
+<p>It first predicts one token, then another token conditioned on the previous ones, then another, and so on. For every token, the model normally runs all of its transformer layers.</p>
+<p>So if you have:</p>
+<ul>
+<li>sequence length growing over time,</li>
+<li>a deep transformer,</li>
+<li>large hidden dimensions,</li>
+<li>large KV cache,</li>
+</ul>
+<p>then generation becomes expensive very quickly.</p>
+<p>The painful part is that decoding is sequential. During training you can parallelize across many positions, but during generation the next token depends on the previous token. That means a lot of latency is fundamentally on the critical path.</p>
+<h3 id="2-2-What-autoregressive-decoding-is">2.2 What autoregressive decoding is</h3>
+<p>Autoregressive decoding means:</p>
+<ul>
+<li>read the prompt,</li>
+<li>predict token 1,</li>
+<li>append token 1,</li>
+<li>predict token 2,</li>
+<li>append token 2,</li>
+<li>keep going.</li>
+</ul>
+<p>This is the default mode for most decoder-only LLMs.</p>
+<p>The good news is that autoregressive decoding is conceptually simple and stable.</p>
+<p>The bad news is that it is slow, because the model repeats a forward pass for every new token. Any method that can safely produce multiple useful tokens with less total computation is valuable.</p>
+<h3 id="2-3-What-speculative-decoding-is-trying-to-fix">2.3 What speculative decoding is trying to fix</h3>
+<p>Speculative decoding says:</p>
+<ul>
+<li>let a faster draft model guess several tokens,</li>
+<li>let a slower stronger model verify them in parallel,</li>
+<li>accept the matching prefix,</li>
+<li>correct when disagreement appears.</li>
+</ul>
+<p>The key benefit is that verifying a chunk of candidate tokens can be faster than generating every token one by one with the large model alone.</p>
+<p>But classic speculative decoding usually needs <strong>two models</strong>:</p>
+<ul>
+<li>a draft model,</li>
+<li>a target model.</li>
+</ul>
+<p>That raises memory cost, cache-management complexity, deployment complexity, and sometimes training complexity too.</p>
+<p>LayerSkip tries to get speculative-decoding-like gains without needing that second model.</p>
+<h3 id="2-4-What-“early-exit”-means-in-deep-networks">2.4 What “early exit” means in deep networks</h3>
+<p>Early exit means we stop computation before the final layer and try to predict from an intermediate layer.</p>
+<p>In ordinary deep networks, earlier layers are usually less task-complete than later ones. They contain partial information, not final judgments. So if you simply cut the model early, quality often drops badly.</p>
+<p>The challenge is therefore not just “exit early.” The real challenge is:</p>
+<blockquote>
+<p>Make earlier layers much more capable of supporting correct decoding.</p>
+</blockquote>
+<p>That is why LayerSkip changes the training recipe.</p>
+<h3 id="2-5-Why-the-KV-cache-matters-so-much">2.5 Why the KV cache matters so much</h3>
+<p>The KV cache stores previously computed attention keys and values so the model does not recompute the entire history for each new token.</p>
+<p>In serving systems, the KV cache is often a dominant memory cost. It also affects speed because cache reuse saves repeated work.</p>
+<p>If your acceleration method requires maintaining separate caches for two models, complexity rises. If the same model can draft and verify while sharing cache structures, that is attractive.</p>
+<h3 id="2-6-Throughput-latency-and-memory-are-not-the-same-thing">2.6 Throughput, latency, and memory are not the same thing</h3>
+<p>These terms are easy to mix up:</p>
+<ul>
+<li><strong>Latency</strong>: how long one request takes.</li>
+<li><strong>Throughput</strong>: how many tokens or requests you process per second.</li>
+<li><strong>Memory footprint</strong>: how much RAM/VRAM/cache you need.</li>
+</ul>
+<p>A method can help one and hurt another. LayerSkip is especially interesting because it tries to improve speed <strong>and</strong> reduce the extra memory overhead associated with two-model speculative decoding.</p>
+<hr>
+<h2 id="3-The-exact-problem-this-paper-tries-to-solve">3. The exact problem this paper tries to solve</h2>
+<p>The paper’s target can be stated precisely like this:</p>
+<blockquote>
+<p>Standard LLM decoding runs the full depth of the model for every token, which is slow. Early exit can reduce depth, but naive early exit hurts accuracy. Standard speculative decoding can recover accuracy, but typically needs a separate draft model and larger memory footprint. Can we co-design training and inference so that a single model drafts from early layers and verifies with later layers efficiently?</p>
+</blockquote>
+<p>There are three sub-problems inside that sentence.</p>
+<h3 id="Problem-A-earlier-layers-are-not-reliable-enough">Problem A: earlier layers are not reliable enough</h3>
+<p>If you simply project an intermediate hidden state through the LM head, you often get junk or unstable predictions.</p>
+<h3 id="Problem-B-even-easy-tokens-still-use-too-much-depth">Problem B: even easy tokens still use too much depth</h3>
+<p>The authors show in Figure 2 that some tokens become predictable before the last layer, yet the default model still spends extra layers “thinking,” sometimes even changing its mind and then returning to the same answer.</p>
+<h3 id="Problem-C-standard-speculative-decoding-is-operationally-heavier">Problem C: standard speculative decoding is operationally heavier</h3>
+<p>Traditional draft-and-verify systems usually need:</p>
+<ul>
+<li>another model,</li>
+<li>another KV cache,</li>
+<li>more deployment logic,</li>
+<li>more memory budget.</li>
+</ul>
+<p>LayerSkip answers all three:</p>
+<ul>
+<li>training makes earlier layers better,</li>
+<li>early exit reduces draft cost,</li>
+<li>self-speculative verification recovers quality,</li>
+<li>one model means less memory overhead than two-model speculation.</li>
+</ul>
+<hr>
+<h2 id="4-Core-idea-in-one-paragraph">4. Core idea in one paragraph</h2>
+<p>LayerSkip combines three ideas into one pipeline:</p>
+<ol>
+<li><strong>Layer dropout during training</strong> makes the model less dependent on late layers by skipping them stochastically, with larger dropout rates for deeper layers.</li>
+<li><strong>Early exit loss</strong> teaches a shared LM head to decode not only from the final layer but also from intermediate layers.</li>
+<li><strong>Self-speculative decoding</strong> uses the first <code>E</code> layers to draft tokens, then uses the remaining <code>L - E</code> layers of the same model to verify and correct those tokens while reusing cache and hidden-state work.</li>
+</ol>
+<p>In short, the paper turns model depth into a controllable serving resource.</p>
+<hr>
+<h2 id="5-Figure-1-explained-slowly-the-whole-LayerSkip-pipeline">5. Figure 1 explained slowly: the whole LayerSkip pipeline</h2>
+<p>Figure 1 is the most important figure in the paper, and I think it is well designed.</p>
+<p>It shows three stages:</p>
+<ul>
+<li><strong>training with layer dropout and early exit loss</strong>,</li>
+<li><strong>early exit inference</strong>,</li>
+<li><strong>self-speculative decoding with verification/correction</strong>.</li>
+</ul>
+<p>I would paraphrase its message like this:</p>
+<blockquote>
+<p>First teach the model to survive missing deeper layers; then let it use fewer layers when drafting; then let the skipped remainder act like a built-in safety net.</p>
+</blockquote>
+<p>Why is this figure important?</p>
+<p>Because many papers present isolated tricks. This paper instead presents an <strong>end-to-end recipe</strong>. The training trick is not meaningful without the inference algorithm, and the inference algorithm is weak without the training trick. Figure 1 makes that dependency obvious.</p>
+<p>I also like that the figure visually communicates a systems idea:</p>
+<ul>
+<li>some computation is reused,</li>
+<li>some is skipped,</li>
+<li>some is delayed until verification.</li>
+</ul>
+<p>That is exactly how a systems engineer should look at transformer depth: not as a sacred fixed pipeline, but as a computational budget that can be reorganized.</p>
+<hr>
+<h2 id="6-Figure-2-explained-why-the-authors-even-believed-early-exit-could-work">6. Figure 2 explained: why the authors even believed early exit could work</h2>
+<p>Figure 2 is the intuition figure, and in my opinion it does a lot of heavy lifting.</p>
+<p>The authors feed a HumanEval coding prompt into Llama1 7B and inspect token predictions layer by layer. They observe several things:</p>
+<ul>
+<li>very early layers produce mostly irrelevant predictions,</li>
+<li>later layers converge toward the final answer,</li>
+<li>many tokens become correct before the final layer,</li>
+<li>some tokens “change their minds” across intermediate layers.</li>
+</ul>
+<p>One concrete example they report is striking:</p>
+<ul>
+<li>in their example, a token needs on average <strong>23.45 layers out of 32</strong>.</li>
+</ul>
+<p>That means even with a perfect early-exit predictor on the original model, the maximum possible compute saving in that example would be only about <strong>26%</strong>. In other words, the raw model is still too reliant on late depth.</p>
+<p>This is an important insight. It tells us that <strong>exit scheduling alone is not enough</strong>. If the model was not trained to make earlier layers useful, a perfect scheduler still has limited upside.</p>
+<p>The authors also note something intuitive but important: even an “easy” token like the start of a Python <code>for</code> loop may still consume all 32 layers in a standard model. That is wasteful. Ideally, easy tokens should settle early and hard tokens should use more depth.</p>
+<p>So Figure 2 does not merely motivate early exit. It motivates <strong>training the model differently so earlier layers become more semantically complete</strong>.</p>
+<p>That is the conceptual bridge into the proposed method.</p>
+<hr>
+<h2 id="7-Training-recipe-part-I-layer-dropout">7. Training recipe, part I: layer dropout</h2>
+<h3 id="7-1-The-intuition">7.1 The intuition</h3>
+<p>The first training modification is layer dropout.</p>
+<p>Instead of always executing every transformer layer during training, the method randomly skips layers. But it does not skip all layers equally. It assigns:</p>
+<ul>
+<li>lower dropout to earlier layers,</li>
+<li>higher dropout to later layers.</li>
+</ul>
+<p>This encourages the model to rely less on the deepest layers. Said differently, the network is pushed to distribute useful computation earlier.</p>
+<p>I think this is the single most elegant idea in the paper. It is conceptually simple, operationally clean, and aligns perfectly with the serving objective.</p>
+<h3 id="7-2-The-actual-equation">7.2 The actual equation</h3>
+<p>The paper writes the layer update at layer <code>l</code> and iteration <code>t</code> as:</p>
+<p>$ x_{l+1,t} = x_{l,t} + M(p_{l,t}) f_l(x_{l,t}) $</p>
+<p>where <code>M(p)</code> is a Bernoulli gate that either keeps or drops the layer output.</p>
+<p>The dropout probability is:</p>
+<p>$ p_{l,t} = S(t) D(l) p_{max} $</p>
+<p>where:</p>
+<ul>
+<li><code>p_max</code> is the maximum dropout rate,</li>
+<li><code>D(l)</code> is a layer-dependent scaling term,</li>
+<li><code>S(t)</code> is a time-dependent curriculum term.</li>
+</ul>
+<p>The per-layer schedule grows exponentially with depth, so the deepest layers are dropped most aggressively.</p>
+<h3 id="7-3-Why-later-layers-get-higher-dropout">7.3 Why later layers get higher dropout</h3>
+<p>This is the part that makes LayerSkip more than generic dropout.</p>
+<p>If you dropped all layers uniformly, you would regularize the model, but you would not specifically teach the model to become less dependent on deep computation.</p>
+<p>By increasing dropout toward later layers, the training procedure says:</p>
+<blockquote>
+<p>Earlier layers must learn to carry more semantic responsibility because the deeper rescue path may disappear.</p>
+</blockquote>
+<p>That is much closer to the actual inference objective.</p>
+<p>The appendix also contains a useful ablation in <strong>Figure 12</strong>: an exponentially increasing layer-dropout schedule achieves lower training loss than a constant dropout schedule with the same average dropout. I think that is good evidence that the schedule is not arbitrary decoration.</p>
+<h3 id="7-4-Why-training-from-scratch-needs-a-time-curriculum">7.4 Why training from scratch needs a time curriculum</h3>
+<p>The paper distinguishes between two cases:</p>
+<ul>
+<li><strong>continual pretraining / finetuning</strong> from a pretrained model,</li>
+<li><strong>pretraining from scratch</strong>.</li>
+</ul>
+<p>For the first case, they found it best to keep <code>S(t)=1</code>, meaning no time curriculum.</p>
+<p>For pretraining from scratch, they use an exponential time schedule, effectively ramping dropout over training. That makes sense to me. When the model is random at the beginning, pushing strong structured dropout immediately can destabilize learning. A curriculum is a safer way to make the optimization problem gradually harder.</p>
+<p>The authors also note later that training from scratch with layer dropout required higher learning rates to maintain accuracy. That is an important practical point, not a small detail.</p>
+<hr>
+<h2 id="8-Training-recipe-part-II-early-exit-loss-with-a-shared-LM-head">8. Training recipe, part II: early exit loss with a shared LM head</h2>
+<h3 id="8-1-Why-earlier-layers-normally-decode-badly">8.1 Why earlier layers normally decode badly</h3>
+<p>A standard LM head is trained to decode the final hidden state. It is not trained to decode middle-layer representations cleanly.</p>
+<p>So even if an intermediate layer contains partially useful information, the LM head may not know how to map it into good tokens.</p>
+<p>This is why naive early exit often underperforms badly.</p>
+<h3 id="8-2-The-total-loss">8.2 The total loss</h3>
+<p>To fix this, the paper adds early exit supervision across layers. The total loss at training step <code>t</code> is a weighted sum of cross-entropy terms from multiple layers:</p>
+<p>$ J(X,Y,t)=\sum_{l=0}^{L-1} \tilde e(t,l) J_{CE}(g(x_{l+1}),Y) $</p>
+<p>The normalized coefficient <code>\tilde e(t,l)</code> depends on:</p>
+<ul>
+<li>a curriculum term <code>C(t,l)</code> that chooses which layers are active for exit supervision at a given step,</li>
+<li>a scale <code>e(l)</code> that increases toward later layers.</li>
+</ul>
+<p>The paper explicitly gives later layers quadratically larger weight because predicting from later layers is easier and should remain strong.</p>
+<p>This is a smart compromise.</p>
+<p>If the authors weighted all layers equally from the start, they could damage final-layer quality too much. Instead they try to improve early layers while still protecting the main model.</p>
+<h3 id="8-3-Rotational-vs-gradual-curricula">8.3 Rotational vs gradual curricula</h3>
+<p>The paper introduces two curricula for deciding which layers receive exit loss at each iteration:</p>
+<ul>
+<li><strong>Rotational curriculum</strong> <code>C_rot,R</code>: activate every <code>R</code> layers and rotate them over iterations.</li>
+<li><strong>Gradual curriculum</strong> <code>C_grad</code>: progressively enable more layers, moving from late toward early layers over training.</li>
+</ul>
+<p>The practical reason is important: applying early exit loss to all layers at all steps slows training and can reduce final-layer accuracy.</p>
+<p>This is exactly the kind of engineering constraint I appreciate seeing in a paper. It acknowledges that “more supervision everywhere” is not free.</p>
+<h3 id="8-4-Why-a-shared-LM-head-is-a-strong-engineering-choice">8.4 Why a shared LM head is a strong engineering choice</h3>
+<p>Many earlier early-exit papers add a separate LM head for each layer, or extra modules for different exits.</p>
+<p>LayerSkip does <strong>not</strong> do that. It uses one shared LM head for all exits.</p>
+<p>I think this is one of the most underrated design choices in the paper.</p>
+<p>Why?</p>
+<ul>
+<li>fewer parameters,</li>
+<li>less memory,</li>
+<li>simpler training,</li>
+<li>simpler inference,</li>
+<li>simpler deployment,</li>
+<li>easier maintenance.</li>
+</ul>
+<p>In production systems, these things matter a lot. A method that is slightly less perfect but much cleaner operationally often wins.</p>
+<p>The paper explicitly says this design makes training faster, uses less memory, and simplifies deployment. I agree with that trade-off.</p>
+<hr>
+<h2 id="9-Inference-recipe-part-I-plain-early-exit">9. Inference recipe, part I: plain early exit</h2>
+<p>The simplest inference mode is straightforward:</p>
+<ul>
+<li>run only the first <code>E</code> transformer layers,</li>
+<li>skip the rest,</li>
+<li>send the intermediate representation to the LM head,</li>
+<li>decode from there.</li>
+</ul>
+<p>This reduces cost from roughly <code>L</code> layers per token to <code>E</code> layers per token.</p>
+<p>Figure 4 visualizes this clearly. Standard inference pays <code>L</code> layers per token; early exit pays <code>E &lt; L</code>.</p>
+<p>But plain early exit has an obvious quality problem. If <code>E</code> is too small, accuracy drops. The authors therefore do not stop here. They treat early exit as the fast drafting stage, not the whole story.</p>
+<hr>
+<h2 id="10-Inference-recipe-part-II-self-speculative-decoding">10. Inference recipe, part II: self-speculative decoding</h2>
+<h3 id="10-1-Self-drafting">10.1 Self-drafting</h3>
+<p>In the draft step, the model uses the first <code>E</code> layers to generate <code>d</code> speculative tokens autoregressively.</p>
+<p>Crucially, the draft model is not another network. It is the same network truncated at layer <code>E</code>.</p>
+<p>The training recipe makes this plausible because earlier layers are now much more competent than in a baseline model.</p>
+<h3 id="10-2-Self-verification">10.2 Self-verification</h3>
+<p>Then the model verifies those drafted tokens using the remaining <code>L-E</code> layers.</p>
+<p>Verification predicts the next token for each draft token in one forward pass. The system compares draft tokens and verified tokens, accepts the matching prefix, then appends the next verified token at the disagreement point.</p>
+<p>This is the standard speculative-decoding logic, but done inside one model split across depth.</p>
+<h3 id="10-3-KVQ-cache-reuse">10.3 KVQ cache reuse</h3>
+<p>This is the systems heart of the paper.</p>
+<p>Because both draft and verify stages come from the same model and use the same early layers in the same order, the method can reuse computation much more naturally than methods that skip arbitrary middle layers or use two different models.</p>
+<p>The paper highlights two cache ideas:</p>
+<ul>
+<li><strong>single KV cache</strong> shared across draft and verify for the first <code>E</code> layers,</li>
+<li><strong>exit query cache</strong> so verification can continue from layer <code>E</code> onward without recomputing everything.</li>
+</ul>
+<p>The authors call the combined structure the <strong>KVQ cache</strong>.</p>
+<p>This is a strong engineering contribution. I do not think the paper’s best idea is merely “use the same model.” The real idea is:</p>
+<blockquote>
+<p>design the split so cache reuse becomes structurally easy.</p>
+</blockquote>
+<p>That is much more valuable.</p>
+<h3 id="10-4-Why-this-is-different-from-standard-draft-and-verify">10.4 Why this is different from standard draft-and-verify</h3>
+<p>Compared with classic speculative decoding, LayerSkip has several differences:</p>
+<ul>
+<li>it needs only one model at serving time,</li>
+<li>it benefits from shared activations and shared cache,</li>
+<li>it has lower memory footprint than two-model speculation,</li>
+<li>it needs special training to make early layers good enough.</li>
+</ul>
+<p>Compared with the self-speculative approach of Zhang et al. (2023), the paper argues it can reuse activations and KV cache better because draft and verify use the same prefix of layers rather than skipping intermediate blocks.</p>
+<p>That distinction matters. Not all “self-speculative” designs are equal from a cache-reuse perspective.</p>
+<hr>
+<h2 id="11-Experimental-setup">11. Experimental setup</h2>
+<h3 id="11-1-Four-training-regimes">11.1 Four training regimes</h3>
+<p>I appreciate that the paper evaluates LayerSkip in several regimes instead of one narrow setup.</p>
+<p>The authors test:</p>
+<ol>
+<li><strong>Continual pretraining</strong> on 52B tokens for Llama2 models, and later 419B / 839B token continual pretraining for Llama3 variants.</li>
+<li><strong>Pretraining from scratch</strong> on 26B tokens for Llama-like 1.5B and Llama2 7B models.</li>
+<li><strong>Finetuning on code data</strong> using a pretrained Llama1 7B and 5.2B CodeLlama-style tokens.</li>
+<li><strong>Finetuning on a task-specific dataset</strong> using TOPv2 semantic parsing.</li>
+</ol>
+<p>That breadth is important because some acceleration methods work only in one particular setting. LayerSkip is trying to present itself as a general training/inference recipe.</p>
+<h3 id="11-2-Model-sizes-and-hardware">11.2 Model sizes and hardware</h3>
+<p>The appendix reports several configurations, including:</p>
+<ul>
+<li>Llama 1.5B with 24 layers,</li>
+<li>Llama1 7B with 32 layers,</li>
+<li>Llama2 7B with 32 layers,</li>
+<li>Llama2 13B with 40 layers.</li>
+</ul>
+<p>Hardware includes:</p>
+<ul>
+<li>64 A100 80GB for continual pretraining of 7B/13B,</li>
+<li>32 A100 30GB for pretraining-from-scratch experiments,</li>
+<li>32 A100 80GB for code finetuning,</li>
+<li>8 A100 80GB for TOPv2 finetuning,</li>
+<li>H100s for several generation-speed evaluations.</li>
+</ul>
+<p>This is not a tiny-toy experimental setup, but it is also not so absurd that the conclusions are meaningless for real deployment teams.</p>
+<h3 id="11-3-Tasks-and-metrics">11.3 Tasks and metrics</h3>
+<p>The paper covers a broad task set.</p>
+<p>For early-exit accuracy it includes classification-style tasks such as:</p>
+<ul>
+<li>BoolQ,</li>
+<li>PIQA,</li>
+<li>SIQA,</li>
+<li>HellaSwag,</li>
+<li>Winogrande,</li>
+<li>ARC,</li>
+<li>OBQA,</li>
+<li>COPA,</li>
+<li>RACE,</li>
+<li>MMLU.</li>
+</ul>
+<p>For generation tasks it includes:</p>
+<ul>
+<li>NaturalQuestions,</li>
+<li>TriviaQA,</li>
+<li>GSM8K,</li>
+<li>MATH,</li>
+<li>HumanEval,</li>
+<li>MBPP.</li>
+</ul>
+<p>For end-to-end generation speed and quality it evaluates:</p>
+<ul>
+<li>CNN/DM,</li>
+<li>XSUM,</li>
+<li>HumanEval,</li>
+<li>TOPv2.</li>
+</ul>
+<p>Metrics include perplexity, exact match, pass@1, ROUGE-2, token acceptance rate, and speedup or time-per-token.</p>
+<p>That is a healthy evaluation spread. It lets us see both quality preservation and serving benefit.</p>
+<hr>
+<h2 id="12-Main-results-and-what-they-really-mean">12. Main results and what they really mean</h2>
+<h3 id="12-1-Early-layers-become-much-more-useful">12.1 Early layers become much more useful</h3>
+<p>The paper’s first major claim is that LayerSkip makes earlier layers far more viable for exit.</p>
+<p>The qualitative figures support that claim:</p>
+<ul>
+<li><strong>Figure 6</strong>: continual pretraining,</li>
+<li><strong>Figure 8</strong>: pretraining from scratch,</li>
+<li><strong>Figure 10</strong>: finetuning on code and TOPv2.</li>
+</ul>
+<p>Across these figures, the consistent pattern is:</p>
+<ul>
+<li>baseline models collapse quickly when exiting early on generation tasks,</li>
+<li>LayerSkip variants, especially LD+EE, hold up much better,</li>
+<li>final-layer accuracy usually drops only slightly if hyperparameters are chosen well.</li>
+</ul>
+<p>The authors explicitly say LayerSkip is especially important for open-ended generation tasks, which is where errors compound across multiple tokens. I think that is right. Multiple-choice tasks are easier to survive with partial representations; long-form generation is much harsher.</p>
+<p>One memorable example from the text:</p>
+<ul>
+<li>on NaturalQuestions for Llama2 7B baseline, performance drops from <strong>25.1%</strong> to <strong>0%</strong> at a middle layer,</li>
+<li>with LayerSkip it rises to <strong>4%</strong> at that same middle-layer exit.</li>
+</ul>
+<p>That is still not “good,” but it is proof that the training recipe makes intermediate layers less useless.</p>
+<h3 id="12-2-Continual-pretraining-results">12.2 Continual pretraining results</h3>
+<p>In <strong>Table 3</strong>, the authors evaluate generation speedups for continually pretrained Llama2 7B and 13B models.</p>
+<p>For CNN/DM summarization:</p>
+<ul>
+<li>Llama2 7B self-speculative decoding reaches <strong>1.86×</strong> speedup while preserving ROUGE-2 almost exactly (<code>0.079</code> autoregressive vs <code>0.078</code> self-speculative).</li>
+<li>Llama2 13B reaches <strong>1.81×</strong> speedup with ROUGE-2 essentially preserved (<code>0.098</code> vs <code>0.098</code>).</li>
+</ul>
+<p>For XSUM:</p>
+<ul>
+<li>Llama2 7B reaches <strong>1.54×</strong> speedup with ROUGE-2 preserved (<code>0.073</code> vs <code>0.073</code>).</li>
+<li>Llama2 13B reaches <strong>1.34×</strong> speedup with ROUGE-2 preserved (<code>0.124</code> vs <code>0.124</code>).</li>
+</ul>
+<p>For HumanEval-style coding in the same table:</p>
+<ul>
+<li>Llama2 7B reports about <strong>1.83×</strong> speedup,</li>
+<li>Llama2 13B reports about <strong>1.66×</strong> speedup,</li>
+<li>while the self-speculative rows remain close to autoregressive quality.</li>
+</ul>
+<p>The interesting systems takeaway is that self-speculation is often much better than plain early exit. Early exit alone can be fast but quality may collapse. Verification recovers most of the lost accuracy.</p>
+<p>The paper also compares against <strong>Draft &amp; Verify</strong> from prior work on shared settings:</p>
+<ul>
+<li>significantly faster on CNN/DM (<code>1.81×</code> vs <code>1.56×</code> in the common comparison they cite),</li>
+<li>slightly slower on XSUM (<code>1.34×</code> vs <code>1.48×</code>).</li>
+</ul>
+<p>That is a believable trade-off. It suggests the method is strong but not uniformly dominant.</p>
+<h3 id="12-3-Pretraining-from-scratch-results">12.3 Pretraining-from-scratch results</h3>
+<p>The pretraining-from-scratch story is particularly interesting.</p>
+<p>In <strong>Table 4</strong>, the paper reports:</p>
+<ul>
+<li>for a 1.5B model trained on 26B tokens, self-speculation yields <strong>1.76×</strong> speedup on CNN/DM while preserving ROUGE-2 (<code>0.063</code> vs <code>0.063</code>),</li>
+<li>for a 7B model trained on the same 26B-token setup, self-speculation reaches the headline <strong>2.16×</strong> speedup while preserving ROUGE-2 reasonably well (<code>0.060</code> autoregressive vs <code>0.067</code> self-speculative in the reported table).</li>
+</ul>
+<p>The authors explicitly note that this result exceeds traditional speculative decoding in that setup.</p>
+<p>I think the important nuance is not just the number 2.16×. The more interesting point is that training from scratch gave the model more room to reorganize where useful computation happens across depth.</p>
+<p>That raises a broader systems-training co-design question:</p>
+<blockquote>
+<p>If we know fast inference matters in deployment, should we train foundation models from the start with depth-usable intermediate states?</p>
+</blockquote>
+<p>This paper nudges me toward “yes.”</p>
+<h3 id="12-4-Code-finetuning-results">12.4 Code finetuning results</h3>
+<p>For code finetuning on HumanEval, <strong>Table 5</strong> and the surrounding discussion show a nice quality-speed trade-off.</p>
+<p>Baseline autoregressive decoding has <strong>85.9%</strong> exact match / pass-like task accuracy in the reported setup.</p>
+<p>Plain early exit shows the expected pattern:</p>
+<ul>
+<li>exit layer 18: <strong>83.3%</strong>,</li>
+<li>exit layer 12: <strong>79.4%</strong>,</li>
+<li>exit layer 6: <strong>62.9%</strong>,</li>
+</ul>
+<p>with faster decoding as exit gets earlier.</p>
+<p>But the main point is self-speculative decoding:</p>
+<ul>
+<li>it achieves up to <strong>1.82×</strong> speedup,</li>
+<li>with <strong>no material accuracy drop</strong> according to the paper’s discussion.</li>
+</ul>
+<p>This is a strong result because code generation is far less forgiving than soft summarization metrics. A wrong token can break correctness immediately.</p>
+<h3 id="12-5-Task-specific-finetuning-on-TOPv2">12.5 Task-specific finetuning on TOPv2</h3>
+<p>The TOPv2 semantic parsing experiment is another good stress test because exact match is unforgiving.</p>
+<p>The paper reports that with self-speculation:</p>
+<ul>
+<li>exit layer <code>E=6</code> gives <strong>76.0%</strong> acceptance,</li>
+<li><code>E=12</code> gives roughly <strong>97.2%</strong> acceptance,</li>
+<li><code>E=18</code> gives <strong>98.9%</strong> acceptance,</li>
+<li>and the system reaches <strong>2.0×</strong> speedup.</li>
+</ul>
+<p>That high acceptance at deeper exits is exactly what you would want from a self-speculative method. It means the draft stage is accurate enough that verification frequently confirms rather than rejects.</p>
+<h3 id="12-6-CPU-results-and-cache-reuse-ablation">12.6 CPU results and cache-reuse ablation</h3>
+<p>I am glad the appendix includes CPU measurements. Too many inference papers act as if only a specific GPU configuration matters.</p>
+<p>In <strong>Table 11</strong>, on CPU for TOPv2:</p>
+<ul>
+<li>autoregressive decoding is <strong>165 ms/token</strong> at <strong>85.39 EM</strong>,</li>
+<li>plain early exit can go as low as <strong>44 ms/token</strong> at <code>E=6</code>, but EM collapses to <strong>29.8</strong>,</li>
+<li>self-speculation at <code>E=6</code> keeps <strong>82.9 EM</strong> at <strong>87 ms/token</strong>,</li>
+<li>self-speculation at <code>E=12</code> keeps <strong>82.9 EM</strong> at <strong>104 ms/token</strong>,</li>
+<li>self-speculation at <code>E=18</code> keeps <strong>82.9 EM</strong> at <strong>134 ms/token</strong>.</li>
+</ul>
+<p>This is the story of the paper in miniature:</p>
+<ul>
+<li>early exit alone is very fast but can be too lossy,</li>
+<li>self-speculation gives back much of the quality while staying much faster than full autoregressive decoding.</li>
+</ul>
+<p>In <strong>Table 7</strong>, the cache-reuse ablation shows KVQ reuse saves roughly <strong>9–20 ms/token</strong> depending on the task. That is not a small implementation detail. It is direct evidence that the paper’s cache design matters in practice.</p>
+<hr>
+<h2 id="13-Figure-by-figure-evidence-review">13. Figure-by-figure evidence review</h2>
+<p>I want to call out the figures one by one because this paper really is driven by visual evidence.</p>
+<h3 id="Figure-1-pipeline-overview">Figure 1: pipeline overview</h3>
+<p>This figure is strong because it ties training and serving into one story. It makes the paper readable.</p>
+<h3 id="Figure-2-layerwise-token-predictions">Figure 2: layerwise token predictions</h3>
+<p>This figure justifies the whole project. It shows that token correctness often emerges before the final layer, but not reliably enough in the baseline model.</p>
+<h3 id="Figure-3-training-as-an-ensemble-of-depths">Figure 3: training as an ensemble of depths</h3>
+<p>This is one of the cleanest conceptual frames in the paper: train once, obtain many effective sub-model depths with shared weights.</p>
+<h3 id="Figure-4-early-exit-inference-cost">Figure 4: early-exit inference cost</h3>
+<p>Simple but useful. It clarifies the cost reduction from <code>L</code> layers to <code>E</code> layers.</p>
+<h3 id="Figure-5-autoregressive-vs-speculative-vs-self-speculative">Figure 5: autoregressive vs speculative vs self-speculative</h3>
+<p>This figure is essential because many readers will otherwise miss how verification differs operationally from the draft pass.</p>
+<h3 id="Figure-6-continual-pretraining-early-exit-curves">Figure 6: continual-pretraining early-exit curves</h3>
+<p>This figure shows where the method pays off most: generation tasks, especially when baseline middle-layer performance collapses.</p>
+<h3 id="Figure-7-and-Figure-9-qualitative-text-examples">Figure 7 and Figure 9: qualitative text examples</h3>
+<p>These are valuable because they show the failure mode of plain early exit in a human-readable way. Baseline-like exits produce repetitive, factually wrong, or awkward continuations; verification fixes many of those bad phrases.</p>
+<h3 id="Figure-8-pretraining-from-scratch-curves">Figure 8: pretraining-from-scratch curves</h3>
+<p>This figure supports the claim that the method is not limited to fine-tuning existing checkpoints.</p>
+<h3 id="Figure-10-code-and-task-specific-finetuning">Figure 10: code and task-specific finetuning</h3>
+<p>This one matters because it shows the method is not only for generic language modeling. It can be useful when correctness matters more sharply.</p>
+<h3 id="Figure-11-middle-layer-perplexity-becomes-worse-over-training-unless-constrained">Figure 11: middle-layer perplexity becomes worse over training unless constrained</h3>
+<p>I think this is one of the most intellectually interesting figures in the paper. The authors find that as pretraining progresses, last-layer perplexity improves as expected, but middle-layer perplexity can become dramatically worse unless early-exit loss is applied. That suggests standard pretraining naturally pushes useful predictive information deeper over time.</p>
+<h3 id="Figure-12-exponential-dropout-schedule-beats-constant-dropout">Figure 12: exponential dropout schedule beats constant dropout</h3>
+<p>This supports the idea that the proposed depth-aware schedule is not arbitrary.</p>
+<hr>
+<h2 id="14-What-is-genuinely-strong-in-this-paper">14. What is genuinely strong in this paper</h2>
+<p>Here is what I think the paper does really well.</p>
+<h3 id="Strength-1-it-co-designs-training-and-inference">Strength 1: it co-designs training and inference</h3>
+<p>This is the main win. Many serving papers assume the training recipe is fixed. LayerSkip asks how training should change if fast inference is a first-class goal.</p>
+<h3 id="Strength-2-it-makes-one-model-speculation-operationally-plausible">Strength 2: it makes one-model speculation operationally plausible</h3>
+<p>Using a single model is not just elegant academically. It matters for:</p>
+<ul>
+<li>memory footprint,</li>
+<li>implementation complexity,</li>
+<li>deployment simplicity,</li>
+<li>cache reuse.</li>
+</ul>
+<h3 id="Strength-3-the-shared-head-design-is-practical">Strength 3: the shared-head design is practical</h3>
+<p>I strongly prefer this over “attach lots of auxiliary heads everywhere.” The paper chooses a more deployable path.</p>
+<h3 id="Strength-4-it-evaluates-multiple-regimes">Strength 4: it evaluates multiple regimes</h3>
+<p>Continual pretraining, pretraining from scratch, code finetuning, and task finetuning make the paper much more convincing.</p>
+<h3 id="Strength-5-it-includes-systems-relevant-evidence">Strength 5: it includes systems-relevant evidence</h3>
+<p>The cache-reuse ablation and CPU results make the paper more than a benchmark-only story.</p>
+<h3 id="Strength-6-it-exposes-a-deeper-phenomenon-about-transformer-depth">Strength 6: it exposes a deeper phenomenon about transformer depth</h3>
+<p>Figure 11 suggests a broader lesson: standard training increasingly concentrates prediction-readiness in later layers. That is a meaningful scientific observation, not just an optimization hack.</p>
+<hr>
+<h2 id="15-Limitations-and-boundary-conditions">15. Limitations and boundary conditions</h2>
+<p>The paper itself is reasonably honest here, and I agree with the listed limitations.</p>
+<h3 id="Limitation-1-you-need-modified-training">Limitation 1: you need modified training</h3>
+<p>This method is not a drop-in serving patch for arbitrary existing checkpoints. The paper’s self-speculative success depends on models being trained or finetuned with LayerSkip’s recipe.</p>
+<p>That is a real deployment constraint.</p>
+<h3 id="Limitation-2-hyperparameter-tuning-matters">Limitation 2: hyperparameter tuning matters</h3>
+<p>The new knobs include:</p>
+<ul>
+<li><code>p_max</code> for layer dropout,</li>
+<li><code>escale</code> for early-exit loss weighting,</li>
+<li><code>R</code> for the rotational curriculum,</li>
+<li>choice of exit layer <code>E</code>,</li>
+<li>number of speculations <code>d</code>.</li>
+</ul>
+<p>These knobs are not impossible to tune, but they do raise operational burden.</p>
+<h3 id="Limitation-3-final-layer-accuracy-can-still-drop">Limitation 3: final-layer accuracy can still drop</h3>
+<p>The paper repeatedly notes that bad settings can hurt the final layer. So the method is not free lunch.</p>
+<h3 id="Limitation-4-fixed-exits-are-not-fully-optimal">Limitation 4: fixed exits are not fully optimal</h3>
+<p>The experiments mostly use fixed exit layers. In reality, token difficulty varies. Some easy tokens might exit even earlier, while hard tokens should go deeper. The authors mention dynamic exit conditions as future work.</p>
+<p>I think this is the biggest open systems opportunity.</p>
+<h3 id="Limitation-5-the-strongest-gains-appear-in-certain-regimes">Limitation 5: the strongest gains appear in certain regimes</h3>
+<p>Speedups and quality preservation vary by task and model. This is not a universal “2× for everything” story.</p>
+<h3 id="Limitation-6-training-from-scratch-needs-learning-rate-retuning">Limitation 6: training from scratch needs learning-rate retuning</h3>
+<p>The authors explicitly say this can be tricky and time consuming. That matters if you want to adopt the method at foundation-model scale.</p>
+<h3 id="Limitation-7-acceptance-is-only-useful-if-drafted-tokens-are-good">Limitation 7: acceptance is only useful if drafted tokens are good</h3>
+<p>The success of self-speculation depends strongly on the draft stage producing a long accepted prefix. If draft quality is poor, verification overhead will dominate.</p>
+<hr>
+<h2 id="16-Reproducibility-notes">16. Reproducibility notes</h2>
+<p>On reproducibility, I would rate this paper as <strong>better than average but not frictionless</strong>.</p>
+<h3 id="What-helps-reproducibility">What helps reproducibility</h3>
+<ul>
+<li>the paper gives explicit training hyperparameters in the appendix,</li>
+<li>model architectures are listed,</li>
+<li>datasets and task categories are described,</li>
+<li>code and checkpoints are open sourced,</li>
+<li>pseudo code for self-speculation is included.</li>
+</ul>
+<h3 id="What-still-makes-reproduction-nontrivial">What still makes reproduction nontrivial</h3>
+<ul>
+<li>some experiments are expensive in GPU budget,</li>
+<li>tuning the new hyperparameters may be workload-specific,</li>
+<li>serving-level implementation details around cache reuse can still be subtle,</li>
+<li>matching exact throughput numbers depends on hardware, kernels, and framework choices.</li>
+</ul>
+<p>If I were reproducing this for a real system, I would not start with the largest reported pretraining setup. I would start with:</p>
+<ol>
+<li>a smaller finetuning setting,</li>
+<li>fixed exit sweeps,</li>
+<li>acceptance-rate analysis,</li>
+<li>a correctness-vs-speed Pareto curve,</li>
+<li>then cache-reuse validation.</li>
+</ol>
+<p>The presence of code makes the paper much more practical than many purely academic acceleration papers.</p>
+<hr>
+<h2 id="17-What-I-would-try-next-if-I-were-extending-this-work-in-2026">17. What I would try next if I were extending this work in 2026</h2>
+<p>If I were continuing this line of research today, I would explore five directions.</p>
+<h3 id="Direction-1-dynamic-per-token-exit">Direction 1: dynamic per-token exit</h3>
+<p>The paper already hints at this. Fixed <code>E</code> is easy, but not ideal. A per-token confidence or agreement-based depth policy could capture more benefit.</p>
+<h3 id="Direction-2-combine-with-quantization">Direction 2: combine with quantization</h3>
+<p>LayerSkip and quantization are not enemies. In fact, they attack different parts of the cost stack. One reduces effective depth; the other reduces precision cost. Their combination could be powerful.</p>
+<h3 id="Direction-3-combine-with-paged-KV-cache-systems">Direction 3: combine with paged KV-cache systems</h3>
+<p>I would especially want to test LayerSkip inside a vLLM-style serving engine to see whether the theoretical cache benefits translate cleanly under realistic batching and multiplexing.</p>
+<h3 id="Direction-4-distill-intermediate-layer-usefulness-directly">Direction 4: distill intermediate-layer usefulness directly</h3>
+<p>The current method uses dropout and early-exit loss. A stronger distillation objective might explicitly align intermediate-layer logits or hidden states with final-layer behavior.</p>
+<h3 id="Direction-5-make-the-exit-layer-request-aware">Direction 5: make the exit layer request-aware</h3>
+<p>Some prompts demand reliability over speed. Others can tolerate more aggressive exits. A deployment system could select policies based on workload class.</p>
+<hr>
+<h2 id="18-Practical-lessons-for-inference-engineers">18. Practical lessons for inference engineers</h2>
+<p>Here are the concrete lessons I take away.</p>
+<h3 id="Lesson-1-treat-model-depth-as-a-serving-budget">Lesson 1: treat model depth as a serving budget</h3>
+<p>We are used to treating sequence length and batch size as serving knobs. This paper reminds us depth can also be a knob if training supports it.</p>
+<h3 id="Lesson-2-training-for-serving-is-worth-it">Lesson 2: training for serving is worth it</h3>
+<p>If inference cost matters at scale, it is rational to spend training complexity to make deployment cheaper.</p>
+<h3 id="Lesson-3-cache-aware-algorithm-design-matters-as-much-as-raw-FLOPs">Lesson 3: cache-aware algorithm design matters as much as raw FLOPs</h3>
+<p>The KVQ reuse idea is a good example. The best serving method is not always the one with the smallest symbolic compute; it is the one whose compute can be reused cleanly.</p>
+<h3 id="Lesson-4-evaluate-generation-tasks-not-only-classification-tasks">Lesson 4: evaluate generation tasks, not only classification tasks</h3>
+<p>Middle-layer accuracy on multiple-choice tasks can look okay, but long-generation quality may still collapse. The paper correctly emphasizes open-ended tasks.</p>
+<h3 id="Lesson-5-plain-early-exit-is-rarely-enough">Lesson 5: plain early exit is rarely enough</h3>
+<p>If you care about correctness, verification is the difference between an interesting idea and a deployable method.</p>
+<hr>
+<h2 id="19-Final-verdict">19. Final verdict</h2>
+<p>My bottom-line view is this:</p>
+<blockquote>
+<p>LayerSkip is one of the more interesting LLM inference papers because it does not merely bolt on a serving trick; it redesigns training so that the model’s internal depth becomes usable at inference time.</p>
+</blockquote>
+<p>What I find most compelling is not any single number like 2.16×. It is the overall architecture:</p>
+<ul>
+<li>train with structured layer dropout,</li>
+<li>supervise exits across depth with one shared head,</li>
+<li>draft with early layers,</li>
+<li>verify with later layers,</li>
+<li>reuse cache because the whole process lives inside one model.</li>
+</ul>
+<p>That is clean. It is technically motivated. It is systems-aware. And it generates enough empirical evidence to be taken seriously.</p>
+<p>I would not describe the paper as a universal replacement for all inference acceleration methods. It has real constraints:</p>
+<ul>
+<li>it needs modified training,</li>
+<li>it introduces tuning complexity,</li>
+<li>it is not guaranteed to dominate every workload.</li>
+</ul>
+<p>But I would absolutely describe it as a strong and practically meaningful contribution to the idea of <strong>training-serving co-design for LLMs</strong>.</p>
+<p>If you work on efficient inference, this paper is worth reading carefully.</p>
+<hr>
+<h2 id="20-References">20. References</h2>
+<ol>
+<li>Elhoushi et al. <em>LayerSkip: Enabling Early Exit Inference and Self-Speculative Decoding</em>. ACL 2024.</li>
+<li>Leviathan et al. <em>Fast Inference from Transformers via Speculative Decoding</em>. 2023.</li>
+<li>Zhang et al. <em>Draft &amp; Verify / self-speculative decoding style prior work</em>. 2023.</li>
+<li>Fan et al. <em>Reducing Transformer Depth on Demand with Structured Dropout</em>. 2020.</li>
+<li>Schuster et al. <em>Confident Adaptive Language Modeling</em>. 2022.</li>
+</ol>
+<hr>
+<h2 id="21-Appendix-A-beginner-FAQ">21. Appendix A: beginner FAQ</h2>
+<h3 id="Q1-Is-this-paper-pruning-the-model">Q1. Is this paper pruning the model?</h3>
+<p>Not exactly. It does not permanently delete layers. Instead, it trains the model so that inference can often rely on fewer layers for drafting, while still using the remaining layers for verification when needed.</p>
+<h3 id="Q2-Is-this-the-same-as-quantization">Q2. Is this the same as quantization?</h3>
+<p>No. Quantization reduces numerical precision. LayerSkip reduces effective inference depth and reorganizes compute across depth.</p>
+<h3 id="Q3-Why-not-just-use-a-smaller-draft-model">Q3. Why not just use a smaller draft model?</h3>
+<p>That works too, and standard speculative decoding does exactly that. LayerSkip’s point is that using one model can reduce memory overhead and simplify cache reuse.</p>
+<h3 id="Q4-Does-early-exit-alone-solve-the-problem">Q4. Does early exit alone solve the problem?</h3>
+<p>Usually no. Early exit alone is fast, but quality can fall sharply. Self-verification is what recovers accuracy.</p>
+<h3 id="Q5-What-is-the-most-important-figure-to-understand-first">Q5. What is the most important figure to understand first?</h3>
+<p>I would read them in this order:</p>
+<ol>
+<li>Figure 1 for the pipeline,</li>
+<li>Figure 2 for the motivation,</li>
+<li>Figure 5 for self-speculative decoding,</li>
+<li>Figure 6 / 8 / 10 for empirical evidence,</li>
+<li>Figure 11 for the deeper training insight.</li>
+</ol>
+<h3 id="Q6-Why-does-the-paper-matter-for-real-systems-teams">Q6. Why does the paper matter for real systems teams?</h3>
+<p>Because it tackles three things at once:</p>
+<ul>
+<li>speed,</li>
+<li>memory footprint,</li>
+<li>deployment simplicity compared with two-model speculation.</li>
+</ul>
+<hr>
+<h2 id="22-Appendix-B-evidence-checklist">22. Appendix B: evidence checklist</h2>
+<ul>
+<li><strong>Problem statement present:</strong> yes — reduce inference cost without unacceptable quality loss or second-model overhead.</li>
+<li><strong>Prerequisites explained:</strong> yes — decoding, early exit, speculative decoding, cache.</li>
+<li><strong>Core method explained:</strong> yes — layer dropout, early exit loss, self-speculation, KVQ reuse.</li>
+<li><strong>Equations discussed:</strong> yes — layer-dropout probability, early-exit loss, curriculum logic.</li>
+<li><strong>Key figures discussed:</strong> Figures 1, 2, 3, 4, 5, 6, 8, 10, 11, 12.</li>
+<li><strong>Key tables discussed:</strong> Tables 3, 4, 5, 7, 11 and the TOPv2 acceptance-rate discussion from Table 6.</li>
+<li><strong>Concrete numbers included:</strong> yes — 23.45/32 layers, up to 2.16×, 1.82× coding, 2.0× TOPv2, CPU ms/token, acceptance rates.</li>
+<li><strong>Limitations covered:</strong> yes — modified training required, tuning burden, possible final-layer regression, fixed-exit limitations.</li>
+<li><strong>Reproducibility addressed:</strong> yes — code availability, hardware scale, appendix hyperparameters, likely reproduction pain points.</li>
+<li><strong>Practical takeaways included:</strong> yes — depth as a serving knob, training-serving co-design, cache-aware algorithm design.</li>
+</ul>
+<hr>
+<p><em>Review written on 2026-04-15.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Efficient-Inference/" rel="tag"># Efficient Inference</a>
+              <a href="/tags/LayerSkip/" rel="tag"># LayerSkip</a>
+              <a href="/tags/Early-Exit/" rel="tag"># Early Exit</a>
+              <a href="/tags/Speculative-Decoding/" rel="tag"># Speculative Decoding</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/15/2026-04-15-LayerSkip-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="prev" title="LayerSkip：让大模型“提前退出 + 自校验推理”成为可部署方案——深度技术评审">
+      <i class="fa fa-chevron-left"></i> LayerSkip：让大模型“提前退出 + 自校验推理”成为可部署方案——深度技术评审
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/16/2026-04-16-PipeDream-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="next" title="PipeDream：把 Pipeline Parallelism 做成真正可训练系统——深度技术评审">
+      PipeDream：把 Pipeline Parallelism 做成真正可训练系统——深度技术评审 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Why-this-paper-matters"><span class="nav-number">1.</span> <span class="nav-text">1. Why this paper matters</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Prerequisites-What-you-need-to-know-first"><span class="nav-number">2.</span> <span class="nav-text">2. Prerequisites: What you need to know first</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-Why-LLM-inference-is-expensive"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 Why LLM inference is expensive</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-What-autoregressive-decoding-is"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 What autoregressive decoding is</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-What-speculative-decoding-is-trying-to-fix"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 What speculative decoding is trying to fix</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-What-“early-exit”-means-in-deep-networks"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 What “early exit” means in deep networks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-Why-the-KV-cache-matters-so-much"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 Why the KV cache matters so much</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-Throughput-latency-and-memory-are-not-the-same-thing"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 Throughput, latency, and memory are not the same thing</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-The-exact-problem-this-paper-tries-to-solve"><span class="nav-number">3.</span> <span class="nav-text">3. The exact problem this paper tries to solve</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Problem-A-earlier-layers-are-not-reliable-enough"><span class="nav-number">3.1.</span> <span class="nav-text">Problem A: earlier layers are not reliable enough</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Problem-B-even-easy-tokens-still-use-too-much-depth"><span class="nav-number">3.2.</span> <span class="nav-text">Problem B: even easy tokens still use too much depth</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Problem-C-standard-speculative-decoding-is-operationally-heavier"><span class="nav-number">3.3.</span> <span class="nav-text">Problem C: standard speculative decoding is operationally heavier</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Core-idea-in-one-paragraph"><span class="nav-number">4.</span> <span class="nav-text">4. Core idea in one paragraph</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Figure-1-explained-slowly-the-whole-LayerSkip-pipeline"><span class="nav-number">5.</span> <span class="nav-text">5. Figure 1 explained slowly: the whole LayerSkip pipeline</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Figure-2-explained-why-the-authors-even-believed-early-exit-could-work"><span class="nav-number">6.</span> <span class="nav-text">6. Figure 2 explained: why the authors even believed early exit could work</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Training-recipe-part-I-layer-dropout"><span class="nav-number">7.</span> <span class="nav-text">7. Training recipe, part I: layer dropout</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-The-intuition"><span class="nav-number">7.1.</span> <span class="nav-text">7.1 The intuition</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-The-actual-equation"><span class="nav-number">7.2.</span> <span class="nav-text">7.2 The actual equation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-Why-later-layers-get-higher-dropout"><span class="nav-number">7.3.</span> <span class="nav-text">7.3 Why later layers get higher dropout</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-Why-training-from-scratch-needs-a-time-curriculum"><span class="nav-number">7.4.</span> <span class="nav-text">7.4 Why training from scratch needs a time curriculum</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Training-recipe-part-II-early-exit-loss-with-a-shared-LM-head"><span class="nav-number">8.</span> <span class="nav-text">8. Training recipe, part II: early exit loss with a shared LM head</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-Why-earlier-layers-normally-decode-badly"><span class="nav-number">8.1.</span> <span class="nav-text">8.1 Why earlier layers normally decode badly</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-The-total-loss"><span class="nav-number">8.2.</span> <span class="nav-text">8.2 The total loss</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-Rotational-vs-gradual-curricula"><span class="nav-number">8.3.</span> <span class="nav-text">8.3 Rotational vs gradual curricula</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-4-Why-a-shared-LM-head-is-a-strong-engineering-choice"><span class="nav-number">8.4.</span> <span class="nav-text">8.4 Why a shared LM head is a strong engineering choice</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-Inference-recipe-part-I-plain-early-exit"><span class="nav-number">9.</span> <span class="nav-text">9. Inference recipe, part I: plain early exit</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-Inference-recipe-part-II-self-speculative-decoding"><span class="nav-number">10.</span> <span class="nav-text">10. Inference recipe, part II: self-speculative decoding</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-Self-drafting"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 Self-drafting</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-Self-verification"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 Self-verification</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-KVQ-cache-reuse"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 KVQ cache reuse</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-4-Why-this-is-different-from-standard-draft-and-verify"><span class="nav-number">10.4.</span> <span class="nav-text">10.4 Why this is different from standard draft-and-verify</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-Experimental-setup"><span class="nav-number">11.</span> <span class="nav-text">11. Experimental setup</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#11-1-Four-training-regimes"><span class="nav-number">11.1.</span> <span class="nav-text">11.1 Four training regimes</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-2-Model-sizes-and-hardware"><span class="nav-number">11.2.</span> <span class="nav-text">11.2 Model sizes and hardware</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-3-Tasks-and-metrics"><span class="nav-number">11.3.</span> <span class="nav-text">11.3 Tasks and metrics</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-Main-results-and-what-they-really-mean"><span class="nav-number">12.</span> <span class="nav-text">12. Main results and what they really mean</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#12-1-Early-layers-become-much-more-useful"><span class="nav-number">12.1.</span> <span class="nav-text">12.1 Early layers become much more useful</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-2-Continual-pretraining-results"><span class="nav-number">12.2.</span> <span class="nav-text">12.2 Continual pretraining results</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-3-Pretraining-from-scratch-results"><span class="nav-number">12.3.</span> <span class="nav-text">12.3 Pretraining-from-scratch results</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-4-Code-finetuning-results"><span class="nav-number">12.4.</span> <span class="nav-text">12.4 Code finetuning results</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-5-Task-specific-finetuning-on-TOPv2"><span class="nav-number">12.5.</span> <span class="nav-text">12.5 Task-specific finetuning on TOPv2</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-6-CPU-results-and-cache-reuse-ablation"><span class="nav-number">12.6.</span> <span class="nav-text">12.6 CPU results and cache-reuse ablation</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-Figure-by-figure-evidence-review"><span class="nav-number">13.</span> <span class="nav-text">13. Figure-by-figure evidence review</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Figure-1-pipeline-overview"><span class="nav-number">13.1.</span> <span class="nav-text">Figure 1: pipeline overview</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Figure-2-layerwise-token-predictions"><span class="nav-number">13.2.</span> <span class="nav-text">Figure 2: layerwise token predictions</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Figure-3-training-as-an-ensemble-of-depths"><span class="nav-number">13.3.</span> <span class="nav-text">Figure 3: training as an ensemble of depths</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Figure-4-early-exit-inference-cost"><span class="nav-number">13.4.</span> <span class="nav-text">Figure 4: early-exit inference cost</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Figure-5-autoregressive-vs-speculative-vs-self-speculative"><span class="nav-number">13.5.</span> <span class="nav-text">Figure 5: autoregressive vs speculative vs self-speculative</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Figure-6-continual-pretraining-early-exit-curves"><span class="nav-number">13.6.</span> <span class="nav-text">Figure 6: continual-pretraining early-exit curves</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Figure-7-and-Figure-9-qualitative-text-examples"><span class="nav-number">13.7.</span> <span class="nav-text">Figure 7 and Figure 9: qualitative text examples</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Figure-8-pretraining-from-scratch-curves"><span class="nav-number">13.8.</span> <span class="nav-text">Figure 8: pretraining-from-scratch curves</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Figure-10-code-and-task-specific-finetuning"><span class="nav-number">13.9.</span> <span class="nav-text">Figure 10: code and task-specific finetuning</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Figure-11-middle-layer-perplexity-becomes-worse-over-training-unless-constrained"><span class="nav-number">13.10.</span> <span class="nav-text">Figure 11: middle-layer perplexity becomes worse over training unless constrained</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Figure-12-exponential-dropout-schedule-beats-constant-dropout"><span class="nav-number">13.11.</span> <span class="nav-text">Figure 12: exponential dropout schedule beats constant dropout</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#14-What-is-genuinely-strong-in-this-paper"><span class="nav-number">14.</span> <span class="nav-text">14. What is genuinely strong in this paper</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Strength-1-it-co-designs-training-and-inference"><span class="nav-number">14.1.</span> <span class="nav-text">Strength 1: it co-designs training and inference</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Strength-2-it-makes-one-model-speculation-operationally-plausible"><span class="nav-number">14.2.</span> <span class="nav-text">Strength 2: it makes one-model speculation operationally plausible</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Strength-3-the-shared-head-design-is-practical"><span class="nav-number">14.3.</span> <span class="nav-text">Strength 3: the shared-head design is practical</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Strength-4-it-evaluates-multiple-regimes"><span class="nav-number">14.4.</span> <span class="nav-text">Strength 4: it evaluates multiple regimes</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Strength-5-it-includes-systems-relevant-evidence"><span class="nav-number">14.5.</span> <span class="nav-text">Strength 5: it includes systems-relevant evidence</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Strength-6-it-exposes-a-deeper-phenomenon-about-transformer-depth"><span class="nav-number">14.6.</span> <span class="nav-text">Strength 6: it exposes a deeper phenomenon about transformer depth</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#15-Limitations-and-boundary-conditions"><span class="nav-number">15.</span> <span class="nav-text">15. Limitations and boundary conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Limitation-1-you-need-modified-training"><span class="nav-number">15.1.</span> <span class="nav-text">Limitation 1: you need modified training</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Limitation-2-hyperparameter-tuning-matters"><span class="nav-number">15.2.</span> <span class="nav-text">Limitation 2: hyperparameter tuning matters</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Limitation-3-final-layer-accuracy-can-still-drop"><span class="nav-number">15.3.</span> <span class="nav-text">Limitation 3: final-layer accuracy can still drop</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Limitation-4-fixed-exits-are-not-fully-optimal"><span class="nav-number">15.4.</span> <span class="nav-text">Limitation 4: fixed exits are not fully optimal</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Limitation-5-the-strongest-gains-appear-in-certain-regimes"><span class="nav-number">15.5.</span> <span class="nav-text">Limitation 5: the strongest gains appear in certain regimes</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Limitation-6-training-from-scratch-needs-learning-rate-retuning"><span class="nav-number">15.6.</span> <span class="nav-text">Limitation 6: training from scratch needs learning-rate retuning</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Limitation-7-acceptance-is-only-useful-if-drafted-tokens-are-good"><span class="nav-number">15.7.</span> <span class="nav-text">Limitation 7: acceptance is only useful if drafted tokens are good</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#16-Reproducibility-notes"><span class="nav-number">16.</span> <span class="nav-text">16. Reproducibility notes</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#What-helps-reproducibility"><span class="nav-number">16.1.</span> <span class="nav-text">What helps reproducibility</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#What-still-makes-reproduction-nontrivial"><span class="nav-number">16.2.</span> <span class="nav-text">What still makes reproduction nontrivial</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#17-What-I-would-try-next-if-I-were-extending-this-work-in-2026"><span class="nav-number">17.</span> <span class="nav-text">17. What I would try next if I were extending this work in 2026</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Direction-1-dynamic-per-token-exit"><span class="nav-number">17.1.</span> <span class="nav-text">Direction 1: dynamic per-token exit</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Direction-2-combine-with-quantization"><span class="nav-number">17.2.</span> <span class="nav-text">Direction 2: combine with quantization</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Direction-3-combine-with-paged-KV-cache-systems"><span class="nav-number">17.3.</span> <span class="nav-text">Direction 3: combine with paged KV-cache systems</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Direction-4-distill-intermediate-layer-usefulness-directly"><span class="nav-number">17.4.</span> <span class="nav-text">Direction 4: distill intermediate-layer usefulness directly</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Direction-5-make-the-exit-layer-request-aware"><span class="nav-number">17.5.</span> <span class="nav-text">Direction 5: make the exit layer request-aware</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#18-Practical-lessons-for-inference-engineers"><span class="nav-number">18.</span> <span class="nav-text">18. Practical lessons for inference engineers</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Lesson-1-treat-model-depth-as-a-serving-budget"><span class="nav-number">18.1.</span> <span class="nav-text">Lesson 1: treat model depth as a serving budget</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Lesson-2-training-for-serving-is-worth-it"><span class="nav-number">18.2.</span> <span class="nav-text">Lesson 2: training for serving is worth it</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Lesson-3-cache-aware-algorithm-design-matters-as-much-as-raw-FLOPs"><span class="nav-number">18.3.</span> <span class="nav-text">Lesson 3: cache-aware algorithm design matters as much as raw FLOPs</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Lesson-4-evaluate-generation-tasks-not-only-classification-tasks"><span class="nav-number">18.4.</span> <span class="nav-text">Lesson 4: evaluate generation tasks, not only classification tasks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Lesson-5-plain-early-exit-is-rarely-enough"><span class="nav-number">18.5.</span> <span class="nav-text">Lesson 5: plain early exit is rarely enough</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#19-Final-verdict"><span class="nav-number">19.</span> <span class="nav-text">19. Final verdict</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#20-References"><span class="nav-number">20.</span> <span class="nav-text">20. References</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#21-Appendix-A-beginner-FAQ"><span class="nav-number">21.</span> <span class="nav-text">21. Appendix A: beginner FAQ</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Q1-Is-this-paper-pruning-the-model"><span class="nav-number">21.1.</span> <span class="nav-text">Q1. Is this paper pruning the model?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Q2-Is-this-the-same-as-quantization"><span class="nav-number">21.2.</span> <span class="nav-text">Q2. Is this the same as quantization?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Q3-Why-not-just-use-a-smaller-draft-model"><span class="nav-number">21.3.</span> <span class="nav-text">Q3. Why not just use a smaller draft model?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Q4-Does-early-exit-alone-solve-the-problem"><span class="nav-number">21.4.</span> <span class="nav-text">Q4. Does early exit alone solve the problem?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Q5-What-is-the-most-important-figure-to-understand-first"><span class="nav-number">21.5.</span> <span class="nav-text">Q5. What is the most important figure to understand first?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Q6-Why-does-the-paper-matter-for-real-systems-teams"><span class="nav-number">21.6.</span> <span class="nav-text">Q6. Why does the paper matter for real systems teams?</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#22-Appendix-B-evidence-checklist"><span class="nav-number">22.</span> <span class="nav-text">22. Appendix B: evidence checklist</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

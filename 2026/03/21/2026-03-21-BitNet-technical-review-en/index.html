@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="An in-depth technical review of BitNet, covering 1-bit weight quantization, BitLinear layer design, scaling laws for binary Transformers, and practical deployment implications.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="BitNet: Scaling 1-bit Transformers for Large Language Models — In-Depth Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/03/21/2026-03-21-BitNet-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="An in-depth technical review of BitNet, covering 1-bit weight quantization, BitLinear layer design, scaling laws for binary Transformers, and practical deployment implications.">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-03-21T15:46:00.000Z">
+<meta property="article:modified_time" content="2026-03-23T18:05:37.602Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="BitNet">
+<meta property="article:tag" content="1-bit Transformers">
+<meta property="article:tag" content="Weight Binarization">
+<meta property="article:tag" content="Quantization-Aware Training">
+<meta property="article:tag" content="Model Efficiency">
+<meta property="article:tag" content="Microsoft Research">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/03/21/2026-03-21-BitNet-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>BitNet: Scaling 1-bit Transformers for Large Language Models — In-Depth Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/03/21/2026-03-21-BitNet-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          BitNet: Scaling 1-bit Transformers for Large Language Models — In-Depth Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-03-21 15:46:00" itemprop="dateCreated datePublished" datetime="2026-03-21T15:46:00+00:00">2026-03-21</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-03-23 18:05:37" itemprop="dateModified" datetime="2026-03-23T18:05:37+00:00">2026-03-23</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Reading/" itemprop="url" rel="index"><span itemprop="name">Paper Reading</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Reading/Efficient-AI/" itemprop="url" rel="index"><span itemprop="name">Efficient AI</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">An in-depth technical review of BitNet, covering 1-bit weight quantization, BitLinear layer design, scaling laws for binary Transformers, and practical deployment implications.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p><strong>Author: Zhongzhu Zhou</strong>
+Paper: BitNet: Scaling 1-bit Transformers for Large Language Models (arXiv 2023)
+ArXiv: <a href="https://arxiv.org/abs/2310.11453" target="_blank" rel="noopener">https://arxiv.org/abs/2310.11453</a></p>
+<hr>
+<h2 id="Abstract">Abstract</h2>
+<p>Large language models have grown so large that their deployment costs — in terms of memory, compute, and energy — now rival or exceed the cost of training itself. BitNet, introduced by researchers at Microsoft Research, the University of Chinese Academy of Sciences, and Tsinghua University, proposes a radical solution: train Transformer-based language models with <strong>1-bit weights</strong> from scratch. By replacing the standard <code>nn.Linear</code> layer with a custom <strong>BitLinear</strong> layer that binarizes weights to +1 or −1 and quantizes activations to 8-bit integers, BitNet achieves competitive performance to full-precision (FP16) Transformers while dramatically reducing memory footprint and energy consumption. More provocatively, the authors demonstrate that BitNet follows a scaling law similar to full-precision models, suggesting that 1-bit architectures could scale to hundreds of billions of parameters without sacrificing the predictable performance improvements that make scaling worthwhile.</p>
+<a id="more"></a>
+<p>This paper matters because it challenges the longstanding assumption that neural network weights need many bits of precision to learn effectively. If 1-bit training can indeed scale, it could fundamentally change the economics of deploying large language models, making powerful AI more accessible and environmentally sustainable.</p>
+<hr>
+<h2 id="1-Prerequisites-What-You-Need-to-Know-Before-Reading-This-Paper">1. Prerequisites: What You Need to Know Before Reading This Paper</h2>
+<h3 id="1-1-The-Transformer-Architecture-and-Large-Language-Models">1.1 The Transformer Architecture and Large Language Models</h3>
+<p>The Transformer architecture, introduced by Vaswani et al. in 2017, is the backbone of modern large language models (LLMs). To understand BitNet, you need a solid grasp of how Transformers work.</p>
+<p><strong>Self-Attention Mechanism.</strong> The core innovation of the Transformer is the self-attention mechanism. Given a sequence of input tokens (words or subwords), self-attention allows each token to &quot;attend to&quot; every other token in the sequence, computing a weighted sum of their representations. Formally, given queries Q, keys K, and values V (all derived from the input via linear projections), attention is computed as:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>Attention</mtext><mo stretchy="false">(</mo><mi>Q</mi><mo separator="true">,</mo><mi>K</mi><mo separator="true">,</mo><mi>V</mi><mo stretchy="false">)</mo><mo>=</mo><mtext>softmax</mtext><mrow><mo fence="true">(</mo><mfrac><mrow><mi>Q</mi><msup><mi>K</mi><mi>T</mi></msup></mrow><msqrt><msub><mi>d</mi><mi>k</mi></msub></msqrt></mfrac><mo fence="true">)</mo></mrow><mi>V</mi></mrow><annotation encoding="application/x-tex">\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right) V
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">Attention</span></span><span class="mopen">(</span><span class="mord mathnormal">Q</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.4684em;vertical-align:-0.95em;"></span><span class="mord text"><span class="mord">softmax</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.5183em;"><span style="top:-2.2528em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8572em;"><span class="svg-align" style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord" style="padding-left:0.833em;"><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-2.8172em;"><span class="pstrut" style="height:3em;"></span><span class="hide-tail" style="min-width:0.853em;height:1.08em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="1.08em" viewBox="0 0 400000 1080" preserveAspectRatio="xMinYMin slice"><path d="M95,702
+c-2.7,0,-7.17,-2.7,-13.5,-8c-5.8,-5.3,-9.5,-10,-9.5,-14
+c0,-2,0.3,-3.3,1,-4c1.3,-2.7,23.83,-20.7,67.5,-54
+c44.2,-33.3,65.8,-50.3,66.5,-51c1.3,-1.3,3,-2,5,-2c4.7,0,8.7,3.3,12,10
+s173,378,173,378c0.7,0,35.3,-71,104,-213c68.7,-142,137.5,-285,206.5,-429
+c69,-144,104.5,-217.7,106.5,-221
+l0 -0
+c5.3,-9.3,12,-14,20,-14
+H400000v40H845.2724
+s-225.272,467,-225.272,467s-235,486,-235,486c-2.7,4.7,-9,7,-19,7
+c-6,0,-10,-1,-12,-3s-194,-422,-194,-422s-65,47,-65,47z
+M834 80h400000v40h-400000z"/></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1828em;"><span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">Q</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8413em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.93em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">)</span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span></span></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">d_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is the dimension of the key vectors. This allows the model to capture long-range dependencies in text.</p>
+<p><strong>Feed-Forward Networks (FFN).</strong> After the attention layer, each token's representation passes through a position-wise feed-forward network, typically consisting of two linear transformations with a non-linearity (like ReLU or GELU) in between:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>FFN</mtext><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><msub><mi>W</mi><mn>2</mn></msub><mo>⋅</mo><mi>σ</mi><mo stretchy="false">(</mo><msub><mi>W</mi><mn>1</mn></msub><mi>x</mi><mo>+</mo><msub><mi>b</mi><mn>1</mn></msub><mo stretchy="false">)</mo><mo>+</mo><msub><mi>b</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">\text{FFN}(x) = W_2 \cdot \sigma(W_1 x + b_1) + b_2
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">FFN</span></span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">b</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">b</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p><strong>Layer Normalization and Residual Connections.</strong> Each sub-layer (attention and FFN) is wrapped with a residual connection and layer normalization, which stabilizes training. The output of each sub-layer is <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>LayerNorm</mtext><mo stretchy="false">(</mo><mi>x</mi><mo>+</mo><mtext>SubLayer</mtext><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\text{LayerNorm}(x + \text{SubLayer}(x))</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">LayerNorm</span></span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">SubLayer</span></span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mclose">))</span></span></span></span>.</p>
+<p><strong>Autoregressive Language Models.</strong> Large language models like GPT are autoregressive: they predict the next token given all previous tokens. They use a &quot;decoder-only&quot; Transformer architecture where each token can only attend to tokens that came before it (causal masking). The model is trained by maximizing the log-likelihood of the training data:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="script">L</mi><mo>=</mo><munderover><mo>∑</mo><mrow><mi>t</mi><mo>=</mo><mn>1</mn></mrow><mi>T</mi></munderover><mi>log</mi><mo>⁡</mo><mi>P</mi><mo stretchy="false">(</mo><msub><mi>x</mi><mi>t</mi></msub><mi mathvariant="normal">∣</mi><msub><mi>x</mi><mn>1</mn></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>x</mi><mrow><mi>t</mi><mo>−</mo><mn>1</mn></mrow></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\mathcal{L} = \sum_{t=1}^{T} \log P(x_t | x_1, \ldots, x_{t-1})
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathcal">L</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3.0954em;vertical-align:-1.2671em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8283em;"><span style="top:-1.8829em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.2671em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">lo<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord">∣</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span></span></p>
+<p><strong>The Key Point for BitNet:</strong> Almost all the computational cost in a Transformer comes from matrix multiplications in the linear projection layers — the Q, K, V projections in attention, the output projection, and the two layers of the FFN. These are all instances of <code>nn.Linear</code> in PyTorch. BitNet targets exactly these layers for binarization.</p>
+<h3 id="1-2-Model-Quantization-Reducing-Numerical-Precision">1.2 Model Quantization: Reducing Numerical Precision</h3>
+<p>Quantization is the process of reducing the numerical precision of a model's weights and/or activations. Instead of using 32-bit or 16-bit floating-point numbers, we might use 8-bit integers, 4-bit integers, or even binary (1-bit) representations. This saves memory and can dramatically speed up computation.</p>
+<p><strong>Post-Training Quantization (PTQ).</strong> The simplest approach: train a model normally in full precision, then convert the weights to lower precision after training. Methods like GPTQ, QuIP, SmoothQuant, and Absmax fall into this category. PTQ is easy to apply but tends to lose accuracy at very low bit widths because the model was never trained to be robust to quantization noise.</p>
+<p><strong>Quantization-Aware Training (QAT).</strong> A more sophisticated approach: during training, simulate the effects of quantization so the model learns to be robust to low precision. QAT generally achieves better accuracy than PTQ at the same bit width, but it requires modifying the training pipeline and can make optimization more challenging.</p>
+<p><strong>Weight Binarization.</strong> The extreme case of quantization: each weight is represented as either +1 or −1 (a single bit). This means matrix multiplications become simple additions and subtractions — no actual multiplication is needed. The challenge is that a single bit carries very little information, so the model needs to find ways to compensate.</p>
+<p><strong>Absmax Quantization.</strong> A simple quantization scheme where values are scaled to fit within a target integer range. For b-bit quantization, values are mapped to the range <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">[</mo><mo>−</mo><msup><mn>2</mn><mrow><mi>b</mi><mo>−</mo><mn>1</mn></mrow></msup><mo separator="true">,</mo><msup><mn>2</mn><mrow><mi>b</mi><mo>−</mo><mn>1</mn></mrow></msup><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">[-2^{b-1}, 2^{b-1}]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0991em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord">−</span><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">b</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">b</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mclose">]</span></span></span></span> by dividing by the absolute maximum value in the tensor and multiplying by the target range.</p>
+<h3 id="1-3-Scaling-Laws-for-Neural-Language-Models">1.3 Scaling Laws for Neural Language Models</h3>
+<p>Kaplan et al. (2020) discovered that the performance of neural language models follows predictable power-law relationships with respect to model size, dataset size, and compute budget:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>L</mi><mo stretchy="false">(</mo><mi>N</mi><mo stretchy="false">)</mo><mo>=</mo><msup><mrow><mo fence="true">(</mo><mfrac><msub><mi>N</mi><mi>c</mi></msub><mi>N</mi></mfrac><mo fence="true">)</mo></mrow><msub><mi>α</mi><mi>N</mi></msub></msup></mrow><annotation encoding="application/x-tex">L(N) = \left(\frac{N_c}{N}\right)^{\alpha_N}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">L</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.4543em;vertical-align:-0.95em;"></span><span class="minner"><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3603em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">N</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">c</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">)</span></span></span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:1.5043em;"><span style="top:-3.9029em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0037em;">α</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.3567em;margin-left:-0.0037em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1433em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi></mrow><annotation encoding="application/x-tex">L</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">L</span></span></span></span> is the loss, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span></span></span></span> is the number of parameters, and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>N</mi><mi>c</mi></msub></mrow><annotation encoding="application/x-tex">N_c</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">c</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>α</mi><mi>N</mi></msub></mrow><annotation encoding="application/x-tex">\alpha_N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0037em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> are fitted constants. This means we can predict how a larger model will perform by extrapolating from smaller models.</p>
+<p><strong>Why This Matters for BitNet:</strong> If a new architecture (like 1-bit models) also follows a scaling law, it means we can confidently invest in training larger versions knowing the performance will improve predictably. The authors show that BitNet indeed follows such a law, which is one of the paper's most important contributions.</p>
+<h3 id="1-4-Energy-Consumption-in-Neural-Network-Computation">1.4 Energy Consumption in Neural Network Computation</h3>
+<p>A critical but often overlooked aspect of model efficiency is energy consumption. Different arithmetic operations consume vastly different amounts of energy depending on the precision of the operands.</p>
+<p>At a 45nm process node, a 32-bit floating-point multiplication consumes about 3.7 pJ, while an 8-bit integer addition consumes only 0.03 pJ — roughly a 123× difference. At a more modern 7nm process node, the gap narrows but remains significant: FP32 multiplication at 1.31 pJ vs. INT8 addition at 0.007 pJ (187× ratio).</p>
+<p><strong>The Key Insight:</strong> When weights are binary (+1 or −1), multiplication by a weight becomes either an addition or a subtraction of the activation value. This eliminates the need for expensive multiplication operations entirely, leading to dramatic energy savings.</p>
+<h3 id="1-5-The-Straight-Through-Estimator-STE">1.5 The Straight-Through Estimator (STE)</h3>
+<p>Training with discrete (quantized) values poses a fundamental problem: the quantization function (like rounding or sign) has zero gradient almost everywhere, so backpropagation cannot flow gradients through it. The Straight-Through Estimator (STE), introduced by Bengio et al. (2013), is a practical workaround.</p>
+<p><strong>How STE Works:</strong> During the forward pass, the quantization function is applied normally. During the backward pass, the gradient of the quantization function is approximated as 1 (i.e., the identity function). This allows gradients to &quot;pass through&quot; the quantization step as if it were not there, while the forward pass still uses quantized values.</p>
+<p>Mathematically, if <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">q(x)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">q</span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span></span> is a quantization function, STE defines:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mfrac><mrow><mi mathvariant="normal">∂</mi><mi>q</mi><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo></mrow><mrow><mi mathvariant="normal">∂</mi><mi>x</mi></mrow></mfrac><mo>≈</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">\frac{\partial q(x)}{\partial x} \approx 1
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:2.113em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord" style="margin-right:0.05556em;">∂</span><span class="mord mathnormal">x</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord" style="margin-right:0.05556em;">∂</span><span class="mord mathnormal" style="margin-right:0.03588em;">q</span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span></span></p>
+<p>This is a biased gradient estimator, but it works remarkably well in practice. Without STE, training binary neural networks would be essentially impossible with gradient-based methods.</p>
+<h3 id="1-6-Layer-Normalization-and-SubLN">1.6 Layer Normalization and SubLN</h3>
+<p>Layer Normalization (LayerNorm) normalizes the inputs across the feature dimension for each individual sample:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>LN</mtext><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mfrac><mrow><mi>x</mi><mo>−</mo><mi>E</mi><mo stretchy="false">[</mo><mi>x</mi><mo stretchy="false">]</mo></mrow><msqrt><mrow><mtext>Var</mtext><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>+</mo><mi>ϵ</mi></mrow></msqrt></mfrac></mrow><annotation encoding="application/x-tex">\text{LN}(x) = \frac{x - E[x]}{\sqrt{\text{Var}(x) + \epsilon}}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">LN</span></span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.557em;vertical-align:-1.13em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.175em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.935em;"><span class="svg-align" style="top:-3.2em;"><span class="pstrut" style="height:3.2em;"></span><span class="mord" style="padding-left:1em;"><span class="mord text"><span class="mord">Var</span></span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal">ϵ</span></span></span><span style="top:-2.895em;"><span class="pstrut" style="height:3.2em;"></span><span class="hide-tail" style="min-width:1.02em;height:1.28em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="1.28em" viewBox="0 0 400000 1296" preserveAspectRatio="xMinYMin slice"><path d="M263,681c0.7,0,18,39.7,52,119
+c34,79.3,68.167,158.7,102.5,238c34.3,79.3,51.8,119.3,52.5,120
+c340,-704.7,510.7,-1060.3,512,-1067
+l0 -0
+c4.7,-7.3,11,-11,19,-11
+H40000v40H1012.3
+s-271.3,567,-271.3,567c-38.7,80.7,-84,175,-136,283c-52,108,-89.167,185.3,-111.5,232
+c-22.3,46.7,-33.8,70.3,-34.5,71c-4.7,4.7,-12.3,7,-23,7s-12,-1,-12,-1
+s-109,-253,-109,-253c-72.7,-168,-109.3,-252,-110,-252c-10.7,8,-22,16.7,-34,26
+c-22,17.3,-33.3,26,-34,26s-26,-26,-26,-26s76,-59,76,-59s76,-60,76,-60z
+M1001 80h400000v40h-400000z"/></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.305em;"><span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal" style="margin-right:0.05764em;">E</span><span class="mopen">[</span><span class="mord mathnormal">x</span><span class="mclose">]</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.13em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p><strong>SubLN</strong> (from Foundation Transformers, Wang et al. 2022) is a variant that places additional LayerNorm operations inside the Transformer sub-layers. Specifically, it adds normalization before the main computation within each attention and FFN block. This has been shown to improve training stability, especially for deep models.</p>
+<p>In BitNet, SubLN serves a dual purpose: stabilizing training (which is harder with binary weights) and normalizing activations before quantization to control the variance of the output. The authors show that SubLN outperforms both Pre-LN (the standard GPT architecture) and BMT (another approach for stabilizing binarized models).</p>
+<hr>
+<h2 id="2-What-This-Paper-Does-The-Core-Idea">2. What This Paper Does (The Core Idea)</h2>
+<h3 id="2-1-The-Problem">2.1 The Problem</h3>
+<p>Large language models are expensive. A model like GPT-3 with 175 billion parameters requires hundreds of gigabytes of memory just to store the weights, and inference requires enormous amounts of computation and energy. As these models get deployed at scale (serving millions of users), the inference cost can dwarf the one-time training cost.</p>
+<p>Existing quantization methods typically operate post-training: you train a full-precision model and then compress it. But post-training quantization struggles at very low bit widths (below 4 bits), and extreme compression (1-bit) via PTQ produces models that are essentially non-functional.</p>
+<h3 id="2-2-The-Key-Insight">2.2 The Key Insight</h3>
+<p>BitNet's core insight is that <strong>1-bit models should be trained from scratch with quantization-aware training</strong>, not created by compressing full-precision models. By designing the training procedure to account for binary weights from the beginning, the model can learn representations that are naturally compatible with extreme quantization.</p>
+<p>The paper introduces <strong>BitLinear</strong>, a drop-in replacement for the standard linear layer (<code>nn.Linear</code>). BitLinear binarizes weights to +1 or −1 and quantizes activations to 8-bit integers, turning matrix multiplications into simple integer additions. The implementation is remarkably simple: you just replace every <code>nn.Linear</code> in the Transformer with a <code>BitLinear</code> layer.</p>
+<h3 id="2-3-How-It-Differs-From-Prior-Work">2.3 How It Differs From Prior Work</h3>
+<p>Previous work on binary neural networks (like XNOR-Net) focused on convolutional neural networks for computer vision. Some work binarized Transformers for machine translation or BERT pretraining, but these use fundamentally different architectures (encoder-decoder or bidirectional encoder) from the autoregressive decoder used in LLMs. Furthermore, prior work never tested at the scale of modern LLMs (billions of parameters).</p>
+<p>BitNet is the first to:</p>
+<ol>
+<li>Apply 1-bit quantization-aware training to autoregressive language models</li>
+<li>Scale binary Transformers from 125M to 30B parameters</li>
+<li>Demonstrate that 1-bit models follow a scaling law similar to full-precision models</li>
+<li>Introduce an &quot;Inference-Optimal Scaling Law&quot; that measures efficiency in terms of energy consumption rather than FLOPs</li>
+</ol>
+<hr>
+<h2 id="3-Method-Details">3. Method Details</h2>
+<h3 id="3-1-BitLinear-The-Core-Building-Block">3.1 BitLinear: The Core Building Block</h3>
+<p>BitLinear replaces the standard linear layer with a three-step process:</p>
+<p><strong>Step 1: Weight Binarization.</strong> The real-valued weight matrix <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>n</mi><mo>×</mo><mi>m</mi></mrow></msup></mrow><annotation encoding="application/x-tex">W \in \mathbb{R}^{n \times m}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7713em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7713em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">n</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight">m</span></span></span></span></span></span></span></span></span></span></span></span> is binarized using the sign function, after first centering the weights to have zero mean:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mover accent="true"><mi>W</mi><mo stretchy="true">~</mo></mover><mo>=</mo><mtext>Sign</mtext><mo stretchy="false">(</mo><mi>W</mi><mo>−</mo><mi>α</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\widetilde{W} = \text{Sign}(W - \alpha)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9433em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9433em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span><span class="svg-align" style="top:-3.6833em;"><span class="pstrut" style="height:3em;"></span><span style="height:0.26em;"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="0.26em" viewBox="0 0 600 260" preserveAspectRatio="none"><path d="M200 55.538c-77 0-168 73.953-177 73.953-3 0-7
+-2.175-9-5.437L2 97c-1-2-2-4-2-6 0-4 2-7 5-9l20-12C116 12 171 0 207 0c86 0
+ 114 68 191 68 78 0 168-68 177-68 4 0 7 2 9 5l12 19c1 2.175 2 4.35 2 6.525 0
+ 4.35-2 7.613-5 9.788l-19 13.05c-92 63.077-116.937 75.308-183 76.128
+-68.267.847-113-73.952-191-73.952z"/></svg></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">Sign</span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mclose">)</span></span></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>=</mo><mfrac><mn>1</mn><mrow><mi>n</mi><mi>m</mi></mrow></mfrac><msub><mo>∑</mo><mrow><mi>i</mi><mi>j</mi></mrow></msub><msub><mi>W</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub></mrow><annotation encoding="application/x-tex">\alpha = \frac{1}{nm} \sum_{ij} W_{ij}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.2809em;vertical-align:-0.4358em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8451em;"><span style="top:-2.655em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">nm</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.394em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.345em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.162em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.4358em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> is the mean of the weight matrix, and the sign function returns +1 for positive values and −1 for non-positive values.</p>
+<p>A scaling factor <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi></mrow><annotation encoding="application/x-tex">\beta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05278em;">β</span></span></span></span> is computed as the mean absolute value of the weights:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>β</mi><mo>=</mo><mfrac><mn>1</mn><mrow><mi>n</mi><mi>m</mi></mrow></mfrac><mi mathvariant="normal">∥</mi><mi>W</mi><msub><mi mathvariant="normal">∥</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">\beta = \frac{1}{nm} \|W\|_1
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05278em;">β</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">nm</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mord">∥</span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mord"><span class="mord">∥</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>This scaling factor is used during dequantization to restore the output to the appropriate scale.</p>
+<p><strong>Step 2: Activation Quantization.</strong> The input activations <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span> are first passed through a SubLN (LayerNorm) operation to normalize them, then quantized to 8-bit integers using absmax quantization:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mover accent="true"><mi>x</mi><mo>~</mo></mover><mo>=</mo><mtext>Clip</mtext><mrow><mo fence="true">(</mo><mi>x</mi><mo>×</mo><mfrac><msub><mi>Q</mi><mi>b</mi></msub><mi>γ</mi></mfrac><mo separator="true">,</mo><mo>−</mo><msub><mi>Q</mi><mi>b</mi></msub><mo>+</mo><mi>ϵ</mi><mo separator="true">,</mo><msub><mi>Q</mi><mi>b</mi></msub><mo>−</mo><mi>ϵ</mi><mo fence="true">)</mo></mrow></mrow><annotation encoding="application/x-tex">\tilde{x} = \text{Clip}\left(x \times \frac{Q_b}{\gamma}, -Q_b + \epsilon, Q_b - \epsilon\right)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6679em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6679em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">x</span></span><span style="top:-3.35em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.2222em;"><span class="mord">~</span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="mord text"><span class="mord">Clip</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">(</span></span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3603em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05556em;">γ</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal">Q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">b</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.8804em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">−</span><span class="mord"><span class="mord mathnormal">Q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">b</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal">ϵ</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">Q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">b</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal">ϵ</span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">)</span></span></span></span></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>Q</mi><mi>b</mi></msub><mo>=</mo><msup><mn>2</mn><mrow><mi>b</mi><mo>−</mo><mn>1</mn></mrow></msup><mo>=</mo><mn>128</mn></mrow><annotation encoding="application/x-tex">Q_b = 2^{b-1} = 128</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8778em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal">Q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">b</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8491em;"></span><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">b</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">128</span></span></span></span> for 8-bit quantization, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>γ</mi><mo>=</mo><mi mathvariant="normal">∥</mi><mi>x</mi><msub><mi mathvariant="normal">∥</mi><mi mathvariant="normal">∞</mi></msub></mrow><annotation encoding="application/x-tex">\gamma = \|x\|_\infty</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05556em;">γ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∥</span><span class="mord mathnormal">x</span><span class="mord"><span class="mord">∥</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">∞</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is the absolute maximum of the input, and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ϵ</mi></mrow><annotation encoding="application/x-tex">\epsilon</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">ϵ</span></span></span></span> is a small constant to prevent overflow.</p>
+<p>For activations before non-linear functions (like ReLU), a slightly different scheme shifts values to be non-negative before quantization.</p>
+<p><strong>Step 3: Integer Matrix Multiplication and Dequantization.</strong> The actual computation is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>y</mi><mo>=</mo><mover accent="true"><mi>W</mi><mo stretchy="true">~</mo></mover><mo>⋅</mo><mtext>Quant</mtext><mo stretchy="false">(</mo><mtext>LN</mtext><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo stretchy="false">)</mo><mo>×</mo><mfrac><mrow><mi>β</mi><mi>γ</mi></mrow><msub><mi>Q</mi><mi>b</mi></msub></mfrac></mrow><annotation encoding="application/x-tex">y = \widetilde{W} \cdot \text{Quant}(\text{LN}(x)) \times \frac{\beta \gamma}{Q_b}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9433em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9433em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span><span class="svg-align" style="top:-3.6833em;"><span class="pstrut" style="height:3em;"></span><span style="height:0.26em;"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="0.26em" viewBox="0 0 600 260" preserveAspectRatio="none"><path d="M200 55.538c-77 0-168 73.953-177 73.953-3 0-7
+-2.175-9-5.437L2 97c-1-2-2-4-2-6 0-4 2-7 5-9l20-12C116 12 171 0 207 0c86 0
+ 114 68 191 68 78 0 168-68 177-68 4 0 7 2 9 5l12 19c1 2.175 2 4.35 2 6.525 0
+ 4.35-2 7.613-5 9.788l-19 13.05c-92 63.077-116.937 75.308-183 76.128
+-68.267.847-113-73.952-191-73.952z"/></svg></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">Quant</span></span><span class="mopen">(</span><span class="mord text"><span class="mord">LN</span></span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mclose">))</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.2519em;vertical-align:-0.8804em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3714em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal">Q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">b</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05278em;">β</span><span class="mord mathnormal" style="margin-right:0.05556em;">γ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.8804em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>Since <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi>W</mi><mo stretchy="true">~</mo></mover></mrow><annotation encoding="application/x-tex">\widetilde{W}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9433em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9433em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span><span class="svg-align" style="top:-3.6833em;"><span class="pstrut" style="height:3em;"></span><span style="height:0.26em;"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="0.26em" viewBox="0 0 600 260" preserveAspectRatio="none"><path d="M200 55.538c-77 0-168 73.953-177 73.953-3 0-7
+-2.175-9-5.437L2 97c-1-2-2-4-2-6 0-4 2-7 5-9l20-12C116 12 171 0 207 0c86 0
+ 114 68 191 68 78 0 168-68 177-68 4 0 7 2 9 5l12 19c1 2.175 2 4.35 2 6.525 0
+ 4.35-2 7.613-5 9.788l-19 13.05c-92 63.077-116.937 75.308-183 76.128
+-68.267.847-113-73.952-191-73.952z"/></svg></span></span></span></span></span></span></span></span></span> contains only +1 and −1, and the activations are 8-bit integers, the matrix multiplication reduces to integer additions and subtractions. The result is then rescaled by <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>β</mi><mi>γ</mi></mrow><msub><mi>Q</mi><mi>b</mi></msub></mfrac></mrow><annotation encoding="application/x-tex">\frac{\beta \gamma}{Q_b}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.4133em;vertical-align:-0.4811em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.9322em;"><span style="top:-2.655em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight">Q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.3488em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">b</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1512em;"><span></span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.4461em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05278em;">β</span><span class="mord mathnormal mtight" style="margin-right:0.05556em;">γ</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.4811em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span> to dequantize.</p>
+<p><strong>Why This Is Elegant:</strong> The SubLN before quantization ensures that the variance of the output <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi></mrow><annotation encoding="application/x-tex">y</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span></span></span></span> is approximately 1, matching the variance achieved by standard weight initialization schemes (Kaiming or Xavier). This is crucial for training stability — without it, the variance would be at the scale of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mo stretchy="false">[</mo><msup><mover accent="true"><mi>x</mi><mo>~</mo></mover><mn>2</mn></msup><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">E[\tilde{x}^2]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0641em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.05764em;">E</span><span class="mopen">[</span><span class="mord"><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6679em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">x</span></span><span style="top:-3.35em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.2222em;"><span class="mord">~</span></span></span></span></span></span></span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mclose">]</span></span></span></span>, which could be very different from 1.</p>
+<h3 id="3-2-Architecture-Design-Decisions">3.2 Architecture Design Decisions</h3>
+<p>BitNet uses the same overall architecture as a standard Transformer, with stacks of self-attention and FFN blocks. The key design decisions are:</p>
+<p><strong>What Gets Binarized:</strong> Only the weight matrices in the linear projections (Q, K, V projections, output projection, FFN layers) are binarized. Other components remain in higher precision:</p>
+<ul>
+<li><strong>Residual connections and LayerNorm:</strong> These contribute negligible computation cost and are kept in high precision.</li>
+<li><strong>QKV transformation computation:</strong> The attention computation itself (softmax, scaling) remains in high precision.</li>
+<li><strong>Input/output embeddings:</strong> Kept in high precision because the language model needs high-precision probabilities for sampling.</li>
+</ul>
+<p><strong>SubLN Architecture:</strong> Instead of the standard Pre-LN (LayerNorm before the sub-layer) or Post-LN (after), BitNet uses SubLN, which places additional normalization inside the sub-layers. This is critical for training stability with binary weights.</p>
+<h3 id="3-3-Group-Quantization-for-Model-Parallelism">3.3 Group Quantization for Model Parallelism</h3>
+<p>A practical challenge for scaling BitNet to large models is model parallelism. Standard model parallelism splits weight matrices across devices and requires each partition to be independent. However, the quantization parameters (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span>, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi></mrow><annotation encoding="application/x-tex">\beta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05278em;">β</span></span></span></span>, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>γ</mi></mrow><annotation encoding="application/x-tex">\gamma</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05556em;">γ</span></span></span></span>, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>η</mi></mrow><annotation encoding="application/x-tex">\eta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">η</span></span></span></span>) are computed from the entire tensor, breaking this independence.</p>
+<p><strong>The Naive Solution:</strong> Compute global parameters with all-reduce operations. This adds communication overhead that grows with model depth.</p>
+<p><strong>BitNet's Solution: Group Quantization.</strong> Divide weight matrices and activations into <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi></mrow><annotation encoding="application/x-tex">G</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">G</span></span></span></span> groups along the partition dimension. Each group independently computes its own quantization parameters:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>α</mi><mi>g</mi></msub><mo>=</mo><mfrac><mi>G</mi><mrow><mi>n</mi><mi>m</mi></mrow></mfrac><munder><mo>∑</mo><mrow><mi>i</mi><mi>j</mi></mrow></munder><msubsup><mi>W</mi><mrow><mi>i</mi><mi>j</mi></mrow><mrow><mo stretchy="false">(</mo><mi>g</mi><mo stretchy="false">)</mo></mrow></msubsup><mo separator="true">,</mo><mspace width="1em"/><msub><mi>β</mi><mi>g</mi></msub><mo>=</mo><mfrac><mi>G</mi><mrow><mi>n</mi><mi>m</mi></mrow></mfrac><mi mathvariant="normal">∥</mi><msup><mi>W</mi><mrow><mo stretchy="false">(</mo><mi>g</mi><mo stretchy="false">)</mo></mrow></msup><msub><mi mathvariant="normal">∥</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">\alpha_g = \frac{G}{nm} \sum_{ij} W_{ij}^{(g)}, \quad \beta_g = \frac{G}{nm} \|W^{(g)}\|_1
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0037em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">g</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.7741em;vertical-align:-1.4138em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3603em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">nm</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">G</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.4138em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.0448em;"><span style="top:-2.4231em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span><span style="top:-3.2198em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathnormal mtight" style="margin-right:0.03588em;">g</span><span class="mclose mtight">)</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.413em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05278em;">β</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0528em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">g</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.0463em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3603em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">nm</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">G</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mord">∥</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.938em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathnormal mtight" style="margin-right:0.03588em;">g</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mord"><span class="mord">∥</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>Similarly, for activations: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>γ</mi><mi>g</mi></msub><mo>=</mo><mi mathvariant="normal">∥</mi><msup><mi>x</mi><mrow><mo stretchy="false">(</mo><mi>g</mi><mo stretchy="false">)</mo></mrow></msup><msub><mi mathvariant="normal">∥</mi><mi mathvariant="normal">∞</mi></msub></mrow><annotation encoding="application/x-tex">\gamma_g = \|x^{(g)}\|_\infty</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05556em;">γ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0556em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">g</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.138em;vertical-align:-0.25em;"></span><span class="mord">∥</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.888em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathnormal mtight" style="margin-right:0.03588em;">g</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mord"><span class="mord">∥</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">∞</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>η</mi><mi>g</mi></msub><mo>=</mo><msub><mrow><mi>min</mi><mo>⁡</mo></mrow><mrow><mi>i</mi><mi>j</mi></mrow></msub><msubsup><mi>x</mi><mrow><mi>i</mi><mi>j</mi></mrow><mrow><mo stretchy="false">(</mo><mi>g</mi><mo stretchy="false">)</mo></mrow></msubsup></mrow><annotation encoding="application/x-tex">\eta_g = \min_{ij} x_{ij}^{(g)}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">η</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">g</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.4578em;vertical-align:-0.413em;"></span><span class="mop"><span class="mop">min</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.0448em;"><span style="top:-2.4231em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span><span style="top:-3.2198em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathnormal mtight" style="margin-right:0.03588em;">g</span><span class="mclose mtight">)</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.413em;"><span></span></span></span></span></span></span></span></span></span>.</p>
+<p>For the LayerNorm in SubLN, Group Normalization is used instead, computing mean and variance within each group. This eliminates all inter-device communication for quantization parameters.</p>
+<h3 id="3-4-Training-Procedure">3.4 Training Procedure</h3>
+<p><strong>Straight-Through Estimator (STE):</strong> Since the Sign and Clip functions have zero or undefined gradients, STE is used during backpropagation to approximate the gradient as 1, allowing gradients to flow through the binarization step.</p>
+<p><strong>Mixed Precision Training:</strong> While weights and activations use low precision in the forward pass, gradients and optimizer states (like Adam's momentum and variance) are stored in full precision. A &quot;latent weight&quot; in full precision accumulates parameter updates; this latent weight is binarized on the fly during each forward pass but is never used directly for inference.</p>
+<p><strong>Large Learning Rate:</strong> A key finding is that BitNet benefits from — and even requires — a larger learning rate than FP16 Transformers. The intuition is that small updates to the latent weights often don't change the binary weights at all (because the sign hasn't flipped), so a larger learning rate is needed to make meaningful progress. The authors show that BitNet converges well with learning rates that would cause FP16 models to diverge, demonstrating that the binarization itself acts as a form of regularization.</p>
+<h3 id="3-5-Computational-Efficiency-Analysis">3.5 Computational Efficiency Analysis</h3>
+<p><strong>Energy Savings.</strong> In a standard Transformer, matrix multiplication with dimensions <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi><mo>×</mo><mi>n</mi></mrow><annotation encoding="application/x-tex">m \times n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">m</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span> and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>×</mo><mi>p</mi></mrow><annotation encoding="application/x-tex">n \times p</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">p</span></span></span></span> requires <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi><mo>×</mo><mi>n</mi><mo>×</mo><mi>p</mi></mrow><annotation encoding="application/x-tex">m \times n \times p</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">m</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">p</span></span></span></span> multiplications and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi><mo>×</mo><mo stretchy="false">(</mo><mi>n</mi><mo>−</mo><mn>1</mn><mo stretchy="false">)</mo><mo>×</mo><mi>p</mi></mrow><annotation encoding="application/x-tex">m \times (n-1) \times p</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">m</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">p</span></span></span></span> additions. In BitNet, since weights are ±1, the multiplications in the matrix product are eliminated. The only multiplications needed are for rescaling with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi></mrow><annotation encoding="application/x-tex">\beta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05278em;">β</span></span></span></span> and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>γ</mi><mi mathvariant="normal">/</mi><msub><mi>Q</mi><mi>b</mi></msub></mrow><annotation encoding="application/x-tex">\gamma/Q_b</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.05556em;">γ</span><span class="mord">/</span><span class="mord"><span class="mord mathnormal">Q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">b</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>, which requires only <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mi>m</mi><mo>×</mo><mi>p</mi><mo>+</mo><mi>m</mi><mo>×</mo><mi>n</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(m \times p + m \times n)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord mathnormal">m</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7778em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">p</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">m</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">n</span><span class="mclose">)</span></span></span></span> scalar multiplications — a dramatic reduction.</p>
+<p>The paper provides detailed energy estimates at both 45nm and 7nm process nodes:</p>
+<table>
+<thead>
+<tr>
+<th>Model Size</th>
+<th>FP16 MUL Energy (7nm)</th>
+<th>BitNet MUL Energy (7nm)</th>
+<th>Reduction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>6.7B</td>
+<td>1.14 J</td>
+<td>0.02 J</td>
+<td>57×</td>
+</tr>
+<tr>
+<td>13B</td>
+<td>2.23 J</td>
+<td>0.04 J</td>
+<td>56×</td>
+</tr>
+<tr>
+<td>30B</td>
+<td>5.21 J</td>
+<td>0.06 J</td>
+<td>87×</td>
+</tr>
+</tbody>
+</table>
+<p>The energy savings grow with model size because the relative cost of the scalar rescaling operations (which still require multiplication) becomes smaller compared to the matrix-level savings.</p>
+<p><strong>Memory Savings.</strong> Each 1-bit weight requires only 1 bit of storage compared to 16 bits for FP16, a 16× reduction in weight memory. For a 30B parameter model, this translates from approximately 60 GB (FP16) to about 3.75 GB (1-bit), making it feasible to run on consumer hardware.</p>
+<hr>
+<h2 id="4-Experiment-Setup">4. Experiment Setup</h2>
+<h3 id="4-1-Training-Configuration">4.1 Training Configuration</h3>
+<p>The authors train autoregressive language models from 125M to 30B parameters. Key training details:</p>
+<ul>
+<li><strong>Dataset:</strong> English-language corpus consisting of the Pile dataset, Common Crawl snapshots, RealNews, and CC-Stories datasets</li>
+<li><strong>Tokenizer:</strong> SentencePiece with vocabulary size 16K</li>
+<li><strong>Training updates:</strong> 40K steps</li>
+<li><strong>Tokens per sample:</strong> 256K (approximately 10.5 billion training tokens total)</li>
+<li><strong>Optimizer:</strong> Adam with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mo>=</mo><mo stretchy="false">(</mo><mn>0.9</mn><mo separator="true">,</mo><mn>0.98</mn><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\beta = (0.9, 0.98)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05278em;">β</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">0.9</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">0.98</span><span class="mclose">)</span></span></span></span></li>
+<li><strong>Learning rate schedule:</strong> Polynomial decay with 750 warmup steps</li>
+<li><strong>Weight decay:</strong> 0.01 (0.05 for 13B and 30B models for stability)</li>
+<li><strong>No dropout, no gradient clipping</strong></li>
+</ul>
+<p>Model configurations range from 768 hidden dimensions with 12 layers (125M) to 7168 hidden dimensions with 48 layers (30B).</p>
+<h3 id="4-2-Baselines">4.2 Baselines</h3>
+<p><strong>FP16 Transformer:</strong> Standard full-precision Transformers trained with identical data and hyperparameters (except learning rate).</p>
+<p><strong>Post-Training Quantization Methods:</strong></p>
+<ul>
+<li><strong>Absmax</strong> (Dettmers et al., 2022): Symmetric weight and activation quantization</li>
+<li><strong>SmoothQuant</strong> (Xiao et al., 2023): Migrates quantization difficulty from activations to weights</li>
+<li><strong>GPTQ</strong> (Frantar et al., 2023): Weight-only quantization using approximate second-order information</li>
+<li><strong>QuIP</strong> (Chee et al., 2023): Weight-only quantization with incoherence processing</li>
+</ul>
+<p>These PTQ methods are applied to the FP16 Transformer at various bit widths (W8A8, W4A16, W4A4, W2A16, W1A8).</p>
+<h3 id="4-3-Evaluation">4.3 Evaluation</h3>
+<ul>
+<li><strong>Perplexity:</strong> On a validation set of the training corpus</li>
+<li><strong>Downstream Tasks (Zero-shot and Few-shot):</strong>
+<ul>
+<li><strong>HellaSwag:</strong> Commonsense reasoning about physical situations</li>
+<li><strong>WinoGrande:</strong> Pronoun resolution requiring world knowledge</li>
+<li><strong>Winograd:</strong> Classic pronoun resolution benchmark</li>
+<li><strong>StoryCloze:</strong> Story completion requiring narrative understanding</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h2 id="5-Results-Analysis">5. Results &amp; Analysis</h2>
+<h3 id="5-1-Scaling-Law-Results">5.1 Scaling Law Results</h3>
+<p>The most striking result is that BitNet follows a power-law scaling relationship similar to FP16 Transformers:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>L</mi><mo stretchy="false">(</mo><mi>N</mi><mo stretchy="false">)</mo><mo>=</mo><mi>a</mi><msup><mi>N</mi><mi>b</mi></msup><mo>+</mo><mi>c</mi></mrow><annotation encoding="application/x-tex">L(N) = aN^b + c
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">L</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9824em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">a</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">b</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">c</span></span></span></span></span></p>
+<p>The authors fit this law using models from 125M to 6.7B and use it to predict the loss of 13B and 30B models. The predictions match the actual performance with high accuracy, demonstrating that the scaling law holds for 1-bit models.</p>
+<p><strong>The Gap Narrows at Scale.</strong> At 125M parameters, BitNet's loss is noticeably higher than FP16. But as the model grows, the gap shrinks. At 30B parameters, the difference is approximately <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Δ</mi><mi>L</mi><mo>=</mo><mn>0.09</mn></mrow><annotation encoding="application/x-tex">\Delta L = 0.09</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span><span class="mord mathnormal">L</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.09</span></span></span></span> — a small gap that may continue to close at even larger scales.</p>
+<p>This is perhaps the paper's most important finding: it suggests that 1-bit models are not fundamentally limited in capability, just slightly less sample-efficient, and this disadvantage diminishes with scale.</p>
+<h3 id="5-2-Inference-Optimal-Scaling-Law">5.2 Inference-Optimal Scaling Law</h3>
+<p>The paper introduces a novel concept: instead of plotting loss vs. FLOPs (which doesn't apply well to 1-bit models since they use integer operations, not floating-point), they plot loss vs. inference energy consumption.</p>
+<p>When measured this way, BitNet dramatically outperforms FP16 Transformers. For a given energy budget, BitNet achieves much lower loss. Conversely, to achieve a given level of performance, BitNet requires far less energy. The left panel of Figure 3 in the paper illustrates this vividly: the BitNet curve is shifted far to the left of the FP16 curve on the energy axis.</p>
+<h3 id="5-3-Downstream-Task-Performance">5.3 Downstream Task Performance</h3>
+<p>At 6.7B parameters (Table 3 in the paper), BitNet (W1A8) achieves:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>WBits</th>
+<th>PPL</th>
+<th>WinoGrande</th>
+<th>Winograd</th>
+<th>StoryCloze</th>
+<th>HellaSwag</th>
+<th>Avg</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FP16 Transformer</td>
+<td>16</td>
+<td>15.19</td>
+<td>66.7</td>
+<td>54.3</td>
+<td>42.9</td>
+<td>67.4</td>
+<td>57.8</td>
+</tr>
+<tr>
+<td>BitNet</td>
+<td>1</td>
+<td>17.07</td>
+<td>66.3</td>
+<td>51.4</td>
+<td>38.9</td>
+<td>66.9</td>
+<td>55.9</td>
+</tr>
+<tr>
+<td>SmoothQuant W8A8</td>
+<td>8</td>
+<td>15.67</td>
+<td>65.3</td>
+<td>53.1</td>
+<td>40.9</td>
+<td>67.6</td>
+<td>56.7</td>
+</tr>
+<tr>
+<td>GPTQ W4A16</td>
+<td>4</td>
+<td>16.05</td>
+<td>57.2</td>
+<td>51.2</td>
+<td>39.9</td>
+<td>63.4</td>
+<td>52.9</td>
+</tr>
+<tr>
+<td>QuIP W2A16</td>
+<td>2</td>
+<td>70.43</td>
+<td>56.1</td>
+<td>51.2</td>
+<td>30.3</td>
+<td>58.4</td>
+<td>49.0</td>
+</tr>
+<tr>
+<td>Absmax W1A8 (PTQ)</td>
+<td>1</td>
+<td>3.5e23</td>
+<td>49.8</td>
+<td>50.0</td>
+<td>24.8</td>
+<td>53.6</td>
+<td>44.6</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key Observations:</strong></p>
+<ol>
+<li>
+<p><strong>BitNet vs. FP16:</strong> BitNet's average accuracy (55.9%) is only 1.9 percentage points below FP16 (57.8%), with a perplexity gap of only 1.88. This is remarkably close for a model using 16× less memory for weights.</p>
+</li>
+<li>
+<p><strong>BitNet vs. PTQ at 1-bit:</strong> Post-training quantization to 1-bit (Absmax W1A8) produces a completely non-functional model (PPL = 3.5×10²³). BitNet, trained from scratch at 1-bit, achieves PPL = 17.07. This dramatically illustrates the advantage of quantization-aware training.</p>
+</li>
+<li>
+<p><strong>BitNet vs. higher-bit PTQ:</strong> BitNet at 1-bit even outperforms GPTQ at 4 bits (52.9% average) and approaches SmoothQuant at 8 bits (56.7% average). This means that a 1-bit model trained properly can beat a 4-bit model created by compressing a full-precision model.</p>
+</li>
+<li>
+<p><strong>Scaling trends (Figure 6):</strong> As model size increases from 1.3B to 6.7B, BitNet's advantage over PTQ methods becomes more pronounced, especially for weight-and-activation quantization.</p>
+</li>
+</ol>
+<h3 id="5-4-Training-Stability">5.4 Training Stability</h3>
+<p>The stability test (Figure 5) reveals an interesting property: BitNet can tolerate much larger learning rates than FP16 Transformers. With a peak learning rate of 1e-3, FP16 training diverges (PPL &gt; 800 initially and remains unstable), while BitNet converges smoothly.</p>
+<p>Furthermore, BitNet benefits from larger learning rates: PPL with lr=8e-4 is better than with lr=4e-4, which is better than with lr=2e-4. This suggests that the binarization step itself acts as a regularizer that prevents the instabilities normally associated with large learning rates.</p>
+<h3 id="5-5-Ablation-Results">5.5 Ablation Results</h3>
+<p>Table 4 compares BitNet's design choices against alternatives for a 1.3B model:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>PPL</th>
+<th>HellaSwag</th>
+<th>WinoGrande</th>
+<th>Winograd</th>
+<th>StoryCloze</th>
+<th>Avg</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BitNet (Absmax + SubLN)</td>
+<td>20.34</td>
+<td>33.2</td>
+<td>52.1</td>
+<td>60.7</td>
+<td>63.2</td>
+<td>52.3</td>
+</tr>
+<tr>
+<td>Elastic + Pre-LN</td>
+<td>24.05</td>
+<td>29.6</td>
+<td>52.9</td>
+<td>56.8</td>
+<td>61.3</td>
+<td>50.2</td>
+</tr>
+<tr>
+<td>Absmax + Pre-LN</td>
+<td>22.11</td>
+<td>31.6</td>
+<td>50.0</td>
+<td>61.8</td>
+<td>61.6</td>
+<td>51.3</td>
+</tr>
+<tr>
+<td>Absmax + BMT</td>
+<td>22.98</td>
+<td>31.2</td>
+<td>52.1</td>
+<td>60.4</td>
+<td>62.7</td>
+<td>51.6</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Absmax vs. Elastic Quantization:</strong> The simpler absmax quantization outperforms the learnable elastic function. Absmax also provides better training stability, enabling the use of larger learning rates.</p>
+<p><strong>SubLN vs. Pre-LN vs. BMT:</strong> SubLN (which adds LayerNorm inside sub-layers) provides the best PPL (20.34 vs. 22.11 for Pre-LN and 22.98 for BMT) and the best average downstream performance. This validates the importance of the SubLN design for training stability with binary weights.</p>
+<hr>
+<h2 id="6-Limitations-Boundary-Conditions">6. Limitations &amp; Boundary Conditions</h2>
+<h3 id="6-1-Limitations-Acknowledged-by-the-Authors">6.1 Limitations Acknowledged by the Authors</h3>
+<p>The paper is relatively transparent about its scope:</p>
+<ul>
+<li><strong>Activation precision:</strong> Activations are kept at 8 bits; lower precision activations are left for future work.</li>
+<li><strong>Scale limit:</strong> While they test up to 30B parameters, they haven't pushed to truly large scales (100B+).</li>
+<li><strong>Architecture scope:</strong> Only tested on decoder-only (autoregressive) Transformers; other architectures like RetNet are mentioned as future work.</li>
+</ul>
+<h3 id="6-2-Limitations-the-Authors-Don-t-Fully-Address">6.2 Limitations the Authors Don't Fully Address</h3>
+<p><strong>Hardware Support.</strong> The energy analysis assumes idealized arithmetic costs. In practice, current GPUs and accelerators are heavily optimized for FP16/BF16 matrix multiplications (via Tensor Cores). 1-bit operations would require custom hardware or specialized kernels to realize the theoretical energy savings. Without dedicated hardware, BitNet might actually be slower than FP16 despite doing less &quot;work.&quot;</p>
+<p><strong>Absolute Performance Gap.</strong> While the gap narrows at scale, BitNet at 6.7B still underperforms FP16 by 1.9 percentage points on average. For applications where marginal accuracy matters (e.g., medical or legal AI), this gap could be significant.</p>
+<p><strong>Limited Evaluation Scope.</strong> The evaluation covers only four relatively simple benchmarks (HellaSwag, WinoGrande, Winograd, StoryCloze). More challenging benchmarks (MMLU, GSM8K, HumanEval) would provide a better picture of whether 1-bit models preserve more complex capabilities like mathematical reasoning and code generation.</p>
+<p><strong>Training Efficiency.</strong> The paper focuses on inference efficiency but says little about training costs. Training with STE and binary weights introduces overhead (maintaining latent weights, additional normalization). The training-time computational comparison is not provided.</p>
+<p><strong>Comparison Fairness.</strong> BitNet is compared against FP16 models trained with the same number of tokens. But given BitNet's lower capacity per parameter, a fairer comparison might train BitNet on more tokens to match the &quot;effective&quot; model capacity. The compute-matched comparison would be more informative.</p>
+<p><strong>No Instruction-Following or Chat Evaluation.</strong> All evaluations are on base language models. It's unclear how well 1-bit models would perform after instruction tuning or RLHF, which are critical for practical deployment.</p>
+<p><strong>Latent Weight Memory.</strong> During training, full-precision latent weights must be maintained. This means training a BitNet model requires at least as much memory as training a full-precision model, potentially more due to the additional normalization parameters. The memory savings only apply at inference time.</p>
+<h3 id="6-3-Boundary-Conditions-When-Would-This-Approach-Fail">6.3 Boundary Conditions: When Would This Approach Fail?</h3>
+<ul>
+<li><strong>Very small models:</strong> At 125M parameters, the gap between BitNet and FP16 is substantial. Binary quantization may be too aggressive for small models that don't have redundancy to absorb the information loss.</li>
+<li><strong>Tasks requiring precise numerical representations:</strong> Tasks involving precise calculations, counting, or numerical reasoning may suffer more from binarization.</li>
+<li><strong>Long-context scenarios:</strong> The paper doesn't evaluate performance with very long sequences. The per-tensor quantization during training (vs. per-token during inference) discrepancy could cause issues.</li>
+</ul>
+<hr>
+<h2 id="7-Reproducibility-Practical-Notes">7. Reproducibility &amp; Practical Notes</h2>
+<h3 id="7-1-Code-Availability">7.1 Code Availability</h3>
+<p>The authors reference a project page at <a href="https://aka.ms/GeneralAI" target="_blank" rel="noopener">https://aka.ms/GeneralAI</a> but do not provide a specific public code repository in the paper. The follow-up work (BitNet b1.58) has released inference kernels, but as of the original paper's publication, full training code was not publicly available.</p>
+<h3 id="7-2-Reproducibility-Assessment">7.2 Reproducibility Assessment</h3>
+<p><strong>Partially Reproducible.</strong> The paper provides detailed hyperparameters (Tables 5-8 in the appendix), model architectures, and training configurations. However, reproducing the results would require:</p>
+<ul>
+<li>Access to the exact training data mixture (Pile + Common Crawl + RealNews + CC-Stories)</li>
+<li>Significant compute resources (30B parameter training at 40K steps with 256K tokens per sample)</li>
+<li>A correct implementation of BitLinear with Group Quantization</li>
+</ul>
+<p>The mathematical formulation is clear enough to implement, but the devil is in the details — issues like numerical stability of the quantization, exact SubLN placement, and interaction with mixed-precision training could cause difficulties.</p>
+<h3 id="7-3-Compute-Requirements">7.3 Compute Requirements</h3>
+<p>The paper doesn't explicitly state the compute budget, but we can estimate:</p>
+<ul>
+<li><strong>Total training tokens:</strong> 40K steps × 256K tokens/step ≈ 10.5 billion tokens</li>
+<li><strong>For the 30B model:</strong> This would require a multi-GPU setup (likely 8+ A100 GPUs) for several days</li>
+<li><strong>For reproducing all experiments:</strong> Models from 125M to 30B, plus all PTQ baselines, would require substantial compute</li>
+</ul>
+<h3 id="7-4-Practical-Tips-for-Practitioners">7.4 Practical Tips for Practitioners</h3>
+<ol>
+<li><strong>Start small:</strong> Validate your BitLinear implementation on small models (125M-350M) before scaling up.</li>
+<li><strong>Use larger learning rates:</strong> The paper shows BitNet benefits from learning rates that would be too large for FP16. Start with 2-3× the learning rate you would normally use.</li>
+<li><strong>Get SubLN right:</strong> The specific placement of LayerNorm inside sub-layers is critical. Using Pre-LN or Post-LN instead will result in worse performance and potentially unstable training.</li>
+<li><strong>Per-tensor vs. per-token quantization:</strong> Use per-tensor quantization during training for stability, but switch to per-token quantization at inference for efficiency.</li>
+<li><strong>Hardware considerations:</strong> Without custom kernels, BitNet's theoretical efficiency gains may not materialize on standard GPU hardware. Consider targeting FPGA or ASIC deployment, or use libraries with binary operation support.</li>
+</ol>
+<hr>
+<h2 id="8-Broader-Context-and-Impact">8. Broader Context and Impact</h2>
+<h3 id="8-1-Relationship-to-Subsequent-Work">8.1 Relationship to Subsequent Work</h3>
+<p>BitNet was followed by <strong>BitNet b1.58</strong> (Ma et al., 2024), which uses ternary weights {-1, 0, +1} instead of binary {-1, +1}. The addition of zero allows the model to effectively &quot;turn off&quot; certain connections, leading to better performance that matches FP16 Transformers at the same model size. This suggests that the minimal step from 1-bit to 1.58-bit dramatically improves the capacity-efficiency tradeoff.</p>
+<h3 id="8-2-Implications-for-the-Field">8.2 Implications for the Field</h3>
+<p><strong>Democratization of AI.</strong> If 1-bit models can match full-precision performance, deploying powerful LLMs becomes feasible on edge devices, smartphones, and low-power hardware. A 30B parameter model at 1-bit fits in under 4 GB of weight memory.</p>
+<p><strong>Environmental Impact.</strong> The 29-41× energy reduction at the 30B scale is significant. If adopted widely, this could substantially reduce the carbon footprint of AI inference.</p>
+<p><strong>New Hardware Paradigm.</strong> BitNet makes a strong case for designing hardware optimized for binary operations. Current GPUs are optimized for FP16 multiplication; dedicated binary accelerators could achieve far greater efficiency.</p>
+<hr>
+<h2 id="References">References</h2>
+<ol>
+<li>Kaplan, J. et al. (2020). &quot;Scaling Laws for Neural Language Models.&quot; arXiv:2001.08361.</li>
+<li>Bengio, Y., Léonard, N., &amp; Courville, A. (2013). &quot;Estimating or Propagating Gradients Through Stochastic Neurons for Conditional Computation.&quot; arXiv:1308.3432.</li>
+<li>Dettmers, T. et al. (2022). &quot;LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale.&quot;</li>
+<li>Xiao, G. et al. (2023). &quot;SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models.&quot; ICML 2023.</li>
+<li>Frantar, E. et al. (2023). &quot;OPTQ: Accurate Quantization for Generative Pre-trained Transformers.&quot; ICLR 2023.</li>
+<li>Wang, H. et al. (2022). &quot;Foundation Transformers.&quot; (SubLN architecture)</li>
+<li>Horowitz, M. (2014). &quot;Computing's Energy Problem (and What We Can Do About It).&quot; ISSCC 2014.</li>
+<li>Ma, S. et al. (2024). &quot;The Era of 1-bit LLMs: All Large Language Models are in 1.58 Bits.&quot; (BitNet b1.58 follow-up)</li>
+<li>Rastegari, M. et al. (2016). &quot;XNOR-Net: ImageNet Classification Using Binary Convolutional Neural Networks.&quot; ECCV 2016.</li>
+<li>Liu, Z. et al. (2022). &quot;BiT: Robustly Binarized Multi-Distilled Transformer.&quot; NeurIPS 2022.</li>
+</ol>
+<hr>
+<p><em>Review written on 2026-03-21.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Efficient-Inference/" rel="tag"># Efficient Inference</a>
+              <a href="/tags/LLM/" rel="tag"># LLM</a>
+              <a href="/tags/Quantization/" rel="tag"># Quantization</a>
+              <a href="/tags/BitNet/" rel="tag"># BitNet</a>
+              <a href="/tags/1-bit/" rel="tag"># 1-bit</a>
+              <a href="/tags/Model-Compression/" rel="tag"># Model Compression</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/03/19/2026-03-19-ZeRO-technical-review-en/" rel="prev" title="ZeRO: Shattering the Memory Wall — How DeepSpeed Trains Trillion-Parameter Models">
+      <i class="fa fa-chevron-left"></i> ZeRO: Shattering the Memory Wall — How DeepSpeed Trains Trillion-Parameter Models
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/03/22/2026-03-22-Transformer-technical-review-en/" rel="next" title="Attention Is All You Need: The Transformer — In-Depth Technical Review">
+      Attention Is All You Need: The Transformer — In-Depth Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Abstract"><span class="nav-number">1.</span> <span class="nav-text">Abstract</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Prerequisites-What-You-Need-to-Know-Before-Reading-This-Paper"><span class="nav-number">2.</span> <span class="nav-text">1. Prerequisites: What You Need to Know Before Reading This Paper</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-The-Transformer-Architecture-and-Large-Language-Models"><span class="nav-number">2.1.</span> <span class="nav-text">1.1 The Transformer Architecture and Large Language Models</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-Model-Quantization-Reducing-Numerical-Precision"><span class="nav-number">2.2.</span> <span class="nav-text">1.2 Model Quantization: Reducing Numerical Precision</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-Scaling-Laws-for-Neural-Language-Models"><span class="nav-number">2.3.</span> <span class="nav-text">1.3 Scaling Laws for Neural Language Models</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-4-Energy-Consumption-in-Neural-Network-Computation"><span class="nav-number">2.4.</span> <span class="nav-text">1.4 Energy Consumption in Neural Network Computation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-5-The-Straight-Through-Estimator-STE"><span class="nav-number">2.5.</span> <span class="nav-text">1.5 The Straight-Through Estimator (STE)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-6-Layer-Normalization-and-SubLN"><span class="nav-number">2.6.</span> <span class="nav-text">1.6 Layer Normalization and SubLN</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-What-This-Paper-Does-The-Core-Idea"><span class="nav-number">3.</span> <span class="nav-text">2. What This Paper Does (The Core Idea)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-The-Problem"><span class="nav-number">3.1.</span> <span class="nav-text">2.1 The Problem</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-The-Key-Insight"><span class="nav-number">3.2.</span> <span class="nav-text">2.2 The Key Insight</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-How-It-Differs-From-Prior-Work"><span class="nav-number">3.3.</span> <span class="nav-text">2.3 How It Differs From Prior Work</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Method-Details"><span class="nav-number">4.</span> <span class="nav-text">3. Method Details</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-BitLinear-The-Core-Building-Block"><span class="nav-number">4.1.</span> <span class="nav-text">3.1 BitLinear: The Core Building Block</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-Architecture-Design-Decisions"><span class="nav-number">4.2.</span> <span class="nav-text">3.2 Architecture Design Decisions</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-Group-Quantization-for-Model-Parallelism"><span class="nav-number">4.3.</span> <span class="nav-text">3.3 Group Quantization for Model Parallelism</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-Training-Procedure"><span class="nav-number">4.4.</span> <span class="nav-text">3.4 Training Procedure</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-Computational-Efficiency-Analysis"><span class="nav-number">4.5.</span> <span class="nav-text">3.5 Computational Efficiency Analysis</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Experiment-Setup"><span class="nav-number">5.</span> <span class="nav-text">4. Experiment Setup</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-Training-Configuration"><span class="nav-number">5.1.</span> <span class="nav-text">4.1 Training Configuration</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-Baselines"><span class="nav-number">5.2.</span> <span class="nav-text">4.2 Baselines</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-Evaluation"><span class="nav-number">5.3.</span> <span class="nav-text">4.3 Evaluation</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Results-Analysis"><span class="nav-number">6.</span> <span class="nav-text">5. Results &amp; Analysis</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-Scaling-Law-Results"><span class="nav-number">6.1.</span> <span class="nav-text">5.1 Scaling Law Results</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Inference-Optimal-Scaling-Law"><span class="nav-number">6.2.</span> <span class="nav-text">5.2 Inference-Optimal Scaling Law</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-Downstream-Task-Performance"><span class="nav-number">6.3.</span> <span class="nav-text">5.3 Downstream Task Performance</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-Training-Stability"><span class="nav-number">6.4.</span> <span class="nav-text">5.4 Training Stability</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-5-Ablation-Results"><span class="nav-number">6.5.</span> <span class="nav-text">5.5 Ablation Results</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Limitations-Boundary-Conditions"><span class="nav-number">7.</span> <span class="nav-text">6. Limitations &amp; Boundary Conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Limitations-Acknowledged-by-the-Authors"><span class="nav-number">7.1.</span> <span class="nav-text">6.1 Limitations Acknowledged by the Authors</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Limitations-the-Authors-Don-t-Fully-Address"><span class="nav-number">7.2.</span> <span class="nav-text">6.2 Limitations the Authors Don&#39;t Fully Address</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-Boundary-Conditions-When-Would-This-Approach-Fail"><span class="nav-number">7.3.</span> <span class="nav-text">6.3 Boundary Conditions: When Would This Approach Fail?</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Reproducibility-Practical-Notes"><span class="nav-number">8.</span> <span class="nav-text">7. Reproducibility &amp; Practical Notes</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-Code-Availability"><span class="nav-number">8.1.</span> <span class="nav-text">7.1 Code Availability</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-Reproducibility-Assessment"><span class="nav-number">8.2.</span> <span class="nav-text">7.2 Reproducibility Assessment</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-Compute-Requirements"><span class="nav-number">8.3.</span> <span class="nav-text">7.3 Compute Requirements</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-Practical-Tips-for-Practitioners"><span class="nav-number">8.4.</span> <span class="nav-text">7.4 Practical Tips for Practitioners</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Broader-Context-and-Impact"><span class="nav-number">9.</span> <span class="nav-text">8. Broader Context and Impact</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-Relationship-to-Subsequent-Work"><span class="nav-number">9.1.</span> <span class="nav-text">8.1 Relationship to Subsequent Work</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-Implications-for-the-Field"><span class="nav-number">9.2.</span> <span class="nav-text">8.2 Implications for the Field</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#References"><span class="nav-number">10.</span> <span class="nav-text">References</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

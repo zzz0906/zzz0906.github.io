@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="AWQ 利用激活感知缩放保护最关键的权重，在低比特量化下仍保持较强精度，并适合真实设备部署。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AWQ：感知激活值的大模型权重量化压缩与加速 — 深度技术评审">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/03/2026-04-03-AWQ-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="AWQ 利用激活感知缩放保护最关键的权重，在低比特量化下仍保持较强精度，并适合真实设备部署。">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-03T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-09T04:10:31.315Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Efficient Inference">
+<meta property="article:tag" content="Quantization">
+<meta property="article:tag" content="AWQ">
+<meta property="article:tag" content="LLM Compression">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/03/2026-04-03-AWQ-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>AWQ：感知激活值的大模型权重量化压缩与加速 — 深度技术评审 | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/03/2026-04-03-AWQ-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AWQ：感知激活值的大模型权重量化压缩与加速 — 深度技术评审
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-03 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-03T00:00:00+00:00">2026-04-03</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-09 04:10:31" itemprop="dateModified" datetime="2026-04-09T04:10:31+00:00">2026-04-09</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">AWQ 利用激活感知缩放保护最关键的权重，在低比特量化下仍保持较强精度，并适合真实设备部署。</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-背景故事：为什么大模型太大了？">1. 背景故事：为什么大模型太大了？</h2>
+<p>想象一下，你希望在自己的手机上运行 ChatGPT 级别的 AI——完全离线，不需要网络，不需要云服务器，数据完全保留在本地。这个想法很美好，但现实是：现代大型语言模型（LLM，Large Language Model）体积<strong>巨大无比</strong>。</p>
+<p>以 GPT-3 为例：它有 <strong>1750 亿个参数</strong>。每个参数通常用 16 位浮点数（FP16）存储，每个参数占 2 个字节。算下来，GPT-3 的存储需求是：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mn>1750</mn><mo>×</mo><msup><mn>10</mn><mn>8</mn></msup><mo>×</mo><mn>2</mn><mtext> 字节</mtext><mo>=</mo><mn>350</mn><mtext> GB</mtext></mrow><annotation encoding="application/x-tex">1750 \times 10^8 \times 2 \text{ 字节} = 350 \text{ GB}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1750</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.9474em;vertical-align:-0.0833em;"></span><span class="mord">1</span><span class="mord"><span class="mord">0</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">8</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">2</span><span class="mord text"><span class="mord"> </span><span class="mord cjk_fallback">字节</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">350</span><span class="mord text"><span class="mord"> GB</span></span></span></span></span></span></p>
+<p>而最顶级的消费级显卡（如 NVIDIA RTX 4090）只有 24 GB 显存，你的手机可能只有 8-12 GB 的总内存。显然，这个问题必须解决。</p>
+<p>即使是&quot;小一点&quot;的模型，比如 LLaMA-2-7B（70 亿参数），也需要约 <strong>14 GB</strong> 的 FP16 存储空间，勉强能放进高端 GPU，但对手机来说完全不可能。</p>
+<a id="more"></a>
+<p><strong>模型量化（Model Quantization）</strong> 是目前最有希望的解决方案。核心思路是：把每个权重参数从 16 位数字压缩成 4 位整数——这样就能实现 <strong>4 倍压缩</strong>。LLaMA-2-7B 就从 14 GB 缩小到约 3.5 GB，一下子变得手机可用了。</p>
+<p>但有个大问题：简单粗暴地把 16 位权重转换成 4 位整数（学名叫&quot;就近取整&quot;，RTN）会让模型精度大幅下降，生成的文字变得语无伦次。本文要介绍的 <strong>AWQ（Activation-aware Weight Quantization，感知激活值的权重量化）</strong> 就是来优雅地解决这个问题的——它荣获了 <strong>MLSys 2024 最佳论文奖</strong>。</p>
+<hr>
+<h2 id="2-预备知识：从零开始理解">2. 预备知识：从零开始理解</h2>
+<p>这一节会从头解释所有必要概念。如果你完全没有机器学习基础，请从这里开始认真读。</p>
+<h3 id="2-1-神经网络的权重与矩阵乘法">2.1 神经网络的权重与矩阵乘法</h3>
+<p>大型语言模型，从数学角度看，本质上是一长串<strong>矩阵乘法</strong>的组合。最核心的运算是：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="bold">y</mi><mo>=</mo><mi mathvariant="bold">W</mi><mi mathvariant="bold">x</mi></mrow><annotation encoding="application/x-tex">\mathbf{y} = \mathbf{W}\mathbf{x}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6389em;vertical-align:-0.1944em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6861em;"></span><span class="mord mathbf">Wx</span></span></span></span></span></p>
+<p>这里：</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">x</mi></mrow><annotation encoding="application/x-tex">\mathbf{x}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4444em;"></span><span class="mord mathbf">x</span></span></span></span> 是<strong>输入向量</strong>——一组代表当前处理内容的数字。比如 LLaMA-2-7B 里，每个&quot;词&quot;被表示成 4096 个数字。</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">W</mi></mrow><annotation encoding="application/x-tex">\mathbf{W}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6861em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">W</span></span></span></span> 是<strong>权重矩阵</strong>——一个巨大的数字网格，是模型在训练时&quot;学到&quot;的知识。一个典型的权重矩阵可能是 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4096</mn><mo>×</mo><mn>4096</mn></mrow><annotation encoding="application/x-tex">4096 \times 4096</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">4096</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4096</span></span></span></span>，包含约 1600 万个数字。</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">y</mi></mrow><annotation encoding="application/x-tex">\mathbf{y}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6389em;vertical-align:-0.1944em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">y</span></span></span></span> 是<strong>输出向量</strong>——计算的结果</li>
+</ul>
+<p>模型由成千上万个这样的权重矩阵组成。所有矩阵里的数字加在一起，就是模型的&quot;参数量&quot;——LLaMA-2-7B 有 70 亿个这样的数字。</p>
+<p><strong>理解量化的关键</strong>：我们对模型做的任何压缩，本质上都是用一个压缩版本 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi mathvariant="bold">W</mi><mo>^</mo></mover></mrow><annotation encoding="application/x-tex">\hat{\mathbf{W}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9495em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9495em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">W</span></span><span style="top:-3.2551em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.25em;"><span class="mord">^</span></span></span></span></span></span></span></span></span></span>（用 4 位整数存储）替换原来的 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">W</mi></mrow><annotation encoding="application/x-tex">\mathbf{W}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6861em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">W</span></span></span></span>（用 16 位浮点数存储），同时让 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi mathvariant="bold">W</mi><mo>^</mo></mover><mi mathvariant="bold">x</mi></mrow><annotation encoding="application/x-tex">\hat{\mathbf{W}}\mathbf{x}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9495em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9495em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">W</span></span><span style="top:-3.2551em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.25em;"><span class="mord">^</span></span></span></span></span></span></span><span class="mord mathbf">x</span></span></span></span> 尽量接近 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">W</mi><mi mathvariant="bold">x</mi></mrow><annotation encoding="application/x-tex">\mathbf{W}\mathbf{x}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6861em;"></span><span class="mord mathbf">Wx</span></span></span></span>。</p>
+<h3 id="2-2-浮点数：FP32、FP16-是什么？">2.2 浮点数：FP32、FP16 是什么？</h3>
+<p>计算机用<strong>浮点数</strong>来近似表示实数，类似科学计数法：<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>3.14</mn><mo>×</mo><msup><mn>10</mn><mn>2</mn></msup><mo>=</mo><mn>314</mn></mrow><annotation encoding="application/x-tex">3.14 \times 10^2 = 314</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">3.14</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord">1</span><span class="mord"><span class="mord">0</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">314</span></span></span></span>。浮点数包含三部分：</p>
+<ul>
+<li><strong>符号位</strong>（正数或负数）</li>
+<li><strong>尾数</strong>（有效数字，如 3.14）</li>
+<li><strong>指数</strong>（2 的幂次）</li>
+</ul>
+<p>不同精度格式分配不同的比特数：</p>
+<table>
+<thead>
+<tr>
+<th>格式</th>
+<th>总位数</th>
+<th>可表示的不同值</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FP32</td>
+<td>32 位</td>
+<td>~43 亿</td>
+<td>训练时常用</td>
+</tr>
+<tr>
+<td>FP16</td>
+<td>16 位</td>
+<td>~65536</td>
+<td>推理、部署</td>
+</tr>
+<tr>
+<td>INT8</td>
+<td>8 位</td>
+<td>256</td>
+<td>中等量化</td>
+</tr>
+<tr>
+<td>INT4</td>
+<td>4 位</td>
+<td><strong>16</strong></td>
+<td>激进量化</td>
+</tr>
+<tr>
+<td>INT3</td>
+<td>3 位</td>
+<td><strong>8</strong></td>
+<td>极端量化</td>
+</tr>
+</tbody>
+</table>
+<p>注意 INT4 只能表示 <strong>16 个不同的值</strong>！把一个拥有 65536 种可能值的 FP16 权重压缩进只有 16 种值的 INT4，必然损失信息。量化研究的核心就是<strong>最小化这种损失</strong>。</p>
+<h3 id="2-3-什么是量化（Quantization）？">2.3 什么是量化（Quantization）？</h3>
+<p>量化就是把连续的（或高精度的）数值映射到一个低精度的离散集合中。</p>
+<p>标准的均匀量化公式是：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo><mo>=</mo><mi mathvariant="normal">Δ</mi><mo>⋅</mo><mtext>Round</mtext><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mfrac><mi>w</mi><mi mathvariant="normal">Δ</mi></mfrac><mo fence="true">)</mo></mrow><mo separator="true">,</mo><mspace width="1em"/><mi mathvariant="normal">Δ</mi><mo>=</mo><mfrac><mrow><mi>max</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>w</mi><mi mathvariant="normal">∣</mi><mo stretchy="false">)</mo></mrow><msup><mn>2</mn><mrow><mi>N</mi><mo>−</mo><mn>1</mn></mrow></msup></mfrac></mrow><annotation encoding="application/x-tex">Q(w) = \Delta \cdot \text{Round}\!\left(\frac{w}{\Delta}\right), \quad \Delta = \frac{\max(|w|)}{2^{N-1}}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.836em;vertical-align:-0.686em;"></span><span class="mord text"><span class="mord">Round</span></span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size2">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.1076em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">Δ</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size2">)</span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">Δ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.113em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7673em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop">max</span><span class="mopen">(</span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord">∣</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>各符号的含义：</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi></mrow><annotation encoding="application/x-tex">w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span>：原始权重值（FP16）</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span></span></span></span>：量化比特数（如 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">N=4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> 表示 INT4）</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Δ</mi></mrow><annotation encoding="application/x-tex">\Delta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span></span></span></span>：<strong>量化步长</strong>（相邻量化格点之间的间距）</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>Round</mtext><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\text{Round}(\cdot)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">Round</span></span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span></span></span></span>：四舍五入到最近整数</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">Q(w)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mclose">)</span></span></span></span>：量化后的近似值</li>
+</ul>
+<p>让我们用一个具体例子来感受。假设 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">N=4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span>（INT4），有 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mn>2</mn><mn>4</mn></msup><mo>=</mo><mn>16</mn></mrow><annotation encoding="application/x-tex">2^4 = 16</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">4</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">16</span></span></span></span> 个可用值（<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>−</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">-8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">−</span><span class="mord">8</span></span></span></span> 到 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>7</mn></mrow><annotation encoding="application/x-tex">7</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">7</span></span></span></span>）。如果权重组的最大绝对值是 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>max</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>w</mi><mi mathvariant="normal">∣</mi><mo stretchy="false">)</mo><mo>=</mo><mn>2.0</mn></mrow><annotation encoding="application/x-tex">\max(|w|) = 2.0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">max</span><span class="mopen">(</span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord">∣</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2.0</span></span></span></span>，那么：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">Δ</mi><mo>=</mo><mfrac><mn>2.0</mn><msup><mn>2</mn><mn>3</mn></msup></mfrac><mo>=</mo><mfrac><mn>2.0</mn><mn>8</mn></mfrac><mo>=</mo><mn>0.25</mn></mrow><annotation encoding="application/x-tex">\Delta = \frac{2.0}{2^3} = \frac{2.0}{8} = 0.25
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7401em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">3</span></span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">2.0</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">8</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">2.0</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.25</span></span></span></span></span></p>
+<p>对权重 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mo>=</mo><mn>1.7</mn></mrow><annotation encoding="application/x-tex">w = 1.7</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1.7</span></span></span></span>，量化结果是：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mn>1.7</mn><mo stretchy="false">)</mo><mo>=</mo><mn>0.25</mn><mo>×</mo><mtext>Round</mtext><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mfrac><mn>1.7</mn><mn>0.25</mn></mfrac><mo fence="true">)</mo></mrow><mo>=</mo><mn>0.25</mn><mo>×</mo><mtext>Round</mtext><mo stretchy="false">(</mo><mn>6.8</mn><mo stretchy="false">)</mo><mo>=</mo><mn>0.25</mn><mo>×</mo><mn>7</mn><mo>=</mo><mn>1.75</mn></mrow><annotation encoding="application/x-tex">Q(1.7) = 0.25 \times \text{Round}\!\left(\frac{1.7}{0.25}\right) = 0.25 \times \text{Round}(6.8) = 0.25 \times 7 = 1.75
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord">1.7</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">0.25</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="mord text"><span class="mord">Round</span></span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">0.25</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1.7</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">)</span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">0.25</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">Round</span></span><span class="mopen">(</span><span class="mord">6.8</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">0.25</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">7</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1.75</span></span></span></span></span></p>
+<p><strong>量化误差</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mi mathvariant="normal">∣</mi><mn>1.75</mn><mo>−</mo><mn>1.70</mn><mi mathvariant="normal">∣</mi><mo>=</mo><mn>0.05</mn></mrow><annotation encoding="application/x-tex">= |1.75 - 1.70| = 0.05</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∣1.75</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1.70∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.05</span></span></span></span>。</p>
+<p>看起来很小？但这种误差在数十亿个权重中不断叠加，就会导致模型输出质量的显著下降。</p>
+<h3 id="2-4-量化误差的本质">2.4 量化误差的本质</h3>
+<p>通过困惑度（Perplexity，下文详解）来看量化的破坏力：</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>比特数</th>
+<th>OPT-6.7B 困惑度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FP16（全精度）</td>
+<td>16</td>
+<td>10.86</td>
+</tr>
+<tr>
+<td>RTN（就近取整）</td>
+<td>INT3-g128</td>
+<td>23.54</td>
+</tr>
+<tr>
+<td>AWQ</td>
+<td>INT3-g128</td>
+<td><strong>11.39</strong></td>
+</tr>
+</tbody>
+</table>
+<p>RTN 用 3 比特量化后，困惑度几乎翻倍（从 10.86 到 23.54），意味着模型生成的文字大幅退化。而 AWQ 把困惑度压到 11.39，几乎恢复了 FP16 的水平。</p>
+<p>关键在于：<strong>量化误差对模型的影响并不均匀</strong>。某些权重被量化后会造成灾难性的精度下降，而其他权重则可以被激进量化而基本不影响结果。AWQ 的核心就是找出那些&quot;关键权重&quot;并特别保护它们。</p>
+<h3 id="2-5-训练后量化-vs-量化感知训练">2.5 训练后量化 vs 量化感知训练</h3>
+<p>量化方法主要分两大类：</p>
+<p><strong>量化感知训练（QAT，Quantization-Aware Training）</strong>：在训练过程中就模拟低精度计算，让模型学会适应量化误差。效果好，但需要完整的训练流程——对 LLaMA-2（在 2 万亿 token 上训练）来说，意味着数周在数千块 GPU 上运行，完全不现实。</p>
+<p><strong>训练后量化（PTQ，Post-Training Quantization）</strong>：对一个<strong>已经训练好</strong>的模型，用一小批校准数据（通常 128-512 条文本）进行压缩。不需要重新训练。计算成本很低，但技术难度在于如何在不重训的情况下保持精度。</p>
+<p>AWQ 是<strong>训练后量化</strong>方法。它只需要一小批校准数据来测量统计量（每个通道的激活值平均幅度），不需要梯度计算，不需要反向传播。这使得 AWQ 极其快速且泛化能力强。</p>
+<h3 id="2-6-仅权重量化-vs-权重-激活量化">2.6 仅权重量化 vs 权重+激活量化</h3>
+<p>另一个重要区别：</p>
+<p><strong>W8A8（权重 8 位，激活 8 位）</strong>：权重和激活值都量化为 INT8，计算也在 INT8 中进行。硬件可以利用快速的 INT8 矩阵乘法单元。代表方法：SmoothQuant。</p>
+<p><strong>W4A16（权重 4 位，激活 16 位）</strong>：只把权重存储为 INT4，激活值保持 FP16。推理时，在矩阵乘法之前把权重即时反量化（dequantize）回 FP16。</p>
+<p>为什么 W4A16 有意义？看这个分析：</p>
+<ul>
+<li><strong>权重内存</strong>：70 亿参数 × 4 位 = 3.5 GB（对比 FP16 的 14 GB）</li>
+<li><strong>激活值内存</strong>：远小于权重（正比于批大小 × 序列长度 × 隐藏维度）</li>
+</ul>
+<p>对批大小为 1 的端侧推理（单个用户），<strong>从内存加载权重是主要瓶颈</strong>（而不是计算本身）。这叫&quot;内存带宽受限&quot;（Memory-Bandwidth-Bound）。把权重压缩到 4 位，就减少了 4 倍的内存访问量，从而带来接近 4 倍的速度提升。</p>
+<p>AWQ 专注于 <strong>W4A16 量化</strong>——这正是端侧 LLM 部署的最佳选择。</p>
+<h3 id="2-7-困惑度：衡量语言模型质量的标准">2.7 困惑度：衡量语言模型质量的标准</h3>
+<p><strong>困惑度（Perplexity）</strong> 是评估语言模型质量最常用的指标。直观上，它衡量模型看到真实文字时的&quot;惊讶程度&quot;。</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>Perplexity</mtext><mo>=</mo><mi>exp</mi><mo>⁡</mo><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mo>−</mo><mfrac><mn>1</mn><mi>N</mi></mfrac><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>N</mi></munderover><mi>log</mi><mo>⁡</mo><mi>P</mi><mo stretchy="false">(</mo><msub><mi>w</mi><mi>i</mi></msub><mo>∣</mo><msub><mi>w</mi><mn>1</mn></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>w</mi><mrow><mi>i</mi><mo>−</mo><mn>1</mn></mrow></msub><mo stretchy="false">)</mo><mo fence="true">)</mo></mrow></mrow><annotation encoding="application/x-tex">\text{Perplexity} = \exp\!\left(-\frac{1}{N}\sum_{i=1}^{N}\log P(w_i \mid w_1, \ldots, w_{i-1})\right)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord">Perplexity</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3.106em;vertical-align:-1.2777em;"></span><span class="mop">exp</span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size4">(</span></span><span class="mord">−</span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">N</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8283em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.2777em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">lo<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size4">)</span></span></span></span></span></span></span></p>
+<ul>
+<li><strong>困惑度越低 = 模型越好</strong>（模型更自信，更不惊讶）</li>
+<li>一个&quot;完美&quot;模型（每次都能猜到下一个词）的困惑度 = 1</li>
+<li>在 5 万词汇量里随机猜测的模型，困惑度约 50,000</li>
+<li>优秀 LLM 在 WikiText-2 上的困惑度通常在 5-15 之间</li>
+</ul>
+<p>把困惑度理解为流畅度的反向指标：困惑度 11 的模型读起来比困惑度 23 的顺畅得多。AWQ 实验的目标就是：在激进的 3 位或 4 位量化后，让困惑度尽量接近 FP16 基准（如 OPT-6.7B 的 10.86）。</p>
+<h3 id="2-8-分组量化与逐通道缩放">2.8 分组量化与逐通道缩放</h3>
+<p><strong>分组量化（Group Quantization）</strong> 把权重矩阵的每一行分成若干小组（如每组 128 个权重），每组独立量化，有自己的缩放系数 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Δ</mi></mrow><annotation encoding="application/x-tex">\Delta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span></span></span></span>。记法&quot;INT3-g128&quot;表示 3 位量化、分组大小 128。分组越小，精度越高，但需要存储更多缩放系数。</p>
+<p><strong>逐通道缩放（Per-Channel Scaling）</strong> 是相关概念：对权重矩阵的每个输出通道（每行）用单独的缩放系数，比全局缩放更精细。AWQ 更进一步，对<strong>每个输入通道</strong>用独立的缩放因子 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span>，在量化前把权重缩放，实现激活感知的精细调节。</p>
+<hr>
+<h2 id="3-AWQ-的核心思想：大局观">3. AWQ 的核心思想：大局观</h2>
+<p>AWQ 基于一个简洁优美的观察，并围绕它构建了整个系统：</p>
+<blockquote>
+<p><strong>LLM 中不是所有权重都同等重要。只需要保护其中约 1% 的&quot;关键权重&quot;，就能大幅减少量化误差。更关键的是：识别这些关键权重，不该看权重本身的大小，而该看流经这些权重的激活值的大小。</strong></p>
+</blockquote>
+<p>最直接的保护方法是：把关键权重保留在 FP16，其余量化为 INT4——这就是&quot;混合精度&quot;量化。这确实有效（OPT-6.7B 的 INT3 困惑度从 23.54 降至 13.00），但有致命缺点：<strong>硬件讨厌混合精度</strong>。真实的 GPU 和 NPU 都针对统一数据类型优化。一个矩阵中 99% 是 INT4、1% 是 FP16，不仅麻烦而且无法获得实际速度提升。</p>
+<p>AWQ 的解法：不把关键权重保留在 FP16，而是在量化前<strong>对它们进行缩放</strong>，再对对应的激活值做相反的缩放。这是一种数学等价变换，它：</p>
+<ol>
+<li>减小关键权重的量化误差</li>
+<li>所有权重保持 INT4（没有混合精度）</li>
+<li>推理时零额外计算开销</li>
+</ol>
+<p>缩放因子通过在小型校准集上对激活统计量进行简单的格点搜索来确定——不需要反向传播。</p>
+<hr>
+<h2 id="4-关键洞察：不是所有权重都同样重要">4. 关键洞察：不是所有权重都同样重要</h2>
+<h3 id="实验验证">实验验证</h3>
+<p>作者对 OPT 模型做了以下实验：用 INT3-g128 量化，但保留一小部分权重通道在 FP16，看看有什么效果。</p>
+<table>
+<thead>
+<tr>
+<th>选择方式</th>
+<th>保留 FP16 比例</th>
+<th>OPT-6.7B 困惑度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全部量化（RTN）</td>
+<td>0%</td>
+<td>23.54</td>
+</tr>
+<tr>
+<td>按<strong>权重幅度</strong>选</td>
+<td>1%</td>
+<td>22.37</td>
+</tr>
+<tr>
+<td>按<strong>激活幅度</strong>选</td>
+<td>1%</td>
+<td><strong>11.39</strong></td>
+</tr>
+<tr>
+<td>随机选</td>
+<td>1%</td>
+<td>23.54</td>
+</tr>
+</tbody>
+</table>
+<p>三个惊人发现：</p>
+<ol>
+<li>按<strong>激活幅度</strong>选出 1% 的通道保留 FP16：困惑度从 23.54 降至 11.39，几乎恢复 FP16 水平（10.86）</li>
+<li>按<strong>权重幅度</strong>选（直觉上的选法）：几乎没什么帮助（22.37）</li>
+<li>随机选：完全无效（23.54）</li>
+</ol>
+<p><strong>为什么激活幅度能识别重要权重？</strong></p>
+<p>权重矩阵 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">W</mi></mrow><annotation encoding="application/x-tex">\mathbf{W}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6861em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">W</span></span></span></span> 中，权重 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub></mrow><annotation encoding="application/x-tex">w_{ij}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> 连接输入通道 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>j</mi></mrow><annotation encoding="application/x-tex">j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.854em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05724em;">j</span></span></span></span> 和输出通道 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi></mrow><annotation encoding="application/x-tex">i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span></span></span></span>。这个权重的&quot;重要性&quot;不只取决于 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub></mrow><annotation encoding="application/x-tex">w_{ij}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> 本身，还取决于输入 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">x_j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> 通常有多大。如果 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">x_j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> 通常很大，那么 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub></mrow><annotation encoding="application/x-tex">w_{ij}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> 哪怕有一点量化误差，也会被放大：输出误差 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mi mathvariant="normal">Δ</mi><msub><mi>w</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><mo>×</mo><msub><mi>x</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">= \Delta w_{ij} \times x_j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord">Δ</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span>，随 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">x_j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> 的增大而增大。</p>
+<p>因此，我们应该通过<strong>输入通道 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>j</mi></mrow><annotation encoding="application/x-tex">j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.854em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05724em;">j</span></span></span></span> 的激活值幅度</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">∣</mi><msub><mi>x</mi><mi>j</mi></msub><mi mathvariant="normal">∣</mi></mrow><annotation encoding="application/x-tex">|x_j|</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord">∣</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mord">∣</span></span></span></span> 来判断该通道权重的重要性。对应大激活值的权重通道更&quot;关键&quot;——它们的量化误差对输出的影响更大。</p>
+<p>这就是 AWQ 中&quot;激活感知&quot;的含义：用输入激活统计量来指导权重量化决策。</p>
+<hr>
+<h2 id="5-AWQ-方法详解">5. AWQ 方法详解</h2>
+<h3 id="5-1-量化误差的数学分析">5.1 量化误差的数学分析</h3>
+<p>AWQ 从严格的数学分析出发。对于仅权重量化的场景，线性层计算：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="bold">y</mi><mo>=</mo><mi mathvariant="bold">W</mi><mi mathvariant="bold">x</mi></mrow><annotation encoding="application/x-tex">\mathbf{y} = \mathbf{W}\mathbf{x}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6389em;vertical-align:-0.1944em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6861em;"></span><span class="mord mathbf">Wx</span></span></span></span></span></p>
+<p>量化后，权重变为 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mi mathvariant="bold">w</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">Q(\mathbf{w})</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathbf" style="margin-right:0.01597em;">w</span><span class="mclose">)</span></span></span></span>，输出变为 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mi mathvariant="bold">w</mi><mo stretchy="false">)</mo><mo>⋅</mo><mi mathvariant="bold">x</mi></mrow><annotation encoding="application/x-tex">Q(\mathbf{w}) \cdot \mathbf{x}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathbf" style="margin-right:0.01597em;">w</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.4444em;"></span><span class="mord mathbf">x</span></span></span></span>。</p>
+<p>量化函数：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo><mo>=</mo><mi mathvariant="normal">Δ</mi><mo>⋅</mo><mtext>Round</mtext><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mfrac><mi>w</mi><mi mathvariant="normal">Δ</mi></mfrac><mo fence="true">)</mo></mrow><mo separator="true">,</mo><mspace width="1em"/><mi mathvariant="normal">Δ</mi><mo>=</mo><mfrac><mrow><mi>max</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>w</mi><mi mathvariant="normal">∣</mi><mo stretchy="false">)</mo></mrow><msup><mn>2</mn><mrow><mi>N</mi><mo>−</mo><mn>1</mn></mrow></msup></mfrac></mrow><annotation encoding="application/x-tex">Q(w) = \Delta \cdot \text{Round}\!\left(\frac{w}{\Delta}\right), \quad \Delta = \frac{\max(|w|)}{2^{N-1}}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.836em;vertical-align:-0.686em;"></span><span class="mord text"><span class="mord">Round</span></span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size2">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.1076em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">Δ</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size2">)</span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">Δ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.113em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7673em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop">max</span><span class="mopen">(</span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord">∣</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>单个元素的量化<strong>误差</strong>：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mtext>Err</mtext><mo stretchy="false">(</mo><mi>Q</mi><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo><mo>⋅</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mi mathvariant="normal">Δ</mi><mo>⋅</mo><mtext>RoundErr</mtext><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mfrac><mi>w</mi><mi mathvariant="normal">Δ</mi></mfrac><mo fence="true">)</mo></mrow><mo>⋅</mo><mi>x</mi></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(公式 3)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\text{Err}(Q(w) \cdot x) = \Delta \cdot \text{RoundErr}\!\left(\frac{w}{\Delta}\right) \cdot x \tag{公式 3}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">Err</span></span><span class="mopen">(</span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.836em;vertical-align:-0.686em;"></span><span class="mord text"><span class="mord">RoundErr</span></span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size2">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.1076em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">Δ</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size2">)</span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span><span class="tag"><span class="strut" style="height:1.836em;vertical-align:-0.686em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord cjk_fallback">公式</span><span class="mord"> 3</span></span><span class="mord">)</span></span></span></span></span></span></p>
+<p>其中 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>RoundErr</mtext><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo><mo>=</mo><mtext>Round</mtext><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo><mo>−</mo><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\text{RoundErr}(\cdot) = \text{Round}(\cdot) - (\cdot)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">RoundErr</span></span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">Round</span></span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span></span></span></span> 是取整误差，大致均匀分布在 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">[</mo><mo>−</mo><mn>0.5</mn><mo separator="true">,</mo><mn>0.5</mn><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">[-0.5, 0.5]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord">−</span><span class="mord">0.5</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">0.5</span><span class="mclose">]</span></span></span></span>，期望绝对值约为 0.25。</p>
+<p>注意两点：</p>
+<ol>
+<li>误差正比于 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span>——激活值越大，量化误差越被放大</li>
+<li>误差正比于 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Δ</mi></mrow><annotation encoding="application/x-tex">\Delta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span></span></span></span>——步长越大，误差越大</li>
+</ol>
+<p>这直接解释了为什么大激活值对应的权重通道更关键！</p>
+<h3 id="5-2-激活感知缩放技巧">5.2 激活感知缩放技巧</h3>
+<p>现在假设我们在量化前把权重 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi></mrow><annotation encoding="application/x-tex">w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span> 乘以一个缩放因子 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>&gt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">s &gt; 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5782em;vertical-align:-0.0391em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">&gt;</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>，同时把激活值 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span> 除以 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span> 来补偿：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mi>w</mi><mo>⋅</mo><mi>s</mi><mo stretchy="false">)</mo><mo>⋅</mo><mfrac><mi>x</mi><mi>s</mi></mfrac></mrow><annotation encoding="application/x-tex">Q(w \cdot s) \cdot \frac{x}{s}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.7936em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.1076em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">s</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">x</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>这个变换在没有量化误差时数学上等价于 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo><mo>⋅</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">Q(w) \cdot x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span>，但在量化时行为不同。新的步长变为：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msup><mi mathvariant="normal">Δ</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>=</mo><mfrac><mrow><mi>max</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>w</mi><mo>⋅</mo><mi>s</mi><mi mathvariant="normal">∣</mi><mo stretchy="false">)</mo></mrow><msup><mn>2</mn><mrow><mi>N</mi><mo>−</mo><mn>1</mn></mrow></msup></mfrac><mo>≈</mo><mi>s</mi><mo>⋅</mo><mi mathvariant="normal">Δ</mi></mrow><annotation encoding="application/x-tex">\Delta&#x27; = \frac{\max(|w \cdot s|)}{2^{N-1}} \approx s \cdot \Delta
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8019em;"></span><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8019em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.113em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7673em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop">max</span><span class="mopen">(</span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal">s</span><span class="mord">∣</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.4445em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span></span></span></span></span></p>
+<p>（近似成立，前提是乘以 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span> 不改变哪个元素是最大值）</p>
+<p>含缩放的量化误差为：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mtext>Err</mtext><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mi>Q</mi><mo stretchy="false">(</mo><mi>w</mi><mo>⋅</mo><mi>s</mi><mo stretchy="false">)</mo><mo>⋅</mo><mfrac><mi>x</mi><mi>s</mi></mfrac><mo fence="true">)</mo></mrow><mo>=</mo><msup><mi mathvariant="normal">Δ</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>⋅</mo><mtext>RoundErr</mtext><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mfrac><mrow><mi>w</mi><mi>s</mi></mrow><msup><mi mathvariant="normal">Δ</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup></mfrac><mo fence="true">)</mo></mrow><mo>⋅</mo><mi>x</mi><mo>⋅</mo><mfrac><mn>1</mn><mi>s</mi></mfrac></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(公式 3b)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\text{Err}\!\left(Q(w \cdot s) \cdot \frac{x}{s}\right) = \Delta&#x27; \cdot \text{RoundErr}\!\left(\frac{ws}{\Delta&#x27;}\right) \cdot x \cdot \frac{1}{s} \tag{公式 3b}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.836em;vertical-align:-0.686em;"></span><span class="mord text"><span class="mord">Err</span></span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size2">(</span></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.1076em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">s</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">x</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size2">)</span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8019em;"></span><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8019em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.836em;vertical-align:-0.686em;"></span><span class="mord text"><span class="mord">RoundErr</span></span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size2">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.1076em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6779em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord mathnormal">s</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size2">)</span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.4445em;"></span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">s</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span><span class="tag"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord cjk_fallback">公式</span><span class="mord"> 3b</span></span><span class="mord">)</span></span></span></span></span></span></p>
+<p>与公式 3 相比，新误差与旧误差的比值是：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mfrac><msup><mi mathvariant="normal">Δ</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mi mathvariant="normal">Δ</mi></mfrac><mo>⋅</mo><mfrac><mn>1</mn><mi>s</mi></mfrac><mo>≈</mo><mfrac><mrow><mi>s</mi><mi mathvariant="normal">Δ</mi></mrow><mi mathvariant="normal">Δ</mi></mfrac><mo>⋅</mo><mfrac><mn>1</mn><mi>s</mi></mfrac><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">\frac{\Delta&#x27;}{\Delta} \cdot \frac{1}{s} \approx \frac{s\Delta}{\Delta} \cdot \frac{1}{s} = 1
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:2.1149em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.4289em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">Δ</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7519em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">s</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.0463em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3603em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">Δ</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">s</span><span class="mord">Δ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">s</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span></span></p>
+<p>乍一看两者相同？但这里忽略了一个关键：<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>RoundErr</mtext><mo stretchy="false">(</mo><mi>w</mi><mi>s</mi><mi mathvariant="normal">/</mi><msup><mi mathvariant="normal">Δ</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\text{RoundErr}(ws/\Delta&#x27;)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0019em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">RoundErr</span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord mathnormal">s</span><span class="mord">/</span><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7519em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span> 和 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>RoundErr</mtext><mo stretchy="false">(</mo><mi>w</mi><mi mathvariant="normal">/</mi><mi mathvariant="normal">Δ</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\text{RoundErr}(w/\Delta)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">RoundErr</span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord">/Δ</span><span class="mclose">)</span></span></span></span> 的值是不同的。放大后的权重 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">ws</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord mathnormal">s</span></span></span></span> 在新的量化格点上的位置不同，可能会更靠近格点，从而减小取整误差。</p>
+<p>实验验证（表 2，OPT-6.7B，INT3-g128）：</p>
+<table>
+<thead>
+<tr>
+<th>缩放因子 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span></th>
+<th>WikiText-2 困惑度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">s=1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>（无缩放，RTN）</td>
+<td>23.54</td>
+</tr>
+<tr>
+<td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mn>1.25</mn></mrow><annotation encoding="application/x-tex">s=1.25</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1.25</span></span></span></span></td>
+<td>12.87</td>
+</tr>
+<tr>
+<td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mn>1.5</mn></mrow><annotation encoding="application/x-tex">s=1.5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1.5</span></span></span></span></td>
+<td>12.48</td>
+</tr>
+<tr>
+<td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">s=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span></td>
+<td><strong>11.92</strong></td>
+</tr>
+<tr>
+<td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">s=4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span></td>
+<td>12.36（变差了）</td>
+</tr>
+</tbody>
+</table>
+<p><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">s=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span> 时困惑度从 23.54 降到 11.92，接近混合精度 FP16 的 11.39！</p>
+<p><strong>为什么 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">s=4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> 反而变差了？</strong></p>
+<p>当 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span> 太大时，<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Δ</mi></mrow><annotation encoding="application/x-tex">\Delta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span></span></span></span> 增大，量化变得更粗糙，非关键通道也受到损害。统计显示：<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">s=4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> 时，21.2% 的权重改变了量化桶（取整到不同的整数），这增大了非关键通道的误差，总体变差。最优的 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">s=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span> 在保护关键通道和不损害非关键通道之间取得了平衡。</p>
+<h3 id="5-3-自动搜索最优缩放因子">5.3 自动搜索最优缩放因子</h3>
+<p>与其为每个通道手动调整缩放因子，AWQ 定义了一个自动搜索流程。</p>
+<p><strong>优化目标</strong>：找到逐通道缩放向量 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">s</mi></mrow><annotation encoding="application/x-tex">\mathbf{s}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4444em;"></span><span class="mord mathbf">s</span></span></span></span>，最小化量化后的输出重建误差：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msup><mi mathvariant="bold">s</mi><mo>∗</mo></msup><mo>=</mo><mi>arg</mi><mo>⁡</mo><munder><mrow><mi>min</mi><mo>⁡</mo></mrow><mi mathvariant="bold">s</mi></munder><mi mathvariant="script">L</mi><mo stretchy="false">(</mo><mi mathvariant="bold">s</mi><mo stretchy="false">)</mo><mo separator="true">,</mo><mspace width="1em"/><mi mathvariant="script">L</mi><mo stretchy="false">(</mo><mi mathvariant="bold">s</mi><mo stretchy="false">)</mo><mo>=</mo><mi mathvariant="normal">∥</mi><mi>Q</mi><mo stretchy="false">(</mo><mi mathvariant="bold">W</mi><mo>⋅</mo><mtext>diag</mtext><mo stretchy="false">(</mo><mi mathvariant="bold">s</mi><mo stretchy="false">)</mo><mo stretchy="false">)</mo><mo stretchy="false">(</mo><mtext>diag</mtext><mo stretchy="false">(</mo><mi mathvariant="bold">s</mi><msup><mo stretchy="false">)</mo><mrow><mo>−</mo><mn>1</mn></mrow></msup><mo>⋅</mo><mi mathvariant="bold">X</mi><mo stretchy="false">)</mo><mo>−</mo><mi mathvariant="bold">W</mi><mi mathvariant="bold">X</mi><mi mathvariant="normal">∥</mi></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(公式 4)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\mathbf{s}^* = \arg\min_{\mathbf{s}} \mathcal{L}(\mathbf{s}), \quad \mathcal{L}(\mathbf{s}) = \|Q(\mathbf{W} \cdot \text{diag}(\mathbf{s}))(\text{diag}(\mathbf{s})^{-1} \cdot \mathbf{X}) - \mathbf{W}\mathbf{X}\| \tag{公式 4}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7387em;"></span><span class="mord"><span class="mord mathbf">s</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7387em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">∗</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.45em;vertical-align:-0.7em;"></span><span class="mop">ar<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6679em;"><span style="top:-2.4em;margin-left:0em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathbf mtight">s</span></span></span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span><span class="mop">min</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.7em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathcal">L</span><span class="mopen">(</span><span class="mord mathbf">s</span><span class="mclose">)</span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathcal">L</span><span class="mopen">(</span><span class="mord mathbf">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∥</span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathbf" style="margin-right:0.01597em;">W</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.1141em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">diag</span></span><span class="mopen">(</span><span class="mord mathbf">s</span><span class="mclose">))</span><span class="mopen">(</span><span class="mord text"><span class="mord">diag</span></span><span class="mopen">(</span><span class="mord mathbf">s</span><span class="mclose"><span class="mclose">)</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathbf">X</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathbf">WX</span><span class="mord">∥</span></span><span class="tag"><span class="strut" style="height:1.5641em;vertical-align:-0.7em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord cjk_fallback">公式</span><span class="mord"> 4</span></span><span class="mord">)</span></span></span></span></span></span></p>
+<p>其中：</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">W</mi></mrow><annotation encoding="application/x-tex">\mathbf{W}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6861em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">W</span></span></span></span>：FP16 原始权重矩阵</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">Q(\cdot)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span></span></span></span>：量化函数（INT3 或 INT4）</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">X</mi></mrow><annotation encoding="application/x-tex">\mathbf{X}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6861em;"></span><span class="mord mathbf">X</span></span></span></span>：从校准集收集到的一小批输入激活值</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>diag</mtext><mo stretchy="false">(</mo><mi mathvariant="bold">s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\text{diag}(\mathbf{s})</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">diag</span></span><span class="mopen">(</span><span class="mord mathbf">s</span><span class="mclose">)</span></span></span></span>：逐通道缩放系数构成的对角矩阵</li>
+<li>缩放系数作用于权重的列（输入维度），其倒数作用于激活值的行</li>
+</ul>
+<p>由于 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">Q(\cdot)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span></span></span></span> 不可微（包含取整操作），梯度优化不稳定。AWQ 采用简单的<strong>格点搜索</strong>，在一个紧凑的 1 维搜索空间内寻找最优值。</p>
+<p><strong>搜索空间设计</strong>：关键通道由大激活幅度标识，AWQ 用每个输入通道的平均激活幅度 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi mathvariant="bold">s</mi><mi mathvariant="bold">X</mi></msub></mrow><annotation encoding="application/x-tex">\mathbf{s}_\mathbf{X}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5944em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathbf">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3303em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathbf mtight">X</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 作为参考基准，搜索最优幂次 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span>：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mi mathvariant="bold">s</mi><mo>=</mo><msubsup><mi mathvariant="bold">s</mi><mi mathvariant="bold">X</mi><mi>α</mi></msubsup><mo separator="true">,</mo><mspace width="1em"/><msup><mi>α</mi><mo>∗</mo></msup><mo>=</mo><mi>arg</mi><mo>⁡</mo><munder><mrow><mi>min</mi><mo>⁡</mo></mrow><mi>α</mi></munder><mi mathvariant="script">L</mi><mo stretchy="false">(</mo><msubsup><mi mathvariant="bold">s</mi><mi mathvariant="bold">X</mi><mi>α</mi></msubsup><mo stretchy="false">)</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(公式 5)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\mathbf{s} = \mathbf{s}_\mathbf{X}^\alpha, \quad \alpha^* = \arg\min_\alpha \mathcal{L}(\mathbf{s}_\mathbf{X}^\alpha) \tag{公式 5}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4444em;"></span><span class="mord mathbf">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9857em;vertical-align:-0.247em;"></span><span class="mord"><span class="mord mathbf">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7144em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathbf mtight">X</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0037em;">α</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7387em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">∗</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.45em;vertical-align:-0.7em;"></span><span class="mop">ar<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6679em;"><span style="top:-2.4em;margin-left:0em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0037em;">α</span></span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span><span class="mop">min</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.7em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathcal">L</span><span class="mopen">(</span><span class="mord"><span class="mord mathbf">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7144em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathbf mtight">X</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0037em;">α</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span><span class="tag"><span class="strut" style="height:1.45em;vertical-align:-0.7em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord cjk_fallback">公式</span><span class="mord"> 5</span></span><span class="mord">)</span></span></span></span></span></span></p>
+<p>直观解释：</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">\alpha = 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0</span></span></span></span>：所有通道缩放系数都是 1（不缩放），等同于 RTN</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">\alpha = 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>：缩放系数正比于激活幅度，最激进地保护关键通道</li>
+<li>最优 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> 通常约为 0.5，在保护关键通道和不损害非关键通道之间取得平衡</li>
+</ul>
+<p>在 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>∈</mo><mo stretchy="false">[</mo><mn>0</mn><mo separator="true">,</mo><mn>1</mn><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">\alpha \in [0, 1]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5782em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord">0</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mclose">]</span></span></span></span> 上进行步长 0.05 的格点搜索（共 20 次评估），<strong>极其快速</strong>——只需要对量化层做正向传播，不需要反向传播。这就是为什么 AWQ 不需要任何训练基础设施就能运行。</p>
+<p><strong>推理时如何消除缩放开销？</strong></p>
+<p>推理时，应该乘以激活值的 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi mathvariant="bold">s</mi><mrow><mo>−</mo><mn>1</mn></mrow></msup></mrow><annotation encoding="application/x-tex">\mathbf{s}^{-1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathbf">s</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span></span></span></span> 被<strong>融入到前一层的操作中</strong>。比如，如果前一层有偏置项或层归一化，可以把缩放系数吸收进去。这样推理时的额外开销为<strong>零</strong>——量化权重就是带着缩放系数一起存储的。</p>
+<p>这个等价变换是 AWQ 对硬件友好的关键：所有权重保持 INT4，没有混合精度，没有额外运算。</p>
+<hr>
+<h2 id="6-TinyChat：把-AWQ-搬上真实设备">6. TinyChat：把 AWQ 搬上真实设备</h2>
+<p>有了压缩算法只是成功的一半，另一半是如何在真实硬件上跑出实际速度。论文还介绍了 <strong>TinyChat</strong>，一个专门为 W4A16 量化设计的推理系统，把理论上的内存节省转化为实际速度提升。</p>
+<h3 id="为什么内存节省不自动等于速度提升？">为什么内存节省不自动等于速度提升？</h3>
+<p>W4A16 量化减少了内存（权重只占原来的 1/4），但不自动带来 4 倍速度，原因是现代硬件不直接支持&quot;INT4 权重乘以 FP16 激活&quot;的计算。需要：</p>
+<ol>
+<li>从内存加载 INT4 权重（快，因为只有 4 位）</li>
+<li>即时反量化为 FP16</li>
+<li>FP16 权重乘以 FP16 激活</li>
+</ol>
+<p>反量化步骤如果做法天真会很耗时。TinyChat 用两个关键技术解决这个问题：</p>
+<h3 id="内核融合的即时权重反量化">内核融合的即时权重反量化</h3>
+<p>TinyChat 不把反量化的权重写回 DRAM（那样就把内存节省的好处抵消了），而是把反量化过程直接<strong>融入矩阵乘法内核</strong>。内核从内存读入 INT4 权重，转为 FP16 寄存器，立即做乘加运算——全程不碰 DRAM 存储反量化后的权重。</p>
+<p>在 GPU 上用 CUDA/PTX 实现；在 ARM CPU 上（手机、树莓派、Apple Silicon）用 NEON SIMD 指令实现。</p>
+<h3 id="SIMD-感知的权重打包（ARM-NEON）">SIMD 感知的权重打包（ARM NEON）</h3>
+<p>ARM NEON 有 128 位寄存器，可以并行处理多个值。挑战是：4 位权重不按字节对齐，需要特殊处理。</p>
+<p>TinyChat 的解法（图 4）：</p>
+<ul>
+<li>每个 128 位 NEON 寄存器存放 32 个 4 位权重</li>
+<li><strong>离线重排</strong>：把权重按特定顺序排列，使得一次 128 位 AND 操作加上移位就能解包全部 32 个权重</li>
+<li>只需 <strong>3 条 SIMD 指令</strong>解包 32 个权重（而朴素方案每个权重需要 3 条标量指令）</li>
+<li>带来约 <strong>1.2 倍</strong>的解包速度提升</li>
+</ul>
+<h3 id="内核融合（Kernel-Fusion）">内核融合（Kernel Fusion）</h3>
+<p>TinyChat 把多个操作融合进单个 CUDA/NEON 内核：</p>
+<ul>
+<li><strong>层归一化</strong>：乘法、除法和平方根融合成一个内核</li>
+<li><strong>注意力层</strong>：QKV 投影和位置编码融合；KV 缓存在注意力内核内直接预分配和更新</li>
+<li><strong>好处</strong>：减少内核启动开销和中间 DRAM 访问</li>
+</ul>
+<hr>
+<h2 id="7-实验结果">7. 实验结果</h2>
+<h3 id="7-1-实验设置与基线">7.1 实验设置与基线</h3>
+<p><strong>量化设置</strong>：仅权重分组量化（INT4 和 INT3，分组大小 128）。记为 W4A16 或 W3A16。</p>
+<p><strong>测试模型</strong>：</p>
+<ul>
+<li>LLaMA 系列：7B、13B、30B、65B</li>
+<li>Llama-2 系列：7B、13B、70B</li>
+<li>OPT 系列：1.3B、2.7B、6.7B、13B、30B</li>
+<li>Mistral-7B、Mixtral-8x7B（专家混合模型）</li>
+<li>指令微调模型：Vicuna-7B、Vicuna-13B</li>
+<li>多模态模型：OpenFlamingo-9B、LLaVA-13B、VILA-7B、VILA-13B</li>
+</ul>
+<p><strong>基线方法</strong>：</p>
+<ul>
+<li><strong>RTN（就近取整）</strong>：最简单的基线</li>
+<li><strong>GPTQ</strong>：使用二阶 Hessian 信息纠正误差的最强基线</li>
+<li><strong>GPTQ-R</strong>：加了重排序（Reorder）技巧的 GPTQ 增强版</li>
+</ul>
+<p><strong>校准数据</strong>：Pile 数据集，<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> 搜索的格点大小为 20。</p>
+<p><strong>评估指标</strong>：WikiText-2 困惑度（语言建模任务）；GPT-4 评分（指令跟随任务）；各专项数据集准确率（多模态、代码、数学）。</p>
+<h3 id="7-2-语言模型结果（LLaMA、OPT）">7.2 语言模型结果（LLaMA、OPT）</h3>
+<p><strong>表 4：Llama-2 和 LLaMA 的 WikiText-2 困惑度</strong></p>
+<table>
+<thead>
+<tr>
+<th>模型</th>
+<th>FP16</th>
+<th>RTN(INT3)</th>
+<th>GPTQ(INT3)</th>
+<th>AWQ(INT3)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Llama-2-7B</td>
+<td>5.47</td>
+<td>6.66</td>
+<td>6.43</td>
+<td><strong>6.24</strong></td>
+</tr>
+<tr>
+<td>Llama-2-13B</td>
+<td>4.88</td>
+<td>5.52</td>
+<td>5.48</td>
+<td><strong>5.32</strong></td>
+</tr>
+<tr>
+<td>Llama-2-70B</td>
+<td>3.32</td>
+<td>3.98</td>
+<td>3.88</td>
+<td><strong>3.74</strong></td>
+</tr>
+<tr>
+<td>LLaMA-7B</td>
+<td>5.68</td>
+<td>7.01</td>
+<td>8.81</td>
+<td><strong>6.35</strong></td>
+</tr>
+<tr>
+<td>LLaMA-13B</td>
+<td>5.09</td>
+<td>5.88</td>
+<td>5.66</td>
+<td><strong>5.52</strong></td>
+</tr>
+<tr>
+<td>LLaMA-30B</td>
+<td>4.10</td>
+<td>4.88</td>
+<td>4.88</td>
+<td><strong>4.61</strong></td>
+</tr>
+<tr>
+<td>LLaMA-65B</td>
+<td>3.53</td>
+<td>4.24</td>
+<td>4.17</td>
+<td><strong>3.95</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>关键发现</strong>：</p>
+<ol>
+<li>AWQ 在所有模型和所有规模上<strong>一致超越</strong> RTN 和 GPTQ</li>
+<li>在 INT4 量化时，差距较小（所有方法在 4 位时都还不错），但 AWQ 仍最优</li>
+<li>对 LLaMA-7B 使用 INT3 时，GPTQ 表现很差（8.81 困惑度），而 AWQ 达到 6.35——这是因为 GPTQ 过拟合了校准集，泛化能力受损</li>
+</ol>
+<p><strong>OPT 模型</strong> 展示了类似规律。AWQ 在 INT3-g128 下：</p>
+<ul>
+<li>OPT-1.3B：16.32（对比 FP16 的 14.62，RTN 的 119.47）</li>
+<li>OPT-6.7B：11.39（对比 FP16 的 10.86，RTN 的 23.54）</li>
+<li>OPT-13B：10.56（对比 FP16 的 10.13，RTN 的 46.04）</li>
+</ul>
+<h3 id="7-3-指令微调模型（Vicuna）">7.3 指令微调模型（Vicuna）</h3>
+<p>指令微调模型（fine-tuned 以遵循用户指令）更难量化，因为微调改变了权重分布。作者用 GPT-4 作为评判者，对 80 个问题评分。</p>
+<p><strong>Vicuna-7B（INT3-g128，GPT-4 评判）</strong>：</p>
+<ul>
+<li>AWQ 在 <strong>23</strong> 道题上胜出（比 FP16 版本的量化后模型更好），打平 <strong>5</strong> 题，输 <strong>52</strong> 题</li>
+<li>相比 RTN：AWQ 多赢 6 题</li>
+<li>相比 GPTQ：AWQ 多赢 11 题</li>
+</ul>
+<p>&quot;赢&quot;意味着量化后的模型比 FP16 对应版本给出了更好的答案（量化有时可以作为轻微的正则化）。更重要的是，AWQ 相比 RTN 和 GPTQ <strong>输的更少</strong>。</p>
+<h3 id="7-4-多模态模型（OpenFlamingo、LLaVA、VILA）">7.4 多模态模型（OpenFlamingo、LLaVA、VILA）</h3>
+<p>这是 LLM 量化研究中的<strong>首次</strong>：把 W4A16 量化应用到<strong>视觉-语言模型</strong>上。</p>
+<p><strong>OpenFlamingo-9B 在 COCO 图像描述数据集上（CIDEr↑，32-shot）</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>INT4-g128</th>
+<th>INT3-g128</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FP16</td>
+<td>81.70</td>
+<td>-</td>
+</tr>
+<tr>
+<td>RTN</td>
+<td>77.13</td>
+<td>64.79</td>
+</tr>
+<tr>
+<td>GPTQ</td>
+<td>74.98</td>
+<td>64.77</td>
+</tr>
+<tr>
+<td><strong>AWQ</strong></td>
+<td><strong>80.53</strong></td>
+<td><strong>74.47</strong></td>
+</tr>
+</tbody>
+</table>
+<p>INT4 量化下，AWQ 将精度损失从 4.57 压缩到 <strong>仅 1.17</strong> CIDEr 分——实现了 4 倍模型压缩，几乎无损！</p>
+<p><strong>VILA-7B 和 VILA-13B 在 11 个视觉语言基准上</strong>（表 7）：AWQ 在包括 VQAv2、GQA、VizWiz、SQA、POPE、MME、MMB、SEED、LLaVA-bench 和 MM-Vet 在内的所有 11 个基准上一致显示出无损或接近无损的量化效果。</p>
+<p>多模态模型的成功表明 AWQ 基于激活值的关键权重检测<strong>跨模态泛化</strong>——无论模型处理文本还是图像，同一套校准策略都有效。</p>
+<h3 id="7-5-代码与数学推理基准">7.5 代码与数学推理基准</h3>
+<p><strong>CodeLlama-7b-Instruct 在 MBPP（编程）和 Llama-2 在 GSM8K（数学）上，INT4-g128</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>模型/基准</th>
+<th>FP16</th>
+<th>RTN</th>
+<th>GPTQ</th>
+<th>AWQ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MBPP pass@1</td>
+<td>38.53</td>
+<td>37.51</td>
+<td>31.97</td>
+<td><strong>40.64</strong></td>
+</tr>
+<tr>
+<td>MBPP pass@10</td>
+<td>49.77</td>
+<td>48.49</td>
+<td>44.75</td>
+<td><strong>49.25</strong></td>
+</tr>
+<tr>
+<td>Llama-2-7B GSM8K</td>
+<td>13.87</td>
+<td>11.07</td>
+<td>12.13</td>
+<td><strong>13.57</strong></td>
+</tr>
+<tr>
+<td>Llama-2-13B GSM8K</td>
+<td>26.16</td>
+<td>21.23</td>
+<td>24.26</td>
+<td><strong>25.12</strong></td>
+</tr>
+<tr>
+<td>Llama-2-70B GSM8K</td>
+<td>56.41</td>
+<td>53.98</td>
+<td>56.03</td>
+<td><strong>56.40</strong></td>
+</tr>
+</tbody>
+</table>
+<p>惊人的是，AWQ 在 MBPP 上<strong>超越了 FP16 的表现</strong>（40.64 vs. 38.53 pass@1）——量化有时可以作为轻微的正则化来提升特定任务性能。对 GSM8K，AWQ 在所有模型规模上几乎匹配 FP16 性能。</p>
+<h3 id="7-6-推理加速结果（TinyChat）">7.6 推理加速结果（TinyChat）</h3>
+<p><strong>RTX 4090（台式 GPU）——token/秒</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>模型</th>
+<th>FP16 (Huggingface)</th>
+<th>AWQ + TinyChat</th>
+<th>加速比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Llama-2-7B</td>
+<td>62</td>
+<td><strong>194</strong></td>
+<td><strong>3.1×</strong></td>
+</tr>
+<tr>
+<td>Llama-2-13B</td>
+<td>52</td>
+<td><strong>110</strong></td>
+<td><strong>2.1×</strong></td>
+</tr>
+<tr>
+<td>MPT-7B</td>
+<td>85</td>
+<td><strong>158</strong></td>
+<td><strong>1.9×</strong></td>
+</tr>
+<tr>
+<td>MPT-30B</td>
+<td>OOM</td>
+<td><strong>49</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Falcon-7B</td>
+<td>53</td>
+<td><strong>53</strong></td>
+<td>1.0×</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Jetson Orin（移动 GPU）——token/秒</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>模型</th>
+<th>FP16</th>
+<th>AWQ + TinyChat</th>
+<th>加速比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Llama-2-7B</td>
+<td>12</td>
+<td><strong>39</strong></td>
+<td><strong>3.3×</strong></td>
+</tr>
+<tr>
+<td>Llama-2-13B</td>
+<td>9</td>
+<td><strong>25</strong></td>
+<td><strong>2.8×</strong></td>
+</tr>
+<tr>
+<td>MPT-30B</td>
+<td>OOM</td>
+<td><strong>12</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Falcon-7B</td>
+<td>12</td>
+<td><strong>38</strong></td>
+<td><strong>3.2×</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>核心成果</strong>：</p>
+<ul>
+<li>在台式和移动 GPU 上一致实现 <strong>3-4 倍加速</strong></li>
+<li>原本因内存不足无法运行的模型（MPT-30B 在 FP16 下 OOM）现在可以流畅运行</li>
+<li>Llama-2-70B：可以在<strong>单块 NVIDIA Jetson Orin</strong>（64GB 内存）上部署，实现了 70B 模型的移动端民主化</li>
+</ul>
+<p><strong>VILA 视觉语言模型在多平台上</strong>（表 10）：</p>
+<ul>
+<li>VILA-7B：RTX 4090 上达到 155.3 token/秒（FP16 为 81.6），<strong>1.9 倍加速</strong></li>
+<li>VILA-13B：RTX 4090 上达到 102.1 token/秒（FP16 OOM）</li>
+</ul>
+<hr>
+<h2 id="8-局限性与开放问题">8. 局限性与开放问题</h2>
+<p>AWQ 是一个出色的方法，但有几个值得深入理解的局限性：</p>
+<h3 id="8-1-仍需校准数据">8.1 仍需校准数据</h3>
+<p>AWQ 需要小批量校准数据来测量每个通道的平均激活幅度。虽然数据集很小（16 条 2048 token 的序列，比 GPTQ 的 192 条少 10 倍），但仍然：</p>
+<ul>
+<li>需要获取目标领域的代表性数据</li>
+<li>对校准分布有轻微依赖</li>
+</ul>
+<p>论文图 8(b) 表明 AWQ 对校准分布不匹配的鲁棒性远高于 GPTQ（困惑度增加 0.5-0.6 vs. GPTQ 的 2.3-4.9），但这是程度上的优势，而非彻底消除依赖。</p>
+<h3 id="8-2-搜索空间简化">8.2 搜索空间简化</h3>
+<p>缩放搜索只用单一参数 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span>，即 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">s</mi><mo>=</mo><msubsup><mi mathvariant="bold">s</mi><mi mathvariant="bold">X</mi><mi>α</mi></msubsup></mrow><annotation encoding="application/x-tex">\mathbf{s} = \mathbf{s}_\mathbf{X}^\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4444em;"></span><span class="mord mathbf">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9417em;vertical-align:-0.2773em;"></span><span class="mord"><span class="mord mathbf">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6644em;"><span style="top:-2.4227em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathbf mtight">X</span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0037em;">α</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2773em;"><span></span></span></span></span></span></span></span></span></span>。这把搜索限制在所有可能逐通道缩放向量空间中的一条曲线上。更丰富的搜索空间可能找到更优的缩放，但计算代价更高。</p>
+<h3 id="8-3-极低比特量化（INT2）效果有限">8.3 极低比特量化（INT2）效果有限</h3>
+<p>在极激进的 2 位量化（INT2）下，AWQ 单独使用效果明显下降，而 GPTQ 基于重建的方法在此有优势。论文表 9 表明，<strong>AWQ + GPTQ 组合</strong>在 INT2 下取得最佳效果——两者互补，而非竞争。</p>
+<h3 id="8-4-生成任务-vs-判别任务">8.4 生成任务 vs 判别任务</h3>
+<p>AWQ 主要在<strong>生成任务</strong>（文本生成、图像描述）上评估。对于分类或嵌入任务，激活幅度启发式的有效性可能不同。</p>
+<h3 id="8-5-无正式收敛保证">8.5 无正式收敛保证</h3>
+<p>公式 5 中的搜索是启发式格点搜索。没有理论保证找到的 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>α</mi><mo>∗</mo></msup></mrow><annotation encoding="application/x-tex">\alpha^*</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6887em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6887em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">∗</span></span></span></span></span></span></span></span></span></span></span> 是全局最优的。该搜索在实验上有效，但更严格的理论分析会增强方法的可信度。</p>
+<h3 id="8-6-对特殊架构的适用性">8.6 对特殊架构的适用性</h3>
+<p>某些架构（如使用特殊归一化策略的注意力层）可能有不同的激活分布模式。虽然论文在 Mistral 和 Mixtral（专家混合）上验证了泛化性，但对更奇异的架构，缩放启发式理论上可能失效。</p>
+<hr>
+<h2 id="9-可重现性与代码">9. 可重现性与代码</h2>
+<p>AWQ 是实际影响力最大的量化方法之一，有极好的开源支持。</p>
+<p><strong>官方实现</strong>：<a href="https://github.com/mit-han-lab/llm-awq" target="_blank" rel="noopener">https://github.com/mit-han-lab/llm-awq</a></p>
+<p><strong>TinyChat</strong>：在同一仓库中，支持 CUDA、ARM NEON 和 Apple Metal 后端。</p>
+<p><strong>生态系统集成</strong>：AWQ 已被几乎所有主流 LLM 服务框架集成：</p>
+<ul>
+<li>HuggingFace Transformers（<code>AutoAWQForCausalLM</code>）</li>
+<li>NVIDIA TensorRT-LLM</li>
+<li>Microsoft DirectML</li>
+<li>Google Vertex AI</li>
+<li>Intel Neural Compressor</li>
+<li>Amazon SageMaker</li>
+<li>vLLM、LMDeploy、FastChat</li>
+</ul>
+<p><strong>复现核心实验</strong>（论文表 3，OPT-6.7B INT3-g128）：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">pip install awq</span><br><span class="line">python -m awq.quantize \</span><br><span class="line">    --model facebook/opt-6.7b \</span><br><span class="line">    --bits 3 \</span><br><span class="line">    --group-size 128 \</span><br><span class="line">    --calib-data pile \</span><br><span class="line">    --output opt-6.7b-awq-int3</span><br></pre></td></tr></table></figure>
+<p>预期结果：WikiText-2 困惑度约 11.39（RTN 为 23.54，FP16 为 10.86）</p>
+<p><strong>核心 AWQ 缩放搜索伪代码</strong>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">awq_quantize_layer</span><span class="params">(W, X, bits=<span class="number">4</span>, group_size=<span class="number">128</span>, grid_size=<span class="number">20</span>)</span>:</span></span><br><span class="line">    <span class="comment"># W: 权重矩阵 [out_features, in_features]</span></span><br><span class="line">    <span class="comment"># X: 校准激活值 [in_features, num_samples]</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># 计算每个输入通道的激活幅度均值</span></span><br><span class="line">    s_X = X.abs().mean(dim=<span class="number">1</span>)  <span class="comment"># [in_features]</span></span><br><span class="line"></span><br><span class="line">    best_alpha = <span class="number">0.0</span></span><br><span class="line">    best_loss = float(<span class="string">'inf'</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 在 [0, 1] 上格点搜索 alpha</span></span><br><span class="line">    <span class="keyword">for</span> alpha <span class="keyword">in</span> [i / grid_size <span class="keyword">for</span> i <span class="keyword">in</span> range(grid_size + <span class="number">1</span>)]:</span><br><span class="line">        s = s_X.pow(alpha)  <span class="comment"># 逐通道缩放 [in_features]</span></span><br><span class="line"></span><br><span class="line">        <span class="comment"># 缩放权重和激活值</span></span><br><span class="line">        W_scaled = W * s.unsqueeze(<span class="number">0</span>)   <span class="comment"># [out, in] * [in] → [out, in]</span></span><br><span class="line">        X_scaled = X / s.unsqueeze(<span class="number">1</span>)   <span class="comment"># [in, samples] / [in, 1]</span></span><br><span class="line"></span><br><span class="line">        <span class="comment"># 量化缩放后的权重</span></span><br><span class="line">        W_q = quantize(W_scaled, bits, group_size)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 计算重建误差</span></span><br><span class="line">        loss = (W_q @ X_scaled - W @ X).norm()</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> loss &lt; best_loss:</span><br><span class="line">            best_loss = loss</span><br><span class="line">            best_alpha = alpha</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 应用最优缩放</span></span><br><span class="line">    s_opt = s_X.pow(best_alpha)</span><br><span class="line">    W_awq = quantize(W * s_opt.unsqueeze(<span class="number">0</span>), bits, group_size)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># s_opt^&#123;-1&#125; 被吸收进前一层的偏置/缩放中</span></span><br><span class="line">    <span class="keyword">return</span> W_awq, s_opt</span><br></pre></td></tr></table></figure>
+<hr>
+<h2 id="10-与更大图景的联系：压缩方法全景">10. 与更大图景的联系：压缩方法全景</h2>
+<p>AWQ 处于 LLM 压缩方法全景中，与针对不同维度的方法并列存在。</p>
+<h3 id="10-1-与-GPTQ-的关系">10.1 与 GPTQ 的关系</h3>
+<p>AWQ 和 GPTQ 都是训练后量化方法，目标相同。主要区别：</p>
+<table>
+<thead>
+<tr>
+<th>方面</th>
+<th>AWQ</th>
+<th>GPTQ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>核心原理</td>
+<td>激活感知缩放</td>
+<td>Hessian 矩阵误差校正</td>
+</tr>
+<tr>
+<td>校准数据量</td>
+<td>16 条序列</td>
+<td>192 条序列</td>
+</tr>
+<tr>
+<td>反向传播</td>
+<td>不需要</td>
+<td>不需要（但用 Hessian）</td>
+</tr>
+<tr>
+<td>过拟合风险</td>
+<td>低</td>
+<td>较高（见表 4，LLaMA-7B INT3）</td>
+</tr>
+<tr>
+<td>是否可组合</td>
+<td>是</td>
+<td>是</td>
+</tr>
+</tbody>
+</table>
+<p>两者正交可以组合：论文表 9 显示 <strong>AWQ + GPTQ 组合</strong>在极低 INT2 量化时优于各自单独使用。</p>
+<h3 id="10-2-与-SVD-低秩分解的关系">10.2 与 SVD 低秩分解的关系</h3>
+<p>AWQ 是<strong>权重空间</strong>压缩方法，通过减少精度来压缩。另一种思路是通过 SVD（奇异值分解）做<strong>低秩分解</strong>：</p>
+<p>给定权重矩阵 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">W</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>m</mi><mo>×</mo><mi>n</mi></mrow></msup></mrow><annotation encoding="application/x-tex">\mathbf{W} \in \mathbb{R}^{m \times n}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7252em;vertical-align:-0.0391em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">W</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7713em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7713em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight">n</span></span></span></span></span></span></span></span></span></span></span></span>，计算：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="bold">W</mi><mo>≈</mo><msub><mi mathvariant="bold">U</mi><mi>k</mi></msub><msub><mi mathvariant="bold">Σ</mi><mi>k</mi></msub><msubsup><mi mathvariant="bold">V</mi><mi>k</mi><mi>T</mi></msubsup></mrow><annotation encoding="application/x-tex">\mathbf{W} \approx \mathbf{U}_k \mathbf{\Sigma}_k \mathbf{V}_k^T
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6861em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">W</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1383em;vertical-align:-0.247em;"></span><span class="mord"><span class="mord mathbf">U</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathbf">Σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathbf" style="margin-right:0.01597em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8913em;"><span style="top:-2.453em;margin-left:-0.016em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>其中 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>≪</mo><mi>min</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi>m</mi><mo separator="true">,</mo><mi>n</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">k \ll \min(m, n)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7335em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≪</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">min</span><span class="mopen">(</span><span class="mord mathnormal">m</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">n</span><span class="mclose">)</span></span></span></span> 只保留主要奇异值。方法如 AdaLoRA、ASVD（激活感知 SVD）使用这一原理。</p>
+<p><strong>与 AWQ 的联系</strong>：ASVD 使用激活统计量的方式和 AWQ 类似——在做 SVD 之前，用激活幅度对 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi></mrow><annotation encoding="application/x-tex">W</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span> 的行列进行缩放，使分解把压缩预算集中在激活幅度较小的方向上。这是同样的&quot;激活感知&quot;原理，应用于不同的压缩基本操作（秩降低 vs. 精度降低）。</p>
+<p><strong>核心区别</strong>：量化保留矩阵的精确结构但降低精度；SVD 改变矩阵结构（变成两个小矩阵的乘积）但保留精度。对大型模型，量化通常在相同精度下能达到更高的压缩比。</p>
+<h3 id="10-3-LLM-压缩方法全景">10.3 LLM 压缩方法全景</h3>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">LLM 压缩方法</span><br><span class="line">├── 量化（Quantization）</span><br><span class="line">│   ├── AWQ（本文）—— 激活感知权重量化</span><br><span class="line">│   ├── GPTQ —— Hessian 误差校正量化</span><br><span class="line">│   ├── BitNet —— 训练时 1-bit 量化</span><br><span class="line">│   └── SmoothQuant —— W8A8 平滑激活分布</span><br><span class="line">├── 剪枝（Pruning）</span><br><span class="line">│   ├── SparseGPT —— 非结构化稀疏</span><br><span class="line">│   └── Wanda —— 激活权重乘积剪枝</span><br><span class="line">├── 低秩分解（Low-Rank）</span><br><span class="line">│   ├── LoRA&#x2F;AdaLoRA —— 低秩适配</span><br><span class="line">│   └── ASVD —— 激活感知 SVD</span><br><span class="line">└── 知识蒸馏（Distillation）</span><br><span class="line">    └── 训练小模型模仿大模型</span><br></pre></td></tr></table></figure>
+<p>AWQ 专注于量化，与剪枝和蒸馏正交——理论上可以组合使用全部三种方法。</p>
+<hr>
+<h2 id="11-总结">11. 总结</h2>
+<p>AWQ（感知激活值的权重量化）是端侧 LLM 部署领域的标志性贡献。让我们回顾它的核心贡献：</p>
+<p><strong>智识洞察</strong>：LLM 中权重的重要性由流经它们的激活值决定，而非权重本身。约 1% 的&quot;关键&quot;权重通道——那些对应大幅激活值的通道——承担了量化引起的精度损失的绝大部分。</p>
+<p><strong>技术解法</strong>：不使用硬件不友好的混合精度，而是应用一种数学等价的逐通道缩放，在均匀 INT4 格式内保护关键权重。缩放因子通过对激活统计量的快速格点搜索确定，无需反向传播。</p>
+<p><strong>系统贡献</strong>：TinyChat 通过精心设计的内核融合、SIMD 感知的权重打包和平台专属优化，把理论上 4 倍的内存节省转化为现实中 3-4 倍的推理加速。</p>
+<p><strong>实际影响</strong>：AWQ 现已成为生产系统中 4 位 LLM 量化的事实标准。它让 Llama-2-70B 这个曾经需要 8 块高端 GPU 才能运行的模型，可以在<strong>单块移动 GPU</strong>（NVIDIA Jetson Orin，64GB 内存）上运行。让 13B 模型可以在 8GB 显存的笔记本 GPU（RTX 4070）上交互式运行。</p>
+<p>这篇论文的问题很简单——&quot;哪些权重最重要？&quot;——答案也很简单：看激活值。这就是&quot;激活感知&quot;的精髓，这一原理很可能在未来多年继续引导压缩研究。</p>
+<hr>
+<p><em>评审作者：Zhongzhu Zhou，2026-04-03</em>
+<em>论文：AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration</em>
+<em>arXiv: 2306.00978 | MLSys 2024 最佳论文奖</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Efficient-Inference/" rel="tag"># Efficient Inference</a>
+              <a href="/tags/Quantization/" rel="tag"># Quantization</a>
+              <a href="/tags/AWQ/" rel="tag"># AWQ</a>
+              <a href="/tags/LLM-Compression/" rel="tag"># LLM Compression</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/03/2026-04-03-AWQ-technical-review-en/" rel="prev" title="AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration — In-Depth Technical Review">
+      <i class="fa fa-chevron-left"></i> AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration — In-Depth Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/04/2026-04-04-SwitchTransformer-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="next" title="Switch Transformers：用简单高效的稀疏性扩展到万亿参数模型 — 深度技术评审">
+      Switch Transformers：用简单高效的稀疏性扩展到万亿参数模型 — 深度技术评审 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-背景故事：为什么大模型太大了？"><span class="nav-number">1.</span> <span class="nav-text">1. 背景故事：为什么大模型太大了？</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-预备知识：从零开始理解"><span class="nav-number">2.</span> <span class="nav-text">2. 预备知识：从零开始理解</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-神经网络的权重与矩阵乘法"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 神经网络的权重与矩阵乘法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-浮点数：FP32、FP16-是什么？"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 浮点数：FP32、FP16 是什么？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-什么是量化（Quantization）？"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 什么是量化（Quantization）？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-量化误差的本质"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 量化误差的本质</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-训练后量化-vs-量化感知训练"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 训练后量化 vs 量化感知训练</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-仅权重量化-vs-权重-激活量化"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 仅权重量化 vs 权重+激活量化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-7-困惑度：衡量语言模型质量的标准"><span class="nav-number">2.7.</span> <span class="nav-text">2.7 困惑度：衡量语言模型质量的标准</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-8-分组量化与逐通道缩放"><span class="nav-number">2.8.</span> <span class="nav-text">2.8 分组量化与逐通道缩放</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-AWQ-的核心思想：大局观"><span class="nav-number">3.</span> <span class="nav-text">3. AWQ 的核心思想：大局观</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-关键洞察：不是所有权重都同样重要"><span class="nav-number">4.</span> <span class="nav-text">4. 关键洞察：不是所有权重都同样重要</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#实验验证"><span class="nav-number">4.1.</span> <span class="nav-text">实验验证</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-AWQ-方法详解"><span class="nav-number">5.</span> <span class="nav-text">5. AWQ 方法详解</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-量化误差的数学分析"><span class="nav-number">5.1.</span> <span class="nav-text">5.1 量化误差的数学分析</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-激活感知缩放技巧"><span class="nav-number">5.2.</span> <span class="nav-text">5.2 激活感知缩放技巧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-自动搜索最优缩放因子"><span class="nav-number">5.3.</span> <span class="nav-text">5.3 自动搜索最优缩放因子</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-TinyChat：把-AWQ-搬上真实设备"><span class="nav-number">6.</span> <span class="nav-text">6. TinyChat：把 AWQ 搬上真实设备</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#为什么内存节省不自动等于速度提升？"><span class="nav-number">6.1.</span> <span class="nav-text">为什么内存节省不自动等于速度提升？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#内核融合的即时权重反量化"><span class="nav-number">6.2.</span> <span class="nav-text">内核融合的即时权重反量化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#SIMD-感知的权重打包（ARM-NEON）"><span class="nav-number">6.3.</span> <span class="nav-text">SIMD 感知的权重打包（ARM NEON）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#内核融合（Kernel-Fusion）"><span class="nav-number">6.4.</span> <span class="nav-text">内核融合（Kernel Fusion）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-实验结果"><span class="nav-number">7.</span> <span class="nav-text">7. 实验结果</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-实验设置与基线"><span class="nav-number">7.1.</span> <span class="nav-text">7.1 实验设置与基线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-语言模型结果（LLaMA、OPT）"><span class="nav-number">7.2.</span> <span class="nav-text">7.2 语言模型结果（LLaMA、OPT）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-指令微调模型（Vicuna）"><span class="nav-number">7.3.</span> <span class="nav-text">7.3 指令微调模型（Vicuna）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-多模态模型（OpenFlamingo、LLaVA、VILA）"><span class="nav-number">7.4.</span> <span class="nav-text">7.4 多模态模型（OpenFlamingo、LLaVA、VILA）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-5-代码与数学推理基准"><span class="nav-number">7.5.</span> <span class="nav-text">7.5 代码与数学推理基准</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-6-推理加速结果（TinyChat）"><span class="nav-number">7.6.</span> <span class="nav-text">7.6 推理加速结果（TinyChat）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-局限性与开放问题"><span class="nav-number">8.</span> <span class="nav-text">8. 局限性与开放问题</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-仍需校准数据"><span class="nav-number">8.1.</span> <span class="nav-text">8.1 仍需校准数据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-搜索空间简化"><span class="nav-number">8.2.</span> <span class="nav-text">8.2 搜索空间简化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-极低比特量化（INT2）效果有限"><span class="nav-number">8.3.</span> <span class="nav-text">8.3 极低比特量化（INT2）效果有限</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-4-生成任务-vs-判别任务"><span class="nav-number">8.4.</span> <span class="nav-text">8.4 生成任务 vs 判别任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-5-无正式收敛保证"><span class="nav-number">8.5.</span> <span class="nav-text">8.5 无正式收敛保证</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-6-对特殊架构的适用性"><span class="nav-number">8.6.</span> <span class="nav-text">8.6 对特殊架构的适用性</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-可重现性与代码"><span class="nav-number">9.</span> <span class="nav-text">9. 可重现性与代码</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-与更大图景的联系：压缩方法全景"><span class="nav-number">10.</span> <span class="nav-text">10. 与更大图景的联系：压缩方法全景</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-与-GPTQ-的关系"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 与 GPTQ 的关系</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-与-SVD-低秩分解的关系"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 与 SVD 低秩分解的关系</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-LLM-压缩方法全景"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 LLM 压缩方法全景</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-总结"><span class="nav-number">11.</span> <span class="nav-text">11. 总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

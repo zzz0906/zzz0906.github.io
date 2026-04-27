@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="A detailed technical review of Google DeepMind&#39;s paper &#39;A Subgoal-driven Framework for Improving Long-Horizon LLM Agents&#39;, analyzing how MiRA uses milestone-based subgoal decomposition and potential-b">
+<meta property="og:type" content="article">
+<meta property="og:title" content="MiRA: A Subgoal-driven Framework for Improving Long-Horizon LLM Agents — Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/03/23/2026-03-23-MiRA-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="A detailed technical review of Google DeepMind&#39;s paper &#39;A Subgoal-driven Framework for Improving Long-Horizon LLM Agents&#39;, analyzing how MiRA uses milestone-based subgoal decomposition and potential-b">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://zzz0906.github.io/2026/03/23/2026-03-23-MiRA-technical-review-en/figure1.png">
+<meta property="og:image" content="https://zzz0906.github.io/2026/03/23/2026-03-23-MiRA-technical-review-en/figure4.png">
+<meta property="og:image" content="https://zzz0906.github.io/2026/03/23/2026-03-23-MiRA-technical-review-en/figure5.png">
+<meta property="og:image" content="https://zzz0906.github.io/2026/03/23/2026-03-23-MiRA-technical-review-en/figure9.png">
+<meta property="og:image" content="https://zzz0906.github.io/2026/03/23/2026-03-23-MiRA-technical-review-en/figure6.png">
+<meta property="og:image" content="https://zzz0906.github.io/2026/03/23/2026-03-23-MiRA-technical-review-en/figure11.png">
+<meta property="og:image" content="https://zzz0906.github.io/2026/03/23/2026-03-23-MiRA-technical-review-en/figure8.png">
+<meta property="og:image" content="https://zzz0906.github.io/2026/03/23/2026-03-23-MiRA-technical-review-en/figure13.png">
+<meta property="og:image" content="https://zzz0906.github.io/2026/03/23/2026-03-23-MiRA-technical-review-en/figure12.png">
+<meta property="og:image" content="https://zzz0906.github.io/2026/03/23/2026-03-23-MiRA-technical-review-en/figure14.png">
+<meta property="og:image" content="https://zzz0906.github.io/2026/03/23/2026-03-23-MiRA-technical-review-en/figure10.png">
+<meta property="article:published_time" content="2026-03-23T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-03-23T18:16:39.165Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="MiRA">
+<meta property="article:tag" content="Subgoal">
+<meta property="article:tag" content="LLM Agent">
+<meta property="article:tag" content="Web Navigation">
+<meta property="article:tag" content="Reinforcement Learning">
+<meta property="article:tag" content="Reward Shaping">
+<meta property="article:tag" content="WebArena">
+<meta property="article:tag" content="Gemma">
+<meta property="article:tag" content="Gemini">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://zzz0906.github.io/2026/03/23/2026-03-23-MiRA-technical-review-en/figure1.png">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/03/23/2026-03-23-MiRA-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>MiRA: A Subgoal-driven Framework for Improving Long-Horizon LLM Agents — Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/03/23/2026-03-23-MiRA-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          MiRA: A Subgoal-driven Framework for Improving Long-Horizon LLM Agents — Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2026-03-23 00:00:00 / Modified: 18:16:39" itemprop="dateCreated datePublished" datetime="2026-03-23T00:00:00+00:00">2026-03-23</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/AI-Research/" itemprop="url" rel="index"><span itemprop="name">AI Research</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/AI-Research/Agent-Systems/" itemprop="url" rel="index"><span itemprop="name">Agent Systems</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">A detailed technical review of Google DeepMind's paper 'A Subgoal-driven Framework for Improving Long-Horizon LLM Agents', analyzing how MiRA uses milestone-based subgoal decomposition and potential-based reward shaping to overcome planning bottlenecks in long-horizon web navigation.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="MiRA-A-Subgoal-driven-Framework-for-Improving-Long-Horizon-LLM-Agents-—-Detailed-Technical-Review">MiRA: A Subgoal-driven Framework for Improving Long-Horizon LLM Agents — Detailed Technical Review</h1>
+<p><strong>Paper</strong>: A Subgoal-driven Framework for Improving Long-Horizon LLM Agents<br>
+<strong>Authors</strong>: Taiyi Wang, Sian Gooding, Florian Hartmann, Oriana Riva, Edward Grefenstette<br>
+<strong>Affiliation</strong>: Google DeepMind<br>
+<strong>Published</strong>: March 20, 2026 (arXiv: 2603.19685)<br>
+<strong>Reviewer</strong>: Zhongzhu Zhou<br>
+<strong>Review Date</strong>: March 23, 2026</p>
+<hr>
+<h2 id="I-Prerequisites-What-You-Need-to-Know">I. Prerequisites: What You Need to Know</h2>
+<p>Before diving into the paper's contributions, let us establish the foundational concepts necessary for understanding the MiRA framework. This section is designed to make the paper accessible even if you are new to the intersection of LLM agents and reinforcement learning.</p>
+<a id="more"></a>
+<h3 id="1-1-What-Are-LLM-Agents">1.1 What Are LLM Agents?</h3>
+<p>A Large Language Model (LLM) agent is an autonomous system built on top of a large language model that can interact with external environments—not just generate text, but actually <em>do things</em>. Imagine asking an AI assistant to book a flight online: it needs to open a browser, search for flights, select seats, fill out forms, and complete payment. This chain of sequential, interdependent operations constitutes a &quot;long-horizon task.&quot;</p>
+<p>Unlike traditional chatbots, LLM agents must:</p>
+<ul>
+<li><strong>Perceive</strong> the environment: understand the current webpage (DOM trees, screenshots)</li>
+<li><strong>Plan</strong> actions: decide what to do next</li>
+<li><strong>Execute</strong> operations: click buttons, type text, scroll pages</li>
+<li><strong>Maintain context</strong>: remember what has been done to make coherent decisions</li>
+</ul>
+<h3 id="1-2-Web-Navigation-Why-Is-It-So-Challenging">1.2 Web Navigation: Why Is It So Challenging?</h3>
+<p>Web navigation is one of the most demanding testbeds for LLM agents. A typical task might be: &quot;Find the nearest cafe within 50 miles of CMU on the map.&quot; Despite seeming straightforward, this requires the agent to:</p>
+<ol>
+<li>Open the map application</li>
+<li>Search for &quot;CMU&quot;</li>
+<li>Find nearby restaurant options</li>
+<li>Apply a distance filter (&lt;50 miles)</li>
+<li>Identify a cafe from the results</li>
+<li>Report the information</li>
+</ol>
+<p><strong>Key difficulties include</strong>:</p>
+<ul>
+<li><strong>Dynamic content</strong>: web pages change in real-time as the agent interacts</li>
+<li><strong>Long action sequences</strong>: a single task may require 10–30 steps, any of which can go wrong</li>
+<li><strong>Error compounding</strong>: one early mistake cascades like dominoes through all subsequent steps</li>
+<li><strong>Sparse rewards</strong>: the agent receives feedback only at the very end (success or failure), with no signal for intermediate steps</li>
+</ul>
+<h3 id="1-3-Reinforcement-Learning-Foundations">1.3 Reinforcement Learning Foundations</h3>
+<p>Reinforcement Learning (RL) is a machine learning paradigm where an agent learns optimal behavior through trial-and-error interaction with an environment. The key components:</p>
+<ul>
+<li><strong>Agent</strong>: the learner and decision-maker</li>
+<li><strong>Environment</strong>: the world the agent interacts with (here: a web browser)</li>
+<li><strong>State</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>s</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">s_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>: the current situation (current webpage + action history)</li>
+<li><strong>Action</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">a_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>: what the agent can do (click, type, scroll, etc.)</li>
+<li><strong>Reward</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>r</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">r_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>: feedback signal from the environment</li>
+<li><strong>Policy</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>π</mi><mo stretchy="false">(</mo><mi>a</mi><mi mathvariant="normal">∣</mi><mi>s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\pi(a|s)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">π</span><span class="mopen">(</span><span class="mord mathnormal">a</span><span class="mord">∣</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span></span>: the mapping from states to actions</li>
+</ul>
+<p><strong>The Sparse Reward Problem</strong>: In web navigation, rewards are extremely sparse—binary 1 (success) or 0 (failure) at the end of an episode. Imagine learning to cook a 20-step recipe where you only find out if the dish tastes good after eating the final product. The agent cannot determine which specific steps contributed to success or failure. This is the credit assignment problem that MiRA directly addresses.</p>
+<h3 id="1-4-Partially-Observable-Markov-Decision-Processes-POMDPs">1.4 Partially Observable Markov Decision Processes (POMDPs)</h3>
+<p>Web navigation is formalized as a POMDP, defined by the tuple <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mo stretchy="false">⟨</mo><mi>S</mi><mo separator="true">,</mo><mi>A</mi><mo separator="true">,</mo><mi mathvariant="normal">Ω</mi><mo separator="true">,</mo><mi>T</mi><mo separator="true">,</mo><mi>O</mi><mo separator="true">,</mo><mi>R</mi><mo separator="true">,</mo><mi>H</mi><mo stretchy="false">⟩</mo></mrow><annotation encoding="application/x-tex">M = \langle S, A, \Omega, T, O, R, H \rangle</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">⟨</span><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">A</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">Ω</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.00773em;">R</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="mclose">⟩</span></span></span></span>:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi></mrow><annotation encoding="application/x-tex">S</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05764em;">S</span></span></span></span>: latent environment states (e.g., server-side databases, hidden DOM elements)</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi></mrow><annotation encoding="application/x-tex">A</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">A</span></span></span></span>: action space (click, type, scroll, etc.)</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Ω</mi></mrow><annotation encoding="application/x-tex">\Omega</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Ω</span></span></span></span>: observation space (rendered HTML, screenshots, task instructions)</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi></mrow><annotation encoding="application/x-tex">T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span></span></span></span>: state transition function</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi></mrow><annotation encoding="application/x-tex">O</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span></span></span></span>: observation function</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi></mrow><annotation encoding="application/x-tex">R</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.00773em;">R</span></span></span></span>: reward function</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi></mrow><annotation encoding="application/x-tex">H</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.08125em;">H</span></span></span></span>: finite horizon</li>
+</ul>
+<p>The critical point is that the agent cannot directly observe the full environment state—it must infer progress from partial observations.</p>
+<h3 id="1-5-Reward-Shaping">1.5 Reward Shaping</h3>
+<p>Reward shaping is a classic technique for mitigating the sparse reward problem. Potential-Based Reward Shaping (PBRS) augments the reward signal by introducing a potential function <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Φ</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\Phi(s)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">Φ</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span></span>:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mover accent="true"><mi>r</mi><mo>~</mo></mover><mi>t</mi></msub><mo>=</mo><msub><mi>r</mi><mi>t</mi></msub><mo>+</mo><mi>γ</mi><mi mathvariant="normal">Φ</mi><mo stretchy="false">(</mo><msub><mi>s</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo stretchy="false">)</mo><mo>−</mo><mi mathvariant="normal">Φ</mi><mo stretchy="false">(</mo><msub><mi>s</mi><mi>t</mi></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\tilde{r}_t = r_t + \gamma \Phi(s_{t+1}) - \Phi(s_t)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8179em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6679em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">r</span></span><span style="top:-3.35em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1944em;"><span class="mord">~</span></span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.05556em;">γ</span><span class="mord">Φ</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">Φ</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span></span></p>
+<p>Intuitively, if the next state has higher potential than the current state, the agent is moving in the right direction and receives a bonus. This provides denser feedback without (in theory) changing the optimal policy.</p>
+<h3 id="1-6-Subgoal-Decomposition">1.6 Subgoal Decomposition</h3>
+<p>Subgoal decomposition breaks a complex, long-term goal into smaller, verifiable intermediate objectives. For example, &quot;find the nearest cafe near CMU on the map&quot; becomes:</p>
+<ol>
+<li>Subgoal 1: Open the map</li>
+<li>Subgoal 2: Search for CMU</li>
+<li>Subgoal 3: Apply the 50-mile filter</li>
+<li>Subgoal 4: Identify the nearest cafe</li>
+</ol>
+<p>This decomposition makes long-horizon planning more tractable and provides verifiable checkpoints for measuring intermediate progress.</p>
+<h3 id="1-7-Value-Functions-and-Critics-in-RL">1.7 Value Functions and Critics in RL</h3>
+<p>A <strong>value function</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">V(s)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span></span> estimates the expected cumulative future reward from state <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span>. A <strong>critic</strong> is a neural network that learns this value function. In actor-critic methods, the critic evaluates how good the agent's actions are, while the <strong>actor</strong> (policy network) decides what actions to take. MiRA introduces a novel <strong>dual-critic</strong> architecture with distinct roles for each critic.</p>
+<hr>
+<h2 id="II-What-This-Paper-Does-Core-Contributions">II. What This Paper Does: Core Contributions</h2>
+<p><img src="figure1.png" alt="Figure 1: Overview of the MiRA framework"></p>
+<h3 id="2-1-The-Core-Problem">2.1 The Core Problem</h3>
+<p>Existing LLM web agents suffer severe performance degradation on long-horizon tasks. Through rigorous quantitative analysis, the paper reveals a critical finding: <strong>nearly 50% of failures occur because agents get &quot;stuck midway&quot;</strong> through tasks—falling into repetitive, non-productive action loops and failing to identify the next meaningful milestone.</p>
+<h3 id="2-2-Three-Main-Contributions">2.2 Three Main Contributions</h3>
+<ol>
+<li><strong>Automated Failure Analyzer</strong>: A systematic tool for diagnosing and categorizing failure modes in web navigation agents</li>
+<li><strong>Inference-Time Subgoal Planning (SGO)</strong>: Lightweight subgoal-guided planning integrated into the agent's inference loop</li>
+<li><strong>MiRA Training Framework</strong>: Milestone-based offline RL fine-tuning with dense intermediate reward signals</li>
+</ol>
+<hr>
+<h2 id="III-Methodology-in-Depth">III. Methodology in Depth</h2>
+<h3 id="3-1-Automated-Failure-Analysis-Diagnosing-the-Root-Cause">3.1 Automated Failure Analysis: Diagnosing the Root Cause</h3>
+<p>Before proposing solutions, the paper conducts a thorough diagnostic study. The authors build an automated analyzer powered by Gemini-2.5-Flash that performs three core functions:</p>
+<p><strong>Function 1: Trajectory Evaluation and Summarization</strong>
+Based on hardcoded behavioral rules, the analyzer objectively determines whether a trajectory failed and produces a factual summary (e.g., &quot;Agent navigated to Hollidaysburg page. Agent extracted information. Agent failed to move forward and terminated. Final benchmark check: FAILED.&quot;).</p>
+<p><strong>Function 2: Prioritized Rule-Based Categorization</strong></p>
+<p>Failed trajectories are classified into four mutually exclusive categories (applied in strict priority order):</p>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Rule</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Stop at Wrong Page</td>
+<td>Agent called exit() but answer was judged incorrect</td>
+</tr>
+<tr>
+<td>Get Stuck Midway</td>
+<td>Repetitive pattern: identical last N actions, or short sequence repeating M times</td>
+</tr>
+<tr>
+<td>Fail to Make Reasonable Attempt</td>
+<td>Reached right page but didn't try exit(), or failed very early</td>
+</tr>
+<tr>
+<td>Others</td>
+<td>General deviation not matching above rules</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Function 3: Identifying the Key Decision Step</strong>
+The analyzer aligns the failed trajectory against reference success traces from (1) teacher demonstrations and (2) peer golden paths. It searches for the <strong>First Point of Significant Divergence</strong>—the earliest timestep where the agent's action semantically contradicts the reference strategy. Two divergence patterns are detected:</p>
+<ul>
+<li><strong>Semantic Deviation</strong>: choosing a link/query that conceptually drifts from successful traces</li>
+<li><strong>Stagnation and Loop Onset</strong>: detecting cyclic sub-graphs and marking the loop entry point</li>
+</ul>
+<p><strong>Validation</strong>: On 40 manually labeled examples, the analyzer achieves 92.5% agreement with human annotators (37/40), with 100% accuracy on &quot;Stuck Midway&quot; and &quot;Wrong Termination&quot; categories.</p>
+<p><strong>Key Finding</strong>: Across all tested models (Gemini-2.5-pro, Gemma, Gemma-SFT), &quot;Get Stuck Midway&quot; is the dominant failure mode, accounting for 42%–49% of all failures. This finding directly motivates the MiRA framework design.</p>
+<h3 id="3-2-Subgoal-Generation-Building-a-Reliable-Progress-Signal">3.2 Subgoal Generation: Building a Reliable Progress Signal</h3>
+<p><strong>Methodology</strong>: The teacher model (Gemini-2.5-pro) generates subgoals given a high-level task description and the current web state. An iterative in-context learning strategy is employed with 2 curated few-shot demonstrations per website category, with randomized distribution to prevent positional bias.</p>
+<p><img src="figure4.png" alt="Figure 4"></p>
+<p><strong>Subgoal Quality Validation</strong> (Figure 4):</p>
+<p>The paper validates subgoals on two levels:</p>
+<ol>
+<li>
+<p><strong>Exact Equivalence</strong> (Does completing all subgoals = success?):</p>
+<ul>
+<li>Equivalence-F1: 0.6847</li>
+<li>Precision: 0.7917 (completing all subgoals strongly indicates success)</li>
+<li>Recall: 0.6032 (agents sometimes succeed via alternative paths)</li>
+</ul>
+</li>
+<li>
+<p><strong>Graded Agreement</strong> (Is partial completion a reliable progress indicator?):</p>
+<ul>
+<li><strong>AUROC = 0.84</strong>: Subgoal completion effectively rank-orders trajectories</li>
+<li><strong>Strict monotonicity</strong>: More completed subgoals → strictly increasing success probability</li>
+<li>Kendall's τ = 0.4585 (p &lt; 0.001)</li>
+</ul>
+</li>
+</ol>
+<p><strong>Conclusion</strong>: Subgoals are not rigid constraints but provide a dense, calibrated progress signal.</p>
+<h3 id="3-3-Inference-Time-Dynamic-Milestoning-SGO">3.3 Inference-Time Dynamic Milestoning (SGO)</h3>
+<p><img src="figure5.png" alt="Figure 5"></p>
+<p>The SGO framework forces the agent to &quot;think before acting&quot; by converting subgoals into dynamic checkpoints. At each timestep <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi></mrow><annotation encoding="application/x-tex">t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6151em;"></span><span class="mord mathnormal">t</span></span></span></span>, the agent performs retrospective reflection by answering three critical questions (Figure 5):</p>
+<ol>
+<li><strong>&quot;What milestones have I achieved?&quot;</strong> — Review the action history</li>
+<li><strong>&quot;Have I completed the current subgoal?&quot;</strong> — Use AutoRater (LLM-as-Judge) verification</li>
+<li><strong>&quot;What milestones should I achieve next?&quot;</strong> — Plan the immediate next action</li>
+</ol>
+<p>The agent maintains an explicit progress vector <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi mathvariant="bold">z</mi><mrow><mi>i</mi><mo separator="true">,</mo><mi>t</mi></mrow></msub><mo>=</mo><mo stretchy="false">[</mo><msub><mi>z</mi><mrow><mi>i</mi><mo separator="true">,</mo><mn>1</mn></mrow></msub><mo separator="true">,</mo><msub><mi>z</mi><mrow><mi>i</mi><mo separator="true">,</mo><mn>2</mn></mrow></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>z</mi><mrow><mi>i</mi><mo separator="true">,</mo><mi>K</mi></mrow></msub><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">\mathbf{z}_{i,t} = [z_{i,1}, z_{i,2}, \ldots, z_{i,K}]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7305em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathbf">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mopen">[</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mpunct mtight">,</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mpunct mtight">,</span><span class="mord mtight">2</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight" style="margin-right:0.07153em;">K</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose">]</span></span></span></span> where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mrow><mi>i</mi><mo separator="true">,</mo><mi>k</mi></mrow></msub><mo>∈</mo><mo stretchy="false">{</mo><mn>0</mn><mo separator="true">,</mo><mn>1</mn><mo stretchy="false">}</mo></mrow><annotation encoding="application/x-tex">z_{i,k} \in \{0, 1\}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8252em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">{</span><span class="mord">0</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mclose">}</span></span></span></span>.</p>
+<p><img src="figure9.png" alt="Figure 9"></p>
+<p><strong>Concrete Example</strong> (Figure 9 — GitLab Todo Task):</p>
+<p>Task: &quot;Check out my todos on GitLab, review them and open the first item for details.&quot;</p>
+<p>The agent's introspective reasoning:</p>
+<blockquote>
+<p>&quot;Reviewing the action log: I opened the GitLab homepage (satisfies g₁), clicked the To-Do nav icon and reached /dashboard/todos (satisfies g₂). Progress vector: [1,1,0,0]. Current target is g₃ — reviewing the list. The page shows a list of items with titles and links. Since I've enumerated them, I mark g₃ as completed: [1,1,1,0]. Only g₄ remains. I find element_id=20 labeled '#1534 404 for many URLs'. Next action: click(element_id=20).&quot;</p>
+</blockquote>
+<p><strong>Error Recovery Mechanisms</strong>:</p>
+<ul>
+<li>If a required milestone is unsatisfied (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mrow><mi>i</mi><mo separator="true">,</mo><mi>k</mi></mrow></msub><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">z_{i,k} = 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0</span></span></span></span>), the agent is prevented from hallucinating progress</li>
+<li>Confirmed milestones act as contextual anchors, focusing planning on the immediate next step</li>
+<li>Dynamic re-planning when progress stalls or deviates</li>
+</ul>
+<h3 id="3-4-The-MiRA-Training-Framework-Milestone-Driven-RL">3.4 The MiRA Training Framework: Milestone-Driven RL</h3>
+<p>MiRA is the paper's central technical contribution, introducing a dual-critic architecture that integrates subgoal feedback into RL training.</p>
+<p><img src="figure6.png" alt="Figure 6"></p>
+<h4 id="3-4-1-Dual-Critic-Architecture-Figure-6">3.4.1 Dual-Critic Architecture (Figure 6)</h4>
+<p>Two independent critic networks with distinct roles:</p>
+<ol>
+<li>
+<p><strong>Value Critic</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>V</mi><mi>ϕ</mi></msub><mo stretchy="false">(</mo><mi>s</mi><mo separator="true">,</mo><mi>g</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">V_\phi(s, g)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">ϕ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">g</span><span class="mclose">)</span></span></span></span>: Trained via binary cross-entropy on final success/failure outcomes</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi mathvariant="script">L</mi><mi>V</mi></msub><mo stretchy="false">(</mo><mi>ϕ</mi><mo stretchy="false">)</mo><mo>=</mo><mo>−</mo><msub><mi mathvariant="double-struck">E</mi><mrow><mo stretchy="false">(</mo><mi>s</mi><mo separator="true">,</mo><mi>I</mi><mo stretchy="false">)</mo><mo>∼</mo><mi mathvariant="script">D</mi></mrow></msub><mrow><mo fence="true">[</mo><mi>r</mi><mi>log</mi><mo>⁡</mo><msub><mi>V</mi><mi>ϕ</mi></msub><mo>+</mo><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><mi>r</mi><mo stretchy="false">)</mo><mi>log</mi><mo>⁡</mo><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><msub><mi>V</mi><mi>ϕ</mi></msub><mo stretchy="false">)</mo><mo fence="true">]</mo></mrow></mrow><annotation encoding="application/x-tex">\mathcal{L}_V(\phi) = -\mathbb{E}_{(s,I)\sim\mathcal{D}}\left[r \log V_\phi + (1-r) \log(1-V_\phi)\right]
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathcal">L</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.22222em;">V</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">ϕ</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1052em;vertical-align:-0.3552em;"></span><span class="mord">−</span><span class="mord"><span class="mord mathbb">E</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.5198em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathnormal mtight">s</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight" style="margin-right:0.07847em;">I</span><span class="mclose mtight">)</span><span class="mrel mtight">∼</span><span class="mord mathcal mtight" style="margin-right:0.02778em;">D</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3552em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;">[</span><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">lo<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">ϕ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">lo<span style="margin-right:0.01389em;">g</span></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">ϕ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mclose delimcenter" style="top:0em;">]</span></span></span></span></span></span></p>
+</li>
+<li>
+<p><strong>Potential Critic</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mi>ψ</mi></msub><mo stretchy="false">(</mo><mi>s</mi><mo separator="true">,</mo><mi>g</mi><mo stretchy="false">)</mo><mo>∈</mo><mo stretchy="false">[</mo><mn>0</mn><mo separator="true">,</mo><mn>1</mn><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">P_\psi(s, g) \in [0, 1]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">ψ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">g</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord">0</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mclose">]</span></span></span></span>: Trained via MSE regression on progress labels</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi mathvariant="script">L</mi><mi>P</mi></msub><mo stretchy="false">(</mo><mi>ψ</mi><mo stretchy="false">)</mo><mo>=</mo><mi mathvariant="double-struck">E</mi><mrow><mo fence="true">[</mo><mi mathvariant="normal">∥</mi><msub><mi>P</mi><mi>ψ</mi></msub><mo stretchy="false">(</mo><msub><mi>s</mi><mi>t</mi></msub><mo separator="true">,</mo><mi>g</mi><mo stretchy="false">)</mo><mo>−</mo><msubsup><mi>p</mi><mi>t</mi><mo>∗</mo></msubsup><msup><mi mathvariant="normal">∥</mi><mn>2</mn></msup><mo fence="true">]</mo></mrow></mrow><annotation encoding="application/x-tex">\mathcal{L}_P(\psi) = \mathbb{E}\left[\|P_\psi(s_t, g) - p_t^*\|^2\right]
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathcal">L</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">P</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.03588em;">ψ</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.2141em;vertical-align:-0.35em;"></span><span class="mord mathbb">E</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size1">[</span></span><span class="mord">∥</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">ψ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">g</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal">p</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7387em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">∗</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord">∥</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size1">]</span></span></span></span></span></span></span></p>
+</li>
+</ol>
+<h4 id="3-4-2-Progress-Label-Construction">3.4.2 Progress Label Construction</h4>
+<p>Discrete subgoal completions are transformed into smooth, continuous progress labels through <strong>linear interpolation</strong>. Given the <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>j</mi></mrow><annotation encoding="application/x-tex">j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.854em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05724em;">j</span></span></span></span>-th and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">(</mo><mi>j</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">(j+1)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.05724em;">j</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1</span><span class="mclose">)</span></span></span></span>-th subgoals completing at timesteps <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>t</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">t_j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9012em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>t</mi><mrow><mi>j</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow><annotation encoding="application/x-tex">t_{j+1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9012em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span>:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>α</mi><mi>t</mi></msub><mo>=</mo><mfrac><mrow><mi>t</mi><mo>−</mo><msub><mi>t</mi><mi>j</mi></msub></mrow><mrow><msub><mi>t</mi><mrow><mi>j</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>−</mo><msub><mi>t</mi><mi>j</mi></msub></mrow></mfrac><mo separator="true">,</mo><mspace width="1em"/><msubsup><mi>p</mi><mi>t</mi><mo>∗</mo></msubsup><mo>=</mo><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><msub><mi>α</mi><mi>t</mi></msub><mo stretchy="false">)</mo><mfrac><mi>j</mi><mi>K</mi></mfrac><mo>+</mo><msub><mi>α</mi><mi>t</mi></msub><mfrac><mrow><mi>j</mi><mo>+</mo><mn>1</mn></mrow><mi>K</mi></mfrac></mrow><annotation encoding="application/x-tex">\alpha_t = \frac{t - t_j}{t_{j+1} - t_j}, \quad p_t^* = (1-\alpha_t)\frac{j}{K} + \alpha_t\frac{j+1}{K}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0037em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.2642em;vertical-align:-0.9721em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.2921em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.9721em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">p</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7387em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">∗</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.0225em;vertical-align:-0.686em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0037em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3365em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.0225em;vertical-align:-0.686em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0037em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3365em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05724em;">j</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p><strong>Worked Example</strong>: For a trajectory with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi><mo>=</mo><mn>3</mn></mrow><annotation encoding="application/x-tex">K=3</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">3</span></span></span></span> subgoals completing at <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>t</mi><mn>1</mn></msub><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">t_1=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7651em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span> and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>t</mi><mn>2</mn></msub><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">t_2=4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7651em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">t</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span>, with episode termination at <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mo>=</mo><mn>9</mn></mrow><annotation encoding="application/x-tex">T=9</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">9</span></span></span></span>:</p>
+<ul>
+<li>Segment 1 (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi><mo>∈</mo><mo stretchy="false">[</mo><mn>0</mn><mo separator="true">,</mo><mn>2</mn><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">t \in [0,2]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6542em;vertical-align:-0.0391em;"></span><span class="mord mathnormal">t</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord">0</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">2</span><span class="mclose">]</span></span></span></span>): Progress ramps <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn><mo>→</mo><mn>0.33</mn></mrow><annotation encoding="application/x-tex">0 \to 0.33</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.33</span></span></span></span></li>
+<li>Segment 2 (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi><mo>∈</mo><mo stretchy="false">[</mo><mn>2</mn><mo separator="true">,</mo><mn>4</mn><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">t \in [2,4]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6542em;vertical-align:-0.0391em;"></span><span class="mord mathnormal">t</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord">2</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">4</span><span class="mclose">]</span></span></span></span>): Progress ramps <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0.33</mn><mo>→</mo><mn>0.66</mn></mrow><annotation encoding="application/x-tex">0.33 \to 0.66</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.33</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.66</span></span></span></span></li>
+<li>Segment 3 (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi><mo>∈</mo><mo stretchy="false">[</mo><mn>4</mn><mo separator="true">,</mo><mn>9</mn><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">t \in [4,9]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6542em;vertical-align:-0.0391em;"></span><span class="mord mathnormal">t</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord">4</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">9</span><span class="mclose">]</span></span></span></span>): Progress ramps <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0.66</mn><mo>→</mo><mn>1.0</mn></mrow><annotation encoding="application/x-tex">0.66 \to 1.0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.66</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1.0</span></span></span></span> (final subgoal anchored to trajectory end)</li>
+</ul>
+<p>The <strong>gap anchoring</strong> technique ensures the potential critic learns a monotonically increasing value function that drives the agent through final verification steps to the sparse terminal reward.</p>
+<h4 id="3-4-3-Auxiliary-Reward-Shaping">3.4.3 Auxiliary Reward Shaping</h4>
+<p>During RL, the potential critic provides auxiliary shaping rewards:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msup><mi>r</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>=</mo><mi>r</mi><mo>+</mo><mi>α</mi><mrow><mo fence="true">[</mo><msub><mi>P</mi><mi>ψ</mi></msub><mo stretchy="false">(</mo><msub><mi>s</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo separator="true">,</mo><mi>g</mi><mo stretchy="false">)</mo><mo>−</mo><msub><mi>P</mi><mi>ψ</mi></msub><mo stretchy="false">(</mo><msub><mi>s</mi><mi>t</mi></msub><mo separator="true">,</mo><mi>g</mi><mo stretchy="false">)</mo><mo fence="true">]</mo></mrow></mrow><annotation encoding="application/x-tex">r&#x27; = r + \alpha\left[P_\psi(s_{t+1}, g) - P_\psi(s_t, g)\right]
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8019em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8019em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;">[</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">ψ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">g</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">ψ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">g</span><span class="mclose">)</span><span class="mclose delimcenter" style="top:0em;">]</span></span></span></span></span></span></p>
+<p><strong>Critical Design Principle</strong>: The subgoal-based potentials are strictly <strong>auxiliary</strong>. The main value critic <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>V</mi><mi>ϕ</mi></msub></mrow><annotation encoding="application/x-tex">V_\phi</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">ϕ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> is trained solely on true task rewards. Furthermore, shaping signals are derived only from <strong>positive traces</strong> (trajectories that ultimately succeed), ensuring subgoal completion is statistically correlated with task completion. If a subgoal does not correlate with success, its shaping influence naturally diminishes.</p>
+<h4 id="3-4-4-Policy-Optimization-MSE-Regression">3.4.4 Policy Optimization: MSE Regression</h4>
+<p>MiRA adopts a distinctive policy update strategy—treating the policy update as a regression problem on log-probability ratios:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi mathvariant="script">L</mi><mi>π</mi></msub><mo stretchy="false">(</mo><mi>θ</mi><mo stretchy="false">)</mo><mo>=</mo><msub><mi mathvariant="double-struck">E</mi><mi>ν</mi></msub><mrow><mo fence="true">[</mo><msup><mrow><mo fence="true">(</mo><mi>β</mi><mi>log</mi><mo>⁡</mo><mfrac><mrow><msub><mi>π</mi><mi>θ</mi></msub><mo stretchy="false">(</mo><mi>a</mi><mi mathvariant="normal">∣</mi><mi>s</mi><mo separator="true">,</mo><mi>I</mi><mo stretchy="false">)</mo></mrow><mrow><msub><mi>π</mi><mtext>ref</mtext></msub><mo stretchy="false">(</mo><mi>a</mi><mi mathvariant="normal">∣</mi><mi>s</mi><mo separator="true">,</mo><mi>I</mi><mo stretchy="false">)</mo></mrow></mfrac><mo>−</mo><msubsup><mi>A</mi><mi>t</mi><mtext>shaped</mtext></msubsup><mo fence="true">)</mo></mrow><mn>2</mn></msup><mo fence="true">]</mo></mrow></mrow><annotation encoding="application/x-tex">\mathcal{L}_\pi(\theta) = \mathbb{E}_\nu\left[\left(\beta \log \frac{\pi_\theta(a|s,I)}{\pi_{\text{ref}}(a|s,I)} - A_t^{\text{shaped}}\right)^2\right]
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathcal">L</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">π</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02778em;">θ</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3em;vertical-align:-1.25em;"></span><span class="mord"><span class="mord mathbb">E</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.06366em;">ν</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size4">[</span></span><span class="minner"><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">(</span></span><span class="mord mathnormal" style="margin-right:0.05278em;">β</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">lo<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">π</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">ref</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">a</span><span class="mord">∣</span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.07847em;">I</span><span class="mclose">)</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">π</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">a</span><span class="mord">∣</span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.07847em;">I</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal">A</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.967em;"><span style="top:-2.4542em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span><span style="top:-3.1809em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">shaped</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2458em;"><span></span></span></span></span></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">)</span></span></span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:1.654em;"><span style="top:-3.9029em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size4">]</span></span></span></span></span></span></span></p>
+<p><strong>Why MSE Over KL Divergence?</strong></p>
+<p><img src="figure11.png" alt="Figure 11"></p>
+<p>This is a critical design decision validated by ablation (Figure 11b):</p>
+<ul>
+<li><strong>KL divergence</strong> requires training data sampled from <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>π</mi><mtext>ref</mtext></msub></mrow><annotation encoding="application/x-tex">\pi_{\text{ref}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">π</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">ref</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> (on-policy constraint)</li>
+<li>KL can only <em>increase</em> probability of sampled actions—it cannot explicitly <em>decrease</em> probability of negative-advantage actions</li>
+<li><strong>MSE</strong> operates on <em>any</em> data distribution and directly regresses log-ratios toward advantages, enabling both upweighting of good actions and downweighting of bad ones</li>
+<li>The KL variant initially drops below the SFT baseline and recovers only to ~33% by Phase 6—nearly 10% below the full method</li>
+</ul>
+<p>The gradient interpretation reveals three mechanisms:</p>
+<ul>
+<li><strong>Advantage-guided update</strong>: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>&gt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">A &gt; 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal">A</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">&gt;</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0</span></span></span></span> increases action probability; <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>&lt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">A &lt; 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal">A</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">&lt;</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0</span></span></span></span> decreases it</li>
+<li><strong>KL-constrained regularization</strong>: prevents excessive deviation from the reference policy</li>
+<li><strong>Off-policy capability</strong>: expectation taken over any data distribution</li>
+</ul>
+<h4 id="3-4-5-Doubly-Robust-Advantage-Estimation">3.4.5 Doubly-Robust Advantage Estimation</h4>
+<p>The advantage target mixes a 1-step TD error with a full Monte-Carlo return:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msubsup><mi>A</mi><mi>t</mi><mtext>shaped</mtext></msubsup><mo>=</mo><mi>λ</mi><mrow><mo fence="true">[</mo><msubsup><mi>r</mi><mi>t</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msubsup><mo>+</mo><mi>γ</mi><msub><mi>V</mi><mi>ϕ</mi></msub><mo stretchy="false">(</mo><msup><mi>s</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo separator="true">,</mo><mi>g</mi><mo stretchy="false">)</mo><mo>−</mo><msub><mi>V</mi><mi>ϕ</mi></msub><mo stretchy="false">(</mo><mi>s</mi><mo separator="true">,</mo><mi>g</mi><mo stretchy="false">)</mo><mo fence="true">]</mo></mrow><mo>+</mo><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><mi>λ</mi><mo stretchy="false">)</mo><mrow><mo fence="true">[</mo><msub><mi>G</mi><mi>t</mi></msub><mo>−</mo><msub><mi>V</mi><mi>ϕ</mi></msub><mo stretchy="false">(</mo><mi>s</mi><mo separator="true">,</mo><mi>g</mi><mo stretchy="false">)</mo><mo fence="true">]</mo></mrow></mrow><annotation encoding="application/x-tex">A_t^{\text{shaped}} = \lambda\left[r_t&#x27; + \gamma V_\phi(s&#x27;, g) - V_\phi(s, g)\right] + (1-\lambda)\left[G_t - V_\phi(s, g)\right]
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.2128em;vertical-align:-0.2458em;"></span><span class="mord"><span class="mord mathnormal">A</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.967em;"><span style="top:-2.4542em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span><span style="top:-3.1809em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">shaped</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2458em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.088em;vertical-align:-0.2861em;"></span><span class="mord mathnormal">λ</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;">[</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8019em;"><span style="top:-2.453em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal" style="margin-right:0.05556em;">γ</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">ϕ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8019em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">g</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">ϕ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">g</span><span class="mclose">)</span><span class="mclose delimcenter" style="top:0em;">]</span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord mathnormal">λ</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;">[</span><span class="mord"><span class="mord mathnormal">G</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">ϕ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">g</span><span class="mclose">)</span><span class="mclose delimcenter" style="top:0em;">]</span></span></span></span></span></span></p>
+<p>This balances the low variance of TD learning with the unbiased nature of MC returns. The ablation shows this is essential: without it, performance collapses to ~25% in early phases due to poorly calibrated critic bias, before slowly recovering.</p>
+<p><img src="figure8.png" alt="Figure 8"></p>
+<h3 id="3-5-Iterative-Policy-Refinement-Cycle-Figure-8">3.5 Iterative Policy Refinement Cycle (Figure 8)</h3>
+<p>MiRA uses an iterative curriculum learning approach:</p>
+<ol>
+<li>Current policy interacts with the environment, collecting trajectories</li>
+<li>Failed trajectories are analyzed to generate harder task distributions</li>
+<li>Policy is refined through offline batched RL updates</li>
+<li>Redeployed on the new task distribution</li>
+<li>Repeat</li>
+</ol>
+<p>This &quot;online curriculum of offline RL phases&quot; prevents saturation on fixed task sets.</p>
+<hr>
+<h2 id="IV-Experimental-Setup-and-Results">IV. Experimental Setup and Results</h2>
+<h3 id="4-1-Setup">4.1 Setup</h3>
+<ul>
+<li><strong>Benchmark</strong>: WebArena-Lite (165 tasks across 5 domains: Shopping Admin(35), Map(26), Shopping(45), Reddit(19), Gitlab(30))</li>
+<li><strong>Why WebArena-Lite?</strong> The full 812-task WebArena has many underspecified tasks and unstable evaluations. WebArena-Lite ensures failures reflect agent reasoning rather than environment faults. Evaluation time: ~40 minutes vs. 6+ hours.</li>
+<li><strong>Baselines</strong>: GPT-4-Turbo, GPT-4o, Gemini-2.5 family, Llama-3.1 (8B), Gemma-3 (12B), with SFT/AWR/DigiRL/WebRL training methods</li>
+<li><strong>Training protocol</strong>: All learning-based methods initialized from the same SFT checkpoints</li>
+</ul>
+<h3 id="4-2-Main-Results-Table-3">4.2 Main Results (Table 3)</h3>
+<p><strong>Proprietary Models</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Average SR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPT-4-Turbo</td>
+<td>17.6%</td>
+</tr>
+<tr>
+<td>GPT-4o</td>
+<td>13.9%</td>
+</tr>
+<tr>
+<td>Gemini-2.5-flash</td>
+<td>20.6%</td>
+</tr>
+<tr>
+<td>Gemini-2.5-pro</td>
+<td>23.0%</td>
+</tr>
+<tr>
+<td><strong>Gemini-2.5-pro-SGO (Ours)</strong></td>
+<td><strong>32.1%</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Open-Source Models (12B scale)</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Reddit</th>
+<th>Gitlab</th>
+<th>CMS</th>
+<th>Map</th>
+<th>OSS</th>
+<th>Avg. SR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gemma3 + SFT</td>
+<td>52.6</td>
+<td>40.0</td>
+<td>42.9</td>
+<td>23.1</td>
+<td>17.8</td>
+<td>30.9</td>
+</tr>
+<tr>
+<td>Gemma3 + DigiRL</td>
+<td>52.6</td>
+<td>46.7</td>
+<td>37.1</td>
+<td>34.6</td>
+<td>20.0</td>
+<td>33.3</td>
+</tr>
+<tr>
+<td>Gemma3 + WebRL</td>
+<td>68.4</td>
+<td>43.3</td>
+<td>40.0</td>
+<td>30.8</td>
+<td>20.0</td>
+<td>35.1</td>
+</tr>
+<tr>
+<td><strong>Gemma3 + MiRA</strong></td>
+<td><strong>73.7</strong></td>
+<td><strong>56.7</strong></td>
+<td><strong>54.3</strong></td>
+<td>30.8</td>
+<td><strong>28.9</strong></td>
+<td><strong>43.0%</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key Takeaways</strong>:</p>
+<ol>
+<li>MiRA at 43.0% substantially outperforms WebRL (35.1%) and DigiRL (33.3%)</li>
+<li>SGO boosts Gemini-2.5-pro from 23.0% → 32.1% (~10% absolute improvement)</li>
+<li>The 12B open-source Gemma3 + MiRA surpasses all proprietary systems including GPT-4-Turbo (17.6%) and GPT-4o (13.9%)</li>
+<li>Particularly strong on Gitlab (56.7%) and Shopping Admin (54.3%) — domains requiring strict procedural dependencies</li>
+</ol>
+<h3 id="4-3-Failure-Mode-Redistribution-Table-4">4.3 Failure Mode Redistribution (Table 4)</h3>
+<table>
+<thead>
+<tr>
+<th>Failure Mode</th>
+<th>Gemini Flash</th>
+<th>Gemini Pro</th>
+<th>Gemini SGO</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Stuck Midway</td>
+<td>45.12%</td>
+<td>48.41%</td>
+<td><strong>39.87%</strong></td>
+</tr>
+<tr>
+<td>Wrong Termination</td>
+<td>10.98%</td>
+<td>9.52%</td>
+<td>12.03%</td>
+</tr>
+<tr>
+<td>Fail Attempt</td>
+<td>12.20%</td>
+<td>6.35%</td>
+<td>6.96%</td>
+</tr>
+</tbody>
+</table>
+<p><img src="figure13.png" alt="Figure 13"></p>
+<p>Post-MiRA training (Figure 13): &quot;Stuck Midway&quot; drops from ~33% (SFT) to ~21%, while &quot;Wrong Termination&quot; rises to ~31%. This represents a <em>qualitative improvement</em>: the agent now traverses the full horizon to reach terminal states (higher-level semantic failure) rather than getting stuck navigating (lower-level execution failure).</p>
+<h3 id="4-4-Ablation-Study-Figure-11b">4.4 Ablation Study (Figure 11b)</h3>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Phase 6 SR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>MiRA (Full)</strong></td>
+<td><strong>~43%</strong></td>
+</tr>
+<tr>
+<td>MiRA (w/o Potential Critic)</td>
+<td>~35%</td>
+</tr>
+<tr>
+<td>MiRA (w. KL Divergence)</td>
+<td>~33%</td>
+</tr>
+<tr>
+<td>MiRA (w/o Doubly-Robust Adv.)</td>
+<td>~37%</td>
+</tr>
+<tr>
+<td>AWR</td>
+<td>~32%</td>
+</tr>
+</tbody>
+</table>
+<p>Each component addresses a distinct failure mode:</p>
+<ul>
+<li><strong>MSE objective</strong>: enables off-policy learning and bidirectional probability adjustment</li>
+<li><strong>Doubly-robust estimator</strong>: prevents catastrophic early-phase collapse from critic bias</li>
+<li><strong>Potential critic</strong>: provides dense supervision needed for long-horizon credit assignment</li>
+</ul>
+<p><img src="figure12.png" alt="Figure 12"></p>
+<h3 id="4-5-Subgoal-Completion-Dynamics-Figure-12">4.5 Subgoal Completion Dynamics (Figure 12)</h3>
+<p>This is one of the paper's most insightful visualizations. The heatmaps show average subgoal completion probabilities across timesteps:</p>
+<ul>
+<li><strong>Phase 0</strong>: Probability mass concentrated in bottom-left → rigid vertical band over first two subgoals → agent stagnates early, consuming its entire time budget without downstream progress</li>
+<li><strong>Phase 6</strong>: Structured diagonal gradient from top-left to bottom-right → agent has acquired <strong>sequential fluency</strong>, efficiently chaining subgoals in lockstep with the episode timeline</li>
+</ul>
+<p>The transition from &quot;vertical stagnation&quot; to &quot;diagonal progression&quot; visually demonstrates MiRA breaking the initial bottleneck.</p>
+<h3 id="4-6-Pass-k-Scaling-Figure-11a">4.6 Pass@k Scaling (Figure 11a)</h3>
+<p>MiRA consistently outperforms the baseline across all sample budgets (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>∈</mo><mo stretchy="false">{</mo><mn>1</mn><mo separator="true">,</mo><mn>2</mn><mo separator="true">,</mo><mn>4</mn><mo separator="true">,</mo><mn>8</mn><mo stretchy="false">}</mo></mrow><annotation encoding="application/x-tex">k \in \{1, 2, 4, 8\}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7335em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">{</span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">2</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">4</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">8</span><span class="mclose">}</span></span></span></span>). The performance gap widens significantly in Phase 2 (+7.9% at Pass@2), demonstrating faster convergence. While the baseline narrows the gap by Phase 6, MiRA maintains a +7.5% lead at Pass@8.</p>
+<h3 id="4-7-Inference-Efficiency">4.7 Inference Efficiency</h3>
+<p><img src="figure14.png" alt="Figure 14"></p>
+<p>Analysis of &quot;Thinking Budgets&quot; (Figure 14):</p>
+<ul>
+<li>Static compute: success peaks at ~32.5% with 8192 tokens, but inference latency exceeds 19 sec/step</li>
+<li>SGO's <strong>Auto (Dynamic)</strong> strategy: achieves comparable success (~32.1%) with significantly lower latency</li>
+<li>The framework succeeds not by scaling inference compute, but by <em>intelligently distributing</em> the burden between amortized offline training costs and targeted online reasoning</li>
+</ul>
+<h3 id="4-7-Pass-k-Scaling-Analysis-Figure-11a">4.7 Pass@k Scaling Analysis (Figure 11a)</h3>
+<p>The Pass@k metric measures the probability that at least one of k sampled attempts succeeds, using the standard unbiased estimator:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>pass@k</mtext><mo>=</mo><mn>1</mn><mo>−</mo><mfrac><mrow><mo fence="true">(</mo><mfrac linethickness="0px"><mrow><mi>n</mi><mo>−</mo><mi>c</mi></mrow><mi>k</mi></mfrac><mo fence="true">)</mo></mrow><mrow><mo fence="true">(</mo><mfrac linethickness="0px"><mi>n</mi><mi>k</mi></mfrac><mo fence="true">)</mo></mrow></mfrac></mrow><annotation encoding="application/x-tex">\text{pass@k} = 1 - \frac{\binom{n-c}{k}}{\binom{n}{k}}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord">pass@k</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.6824em;vertical-align:-1.09em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.5923em;"><span style="top:-2.26em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size1">(</span></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7454em;"><span style="top:-2.355em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span style="top:-3.144em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">n</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.345em;"><span></span></span></span></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size1">)</span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.74em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size1">(</span></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8523em;"><span style="top:-2.355em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span style="top:-3.144em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">n</span><span class="mbin mtight">−</span><span class="mord mathnormal mtight">c</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.345em;"><span></span></span></span></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size1">)</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.09em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>where n is the total number of attempts and c is the number of successes.</p>
+<p>MiRA consistently outperforms the baseline across all sample budgets:</p>
+<ul>
+<li><strong>Phase 2</strong>: The gap reaches +7.9% at Pass@2, demonstrating faster convergence</li>
+<li><strong>Phase 6</strong>: While the baseline narrows the gap via curriculum effects, MiRA maintains +7.5% lead at Pass@8</li>
+</ul>
+<p>This demonstrates that MiRA improves not only single-attempt success but also overall solution coverage.</p>
+<p><img src="figure10.png" alt="Figure 10"></p>
+<h3 id="4-8-Multi-Phase-Training-and-Per-Domain-Trends-Figure-10">4.8 Multi-Phase Training and Per-Domain Trends (Figure 10)</h3>
+<p><strong>Overall Trends</strong> (Figure 10a): MiRA steadily improves from initial SR ~31% to 43%, while the baseline RL without subgoal shaping saturates near 35%.</p>
+<p><strong>Per-Domain Trends</strong> (Figure 10b):</p>
+<ul>
+<li><strong>Reddit</strong>: SFT 52.6% → MiRA 73.7% (largest absolute gain)</li>
+<li><strong>Gitlab</strong>: 40.0% → 56.7% (multi-step procedural dependency tasks)</li>
+<li><strong>Shopping Admin (CMS)</strong>: 42.9% → 54.3%</li>
+<li><strong>Map</strong>: 23.1% → 30.8% (limited improvement, possibly due to special visual-spatial reasoning needs)</li>
+<li><strong>Shopping (OSS)</strong>: 17.8% → 28.9%</li>
+</ul>
+<p>The striking gains on Gitlab and CMS validate the special value of potential-based reward shaping in complex multi-step interactions—these domains require strict adherence to procedural dependencies that purely sparse-reward methods struggle to capture.</p>
+<h3 id="4-9-Inference-Efficiency-Thinking-Budget-Analysis-Figure-14">4.9 Inference Efficiency: Thinking Budget Analysis (Figure 14)</h3>
+<p>This analysis reveals an important compute-performance trade-off:</p>
+<table>
+<thead>
+<tr>
+<th>Thinking Budget (tokens)</th>
+<th>Success Rate</th>
+<th>Inference Latency</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>256</td>
+<td>~24.3%</td>
+<td>~6.5 sec/step</td>
+</tr>
+<tr>
+<td>1024</td>
+<td>~27%</td>
+<td>~8 sec/step</td>
+</tr>
+<tr>
+<td>4096</td>
+<td>~30%</td>
+<td>~13 sec/step</td>
+</tr>
+<tr>
+<td>8192</td>
+<td>~32.5% (peak)</td>
+<td>~19 sec/step</td>
+</tr>
+<tr>
+<td>16384</td>
+<td>~26% (drops!)</td>
+<td>&gt;20 sec/step</td>
+</tr>
+<tr>
+<td>Auto (Dynamic)</td>
+<td>~32.1%</td>
+<td>~16.7 sec/step</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key findings</strong>:</p>
+<ol>
+<li>Excessively large static budgets (16384 tokens) cause diminishing or negative returns—extra reasoning introduces unnecessary deliberation</li>
+<li>The dynamic thinking mode achieves comparable success to the optimal static budget with lower latency</li>
+<li>The framework succeeds by <em>intelligently distributing</em> the compute burden between amortized offline training and targeted online reasoning</li>
+</ol>
+<h3 id="4-10-Understanding-the-PBRS-Equivalence-Proof">4.10 Understanding the PBRS Equivalence Proof</h3>
+<p>The paper provides an important theoretical proof in Appendix A.1: Potential-Based Reward Shaping is equivalent to training with the original reward but initializing the Q-function to the potential function Φ.</p>
+<p><strong>Intuitive explanation</strong>: Imagine navigating a complex maze. PBRS is like giving you a &quot;height map&quot;—telling you how &quot;high&quot; your current position is relative to the exit. This height information doesn't change where the exit is (optimal policy preserved), but helps you find downhill paths faster (accelerated learning).</p>
+<p>Formally, for any goal g and all iteration steps k:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mover accent="true"><mi>Q</mi><mo>~</mo></mover><mi>k</mi></msub><mo stretchy="false">(</mo><mi>s</mi><mo separator="true">,</mo><mi>a</mi><mo separator="true">,</mo><mi>g</mi><mo stretchy="false">)</mo><mo>=</mo><msub><mi>Q</mi><mi>k</mi></msub><mo stretchy="false">(</mo><mi>s</mi><mo separator="true">,</mo><mi>a</mi><mo separator="true">,</mo><mi>g</mi><mo stretchy="false">)</mo><mo>−</mo><mi mathvariant="normal">Φ</mi><mo stretchy="false">(</mo><mi>s</mi><mo separator="true">,</mo><mi>g</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\tilde{Q}_k(s, a, g) = Q_k(s, a, g) - \Phi(s, g)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.1702em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord accent"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.9202em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">Q</span></span><span style="top:-3.6023em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">~</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1944em;"><span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">a</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">g</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">Q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">a</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">g</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">Φ</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">g</span><span class="mclose">)</span></span></span></span></span></p>
+<p>Since Φ(s, g) is a constant with respect to action a, policy invariance is guaranteed:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>arg</mi><mo>⁡</mo><munder><mrow><mi>max</mi><mo>⁡</mo></mrow><mi>a</mi></munder><msub><mover accent="true"><mi>Q</mi><mo>~</mo></mover><mi>k</mi></msub><mo stretchy="false">(</mo><mi>s</mi><mo separator="true">,</mo><mi>a</mi><mo separator="true">,</mo><mi>g</mi><mo stretchy="false">)</mo><mo>=</mo><mi>arg</mi><mo>⁡</mo><munder><mrow><mi>max</mi><mo>⁡</mo></mrow><mi>a</mi></munder><msub><mi>Q</mi><mi>k</mi></msub><mo stretchy="false">(</mo><mi>s</mi><mo separator="true">,</mo><mi>a</mi><mo separator="true">,</mo><mi>g</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\arg\max_a \tilde{Q}_k(s, a, g) = \arg\max_a Q_k(s, a, g)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.6202em;vertical-align:-0.7em;"></span><span class="mop">ar<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.4306em;"><span style="top:-2.4em;margin-left:0em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">a</span></span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span><span class="mop">max</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.7em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord accent"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.9202em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">Q</span></span><span style="top:-3.6023em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">~</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1944em;"><span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">a</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">g</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.45em;vertical-align:-0.7em;"></span><span class="mop">ar<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.4306em;"><span style="top:-2.4em;margin-left:0em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">a</span></span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span><span class="mop">max</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.7em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">Q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">a</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">g</span><span class="mclose">)</span></span></span></span></span></p>
+<p><strong>Practical significance</strong>: MiRA's auxiliary reward shaping theoretically does not bias the optimal policy—it only accelerates learning. However, since MiRA uses a <em>learned</em> potential estimate rather than the true potential, strict policy invariance is approximate in practice. The paper mitigates this by (1) restricting shaping to positive traces only, and (2) keeping the main value critic trained solely on true task rewards.</p>
+<h3 id="4-11-Potential-Critic-Training-Details">4.11 Potential Critic Training Details</h3>
+<p>The potential critic construction involves several carefully designed steps:</p>
+<ol>
+<li>
+<p><strong>Data Collection</strong>: Llama3-8b (WebRL checkpoint) and a vanilla-RL agent (without milestone modifications) perform exploratory rollouts across 1,237 tasks, yielding diverse traces from early failures to complete successes.</p>
+</li>
+<li>
+<p><strong>Progress Label Generation</strong>: Post-process trajectories using a subgoal checker to derive dense progress labels for every timestep (not just binary outcomes).</p>
+</li>
+<li>
+<p><strong>Architecture</strong>: A pretrained Gemma-12B backbone augmented with an MLP head and sigmoid activation, constraining output to [0, 1].</p>
+</li>
+<li>
+<p><strong>Pre-training</strong>: Single-stage supervised learning on the labeled dataset, distilling subgoal logic into a differentiable critic.</p>
+</li>
+<li>
+<p><strong>Continuous Fine-tuning</strong>: During RL training, the potential critic continues updating using fresh online rollouts, allowing the potential landscape to co-evolve with agent capabilities.</p>
+</li>
+</ol>
+<p><strong>State Construction</strong>: Each state encodes as <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>s</mi><mi>t</mi></msub><mo>=</mo><mo stretchy="false">[</mo><msub><mi>a</mi><mn>1</mn></msub><mo separator="true">,</mo><msub><mi>a</mi><mn>2</mn></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>a</mi><mrow><mi>t</mi><mo>−</mo><mn>1</mn></mrow></msub><mo separator="true">,</mo><msub><mi>o</mi><mi>t</mi></msub><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">s_t = [a_1, a_2, \ldots, a_{t-1}, o_t]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">]</span></span></span></span>, appended with the natural-language goal. The paper observes that successful trajectories solving the same task exhibit a stable longest-common subsequence of actions—core semantic steps (&quot;open menu&quot;, &quot;locate repository&quot;, &quot;click clone&quot;) recur with strong regularity. The potential critic learns this structure from data, assigning higher potential to states along successful semantic paths.</p>
+<h3 id="4-12-Perplexity-Filtering-and-Experience-Replay">4.12 Perplexity Filtering and Experience Replay</h3>
+<p>An important quality assurance mechanism in MiRA training is <strong>perplexity filtering</strong>: the current actor policy evaluates the perplexity of each collected trajectory, and those exceeding a dynamic threshold are discarded as out-of-distribution or irrational behavior. This ensures the actor learns only from high-quality data.</p>
+<p>The experience replay buffer integrates data from both current and previous phases, enabling cross-phase knowledge accumulation. Each phase performs one epoch of RL training over the collected data, with the buffer maintaining temporal coherence across the curriculum.</p>
+<h3 id="4-13-Scaling-Factor-α-Selection">4.13 Scaling Factor α Selection</h3>
+<p>The shaping reward scaling factor α is determined via a validation-based selection strategy:</p>
+<ul>
+<li>Grid search over α ∈ [0.1, 0.8] using held-out validation tasks</li>
+<li>Selection criterion: maximize SR while constraining shaped reward magnitude to not overwhelm the ground-truth signal</li>
+<li>Optimal value: <strong>α = 0.3</strong></li>
+<li>Effect: effectively densifies the reward space while retaining sensitivity to sparse terminal rewards</li>
+</ul>
+<hr>
+<h2 id="V-Discussion-and-Insights">V. Discussion and Insights</h2>
+<h3 id="5-1-Connection-to-Process-Reward-Models-PRMs">5.1 Connection to Process Reward Models (PRMs)</h3>
+<p>MiRA can be viewed as a form of <strong>semi-supervised PRM learning</strong>. Unlike traditional PRMs requiring expensive human step-by-step annotations, MiRA synthesizes its own &quot;process supervision&quot; via a teacher model and grounds it in execution traces. The potential critic <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>P</mi><mi>ψ</mi></msub></mrow><annotation encoding="application/x-tex">P_\psi</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">ψ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> effectively acts as a learned value function over synthesized milestones. This extends the principle from mathematical reasoning (Lightman et al., 2023) to the noisy, non-stationary domain of web navigation.</p>
+<h3 id="5-2-The-Solid-Grounding-Trade-off">5.2 The &quot;Solid Grounding&quot; Trade-off</h3>
+<p>The efficacy of potential-based shaping hinges entirely on subgoal validity. Because auxiliary rewards trigger only upon successful milestone grounding, the system favors trajectories mastering early task stages. If the agent fails to ground initial subgoals (extreme exploration difficulty or perception errors), the shaping signal remains silent—effectively reverting to sparse rewards. MiRA excels at extending the &quot;competence boundary&quot; but does not solve the cold-start problem.</p>
+<h3 id="5-3-Toward-Self-Evolving-Autonomous-Agents">5.3 Toward Self-Evolving Autonomous Agents</h3>
+<p>Perhaps the most compelling implication: a single capable model (Gemini-2.5-pro) serves multiple roles simultaneously—planner, executor, judge, curriculum designer, and shaping signal generator. This closed-loop design suggests we are approaching truly self-evolving agents capable of recursive improvement without human intervention, transforming the static &quot;train-then-deploy&quot; paradigm into a lifelong learning process.</p>
+<h3 id="5-4-The-Wrong-Termination-Trade-off-A-Dialectical-Reading">5.4 The Wrong-Termination Trade-off: A Dialectical Reading</h3>
+<p>A fascinating phenomenon emerges from the results: MiRA reduces &quot;stuck midway&quot; errors (from ~33% to ~21%) but the &quot;wrong termination&quot; rate rises to ~31%. This seeming paradox actually represents a <strong>qualitative capability upgrade</strong>:</p>
+<ul>
+<li><strong>Before MiRA</strong>: Agents fail at the <em>navigation</em> level—they cannot even reach terminal states (execution-level failure)</li>
+<li><strong>After MiRA</strong>: Agents traverse the full task horizon to reach terminal states but make incorrect final judgments (semantic-level failure)</li>
+</ul>
+<p>This is analogous to a student progressing from &quot;cannot understand the problem&quot; to &quot;can work through the problem but gets the final answer wrong&quot;—the latter is clearly a higher level of competence. The shift exposes the underlying LLM's semantic reasoning limitations rather than planning deficiencies.</p>
+<h3 id="5-5-Positioning-Against-Related-Approaches">5.5 Positioning Against Related Approaches</h3>
+<p><strong>vs. WebRL</strong>: Both use RL fine-tuning, but WebRL relies on self-evolving curriculum with sparse rewards. MiRA adds subgoal-driven dense rewards, jumping from 35.1% to 43.0%. The key difference: MiRA optimizes not just the final outcome but explicitly the <em>path</em> to the outcome.</p>
+<p><strong>vs. DigiRL</strong>: DigiRL uses Advantage-Weighted Regression with instruction-level and step-level dual value functions. MiRA's potential critic provides more precise progress estimates because it is directly grounded in verifiable subgoal completion states.</p>
+<p><strong>vs. VSC-RL</strong>: VSC-RL uses variational subgoal-conditioned learning with latent representations. MiRA uses explicit, semantically verifiable milestones, offering superior interpretability and reliability.</p>
+<p><strong>vs. PRM Approaches (Web-Shepherd, AgentPRM)</strong>: These use learned process reward models with soft, continuous scores. MiRA replaces soft rewards with hard objectives (binary subgoal completion), avoiding reward over-optimization—a known failure mode of learned PRMs.</p>
+<h3 id="5-6-Generalizability-Beyond-Web-Navigation">5.6 Generalizability Beyond Web Navigation</h3>
+<p>While MiRA demonstrates results on web navigation, its core idea—decomposing long-horizon tasks into verifiable intermediate milestones and shaping rewards accordingly—is theoretically applicable to other domains:</p>
+<ul>
+<li><strong>Code Generation</strong>: Decompose programming tasks into sub-function implementations, verifying progress via test cases</li>
+<li><strong>Scientific Experiment Automation</strong>: Decompose experimental protocols into verifiable step sequences</li>
+<li><strong>Game AI</strong>: Decompose complex game objectives into phase-level subgoals</li>
+<li><strong>Robotics</strong>: Decompose long manipulation tasks into detectable intermediate states</li>
+</ul>
+<p>The key prerequisites for transfer: (1) reliable subgoal generation for the target domain, and (2) automated subgoal completion verification.</p>
+<hr>
+<h2 id="VI-Limitations-and-Boundary-Conditions">VI. Limitations and Boundary Conditions</h2>
+<h3 id="6-1-Subgoal-Quality-Dependency">6.1 Subgoal Quality Dependency</h3>
+<ul>
+<li>Generation relies on a powerful teacher model (Gemini-2.5-pro)</li>
+<li>Quality may degrade in unfamiliar domains</li>
+<li>Exact equivalence F1 of 0.6847 indicates room for improvement in subgoal coverage</li>
+</ul>
+<h3 id="6-2-Cold-Start-Problem">6.2 Cold-Start Problem</h3>
+<ul>
+<li>When initial subgoals themselves are hard to reach, shaping signals remain silent</li>
+<li>Framework excels at extending competence boundaries but does not address extreme exploration difficulty</li>
+</ul>
+<h3 id="6-3-Evaluation-Scope">6.3 Evaluation Scope</h3>
+<ul>
+<li>Evaluated only on WebArena-Lite (165 tasks)</li>
+<li>No testing on more complex benchmarks (full WebArena, OSWorld)</li>
+<li>Rising wrong-termination rate (~31%) exposes underlying LLM semantic reasoning limitations</li>
+</ul>
+<h3 id="6-4-Computational-Cost">6.4 Computational Cost</h3>
+<ul>
+<li>Requires teacher model for subgoal generation and evaluation</li>
+<li>Dual-critic architecture increases training complexity</li>
+<li>Iterative refinement cycles require multiple rounds of environment interaction</li>
+</ul>
+<h3 id="6-5-Single-Benchmark-Evaluation">6.5 Single-Benchmark Evaluation</h3>
+<ul>
+<li>Evaluated only on WebArena-Lite (165 tasks, 5 domains)</li>
+<li>Not validated on other web navigation benchmarks (Mind2Web, WebShop, WebGames)</li>
+<li>Cross-benchmark transfer ability remains unknown</li>
+<li>More complex real-world scenarios (multi-tab collaboration, authentication flows, form-heavy tasks) not tested</li>
+</ul>
+<h3 id="6-6-Subgoal-Generation-Scalability">6.6 Subgoal Generation Scalability</h3>
+<ul>
+<li>Current generation relies on manually curated few-shot examples (2 per website category)</li>
+<li>Effective within known website categories but requires additional example design for new domains</li>
+<li>The paper's proposed future direction—learnable or hierarchical subgoal generators—would be critical for addressing this limitation</li>
+</ul>
+<h3 id="6-7-AutoRater-Reliability">6.7 AutoRater Reliability</h3>
+<ul>
+<li>Subgoal completion judgment depends on LLM-as-Judge (Gemini-2.5-pro), introducing another layer of uncertainty</li>
+<li>While the analyzer achieves 92.5% agreement with humans on failure classification, the accuracy of subgoal completion checking was not independently evaluated</li>
+<li>Systematic bias in the subgoal checker could cause the potential critic to learn a distorted progress landscape</li>
+</ul>
+<hr>
+<h2 id="VII-Broader-Research-Context">VII. Broader Research Context</h2>
+<h3 id="7-1-Position-in-LLM-Agent-Evolution">7.1 Position in LLM Agent Evolution</h3>
+<p>MiRA arrives during a period of rapid advancement in LLM agent research. From early approaches like ReAct (interleaving reasoning and acting) to Tree of Thoughts (structured search) to Reflexion (verbal reinforcement learning), the community has progressively explored how to improve LLM long-horizon reasoning. MiRA goes further—it not only enables agents to &quot;think&quot; during inference but also compiles planning capabilities into model weights through RL training.</p>
+<h3 id="7-2-The-Eternal-Tension-Dense-vs-Sparse-Rewards">7.2 The Eternal Tension: Dense vs. Sparse Rewards</h3>
+<p>MiRA's core insight—transforming sparse terminal rewards into dense intermediate signals—addresses a perennial RL research theme. From early intrinsic motivation and curiosity-driven exploration, through HER and Goal-Conditioned RL, to current subgoal-based reward shaping, researchers have continuously sought better approaches to credit assignment. MiRA's contribution lies in finding an elegant way to combine semantic-level intermediate objectives with RL training in the LLM agent domain.</p>
+<h3 id="7-3-Automated-Diagnosis-as-Research-Methodology">7.3 Automated Diagnosis as Research Methodology</h3>
+<p>The failure analysis section deserves special attention—not only because it drives the subsequent method design, but because it demonstrates a research methodology worth promoting. In prior agent research, authors typically report only aggregate success rates, rarely analyzing <em>why</em> agents fail. MiRA's automated failure analyzer provides a reusable diagnostic tool paradigm for the community. Every agent system paper would benefit from including such systematic failure decomposition.</p>
+<hr>
+<h2 id="VIII-Reproducibility-Assessment">VIII. Reproducibility Assessment</h2>
+<p><strong>Strengths</strong>:</p>
+<ul>
+<li>Uses a public benchmark (WebArena-Lite)</li>
+<li>Detailed training protocol with controlled initialization</li>
+<li>Complete algorithm pseudocode (Algorithms 1 and 2)</li>
+<li>Comprehensive ablations across five variants</li>
+</ul>
+<p><strong>Challenges</strong>:</p>
+<ul>
+<li>Depends on Gemini-2.5-pro as teacher (proprietary, version-sensitive)</li>
+<li>Subgoal generation prompts only partially shown in appendix</li>
+<li>Pre-training data for the potential critic (1,237-task trajectories) composition not fully specified</li>
+<li>No mention of code/model open-sourcing</li>
+</ul>
+<hr>
+<h2 id="IX-Summary-and-Significance">IX. Summary and Significance</h2>
+<p>MiRA is a high-quality research contribution that follows a compelling narrative arc: from diagnosing the problem (failure analysis), to designing targeted solutions (subgoal-driven inference and training), to comprehensive experimental validation.</p>
+<p><strong>Core Value Propositions</strong>:</p>
+<ol>
+<li>First systematic quantification of web agent failure modes, revealing &quot;stuck midway&quot; as the dominant cause</li>
+<li>A unified framework leveraging subgoals at both inference and training time</li>
+<li>A 12B open-source model outperforming large proprietary systems, demonstrating method efficacy</li>
+<li>The dual-critic architecture with MSE regression provides stable, efficient training</li>
+</ol>
+<p><strong>Insights for the Research Community</strong>:</p>
+<ul>
+<li>Explicit intermediate supervision is more effective than terminal-only feedback</li>
+<li>Keeping dense shaping signals as <em>auxiliary</em> (not replacing the primary objective) is a key design principle</li>
+<li>Automated failure diagnosis tools should be standard practice in agent research</li>
+<li>The progression from &quot;execution failure&quot; to &quot;semantic failure&quot; represents genuine capability improvement</li>
+</ul>
+<p>MiRA points to a clear direction for building more capable autonomous web agents: by structuring long-horizon tasks as verifiable milestone sequences and leveraging this structure in both inference and training, one can significantly improve agent planning and execution in complex, dynamic environments.</p>
+<hr>
+<p><em>This review was completed by Zhongzhu Zhou on March 23, 2026.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Reinforcement-Learning/" rel="tag"># Reinforcement Learning</a>
+              <a href="/tags/LLM-Agent/" rel="tag"># LLM Agent</a>
+              <a href="/tags/Web-Navigation/" rel="tag"># Web Navigation</a>
+              <a href="/tags/Subgoal-Decomposition/" rel="tag"># Subgoal Decomposition</a>
+              <a href="/tags/Reward-Shaping/" rel="tag"># Reward Shaping</a>
+              <a href="/tags/MiRA/" rel="tag"># MiRA</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/03/22/2026-03-22-Transformer-technical-review-en/" rel="prev" title="Attention Is All You Need: The Transformer — In-Depth Technical Review">
+      <i class="fa fa-chevron-left"></i> Attention Is All You Need: The Transformer — In-Depth Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/03/24/2026-03-24-PPO-technical-review-en/" rel="next" title="Proximal Policy Optimization Algorithms — In-Depth Technical Review">
+      Proximal Policy Optimization Algorithms — In-Depth Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#MiRA-A-Subgoal-driven-Framework-for-Improving-Long-Horizon-LLM-Agents-—-Detailed-Technical-Review"><span class="nav-number">1.</span> <span class="nav-text">MiRA: A Subgoal-driven Framework for Improving Long-Horizon LLM Agents — Detailed Technical Review</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#I-Prerequisites-What-You-Need-to-Know"><span class="nav-number">1.1.</span> <span class="nav-text">I. Prerequisites: What You Need to Know</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-What-Are-LLM-Agents"><span class="nav-number">1.1.1.</span> <span class="nav-text">1.1 What Are LLM Agents?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-Web-Navigation-Why-Is-It-So-Challenging"><span class="nav-number">1.1.2.</span> <span class="nav-text">1.2 Web Navigation: Why Is It So Challenging?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-Reinforcement-Learning-Foundations"><span class="nav-number">1.1.3.</span> <span class="nav-text">1.3 Reinforcement Learning Foundations</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-4-Partially-Observable-Markov-Decision-Processes-POMDPs"><span class="nav-number">1.1.4.</span> <span class="nav-text">1.4 Partially Observable Markov Decision Processes (POMDPs)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-5-Reward-Shaping"><span class="nav-number">1.1.5.</span> <span class="nav-text">1.5 Reward Shaping</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-6-Subgoal-Decomposition"><span class="nav-number">1.1.6.</span> <span class="nav-text">1.6 Subgoal Decomposition</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-7-Value-Functions-and-Critics-in-RL"><span class="nav-number">1.1.7.</span> <span class="nav-text">1.7 Value Functions and Critics in RL</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#II-What-This-Paper-Does-Core-Contributions"><span class="nav-number">1.2.</span> <span class="nav-text">II. What This Paper Does: Core Contributions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-The-Core-Problem"><span class="nav-number">1.2.1.</span> <span class="nav-text">2.1 The Core Problem</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-Three-Main-Contributions"><span class="nav-number">1.2.2.</span> <span class="nav-text">2.2 Three Main Contributions</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#III-Methodology-in-Depth"><span class="nav-number">1.3.</span> <span class="nav-text">III. Methodology in Depth</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-Automated-Failure-Analysis-Diagnosing-the-Root-Cause"><span class="nav-number">1.3.1.</span> <span class="nav-text">3.1 Automated Failure Analysis: Diagnosing the Root Cause</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-Subgoal-Generation-Building-a-Reliable-Progress-Signal"><span class="nav-number">1.3.2.</span> <span class="nav-text">3.2 Subgoal Generation: Building a Reliable Progress Signal</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-Inference-Time-Dynamic-Milestoning-SGO"><span class="nav-number">1.3.3.</span> <span class="nav-text">3.3 Inference-Time Dynamic Milestoning (SGO)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-The-MiRA-Training-Framework-Milestone-Driven-RL"><span class="nav-number">1.3.4.</span> <span class="nav-text">3.4 The MiRA Training Framework: Milestone-Driven RL</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#3-4-1-Dual-Critic-Architecture-Figure-6"><span class="nav-number">1.3.4.1.</span> <span class="nav-text">3.4.1 Dual-Critic Architecture (Figure 6)</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-4-2-Progress-Label-Construction"><span class="nav-number">1.3.4.2.</span> <span class="nav-text">3.4.2 Progress Label Construction</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-4-3-Auxiliary-Reward-Shaping"><span class="nav-number">1.3.4.3.</span> <span class="nav-text">3.4.3 Auxiliary Reward Shaping</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-4-4-Policy-Optimization-MSE-Regression"><span class="nav-number">1.3.4.4.</span> <span class="nav-text">3.4.4 Policy Optimization: MSE Regression</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-4-5-Doubly-Robust-Advantage-Estimation"><span class="nav-number">1.3.4.5.</span> <span class="nav-text">3.4.5 Doubly-Robust Advantage Estimation</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-Iterative-Policy-Refinement-Cycle-Figure-8"><span class="nav-number">1.3.5.</span> <span class="nav-text">3.5 Iterative Policy Refinement Cycle (Figure 8)</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#IV-Experimental-Setup-and-Results"><span class="nav-number">1.4.</span> <span class="nav-text">IV. Experimental Setup and Results</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-Setup"><span class="nav-number">1.4.1.</span> <span class="nav-text">4.1 Setup</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-Main-Results-Table-3"><span class="nav-number">1.4.2.</span> <span class="nav-text">4.2 Main Results (Table 3)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-Failure-Mode-Redistribution-Table-4"><span class="nav-number">1.4.3.</span> <span class="nav-text">4.3 Failure Mode Redistribution (Table 4)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-4-Ablation-Study-Figure-11b"><span class="nav-number">1.4.4.</span> <span class="nav-text">4.4 Ablation Study (Figure 11b)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-5-Subgoal-Completion-Dynamics-Figure-12"><span class="nav-number">1.4.5.</span> <span class="nav-text">4.5 Subgoal Completion Dynamics (Figure 12)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-6-Pass-k-Scaling-Figure-11a"><span class="nav-number">1.4.6.</span> <span class="nav-text">4.6 Pass@k Scaling (Figure 11a)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-7-Inference-Efficiency"><span class="nav-number">1.4.7.</span> <span class="nav-text">4.7 Inference Efficiency</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-7-Pass-k-Scaling-Analysis-Figure-11a"><span class="nav-number">1.4.8.</span> <span class="nav-text">4.7 Pass@k Scaling Analysis (Figure 11a)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-8-Multi-Phase-Training-and-Per-Domain-Trends-Figure-10"><span class="nav-number">1.4.9.</span> <span class="nav-text">4.8 Multi-Phase Training and Per-Domain Trends (Figure 10)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-9-Inference-Efficiency-Thinking-Budget-Analysis-Figure-14"><span class="nav-number">1.4.10.</span> <span class="nav-text">4.9 Inference Efficiency: Thinking Budget Analysis (Figure 14)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-10-Understanding-the-PBRS-Equivalence-Proof"><span class="nav-number">1.4.11.</span> <span class="nav-text">4.10 Understanding the PBRS Equivalence Proof</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-11-Potential-Critic-Training-Details"><span class="nav-number">1.4.12.</span> <span class="nav-text">4.11 Potential Critic Training Details</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-12-Perplexity-Filtering-and-Experience-Replay"><span class="nav-number">1.4.13.</span> <span class="nav-text">4.12 Perplexity Filtering and Experience Replay</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-13-Scaling-Factor-α-Selection"><span class="nav-number">1.4.14.</span> <span class="nav-text">4.13 Scaling Factor α Selection</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#V-Discussion-and-Insights"><span class="nav-number">1.5.</span> <span class="nav-text">V. Discussion and Insights</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-Connection-to-Process-Reward-Models-PRMs"><span class="nav-number">1.5.1.</span> <span class="nav-text">5.1 Connection to Process Reward Models (PRMs)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-The-Solid-Grounding-Trade-off"><span class="nav-number">1.5.2.</span> <span class="nav-text">5.2 The &quot;Solid Grounding&quot; Trade-off</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-Toward-Self-Evolving-Autonomous-Agents"><span class="nav-number">1.5.3.</span> <span class="nav-text">5.3 Toward Self-Evolving Autonomous Agents</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-The-Wrong-Termination-Trade-off-A-Dialectical-Reading"><span class="nav-number">1.5.4.</span> <span class="nav-text">5.4 The Wrong-Termination Trade-off: A Dialectical Reading</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-5-Positioning-Against-Related-Approaches"><span class="nav-number">1.5.5.</span> <span class="nav-text">5.5 Positioning Against Related Approaches</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-6-Generalizability-Beyond-Web-Navigation"><span class="nav-number">1.5.6.</span> <span class="nav-text">5.6 Generalizability Beyond Web Navigation</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#VI-Limitations-and-Boundary-Conditions"><span class="nav-number">1.6.</span> <span class="nav-text">VI. Limitations and Boundary Conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Subgoal-Quality-Dependency"><span class="nav-number">1.6.1.</span> <span class="nav-text">6.1 Subgoal Quality Dependency</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Cold-Start-Problem"><span class="nav-number">1.6.2.</span> <span class="nav-text">6.2 Cold-Start Problem</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-Evaluation-Scope"><span class="nav-number">1.6.3.</span> <span class="nav-text">6.3 Evaluation Scope</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-Computational-Cost"><span class="nav-number">1.6.4.</span> <span class="nav-text">6.4 Computational Cost</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-5-Single-Benchmark-Evaluation"><span class="nav-number">1.6.5.</span> <span class="nav-text">6.5 Single-Benchmark Evaluation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-6-Subgoal-Generation-Scalability"><span class="nav-number">1.6.6.</span> <span class="nav-text">6.6 Subgoal Generation Scalability</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-7-AutoRater-Reliability"><span class="nav-number">1.6.7.</span> <span class="nav-text">6.7 AutoRater Reliability</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#VII-Broader-Research-Context"><span class="nav-number">1.7.</span> <span class="nav-text">VII. Broader Research Context</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-Position-in-LLM-Agent-Evolution"><span class="nav-number">1.7.1.</span> <span class="nav-text">7.1 Position in LLM Agent Evolution</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-The-Eternal-Tension-Dense-vs-Sparse-Rewards"><span class="nav-number">1.7.2.</span> <span class="nav-text">7.2 The Eternal Tension: Dense vs. Sparse Rewards</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-Automated-Diagnosis-as-Research-Methodology"><span class="nav-number">1.7.3.</span> <span class="nav-text">7.3 Automated Diagnosis as Research Methodology</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#VIII-Reproducibility-Assessment"><span class="nav-number">1.8.</span> <span class="nav-text">VIII. Reproducibility Assessment</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#IX-Summary-and-Significance"><span class="nav-number">1.9.</span> <span class="nav-text">IX. Summary and Significance</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

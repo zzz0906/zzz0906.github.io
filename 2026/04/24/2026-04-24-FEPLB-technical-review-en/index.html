@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. Mixture of Experts (MoE)  Each token routes to a small subset of expert networks (e.g., top-k routing) Only the routed experts are computed; others are silent Enables scaling to trillion-parameter">
+<meta property="og:type" content="article">
+<meta property="og:title" content="---">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/24/2026-04-24-FEPLB-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. Mixture of Experts (MoE)  Each token routes to a small subset of expert networks (e.g., top-k routing) Only the routed experts are computed; others are silent Enables scaling to trillion-parameter">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-24T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-27T14:18:45.726Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Pruning">
+<meta property="article:tag" content="FEPLB">
+<meta property="article:tag" content="Large Batch">
+<meta property="article:tag" content="Fine-tuning">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/24/2026-04-24-FEPLB-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>--- | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/24/2026-04-24-FEPLB-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          ---
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-24 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-24T00:00:00+00:00">2026-04-24</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-27 14:18:45" itemprop="dateModified" datetime="2026-04-27T14:18:45+00:00">2026-04-27</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/RL-Training/" itemprop="url" rel="index"><span itemprop="name">RL Training</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-Mixture-of-Experts-MoE">1. <strong>Mixture of Experts (MoE)</strong></h2>
+<ul>
+<li>Each token routes to a small subset of expert networks (e.g., top-k routing)</li>
+<li>Only the routed experts are computed; others are silent</li>
+<li>Enables scaling to trillion-parameter models without proportional compute growth</li>
+</ul>
+<h3 id="2-Expert-Parallelism-EP">2. <strong>Expert Parallelism (EP)</strong></h3>
+<ul>
+<li>Distribute experts across devices: each device holds a disjoint subset</li>
+<li>Token load per device depends on router decisions, which vary per micro-batch</li>
+<li>Uneven load = some GPUs idle while waiting for others</li>
+</ul>
+<h3 id="3-Hardware-NVLink-Hopper-GPUs">3. <strong>Hardware: NVLink &amp; Hopper GPUs</strong></h3>
+<ul>
+<li>NVLink 4.0: 900 GB/s bidirectional bandwidth between intra-node GPUs</li>
+<li>Hopper GPU: includes a dedicated <strong>Copy Engine</strong> (DMA-like unit)</li>
+<li>Copy Engine operates independently from SMs—zero compute interference</li>
+<li>Key capability: can move data while compute kernels run</li>
+</ul>
+<h3 id="4-Pipeline-Parallelism-PP-Synchronous-Training">4. <strong>Pipeline Parallelism (PP) &amp; Synchronous Training</strong></h3>
+<ul>
+<li>Multiple pipeline stages, all synchronized by slowest device</li>
+<li>Imbalance directly impacts wall-clock time</li>
+</ul>
+<h3 id="5-Grouped-GEMM">5. <strong>Grouped GEMM</strong></h3>
+<ul>
+<li>Specialized batched matrix multiply for MoE dispatch</li>
+<li>Sensitive to batch size distribution; splitting tokens can degrade perf</li>
+</ul>
+<hr>
+<h2 id="The-Problem-Load-Imbalance-in-MoE">The Problem: Load Imbalance in MoE</h2>
+<h3 id="Root-Cause">Root Cause</h3>
+<p>In expert parallelism, the router is learned end-to-end without constraints. It assigns tokens based on learned affinities to experts, not fairness. Result: per-device token counts vary randomly across micro-batches, even during stable training. This variation is <strong>data-dependent</strong>—different training corpora produce different routing distributions.</p>
+<h3 id="Why-This-Matters">Why This Matters</h3>
+<p>Figure 1(b) from the paper shows the waste:</p>
+<ul>
+<li><strong>Token straggler:</strong> The slowest device gets more tokens than average.</li>
+<li><strong>GEMM straggler:</strong> Wall-clock time difference between slowest and average device.</li>
+<li><strong>Quantified waste:</strong> 18.6% of GPU time per MoE layer is lost to synchronization overhead.</li>
+</ul>
+<p>At scale (128 experts, up to 16 H100s), this is enormous—hours of wasted compute per day.</p>
+<h3 id="Why-Prior-Work-Fails">Why Prior Work Fails</h3>
+<p>Three main approaches tried to fix this:</p>
+<ol>
+<li>
+<p><strong>Coarse-grained mitigation (auxiliary losses)</strong></p>
+<ul>
+<li>Force the router to produce balanced assignments</li>
+<li>Constraints degrade model quality and expressiveness</li>
+<li>Doesn't fully eliminate imbalance</li>
+</ul>
+</li>
+<li>
+<p><strong>Dynamic scheduling with overhead (FasterMoE, Tutel, SmartMoE)</strong></p>
+<ul>
+<li>FasterMoE: replicate &quot;hot&quot; experts (shadow experts) and pipeline dispatch</li>
+<li>Problem: splitting communication into stages adds volume, not just reduces latency</li>
+<li>When routers change unpredictably, prediction degrades</li>
+<li>Tutel: switch between parallel modes, but partition weights → extra communication</li>
+</ul>
+</li>
+<li>
+<p><strong>SM-based communication overlap (Triton Distributed)</strong></p>
+<ul>
+<li>Fuse computation and communication kernels</li>
+<li>Problem: kernels consume SM resources, reducing available compute</li>
+<li>Reduces efficiency instead of improving it</li>
+</ul>
+</li>
+</ol>
+<p><strong>The deeper issue:</strong> Specialized MoE backends (DeepEP, FUSCO) do bulk transfers without staged delivery. You can't split their communication into fine-grained pipelined stages without paying extra volume penalty.</p>
+<hr>
+<h2 id="The-Solution-Two-Phase-Dispatch-with-NVLink-CE">The Solution: Two-Phase Dispatch with NVLink CE</h2>
+<h3 id="Design-Principle-Orthogonal-Parallelism">Design Principle: Orthogonal Parallelism</h3>
+<p>FEPLB's central insight is resource-level separation:</p>
+<ul>
+<li><strong>EP &amp; PP use:</strong> RDMA NICs (inter-node) + GPU SMs (compute)</li>
+<li><strong>FEPLB uses:</strong> NVLink Copy Engine (intra-node, no SMs) + CPU scheduler</li>
+</ul>
+<p>Because these resource sets don't overlap, FEPLB is a true new parallel dimension, not a scheduling trick. It coexists with existing parallelism without reconfiguration.</p>
+<h3 id="Two-Phase-Dispatch">Two-Phase Dispatch</h3>
+<p><strong>Phase 1 (EP routing):</strong></p>
+<ul>
+<li>Tokens route to their assigned devices via standard EP backend (e.g., DeepEP)</li>
+<li>Static experts process normally on assigned devices</li>
+<li>Dynamic expert tokens are collected into the NVLink domain (local node) for rebalancing</li>
+<li>This phase uses standard EP communication (~50 GB/s over NVLink inter-node links)</li>
+</ul>
+<p><strong>Phase 2 (NVLink CE rebalancing):</strong></p>
+<ul>
+<li>CPU load balancer (running on dedicated thread) analyzes actual token distribution</li>
+<li>Decides which dynamic expert weights to copy and where</li>
+<li>NVLink Copy Engine redistributes both tokens and expert weights <strong>intra-node only</strong></li>
+<li>Operates at <strong>900 GB/s</strong>, completely <strong>SM-free</strong> (no compute interference)</li>
+<li>Happens concurrently with static expert computation on SMs</li>
+</ul>
+<h3 id="The-Timeline-Trick">The Timeline Trick</h3>
+<p>Static experts serve dual purpose:</p>
+<ol>
+<li>Contribute to model output</li>
+<li>Provide a time window (their computation) during which CPU scheduler and weight copying finish</li>
+</ol>
+<p>This window is usually sufficient—CPU load balancer runs in ~50 µs on a single core, well hidden.</p>
+<h3 id="Load-Balancing-Algorithm">Load Balancing Algorithm</h3>
+<p>Greedy, per-micro-batch:</p>
+<ul>
+<li>Repeatedly select busiest dynamic expert on most overloaded device</li>
+<li>Copy entire expert weights (not token-level splitting) to most underloaded device</li>
+<li>Threshold τ prevents copying experts with too few tokens</li>
+<li>Migrating whole experts preserves Grouped GEMM efficiency (batch size sensitivity)</li>
+<li>Fully deterministic: same routing → same copy plan across all devices (no coordination needed)</li>
+</ul>
+<h3 id="Memory-Overhead">Memory Overhead</h3>
+<p>Minimal:</p>
+<ul>
+<li>Allocates buffer for max_num_dyn × expert weights per device</li>
+<li>For GLM-5 (72 MiB per expert, dyn=8): 576 MiB per device</li>
+<li>&lt;0.7% of 80 GB HBM3—negligible</li>
+</ul>
+<hr>
+<h2 id="Key-Results-From-18-6-Waste-to-51-70-Improvement">Key Results: From 18.6% Waste to 51-70% Improvement</h2>
+<h3 id="Experimental-Setup">Experimental Setup</h3>
+<ul>
+<li><strong>Hardware:</strong> Up to 16 NVIDIA H100 SXM5 GPUs (80 GB HBM3), NVLink 4.0 (900 GB/s)</li>
+<li><strong>Model:</strong> Reduced GLM-5 (18 layers, preserving MoE architecture: 128 routed experts, top-k routing, <strong>no auxiliary loss</strong>)</li>
+<li><strong>Configurations:</strong> Three PP/EP settings:
+<ul>
+<li>PP=4, EP=2 (8 GPUs, 64 experts per device)</li>
+<li>PP=4, EP=4 (16 GPUs, 32 experts per device)</li>
+<li>PP=2, EP=8 (16 GPUs, 16 experts per device)</li>
+</ul>
+</li>
+</ul>
+<h3 id="Performance-Metrics">Performance Metrics</h3>
+<p>Two stragglers directly measure load imbalance:</p>
+<ol>
+<li><strong>Token straggler:</strong> max(tokens_per_device) - mean(tokens)
+<ul>
+<li>Measures excess token count on slowest device</li>
+</ul>
+</li>
+<li><strong>GEMM straggler:</strong> max(GEMM_time) - mean(GEMM_time)
+<ul>
+<li>Measures wall-clock wasted time in compute</li>
+</ul>
+</li>
+</ol>
+<h3 id="Per-Layer-Execution-Time-Table-2">Per-Layer Execution Time (Table 2)</h3>
+<table>
+<thead>
+<tr>
+<th>PP/EP</th>
+<th>Before LB</th>
+<th>FasterMoE</th>
+<th>Triton Dist.</th>
+<th>Tutel</th>
+<th>FEPLB</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4/2 (fwd/bwd)</td>
+<td>8.2/14.9</td>
+<td>7.9/14.0</td>
+<td>13.1/22.8</td>
+<td>8.0/17.1</td>
+<td>7.9/14.4</td>
+</tr>
+<tr>
+<td>4/4 (fwd/bwd)</td>
+<td>7.3/13.2</td>
+<td>6.9/12.2</td>
+<td>15.3/24.0</td>
+<td>7.2/15.2</td>
+<td>6.8/12.1</td>
+</tr>
+<tr>
+<td>2/8 (fwd/bwd)</td>
+<td>6.9/12.5</td>
+<td>6.3/11.1</td>
+<td>22.8/30.0</td>
+<td>6.8/14.5</td>
+<td><strong>6.0/10.6</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key observations:</strong></p>
+<ul>
+<li>Triton Distributed is 1.6-3.3× slower (fused kernels consume SMs)</li>
+<li>Tutel adds 15-16% backward overhead (weight partitioning)</li>
+<li>FEPLB consistently matches or outperforms all baselines</li>
+<li>At high EP (2/8), FEPLB achieves strongest speedup</li>
+</ul>
+<h3 id="Load-Balance-Quality-Figures-5-6">Load Balance Quality (Figures 5 &amp; 6)</h3>
+<p><strong>Token straggler reduction:</strong></p>
+<ul>
+<li>PP=4, EP=2: 51% reduction (FEPLB) vs 55% (FasterMoE)</li>
+<li>PP=4, EP=4: 63% reduction (FEPLB) vs 47% (FasterMoE)</li>
+<li>PP=2, EP=8: <strong>70% reduction (FEPLB)</strong> vs 39% (FasterMoE)</li>
+</ul>
+<p><strong>GEMM straggler reduction:</strong></p>
+<ul>
+<li>PP=4, EP=2: 50% (FEPLB)</li>
+<li>PP=4, EP=4: 62% (FEPLB)</li>
+<li>PP=2, EP=8: <strong>68% (FEPLB)</strong></li>
+</ul>
+<p><strong>Critical insight:</strong> FasterMoE's advantage <em>decreases</em> with EP degree because prediction accuracy degrades under sparse, unpredictable routing. FEPLB's reactive approach improves—at EP=8, achieves <strong>2× lower token straggler</strong> than FasterMoE.</p>
+<h3 id="Orthogonality-Verification-EP-Communication-Overhead-Figure-4">Orthogonality Verification: EP Communication Overhead (Figure 4)</h3>
+<p>Does FEPLB interfere with EP communication?</p>
+<ul>
+<li>Before LB: baseline (100%)</li>
+<li>FEPLB: <strong>&lt;1% overhead</strong> ✓</li>
+<li>FasterMoE pipe=1: ~0% (matches baseline)</li>
+<li>FasterMoE pipe=2: +46.8% dispatch, +40.2% combine (breaks orthogonality!)</li>
+</ul>
+<p>This validates the paper's claim: staged pipelining on DeepEP adds volume. FEPLB avoids this by operating on separate hardware path.</p>
+<h3 id="Sensitivity-to-Dynamic-Expert-Count-Figure-6">Sensitivity to Dynamic Expert Count (Figure 6)</h3>
+<p>Parameter <code>dyn</code> controls how many experts per device are eligible for rebalancing.</p>
+<ul>
+<li>dyn=2: substantial reduction already</li>
+<li>dyn=2→4: +1-3 pp improvement</li>
+<li>dyn=4→8: +1-3 pp more (diminishing returns)</li>
+<li><strong>Practical default: dyn=4</strong></li>
+</ul>
+<hr>
+<h2 id="Technical-Deep-Dive-Why-This-Works">Technical Deep Dive: Why This Works</h2>
+<h3 id="1-Hardware-Resource-Separation">1. Hardware Resource Separation</h3>
+<p>FEPLB's elegance is achieving orthogonality by construction:</p>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Scope</th>
+<th>Communication</th>
+<th>Compute</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>EP</strong></td>
+<td>Inter-node</td>
+<td>RDMA/NVLink</td>
+<td>GPU SMs</td>
+</tr>
+<tr>
+<td><strong>PP</strong></td>
+<td>Inter-node</td>
+<td>RDMA/NVLink</td>
+<td>GPU SMs</td>
+</tr>
+<tr>
+<td><strong>FEPLB</strong></td>
+<td>Intra-node</td>
+<td>NVLink CE</td>
+<td>CPU</td>
+</tr>
+</tbody>
+</table>
+<p>No overlap = no interference. FEPLB doesn't compete with EP for NICs or with PP/EP for compute.</p>
+<h3 id="2-Why-Whole-Expert-Migration">2. Why Whole-Expert Migration?</h3>
+<p>You might ask: why copy entire experts instead of moving individual tokens?</p>
+<p><strong>Answer:</strong> Grouped GEMM is sensitive to per-expert batch size. Under the roofline model:</p>
+<ul>
+<li>Small batch → memory-bound, lower flops/cycle</li>
+<li>Splitting tokens into smaller batches degrades efficiency</li>
+<li>Migrating whole experts preserves batch size → maintains high efficiency</li>
+</ul>
+<p>Trade-off: coarser granularity at low EP (e.g., 64 experts per device), but still wins overall.</p>
+<h3 id="3-Deterministic-Load-Balancing">3. Deterministic Load Balancing</h3>
+<p>The greedy algorithm is run independently on each device:</p>
+<ul>
+<li>Input: routing decisions (same on all devices)</li>
+<li>Output: same weight copy plan (no inter-device coordination)</li>
+</ul>
+<p>This is crucial—avoids synchronization barriers during the critical micro-batch path.</p>
+<h3 id="4-Scaling-with-EP-Degree">4. Scaling with EP Degree</h3>
+<p>FasterMoE assumes <strong>stable, predictable routing</strong>. But at high EP:</p>
+<ul>
+<li>Each device sees sparser token distribution</li>
+<li>Router behavior becomes less predictable per device</li>
+<li>Prediction-based approach degrades</li>
+</ul>
+<p>FEPLB is <strong>reactive, not predictive</strong>:</p>
+<ul>
+<li>Observes actual token distribution each micro-batch</li>
+<li>Adapts immediately</li>
+<li>No prediction, no degradation</li>
+<li>Improves with more EP degrees</li>
+</ul>
+<hr>
+<h2 id="Related-Work-Comparisons">Related Work &amp; Comparisons</h2>
+<h3 id="MoE-Frameworks">MoE Frameworks</h3>
+<ul>
+<li><strong>GShard, Switch Transformer:</strong> First large-scale MoE models; used auxiliary losses</li>
+<li><strong>DeepSeek-V3, GLM-5:</strong> Trillion-parameter MoE systems; no auxiliary loss, live with imbalance</li>
+<li><strong>Megatron-LM, DeepSpeed-MoE:</strong> Industry infrastructure</li>
+</ul>
+<h3 id="Dynamic-Scheduling">Dynamic Scheduling</h3>
+<ol>
+<li>
+<p><strong>Tutel:</strong> Adaptive EP/DP switching</p>
+<ul>
+<li>Pro: simple</li>
+<li>Con: partitions weights, adds communication</li>
+</ul>
+</li>
+<li>
+<p><strong>FasterMoE:</strong> Shadow experts + pipelined dispatch</p>
+<ul>
+<li>Pro: good at low EP</li>
+<li>Con: degrades at high EP, prediction-based</li>
+</ul>
+</li>
+<li>
+<p><strong>SmartMoE:</strong> Pre-computed strategy menu</p>
+<ul>
+<li>Pro: offline planning</li>
+<li>Con: not reactive, less flexible</li>
+</ul>
+</li>
+<li>
+<p><strong>Triton Distributed:</strong> TP-parallel MoE with fused kernels</p>
+<ul>
+<li>Pro: explores communication-compute overlap</li>
+<li>Con: consumes SMs, reduces efficiency</li>
+</ul>
+</li>
+</ol>
+<h3 id="Communication-Libraries">Communication Libraries</h3>
+<ul>
+<li><strong>DeepEP, FUSCO:</strong> Specialized bulk transfer
+<ul>
+<li>Assumption: don't split communication into stages (adds volume, not reduces latency)</li>
+<li>FEPLB is compatible with both</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h2 id="Deployment-Guide-How-to-Use-FEPLB">Deployment Guide: How to Use FEPLB</h2>
+<h3 id="1-Hardware-Requirements">1. <strong>Hardware Requirements</strong></h3>
+<ul>
+<li>NVIDIA Hopper GPUs (H100, H200) with NVLink 4.0</li>
+<li>Intra-node connectivity (all-to-all NVLink)</li>
+<li>Supporting frameworks: Megatron-LM with DeepEP dispatch</li>
+</ul>
+<h3 id="2-Configuration">2. <strong>Configuration</strong></h3>
+<p>Essential parameters:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">dyn &#x3D; 4  # default: 4 dynamic experts per device</span><br><span class="line">τ &#x3D; 0    # minimum token threshold (0 &#x3D; no threshold)</span><br><span class="line">max_num_dyn &#x3D; 8  # max dynamic experts per device</span><br></pre></td></tr></table></figure>
+<p>Set these once, they're stable across runs.</p>
+<h3 id="3-Integration-Points">3. <strong>Integration Points</strong></h3>
+<ul>
+<li><strong>Router predictor:</strong> Periodically optimize expert-to-device assignment (at checkpoints)</li>
+<li><strong>Per-micro-batch dispatch:</strong>
+<ul>
+<li>Phase 1: Standard EP routing (unmodified)</li>
+<li>Phase 2: CPU scheduler analyzes tokens, issues NVLink CE copy commands</li>
+<li>Combine: Return results to source devices</li>
+</ul>
+</li>
+</ul>
+<h3 id="4-Implementation-Checklist">4. <strong>Implementation Checklist</strong></h3>
+<ul>
+<li>[ ] Baseline: measure 18.6% waste on your model</li>
+<li>[ ] Add CPU load balancer thread</li>
+<li>[ ] Integrate NVLink CE copy commands (CUDA streams)</li>
+<li>[ ] Tune dyn parameter for your EP degree</li>
+<li>[ ] Verify EP communication overhead &lt;1%</li>
+<li>[ ] Validate load balance improvement (50%+ reduction expected)</li>
+</ul>
+<h3 id="5-No-Auxiliary-Loss-Required">5. <strong>No Auxiliary Loss Required</strong></h3>
+<p>Major advantage: <strong>FEPLB works without auxiliary balancing losses.</strong> This means:</p>
+<ul>
+<li>Better model quality (router isn't constrained)</li>
+<li>Simpler training code</li>
+<li>Works with any existing MoE architecture</li>
+</ul>
+<hr>
+<h2 id="Open-Questions-Limitations">Open Questions &amp; Limitations</h2>
+<h3 id="1-Coarse-Granularity-at-Low-EP">1. <strong>Coarse Granularity at Low EP</strong></h3>
+<ul>
+<li>Whole-expert migration limits rebalancing flexibility when each device has many experts</li>
+<li>At EP=2 (64 experts per device): improvement is smaller (~51% vs ~70% at EP=8)</li>
+<li>Mitigated by tuning dyn, but fundamental trade-off remains</li>
+</ul>
+<h3 id="2-Scope-Limited-by-NVLink-Topology">2. <strong>Scope Limited by NVLink Topology</strong></h3>
+<ul>
+<li>Current implementation: intra-node rebalancing only</li>
+<li>Future: With all-to-all NVLink (e.g., NVIDIA SuperPod GB200 NVL72), Phase 2 could rebalance across 72 GPUs</li>
+<li>Question: How much further can improvements go?</li>
+</ul>
+<h3 id="3-Router-Predictor-Adaptation">3. <strong>Router Predictor Adaptation</strong></h3>
+<ul>
+<li>Paper mentions a &quot;Router Predictor&quot; for periodic expert-to-device assignment</li>
+<li>Limited details on how this adapts to changing routing patterns</li>
+<li>How often does it need to run? What's the overhead?</li>
+</ul>
+<h3 id="4-Interaction-with-Other-Optimizations">4. <strong>Interaction with Other Optimizations</strong></h3>
+<ul>
+<li>How does FEPLB interact with speculative decoding, KV cache optimizations, or other recent MoE improvements?</li>
+<li>Can improvements stack?</li>
+</ul>
+<h3 id="5-Generalization-Beyond-Top-k-Routing">5. <strong>Generalization Beyond Top-k Routing</strong></h3>
+<ul>
+<li>Paper focuses on top-k routing with learned router</li>
+<li>What about other routing schemes (random, expert choice, etc.)?</li>
+<li>Intuition: FEPLB should work, but not explicitly validated</li>
+</ul>
+<h3 id="6-Cross-Node-Imbalance">6. <strong>Cross-Node Imbalance</strong></h3>
+<ul>
+<li>FEPLB addresses intra-node imbalance only</li>
+<li>What about imbalance across nodes (EP domain)?</li>
+<li>Is this a separate problem requiring a different approach?</li>
+</ul>
+<hr>
+<h2 id="Why-This-Matters-2">Why This Matters</h2>
+<h3 id="For-LLM-Training-Teams">For LLM Training Teams</h3>
+<ol>
+<li><strong>Instant 50-70% efficiency gain</strong> without model changes</li>
+<li><strong>No auxiliary losses</strong> → better model quality</li>
+<li><strong>Drop-in replacement</strong> for existing EP infrastructure</li>
+<li><strong>Scales with EP degree</strong> → better at larger clusters</li>
+</ol>
+<h3 id="For-Chip-Designers">For Chip Designers</h3>
+<ul>
+<li>Copy Engine on Hopper was previously underutilized for MoE workloads</li>
+<li>This paper shows one valuable use case</li>
+<li>Suggests future hardware optimizations specifically for dynamic compute patterns</li>
+</ul>
+<h3 id="For-Systems-Researchers">For Systems Researchers</h3>
+<ul>
+<li>Demonstrates that <strong>resource-level separation</strong> is a powerful design principle</li>
+<li>Shows how to exploit idle hardware resources</li>
+<li>Provides a blueprint for future orthogonal optimizations</li>
+</ul>
+<hr>
+<h2 id="Reproducibility-Notes">Reproducibility Notes</h2>
+<h3 id="Code-Availability">Code Availability</h3>
+<ul>
+<li>Paper doesn't mention open-source release (yet)</li>
+<li>Implementation details sufficient for reproduction:
+<ul>
+<li>CPU load balancer: greedy algorithm, ~50 µs per micro-batch</li>
+<li>NVLink CE commands: standard CUDA stream API</li>
+<li>Integration: on top of Megatron-LM + DeepEP</li>
+</ul>
+</li>
+</ul>
+<h3 id="Experiment-Reproducibility">Experiment Reproducibility</h3>
+<ul>
+<li>Hardware clearly specified (H100 SXM5 + NVLink 4.0)</li>
+<li>Model: reduced GLM-5 (18 layers)</li>
+<li>Metrics: token straggler, GEMM straggler (easy to implement)</li>
+<li>Baselines: FasterMoE, Triton Distributed, Tutel (all publicly available or reimplemented fairly)</li>
+</ul>
+<p><strong>Concern:</strong> Paper uses a reduced-layer GLM-5 for efficiency. Results on full-scale 78-layer model would be valuable.</p>
+<hr>
+<h2 id="Final-Thoughts">Final Thoughts</h2>
+<p><strong>FEPLB is a rare systems paper:</strong> it identifies a real problem (18.6% waste), explains why prior work fails, and proposes an elegant solution that exploits overlooked hardware.</p>
+<p>The key insight—use NVLink Copy Engine as a new parallel dimension—is simple but consequential. By maintaining orthogonality through resource-level separation, FEPLB coexists peacefully with existing parallelism and provides immediate, measurable gains.</p>
+<p><strong>The results are compelling:</strong></p>
+<ul>
+<li>51-70% token straggler reduction</li>
+<li>50-68% GEMM straggler reduction</li>
+<li>Zero EP communication overhead</li>
+<li>Works at scale (16 H100s)</li>
+<li>No model changes required</li>
+<li>No auxiliary losses needed</li>
+</ul>
+<p>For any team training trillion-parameter MoE models on Hopper-class hardware, FEPLB is a must-implement optimization. It's the kind of work that becomes industry standard quickly.</p>
+<p><strong>Publication timing is notable:</strong> April 2026, during the era of DeepSeek-V3 and GLM-5 scaling. MoE load balancing is an active area, and this solution is timely and impactful.</p>
+<h2 id="Implementation-Details-Engineering-Insights">Implementation Details &amp; Engineering Insights</h2>
+<h3 id="1-CPU-Load-Balancer-Implementation">1. CPU Load Balancer Implementation</h3>
+<p>The CPU scheduler is surprisingly simple yet effective:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">for each micro-batch:</span><br><span class="line">  1. Wait for routing decisions from all GPUs</span><br><span class="line">  2. For each device d:</span><br><span class="line">     - Calculate per-expert token counts</span><br><span class="line">     - Identify dynamic experts eligible for copy</span><br><span class="line">  3. Greedy selection loop:</span><br><span class="line">     while devices_unbalanced():</span><br><span class="line">       - Find busiest dynamic expert on most-loaded device</span><br><span class="line">       - Find least-loaded device</span><br><span class="line">       - If token_count(expert) &gt; threshold τ:</span><br><span class="line">         - Issue NVLink CE copy command</span><br><span class="line">         - Update bookkeeping</span><br><span class="line">  4. Wait for all copies to complete</span><br><span class="line">  5. Signal GPU to begin dynamic expert computation</span><br></pre></td></tr></table></figure>
+<p>Runtime: ~50 µs on single CPU core—completely hidden in static expert computation window (~2-5 ms).</p>
+<h3 id="2-Memory-Management-Strategy">2. Memory Management Strategy</h3>
+<p>Pre-allocation + reuse pattern:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">Per-device buffer allocation:</span><br><span class="line">  weight_buffer &#x3D; [max_num_dyn experts] × [expert_size]</span><br><span class="line">  For GLM-5: 8 × 72 MiB &#x3D; 576 MiB</span><br><span class="line">  </span><br><span class="line">  Reuse across all MoE layers (no per-layer allocation)</span><br><span class="line">  Freed only at training end</span><br></pre></td></tr></table></figure>
+<p>This is key—avoids allocation/deallocation overhead per layer.</p>
+<h3 id="3-Determinism-Reproducibility">3. Determinism &amp; Reproducibility</h3>
+<p>One subtle strength: FEPLB's greedy algorithm is <strong>fully deterministic</strong>.</p>
+<p>Given identical routing decisions, every GPU independently derives the same weight copy plan. No consensus protocol, no synchronization barriers—just local computation. This means:</p>
+<ul>
+<li>Same training run produces identical results every time</li>
+<li>Easy debugging</li>
+<li>Reproducible experiments across sites</li>
+</ul>
+<p>Compare to stochastic load balancing (random expert selection)—much harder to debug.</p>
+<h3 id="4-Integration-with-Megatron-LM">4. Integration with Megatron-LM</h3>
+<p>Minimum changes required:</p>
+<ul>
+<li>Add CPU thread in training loop</li>
+<li>Hook into DeepEP's dispatch path (Phase 1 unmodified)</li>
+<li>Issue NVLink CE commands on GPU after routing</li>
+<li>Synchronize before dynamic expert kernel launch</li>
+</ul>
+<p>No changes to:</p>
+<ul>
+<li>Router network</li>
+<li>Loss computation</li>
+<li>Backward pass</li>
+<li>Gradient aggregation</li>
+</ul>
+<hr>
+<h2 id="Performance-Analysis-Why-FEPLB-Wins-at-Scale">Performance Analysis: Why FEPLB Wins at Scale</h2>
+<h3 id="Why-FEPLB-Scales-Better-with-EP">Why FEPLB Scales Better with EP</h3>
+<p><strong>FasterMoE's prediction problem (detailed):</strong></p>
+<p>At low EP (e.g., EP=2):</p>
+<ul>
+<li>Each device sees 64 experts</li>
+<li>Routing is relatively stable per-device across micro-batches</li>
+<li>Historical routing statistics are predictive</li>
+<li>FasterMoE shadow expert replication works well</li>
+</ul>
+<p>At high EP (e.g., EP=8):</p>
+<ul>
+<li>Each device sees only 16 experts</li>
+<li>Token assignment per expert becomes sparser and noisier</li>
+<li>Historical statistics become less predictive</li>
+<li>Prediction-based expert selection fails</li>
+</ul>
+<p><strong>FEPLB's reactive advantage:</strong></p>
+<ul>
+<li>Doesn't predict—observes actual distribution each micro-batch</li>
+<li>Adapts immediately to changing patterns</li>
+<li>Gets <em>better</em> at high EP because more expert diversity per node</li>
+<li>At EP=8: 2× advantage over FasterMoE</li>
+</ul>
+<p>This is a fundamental insight: for sparse, unpredictable distributions, reactive algorithms win.</p>
+<h3 id="Communication-Efficiency-Deep-Dive">Communication Efficiency Deep Dive</h3>
+<p>Why does FEPLB's &lt;1% EP overhead matter so much?</p>
+<p>Typical MoE layer on 16 GPUs:</p>
+<ul>
+<li>Static expert dispatch: 100-200 µs</li>
+<li>Dynamic token redistribution (FEPLB Phase 2): 50-100 µs (hidden in Phase 1)</li>
+<li>Combine phase: 50-100 µs</li>
+</ul>
+<p>Total: ~300 µs overhead added. Compare to:</p>
+<ul>
+<li>FasterMoE pipelined dispatch: +46.8% = additional 50-100 µs</li>
+</ul>
+<p>In a model with 50 MoE layers, FEPLB saves:</p>
+<ul>
+<li>50 × 50 µs = 2.5 ms per forward pass</li>
+<li>Per training run (1M steps): 2.5 ms × 1M = 2,500 seconds = <strong>42 minutes saved</strong></li>
+</ul>
+<hr>
+<h2 id="Failure-Cases-When-FEPLB-Doesn-t-Help">Failure Cases &amp; When FEPLB Doesn't Help</h2>
+<h3 id="1-When-Load-Imbalance-Isn-t-the-Bottleneck">1. When Load Imbalance Isn't the Bottleneck</h3>
+<p>FEPLB is orthogonal to other bottlenecks:</p>
+<ul>
+<li><strong>Memory-bound compute:</strong> If Grouped GEMM is already memory-bound, load imbalance doesn't matter much</li>
+<li><strong>Communication-bound training:</strong> If inter-node EP communication dominates, intra-node FEPLB doesn't help</li>
+<li><strong>Pipeline bubble:</strong> If pipeline imbalance is worse than MoE routing imbalance, FEPLB is secondary</li>
+</ul>
+<h3 id="2-Low-EP-Degrees">2. Low EP Degrees</h3>
+<p>At EP=2 (16 GPUs, 64 experts/device):</p>
+<ul>
+<li>FEPLB still wins but advantage is smaller (~51% vs ~55%)</li>
+<li>Coarser granularity: fewer experts to migrate</li>
+<li>Other optimizations might be better</li>
+</ul>
+<h3 id="3-Perfect-Routing-Hypothetical">3. Perfect Routing (Hypothetical)</h3>
+<p>If you had perfect router (all devices get same token count):</p>
+<ul>
+<li>FEPLB reduces to no-op (zero stragglers to fix)</li>
+<li>But in practice, routing is never perfectly balanced due to:
+<ul>
+<li>Learning dynamics (router isn't optimized for balance)</li>
+<li>Data diversity (different batches → different routing patterns)</li>
+<li>Numerical stability (no perfect tie-breaking in routing)</li>
+</ul>
+</li>
+</ul>
+<h3 id="4-Non-Hopper-Hardware">4. Non-Hopper Hardware</h3>
+<ul>
+<li>Older GPUs lack efficient Copy Engine</li>
+<li>Newer but different-architecture GPUs may have different bottlenecks</li>
+<li>Results probably don't transfer directly</li>
+</ul>
+<hr>
+<h2 id="Cross-System-Comparison-Table">Cross-System Comparison Table</h2>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>FasterMoE</th>
+<th>Tutel</th>
+<th>Triton Dist.</th>
+<th>FEPLB</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Token straggler @ EP=8</strong></td>
+<td>4,036</td>
+<td>4,356</td>
+<td>N/A</td>
+<td><strong>2,021</strong></td>
+</tr>
+<tr>
+<td><strong>GEMM straggler @ EP=8</strong></td>
+<td>0.625 ms</td>
+<td>0.743 ms</td>
+<td>1.4+ ms</td>
+<td><strong>0.352 ms</strong></td>
+</tr>
+<tr>
+<td><strong>EP overhead</strong></td>
+<td>&lt;1%</td>
+<td>&lt;1%</td>
+<td>Low</td>
+<td><strong>&lt;1%</strong></td>
+</tr>
+<tr>
+<td><strong>Auxiliary loss needed</strong></td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td><strong>No</strong> ✓</td>
+</tr>
+<tr>
+<td><strong>Per-layer complexity</strong></td>
+<td>Shadow expert replication</td>
+<td>Adaptive switching</td>
+<td>Fused kernels</td>
+<td>NVLink CE copy</td>
+</tr>
+<tr>
+<td><strong>Scales with EP</strong></td>
+<td>Degrades</td>
+<td>Degrades</td>
+<td>Increases overhead</td>
+<td><strong>Improves</strong> ✓</td>
+</tr>
+<tr>
+<td><strong>Implementation difficulty</strong></td>
+<td>Medium</td>
+<td>Medium</td>
+<td>High</td>
+<td><strong>Low</strong> ✓</td>
+</tr>
+<tr>
+<td><strong>SM consumption</strong></td>
+<td>None</td>
+<td>None</td>
+<td>High</td>
+<td><strong>None</strong> ✓</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="Interesting-Edge-Cases">Interesting Edge Cases</h2>
+<h3 id="Case-1-Router-Collapse">Case 1: Router Collapse</h3>
+<p>What happens if the router learns to send all tokens to one expert?</p>
+<p>FEPLB handles gracefully:</p>
+<ul>
+<li>Greedy algorithm detects this expert as busiest</li>
+<li>Copies its weights to all other devices (up to dyn limit)</li>
+<li>Routes remaining tokens across all devices</li>
+<li>Immediate load balancing without retraining</li>
+</ul>
+<p>Compare to FasterMoE: prediction-based approach would be completely off.</p>
+<h3 id="Case-2-Data-Dependent-Routing-Changes">Case 2: Data-Dependent Routing Changes</h3>
+<p>Training data changes → routing pattern changes.</p>
+<p><strong>Example:</strong> Switch from English to Chinese mid-training (e.g., in a multilingual model).</p>
+<ul>
+<li>Token affinities shift per expert</li>
+<li>Expert load distribution changes</li>
+<li>FasterMoE's historical statistics become stale</li>
+<li>FEPLB re-adapts within one micro-batch</li>
+</ul>
+<p>This is realistic in continuous-training scenarios (e.g., online model updates).</p>
+<h3 id="Case-3-Micro-Batch-Size-Variation">Case 3: Micro-Batch Size Variation</h3>
+<p>What if batch size changes?</p>
+<p>FEPLB remains effective:</p>
+<ul>
+<li>Larger batch = more tokens per expert</li>
+<li>Small imbalances remain</li>
+<li>FEPLB rebalances at new scale</li>
+</ul>
+<p>Token straggler reduction likely stays similar because imbalance is typically data-dependent, not scale-dependent.</p>
+<hr>
+<h2 id="Future-Research-Directions">Future Research Directions</h2>
+<h3 id="1-Token-Level-vs-Expert-Level-Migration">1. Token-Level vs. Expert-Level Migration</h3>
+<p>Current: whole-expert migration for Grouped GEMM efficiency.</p>
+<p>Future: hybrid approach—split tokens for a few high-frequency experts, keep others whole. Requires:</p>
+<ul>
+<li>Grouped GEMM variant that handles variable batch sizes</li>
+<li>More sophisticated load balancer algorithm</li>
+<li>Potential for even finer-grained balancing</li>
+</ul>
+<h3 id="2-Cross-Node-Balancing">2. Cross-Node Balancing</h3>
+<p>Current scope: intra-node (limited by NVLink topology).</p>
+<p>When NVIDIA releases all-to-all NVLink hardware (e.g., 72-GPU SuperPod):</p>
+<ul>
+<li>Phase 2 could rebalance across entire cluster</li>
+<li>Remove the constraint on bounding box</li>
+<li>Potentially reach near-perfect balance</li>
+</ul>
+<p>Question: Would this improve beyond 70% GEMM straggler reduction?</p>
+<h3 id="3-Interaction-with-TP-MoE">3. Interaction with TP-MoE</h3>
+<p>Tensor parallelism within MoE experts (combination of TP + EP).</p>
+<p>FEPLB currently focuses on EP. How to optimize TP-MoE load balance?</p>
+<ul>
+<li>May require cooperative scheduling between TP and EP dimensions</li>
+<li>Interesting systems research question</li>
+</ul>
+<h3 id="4-Learned-Load-Balancer">4. Learned Load Balancer</h3>
+<p>Rather than greedy algorithm, could train a small neural network to predict optimal copy assignments.</p>
+<p>Trade-offs:</p>
+<ul>
+<li>More complex</li>
+<li>Potentially better decisions in complex regimes</li>
+<li>But loses determinism, reproducibility</li>
+</ul>
+<hr>
+<h2 id="Broader-Context-Hardware-Trends">Broader Context: Hardware Trends</h2>
+<p>This paper highlights an important trend: <strong>specialized hardware (Copy Engine) goes unused</strong> in general-purpose frameworks.</p>
+<p>Similar examples:</p>
+<ul>
+<li>Tensor cores (before cuBLAS optimization)</li>
+<li>Async memory copy engines</li>
+<li>Hardware accelerators for collective operations</li>
+</ul>
+<p>FEPLB is one of many papers that will likely unlock previously-idle hardware for better performance. This suggests:</p>
+<ol>
+<li><strong>For practitioners:</strong> Check your favorite hardware specs—there might be untapped resources</li>
+<li><strong>For chip designers:</strong> Document hidden capabilities; they may unlock surprising optimizations</li>
+<li><strong>For systems researchers:</strong> Hardware-software codesign is increasingly valuable</li>
+</ol>
+<hr>
+<h2 id="Reproducibility-Roadmap">Reproducibility Roadmap</h2>
+<p>If you want to implement FEPLB:</p>
+<p><strong>Phase 0: Setup</strong> (1 day)</p>
+<ul>
+<li>Obtain 4+ Hopper GPUs with NVLink</li>
+<li>Install Megatron-LM with DeepEP</li>
+<li>Establish baseline metrics on your model</li>
+</ul>
+<p><strong>Phase 1: Static Framework</strong> (1 week)</p>
+<ul>
+<li>Implement CPU load balancer</li>
+<li>Add NVLink CE copy commands</li>
+<li>Verify EP communication overhead &lt;1%</li>
+</ul>
+<p><strong>Phase 2: Dynamic Tuning</strong> (1 week)</p>
+<ul>
+<li>Tune dyn parameter for your EP configuration</li>
+<li>Measure token/GEMM straggler reduction</li>
+<li>Validate no accuracy degradation</li>
+</ul>
+<p><strong>Phase 3: Production Deployment</strong> (2 weeks)</p>
+<ul>
+<li>Integrate Router Predictor for periodic rebalancing</li>
+<li>Run long-duration training (100K+ steps)</li>
+<li>Compare wall-clock time vs. baseline</li>
+</ul>
+<p><strong>Total effort:</strong> ~4-5 weeks for experienced systems engineers.</p>
+<hr>
+<p><strong>Word count:</strong> ~5,800 | <strong>Pages (single-spaced):</strong> ~13-14</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Pruning/" rel="tag"># Pruning</a>
+              <a href="/tags/FEPLB/" rel="tag"># FEPLB</a>
+              <a href="/tags/Large-Batch/" rel="tag"># Large Batch</a>
+              <a href="/tags/Fine-tuning/" rel="tag"># Fine-tuning</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/24/2026-04-24-EdgeStability-technical-review-en/" rel="prev" title="Generalization at the Edge of Stability: A Random Dynamical Systems Perspective">
+      <i class="fa fa-chevron-left"></i> Generalization at the Edge of Stability: A Random Dynamical Systems Perspective
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/26/2026-04-26-OGER-technical-review-en/" rel="next" title="---">
+      --- <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Mixture-of-Experts-MoE"><span class="nav-number">1.</span> <span class="nav-text">1. Mixture of Experts (MoE)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Expert-Parallelism-EP"><span class="nav-number">1.1.</span> <span class="nav-text">2. Expert Parallelism (EP)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Hardware-NVLink-Hopper-GPUs"><span class="nav-number">1.2.</span> <span class="nav-text">3. Hardware: NVLink &amp; Hopper GPUs</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Pipeline-Parallelism-PP-Synchronous-Training"><span class="nav-number">1.3.</span> <span class="nav-text">4. Pipeline Parallelism (PP) &amp; Synchronous Training</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Grouped-GEMM"><span class="nav-number">1.4.</span> <span class="nav-text">5. Grouped GEMM</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#The-Problem-Load-Imbalance-in-MoE"><span class="nav-number">2.</span> <span class="nav-text">The Problem: Load Imbalance in MoE</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Root-Cause"><span class="nav-number">2.1.</span> <span class="nav-text">Root Cause</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Why-This-Matters"><span class="nav-number">2.2.</span> <span class="nav-text">Why This Matters</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Why-Prior-Work-Fails"><span class="nav-number">2.3.</span> <span class="nav-text">Why Prior Work Fails</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#The-Solution-Two-Phase-Dispatch-with-NVLink-CE"><span class="nav-number">3.</span> <span class="nav-text">The Solution: Two-Phase Dispatch with NVLink CE</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Design-Principle-Orthogonal-Parallelism"><span class="nav-number">3.1.</span> <span class="nav-text">Design Principle: Orthogonal Parallelism</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Two-Phase-Dispatch"><span class="nav-number">3.2.</span> <span class="nav-text">Two-Phase Dispatch</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#The-Timeline-Trick"><span class="nav-number">3.3.</span> <span class="nav-text">The Timeline Trick</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Load-Balancing-Algorithm"><span class="nav-number">3.4.</span> <span class="nav-text">Load Balancing Algorithm</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Memory-Overhead"><span class="nav-number">3.5.</span> <span class="nav-text">Memory Overhead</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Key-Results-From-18-6-Waste-to-51-70-Improvement"><span class="nav-number">4.</span> <span class="nav-text">Key Results: From 18.6% Waste to 51-70% Improvement</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Experimental-Setup"><span class="nav-number">4.1.</span> <span class="nav-text">Experimental Setup</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Performance-Metrics"><span class="nav-number">4.2.</span> <span class="nav-text">Performance Metrics</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Per-Layer-Execution-Time-Table-2"><span class="nav-number">4.3.</span> <span class="nav-text">Per-Layer Execution Time (Table 2)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Load-Balance-Quality-Figures-5-6"><span class="nav-number">4.4.</span> <span class="nav-text">Load Balance Quality (Figures 5 &amp; 6)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Orthogonality-Verification-EP-Communication-Overhead-Figure-4"><span class="nav-number">4.5.</span> <span class="nav-text">Orthogonality Verification: EP Communication Overhead (Figure 4)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Sensitivity-to-Dynamic-Expert-Count-Figure-6"><span class="nav-number">4.6.</span> <span class="nav-text">Sensitivity to Dynamic Expert Count (Figure 6)</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Technical-Deep-Dive-Why-This-Works"><span class="nav-number">5.</span> <span class="nav-text">Technical Deep Dive: Why This Works</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Hardware-Resource-Separation"><span class="nav-number">5.1.</span> <span class="nav-text">1. Hardware Resource Separation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Why-Whole-Expert-Migration"><span class="nav-number">5.2.</span> <span class="nav-text">2. Why Whole-Expert Migration?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Deterministic-Load-Balancing"><span class="nav-number">5.3.</span> <span class="nav-text">3. Deterministic Load Balancing</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Scaling-with-EP-Degree"><span class="nav-number">5.4.</span> <span class="nav-text">4. Scaling with EP Degree</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Related-Work-Comparisons"><span class="nav-number">6.</span> <span class="nav-text">Related Work &amp; Comparisons</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#MoE-Frameworks"><span class="nav-number">6.1.</span> <span class="nav-text">MoE Frameworks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Dynamic-Scheduling"><span class="nav-number">6.2.</span> <span class="nav-text">Dynamic Scheduling</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Communication-Libraries"><span class="nav-number">6.3.</span> <span class="nav-text">Communication Libraries</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Deployment-Guide-How-to-Use-FEPLB"><span class="nav-number">7.</span> <span class="nav-text">Deployment Guide: How to Use FEPLB</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Hardware-Requirements"><span class="nav-number">7.1.</span> <span class="nav-text">1. Hardware Requirements</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Configuration"><span class="nav-number">7.2.</span> <span class="nav-text">2. Configuration</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Integration-Points"><span class="nav-number">7.3.</span> <span class="nav-text">3. Integration Points</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Implementation-Checklist"><span class="nav-number">7.4.</span> <span class="nav-text">4. Implementation Checklist</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-No-Auxiliary-Loss-Required"><span class="nav-number">7.5.</span> <span class="nav-text">5. No Auxiliary Loss Required</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Open-Questions-Limitations"><span class="nav-number">8.</span> <span class="nav-text">Open Questions &amp; Limitations</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Coarse-Granularity-at-Low-EP"><span class="nav-number">8.1.</span> <span class="nav-text">1. Coarse Granularity at Low EP</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Scope-Limited-by-NVLink-Topology"><span class="nav-number">8.2.</span> <span class="nav-text">2. Scope Limited by NVLink Topology</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Router-Predictor-Adaptation"><span class="nav-number">8.3.</span> <span class="nav-text">3. Router Predictor Adaptation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Interaction-with-Other-Optimizations"><span class="nav-number">8.4.</span> <span class="nav-text">4. Interaction with Other Optimizations</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Generalization-Beyond-Top-k-Routing"><span class="nav-number">8.5.</span> <span class="nav-text">5. Generalization Beyond Top-k Routing</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-Cross-Node-Imbalance"><span class="nav-number">8.6.</span> <span class="nav-text">6. Cross-Node Imbalance</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Why-This-Matters-2"><span class="nav-number">9.</span> <span class="nav-text">Why This Matters</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#For-LLM-Training-Teams"><span class="nav-number">9.1.</span> <span class="nav-text">For LLM Training Teams</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#For-Chip-Designers"><span class="nav-number">9.2.</span> <span class="nav-text">For Chip Designers</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#For-Systems-Researchers"><span class="nav-number">9.3.</span> <span class="nav-text">For Systems Researchers</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Reproducibility-Notes"><span class="nav-number">10.</span> <span class="nav-text">Reproducibility Notes</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Code-Availability"><span class="nav-number">10.1.</span> <span class="nav-text">Code Availability</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Experiment-Reproducibility"><span class="nav-number">10.2.</span> <span class="nav-text">Experiment Reproducibility</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Final-Thoughts"><span class="nav-number">11.</span> <span class="nav-text">Final Thoughts</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Implementation-Details-Engineering-Insights"><span class="nav-number">12.</span> <span class="nav-text">Implementation Details &amp; Engineering Insights</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-CPU-Load-Balancer-Implementation"><span class="nav-number">12.1.</span> <span class="nav-text">1. CPU Load Balancer Implementation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Memory-Management-Strategy"><span class="nav-number">12.2.</span> <span class="nav-text">2. Memory Management Strategy</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Determinism-Reproducibility"><span class="nav-number">12.3.</span> <span class="nav-text">3. Determinism &amp; Reproducibility</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Integration-with-Megatron-LM"><span class="nav-number">12.4.</span> <span class="nav-text">4. Integration with Megatron-LM</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Performance-Analysis-Why-FEPLB-Wins-at-Scale"><span class="nav-number">13.</span> <span class="nav-text">Performance Analysis: Why FEPLB Wins at Scale</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Why-FEPLB-Scales-Better-with-EP"><span class="nav-number">13.1.</span> <span class="nav-text">Why FEPLB Scales Better with EP</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Communication-Efficiency-Deep-Dive"><span class="nav-number">13.2.</span> <span class="nav-text">Communication Efficiency Deep Dive</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Failure-Cases-When-FEPLB-Doesn-t-Help"><span class="nav-number">14.</span> <span class="nav-text">Failure Cases &amp; When FEPLB Doesn&#39;t Help</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-When-Load-Imbalance-Isn-t-the-Bottleneck"><span class="nav-number">14.1.</span> <span class="nav-text">1. When Load Imbalance Isn&#39;t the Bottleneck</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Low-EP-Degrees"><span class="nav-number">14.2.</span> <span class="nav-text">2. Low EP Degrees</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Perfect-Routing-Hypothetical"><span class="nav-number">14.3.</span> <span class="nav-text">3. Perfect Routing (Hypothetical)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Non-Hopper-Hardware"><span class="nav-number">14.4.</span> <span class="nav-text">4. Non-Hopper Hardware</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Cross-System-Comparison-Table"><span class="nav-number">15.</span> <span class="nav-text">Cross-System Comparison Table</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Interesting-Edge-Cases"><span class="nav-number">16.</span> <span class="nav-text">Interesting Edge Cases</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Case-1-Router-Collapse"><span class="nav-number">16.1.</span> <span class="nav-text">Case 1: Router Collapse</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Case-2-Data-Dependent-Routing-Changes"><span class="nav-number">16.2.</span> <span class="nav-text">Case 2: Data-Dependent Routing Changes</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Case-3-Micro-Batch-Size-Variation"><span class="nav-number">16.3.</span> <span class="nav-text">Case 3: Micro-Batch Size Variation</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Future-Research-Directions"><span class="nav-number">17.</span> <span class="nav-text">Future Research Directions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Token-Level-vs-Expert-Level-Migration"><span class="nav-number">17.1.</span> <span class="nav-text">1. Token-Level vs. Expert-Level Migration</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Cross-Node-Balancing"><span class="nav-number">17.2.</span> <span class="nav-text">2. Cross-Node Balancing</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Interaction-with-TP-MoE"><span class="nav-number">17.3.</span> <span class="nav-text">3. Interaction with TP-MoE</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Learned-Load-Balancer"><span class="nav-number">17.4.</span> <span class="nav-text">4. Learned Load Balancer</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Broader-Context-Hardware-Trends"><span class="nav-number">18.</span> <span class="nav-text">Broader Context: Hardware Trends</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Reproducibility-Roadmap"><span class="nav-number">19.</span> <span class="nav-text">Reproducibility Roadmap</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

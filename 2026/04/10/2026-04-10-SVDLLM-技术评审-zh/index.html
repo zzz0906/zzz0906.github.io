@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. 这篇论文为什么值得认真读 我先用一句话给结论：  SVD-LLM 把 SVD 压缩里最关键的“截断决策”从经验做法，升级成和真实压缩损失直接对齐的数学机制；再通过顺序式低秩参数更新，把高压缩率下的质量崩塌拉回来。  为什么这是大事？因为现实里的 LLM 部署痛点非常具体：  权重太大，显存压力爆炸； 线上推理成本高； 压缩到中高比例时，很多方法会“看起来压了，实际不可用”。  SVD 路线一">
+<meta property="og:type" content="article">
+<meta property="og:title" content="SVD-LLM：面向大语言模型压缩的“截断感知”奇异值分解方法 — 深度技术评审">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/10/2026-04-10-SVDLLM-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. 这篇论文为什么值得认真读 我先用一句话给结论：  SVD-LLM 把 SVD 压缩里最关键的“截断决策”从经验做法，升级成和真实压缩损失直接对齐的数学机制；再通过顺序式低秩参数更新，把高压缩率下的质量崩塌拉回来。  为什么这是大事？因为现实里的 LLM 部署痛点非常具体：  权重太大，显存压力爆炸； 线上推理成本高； 压缩到中高比例时，很多方法会“看起来压了，实际不可用”。  SVD 路线一">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-10T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-16T12:57:27.411Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Efficient Inference">
+<meta property="article:tag" content="SVD">
+<meta property="article:tag" content="Model Compression">
+<meta property="article:tag" content="SVD-LLM">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/10/2026-04-10-SVDLLM-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>SVD-LLM：面向大语言模型压缩的“截断感知”奇异值分解方法 — 深度技术评审 | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/10/2026-04-10-SVDLLM-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          SVD-LLM：面向大语言模型压缩的“截断感知”奇异值分解方法 — 深度技术评审
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-10 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-10T00:00:00+00:00">2026-04-10</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-16 12:57:27" itemprop="dateModified" datetime="2026-04-16T12:57:27+00:00">2026-04-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/Efficient-ML/" itemprop="url" rel="index"><span itemprop="name">Efficient ML</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-这篇论文为什么值得认真读">1. 这篇论文为什么值得认真读</h2>
+<p>我先用一句话给结论：</p>
+<blockquote>
+<p><strong>SVD-LLM 把 SVD 压缩里最关键的“截断决策”从经验做法，升级成和真实压缩损失直接对齐的数学机制；再通过顺序式低秩参数更新，把高压缩率下的质量崩塌拉回来。</strong></p>
+</blockquote>
+<p>为什么这是大事？因为现实里的 LLM 部署痛点非常具体：</p>
+<ul>
+<li>权重太大，显存压力爆炸；</li>
+<li>线上推理成本高；</li>
+<li>压缩到中高比例时，很多方法会“看起来压了，实际不可用”。</li>
+</ul>
+<p>SVD 路线一直很诱人：硬件友好、结构规整、并且可同时影响权重与推理内存。但过去的 SVD 方案在高压缩率下经常掉得太厉害。SVD-LLM 的意义就在于，它不是“调了一点超参”，而是把根因给修了。</p>
+<hr>
+<a id="more"></a>
+<h2 id="2-前置知识：理解这篇论文前需要知道什么">2. 前置知识：理解这篇论文前需要知道什么</h2>
+<p>这一节我按“从零开始”的标准来讲。</p>
+<h3 id="2-1-LLM-里的“矩阵”到底是什么">2.1 LLM 里的“矩阵”到底是什么</h3>
+<p>很多人听到大模型会想到“很神秘”，其实底层大量操作都是线性变换：</p>
+<p>[
+Y = WX
+]</p>
+<p>其中：</p>
+<ul>
+<li>(X) 是输入特征，</li>
+<li>(W) 是模型学到的参数矩阵，</li>
+<li>(Y) 是输出特征。</li>
+</ul>
+<p>压缩模型，很多时候就是在“尽量不伤效果”的前提下，把很多个大矩阵 (W) 变小。</p>
+<h3 id="2-2-为什么现在必须做模型压缩">2.2 为什么现在必须做模型压缩</h3>
+<p>大模型成本主要来自三类：</p>
+<ol>
+<li><strong>权重内存</strong>（模型参数本身），</li>
+<li><strong>计算开销</strong>（矩阵乘法），</li>
+<li><strong>服务开销</strong>（并发与上下文增长）。</li>
+</ol>
+<p>如果不压缩，很多公司或团队根本部署不起，或者用户体验会因为资源限制变差。</p>
+<h3 id="2-3-SVD-是什么（直观版）">2.3 SVD 是什么（直观版）</h3>
+<p>SVD（奇异值分解）可以写成：</p>
+<p>[
+W = U\Sigma V^T
+]</p>
+<p>直观理解：</p>
+<ul>
+<li>(V^T)：先把输入坐标系旋转到“更好压缩”的方向；</li>
+<li>(\Sigma)：每个方向给一个强度（奇异值）；</li>
+<li>(U)：再旋转回输出空间。</li>
+</ul>
+<p>奇异值越大，通常代表这个方向“信息更重”。</p>
+<h3 id="2-4-“低秩近似”到底在干嘛">2.4 “低秩近似”到底在干嘛</h3>
+<p>低秩近似就是保留最重要的一部分方向，把不重要方向截断：</p>
+<p>[
+W \approx U_r\Sigma_rV_r^T
+]</p>
+<p>这样可以减少参数和计算量，但会引入误差。难点就在于：到底该截断哪些方向，才最不伤模型能力。</p>
+<h3 id="2-5-什么叫后训练压缩">2.5 什么叫后训练压缩</h3>
+<p>后训练压缩（post-training）是指：</p>
+<ul>
+<li>模型已经训练好了，</li>
+<li>不从头再训，</li>
+<li>直接在现有模型上做压缩。</li>
+</ul>
+<p>它的好处是省钱、省时间、工程可落地。</p>
+<h3 id="2-6-困惑度和准确率为什么都要看">2.6 困惑度和准确率为什么都要看</h3>
+<p>论文里常见两个指标族：</p>
+<ul>
+<li><strong>Perplexity（困惑度，越低越好）</strong>：看语言建模质量；</li>
+<li><strong>准确率/BLEU/EM（越高越好）</strong>：看具体任务能力。</li>
+</ul>
+<p>只看一个指标会片面。比如困惑度不错，但问答生成全崩，也没用。</p>
+<h3 id="2-7-为什么剪枝和量化不总是够用">2.7 为什么剪枝和量化不总是够用</h3>
+<p>剪枝、量化都很强，但也有现实约束：</p>
+<ul>
+<li>低比特量化可能严重伤精度；</li>
+<li>某些量化需要特定硬件内核才跑得快；</li>
+<li>剪枝的稀疏模式不一定带来线性加速；</li>
+<li>高压缩率下容易质量崩溃。</li>
+</ul>
+<p>低秩压缩是另一条重要路线，和它们互补。</p>
+<h3 id="2-8-为什么激活分布会影响压缩效果">2.8 为什么激活分布会影响压缩效果</h3>
+<p>压缩误差不只取决于权重 (W)，还和激活 (X) 相关。某些输入通道方差特别大时，单纯看奇异值大小做截断可能会“看起来合理，实际上损失更大”。</p>
+<h3 id="2-9-什么是-whitening，为什么会出现-Cholesky">2.9 什么是 whitening，为什么会出现 Cholesky</h3>
+<p>白化（whitening）目的是把特征变到“更独立、尺度更均衡”的空间。</p>
+<p>如果构造 (S) 满足：</p>
+<p>[
+SS^T = XX^T
+]</p>
+<p>那么经过 (S^{-1}) 变换后，激活会变成正交归一形式。Cholesky 分解是求这种 (S) 的常见高效方法。</p>
+<h3 id="2-10-LoRA-式参数更新是什么">2.10 LoRA 式参数更新是什么</h3>
+<p>LoRA 思想是用小矩阵（低秩）去修正大矩阵。SVD-LLM 在截断后不是直接结束，而是对分解出来的低秩因子继续做 LoRA 式恢复更新。</p>
+<h3 id="2-11-KV-cache-为什么是线上部署大头">2.11 KV cache 为什么是线上部署大头</h3>
+<p>自回归生成时，历史 token 的 K/V 会缓存。长上下文下，KV cache 内存可能比你想象的更可怕。能同时压权重和 KV cache，才是“真部署友好”。</p>
+<hr>
+<h2 id="3-SVD-LLM-要解决的核心问题">3. SVD-LLM 要解决的核心问题</h2>
+<p>论文指出旧 SVD 压缩在 LLM 场景有两个根本问题：</p>
+<ol>
+<li>
+<p><strong>奇异值截断与真实压缩损失不对齐</strong>。<br>
+旧方法下，截断“更小”的奇异值，不一定带来更小的 (|WX-W'X|_F) 损失。</p>
+</li>
+<li>
+<p><strong>截断后不做参数恢复更新</strong>。<br>
+压缩率越高，截断掉的信息越多；如果没有恢复机制，性能会断崖式下降。</p>
+</li>
+</ol>
+<p>SVD-LLM 就是针对这两点做系统性修复。</p>
+<hr>
+<h2 id="4-方法总览（Figure-1）">4. 方法总览（Figure 1）</h2>
+<p>Figure 1 的流程可以拆成四步：</p>
+<ol>
+<li>准备 calibration data（少量校准样本）；</li>
+<li>对每层构造白化矩阵（truncation-aware whitening）；</li>
+<li>对每个目标权重 (W) 做 (WS) 的 SVD 并截断，得到两个低秩矩阵 (W'_u, W'_v)；</li>
+<li>进行顺序式低秩参数更新，恢复精度。</li>
+</ol>
+<p>这个设计同时兼顾了“数学正确性”和“工程可跑性”。</p>
+<hr>
+<h2 id="5-技术细节一：截断感知数据白化（Truncation-aware-Data-Whitening）">5. 技术细节一：截断感知数据白化（Truncation-aware Data Whitening）</h2>
+<h3 id="5-1-目标函数与压缩损失">5.1 目标函数与压缩损失</h3>
+<p>论文的压缩目标写成：</p>
+<p>[
+\min |WX-W'X|_F
+]</p>
+<p>其中 (W') 是压缩后的近似权重。</p>
+<p>关键点不是“做 SVD”，而是要让“截断决策”和这个损失目标直接一致。</p>
+<h3 id="5-2-为什么“截断最小奇异值”在旧方法里不一定对">5.2 为什么“截断最小奇异值”在旧方法里不一定对</h3>
+<p>论文在 Figure 2(a) 给了反例：</p>
+<ul>
+<li>只截断一个值时，截断最小值反而可能损失更大；</li>
+<li>截断多个值时，也可能“截掉更小的一组”但损失更差。</li>
+</ul>
+<p>这意味着旧方法里的“按奇异值大小截断”在数学上并不可靠。</p>
+<h3 id="5-3-白化矩阵如何构造">5.3 白化矩阵如何构造</h3>
+<p>SVD-LLM 用 Cholesky 构造 (S)，使得：</p>
+<p>[
+(S^{-1}X)(S^{-1}X)^T=I
+]</p>
+<p>然后对 (WS) 做 SVD：</p>
+<p>[
+WS = U\Sigma V^T
+]</p>
+<p>截断后构造低秩因子：</p>
+<p>[
+W'_u = U,[\mathrm{Trunc}(\Sigma)]^{1/2},\qquad
+W'_v = [\mathrm{Trunc}(\Sigma)]^{1/2}V^TS^{-1}
+]</p>
+<p>最终：</p>
+<p>[
+W' = W'_uW'_v
+]</p>
+<h3 id="5-4-Theorem-Corollary-在工程上的意义">5.4 Theorem/Corollary 在工程上的意义</h3>
+<p>论文给出的结论非常关键：</p>
+<ul>
+<li>若 (S) 来自 (XX^T) 的 Cholesky，</li>
+<li>截断单个奇异值 (\sigma_i) 的损失就是 (\sigma_i) 本身，</li>
+<li>截断多个时，损失平方是被截断奇异值平方和：</li>
+</ul>
+<p>[
+L^2 = \sum_{i\in\text{truncated} }\sigma_i^2
+]</p>
+<p>这就把“截断最小奇异值”重新变成有理论保证的最优策略。</p>
+<p>一句话：SVD-LLM 不是“换个归一化”，而是把截断准则从经验规则变成了损失对齐规则。</p>
+<hr>
+<h2 id="6-技术细节二：顺序式低秩参数更新（Sequential-Low-rank-Approximation）">6. 技术细节二：顺序式低秩参数更新（Sequential Low-rank Approximation）</h2>
+<p>即便截断更合理，高压缩率仍会带来可见精度损失，所以要做恢复。</p>
+<p>SVD-LLM 对两个低秩因子分别加 LoRA 更新：</p>
+<p>[
+W'_u \leftarrow W'_u + B_uA_u,\qquad
+W'_v \leftarrow W'_v + B_vA_v
+]</p>
+<p>但它不同时更新两者，而是<strong>顺序更新</strong>：</p>
+<ol>
+<li>冻结 (W'_v)，先调 (W'_u)；</li>
+<li>冻结更新后的 (W'_u)，再调 (W'_v)。</li>
+</ol>
+<p>论文给出的动机很实在：同时更新会互相干扰梯度，顺序更新更稳定、收敛更可靠。</p>
+<hr>
+<h2 id="7-整体算法流程（Algorithm-1-2-3）">7. 整体算法流程（Algorithm 1/2/3）</h2>
+<h3 id="Algorithm-1（总流程）">Algorithm 1（总流程）</h3>
+<p>对每个要压缩的权重：</p>
+<ol>
+<li>取出对应 (S)；</li>
+<li>对 (WS) 做 SVD；</li>
+<li>截断 (\Sigma)；</li>
+<li>构造 (W'_u, W'_v) 替换原权重；</li>
+<li>全部层完成后，做顺序低秩更新。</li>
+</ol>
+<h3 id="Algorithm-2（白化）">Algorithm 2（白化）</h3>
+<p>对每个权重层：</p>
+<ol>
+<li>用校准数据取激活 (X)；</li>
+<li>算 (S=\text{Cholesky}(XX^T))；</li>
+<li>存入白化矩阵集合。</li>
+</ol>
+<h3 id="Algorithm-3（顺序更新）">Algorithm 3（顺序更新）</h3>
+<ol>
+<li>固定所有 (W'_v) 更新 (W'_u)；</li>
+<li>固定更新后的 (W'_u) 更新 (W'_v)。</li>
+</ol>
+<p>这个流程工程上不复杂，利于落地。</p>
+<hr>
+<h2 id="8-推理效率分析">8. 推理效率分析</h2>
+<p>论文给了理论和实测两类证据。</p>
+<h3 id="8-1-计算复杂度">8.1 计算复杂度</h3>
+<p>设原始权重 (W\in\mathbb{R}^{d\times n})，分解后是 (W'_u\in\mathbb{R}^{d\times r}), (W'_v\in\mathbb{R}^{r\times n})。压缩率：</p>
+<p>[
+R_w = 1-\frac{(d+n)r}{dn}
+]</p>
+<p>通过两次小矩阵乘法替代一次大矩阵乘法，复杂度会按压缩率显著下降（论文给了 50% 压缩示例推导）。</p>
+<h3 id="8-2-权重内存与-KV-cache">8.2 权重内存与 KV cache</h3>
+<ul>
+<li>权重内存按低秩参数规模下降；</li>
+<li>论文还提出 KV cache 的低秩中间态存储方案，在保证输出一致性的前提下，进一步降推理内存。</li>
+</ul>
+<p>对于长上下文应用，这点价值非常高。</p>
+<hr>
+<h2 id="9-实验设置">9. 实验设置</h2>
+<h3 id="9-1-模型">9.1 模型</h3>
+<p>覆盖 3 个家族、7 个模型：</p>
+<ul>
+<li>LLaMA-7B / 13B / 30B，</li>
+<li>LLaMA2-7B，</li>
+<li>OPT-6.7B，</li>
+<li>Vicuna-7B，</li>
+<li>Mistral-7B。</li>
+</ul>
+<h3 id="9-2-数据集">9.2 数据集</h3>
+<p>共 10 个：</p>
+<ul>
+<li>语言建模：WikiText-2、C4；</li>
+<li>分类/常识：OpenBookQA、ARC-e、WinoGrande、HellaSwag、PIQA、MathQA；</li>
+<li>生成：TruthfulQA、GSM8K。</li>
+</ul>
+<h3 id="9-3-校准与更新数据">9.3 校准与更新数据</h3>
+<ul>
+<li>校准数据：WikiText-2 随机 256 条（对齐 ASVD 设定）；</li>
+<li>参数恢复更新：Alpaca 50K（对齐 LLM-Pruner 类设定）。</li>
+</ul>
+<h3 id="9-4-对比基线">9.4 对比基线</h3>
+<ul>
+<li>Vanilla SVD、FWSVD、ASVD；</li>
+<li>后续还对比结构化剪枝与量化方法。</li>
+</ul>
+<hr>
+<h2 id="10-核心实验结果与图表证据">10. 核心实验结果与图表证据</h2>
+<h2 id="10-1-不同压缩率表现（Table-1）">10.1 不同压缩率表现（Table 1）</h2>
+<p>先看 LLaMA-7B 原始模型：</p>
+<ul>
+<li>WikiText-2：5.68</li>
+<li>C4：7.34</li>
+<li>下游平均：0.57</li>
+</ul>
+<h3 id="20-压缩">20% 压缩</h3>
+<ul>
+<li>ASVD：11.14</li>
+<li>SVD-LLM (W)：7.94</li>
+<li>SVD-LLM：<strong>7.73</strong></li>
+</ul>
+<h3 id="40-压缩">40% 压缩</h3>
+<ul>
+<li>ASVD：1407（明显崩）</li>
+<li>SVD-LLM (W)：13.73</li>
+<li>SVD-LLM：<strong>9.27</strong></li>
+</ul>
+<h3 id="60-压缩">60% 压缩</h3>
+<ul>
+<li>ASVD：57057</li>
+<li>SVD-LLM：<strong>15.00</strong></li>
+</ul>
+<h3 id="80-压缩">80% 压缩</h3>
+<ul>
+<li>多个基线几乎失去可用性，</li>
+<li>SVD-LLM 仍保持有限困惑度（31.79）和非零下游能力。</li>
+</ul>
+<p>尤其是生成任务（TruthfulQA/GSM8K）：</p>
+<ul>
+<li>在 60% 以上压缩率，很多基线分数接近 0；</li>
+<li>SVD-LLM 仍能输出可读结果。</li>
+</ul>
+<p>这说明它不是“只在低压缩率好看”，而是在最难区间仍可用。</p>
+<h2 id="10-2-不同模型家族泛化（Table-2）">10.2 不同模型家族泛化（Table 2）</h2>
+<p>20% 压缩下：</p>
+<ul>
+<li>OPT-6.7B：14.47 / 0.49</li>
+<li>LLaMA2-7B：7.73 / 0.54</li>
+<li>Mistral-7B：7.47 / 0.55</li>
+<li>Vicuna-7B：7.43 / 0.54</li>
+</ul>
+<p>整体上，SVD-LLM 与 SVD-LLM(W)在四个模型上都稳定优于 SVD/FWSVD/ASVD。</p>
+<h2 id="10-3-大模型规模泛化（Table-3）">10.3 大模型规模泛化（Table 3）</h2>
+<p>20% 压缩下：</p>
+<ul>
+<li>LLaMA-13B：SVD-LLM 6.43（优于 ASVD 6.74）</li>
+<li>LLaMA-30B：SVD-LLM 5.14（显著优于 ASVD 22.71）</li>
+</ul>
+<p>说明方法在更大参数规模上也成立。</p>
+<h2 id="10-4-吞吐与显存（Figure-3-4）">10.4 吞吐与显存（Figure 3/4）</h2>
+<p>Figure 3 的趋势总结：</p>
+<ul>
+<li>压缩率越高，相对吞吐提升越明显；</li>
+<li>batch 越大、序列越短，相对加速越突出；</li>
+<li>该趋势在 GPU 和 CPU 上都成立。</li>
+</ul>
+<p>Figure 4：</p>
+<ul>
+<li>权重内存下降近似随压缩率线性变化；</li>
+<li>开启 KV cache 方案后，内存可继续下降。</li>
+</ul>
+<h2 id="10-5-消融与鲁棒性（Table-4-5-6）">10.5 消融与鲁棒性（Table 4/5/6）</h2>
+<h3 id="Table-4：组件贡献">Table 4：组件贡献</h3>
+<p>在 60% 压缩下（WikiText-2）：</p>
+<ul>
+<li>ASVD：57057</li>
+<li>SVD-LLM(W)：42.30</li>
+<li>SVD-LLM(U)：49.88</li>
+<li>SVD-LLM：<strong>15.00</strong></li>
+</ul>
+<p>结论：</p>
+<ul>
+<li>两个核心组件都有效；</li>
+<li>只做白化或只做更新都不如两者结合；</li>
+<li>白化组件贡献尤其关键。</li>
+</ul>
+<h3 id="Table-5：更新顺序">Table 5：更新顺序</h3>
+<p>先更新 (W'_u) 还是先更新 (W'_v) 差距不大，说明顺序式更新机制本身较稳。</p>
+<h3 id="Table-6：校准数据敏感性">Table 6：校准数据敏感性</h3>
+<p>校准样本数量、随机种子、来源变化带来的性能波动很小（论文报告约 3% 内），工程上友好。</p>
+<h2 id="10-6-与结构化剪枝比较（Table-7）">10.6 与结构化剪枝比较（Table 7）</h2>
+<p>同等内存预算（LLaMA-7B）：</p>
+<ul>
+<li>10GB：SVD-LLM 7.92（优于 SliceGPT 8.78）</li>
+<li>9GB：SVD-LLM 8.18（基线约 12+）</li>
+<li>8GB：SVD-LLM 8.33（基线 16.39~19.78）</li>
+<li>7GB：SVD-LLM 9.63（基线 21.68~43.05）</li>
+</ul>
+<p>预算越紧，SVD-LLM 的优势越明显。</p>
+<h2 id="10-7-与量化及混合方案比较（Table-8）">10.7 与量化及混合方案比较（Table 8）</h2>
+<p>LLaMA-7B 上：</p>
+<ul>
+<li>PB-LLM（1.9GB，后训练）：104.83</li>
+<li>BiLLM（1.5GB，后训练）：47.67</li>
+<li>SVD-LLM（1.5GB，后训练）：<strong>47.21</strong></li>
+<li>OneBit（1.3GB，需重训练）：10.20</li>
+<li>SVD-LLM + 2bit QuIP#（1.3GB，后训练）：<strong>9.83</strong></li>
+</ul>
+<p>这条结果很实用：</p>
+<blockquote>
+<p>后训练的“低秩+低比特”混合路线，可以在不做昂贵重训练的情况下，达到甚至超过某些训练型极低比特方案。</p>
+</blockquote>
+<hr>
+<h2 id="11-很多人会忽略但非常重要的附录证据">11. 很多人会忽略但非常重要的附录证据</h2>
+<h3 id="11-1-奇异值谱分析（Appendix-A-4）">11.1 奇异值谱分析（Appendix A.4）</h3>
+<p>论文检查了白化后矩阵的奇异值分布，观察到明显衰减，这支持了 SVD 截断在该变换空间的适用性。</p>
+<h3 id="11-2-与-DRONE-的比较（Appendix-A-5）">11.2 与 DRONE 的比较（Appendix A.5）</h3>
+<p>论文认为理论最优损失层面可对齐，但 SVD-LLM 更可落地。</p>
+<p>给出的内存例子很直观：</p>
+<ul>
+<li>DRONE 缓存完整激活会非常大（示例可到 419GB 量级），</li>
+<li>SVD-LLM 用 (XX^T) 增量累积只需约 3.6GB。</li>
+</ul>
+<p>另外在压缩时间和数值稳定性上，附录也给出 SVD-LLM 的优势证据。</p>
+<h3 id="11-3-与-FLAP、小模型从头训练对比（Appendix-A-6-A-7）">11.3 与 FLAP、小模型从头训练对比（Appendix A.6/A.7）</h3>
+<p>高压缩率下，SVD-LLM 在 WikiText-2 上持续优于 FLAP。</p>
+<p>论文还展示了从 7B 压到 3B 的模型，在一些指标上能优于某些原生 3B 模型，并保持更好的吞吐/内存表现。</p>
+<h3 id="11-4-压缩耗时（Appendix-A-8）">11.4 压缩耗时（Appendix A.8）</h3>
+<p>论文结论：</p>
+<ul>
+<li>ASVD 压 LLaMA-7B 约 5.5 小时；</li>
+<li>SVD-LLM 约 3.5 小时；</li>
+<li>约快 36%。</li>
+</ul>
+<p>主要省在避免了 ASVD 那类耗时的搜索流程。</p>
+<hr>
+<h2 id="12-优点、局限与适用边界">12. 优点、局限与适用边界</h2>
+<h2 id="12-1-主要优点">12.1 主要优点</h2>
+<ol>
+<li><strong>理论对齐强</strong>：截断与压缩损失直接映射；</li>
+<li><strong>高压缩率稳</strong>：最难区间仍可用；</li>
+<li><strong>泛化广</strong>：跨模型家族、跨参数规模；</li>
+<li><strong>工程友好</strong>：后训练可用，不强依赖从头重训；</li>
+<li><strong>部署价值高</strong>：不仅压权重，还关注 KV cache。</li>
+</ol>
+<h2 id="12-2-主要局限">12.2 主要局限</h2>
+<ol>
+<li>顺序更新仍需额外调参与计算；</li>
+<li>依赖校准激活分布质量；</li>
+<li>某些实际业务分布可能与论文测试不同，需要再验证；</li>
+<li>中低压缩率下，和强基线差距可能没高压缩率那么夸张。</li>
+</ol>
+<h2 id="12-3-适用边界">12.3 适用边界</h2>
+<p>当你满足以下条件时，SVD-LLM 很值得优先尝试：</p>
+<ul>
+<li>内存预算非常紧；</li>
+<li>需要 40% 甚至更高压缩率；</li>
+<li>不想（或不能）做全量重训练；</li>
+<li>需要结构规整、硬件友好的压缩表示。</li>
+</ul>
+<hr>
+<h2 id="13-复现清单">13. 复现清单</h2>
+<p>如果我来复现，我会严格锁定：</p>
+<ol>
+<li>模型版本和 tokenizer；</li>
+<li>校准样本采样规则；</li>
+<li>顺序更新的数据与超参；</li>
+<li>每层截断策略；</li>
+<li>评测框架与 prompt 设定；</li>
+<li>硬件与精度环境。</li>
+</ol>
+<p>并且额外报告：</p>
+<ul>
+<li>权重内存节省，</li>
+<li>KV cache 节省，</li>
+<li>不同 batch/seq 的真实吞吐，</li>
+<li>生成质量样例（避免只看困惑度）。</li>
+</ul>
+<hr>
+<h2 id="14-工程落地建议">14. 工程落地建议</h2>
+<p>我建议按这条路线实施：</p>
+<ol>
+<li>先在一个线上关键模型试 20% 压缩；</li>
+<li>回归验证通过后，再上 40% 和 60%；</li>
+<li>必须加顺序低秩更新做恢复；</li>
+<li>若还要进一步省内存，可再叠加 2bit 量化；</li>
+<li>全程监控生成稳定性、长文本表现和延迟。</li>
+</ol>
+<p>重点盯的风险点：</p>
+<ul>
+<li>长输出质量是否突降；</li>
+<li>少数难题集是否显著退化；</li>
+<li>校准数据分布漂移；</li>
+<li>目标硬件上的 kernel 适配问题。</li>
+</ul>
+<hr>
+<h2 id="15-总结性判断">15. 总结性判断</h2>
+<p>我的最终判断非常明确：</p>
+<blockquote>
+<p><strong>SVD-LLM 是目前后训练低秩压缩路线里，理论与工程结合得非常到位的一篇工作。它真正解决了“截断怎么截才对”这个根问题，并在高压缩率区间给出了有说服力的可用结果。</strong></p>
+</blockquote>
+<p>如果你的问题是“我们必须把模型大幅压小，而且不能付出从头重训成本”，SVD-LLM 应该在优先试验名单的前列。</p>
+<hr>
+<h2 id="16-参考文献">16. 参考文献</h2>
+<ol>
+<li>Xin Wang, Yu Zheng, Zhongwei Wan, Mi Zhang. <strong>SVD-LLM: Truncation-aware Singular Value Decomposition for Large Language Model Compression</strong>. ICLR 2025. arXiv:2403.07378.</li>
+<li>Yen-Chang Hsu et al. <strong>Language Model Compression with Weighted Low-rank Factorization (FWSVD)</strong>. ICLR 2022.</li>
+<li>Zhihang Yuan et al. <strong>ASVD: Activation-aware Singular Value Decomposition for Compressing Large Language Models</strong>. arXiv 2023.</li>
+<li>Patrick H. Chen et al. <strong>DRONE: Data-aware Low-rank Compression for Large NLP Models</strong>. NeurIPS 2021.</li>
+<li>Xinyin Ma et al. <strong>LLM-Pruner</strong>. NeurIPS 2023.</li>
+<li>Saleh Ashkboos et al. <strong>SliceGPT</strong>. ICLR 2024.</li>
+<li>Longguang Zhong et al. <strong>BlockPruner</strong>. arXiv 2024.</li>
+<li>Wei Huang et al. <strong>BiLLM</strong>. ICML 2024.</li>
+<li>Zhihang Yuan et al. <strong>PB-LLM</strong>. ICLR 2024.</li>
+<li>Yuzhuang Xu et al. <strong>OneBit</strong>. NeurIPS 2024.</li>
+</ol>
+<hr>
+<p><em>评审写于 2026-04-10。</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Efficient-Inference/" rel="tag"># Efficient Inference</a>
+              <a href="/tags/SVD/" rel="tag"># SVD</a>
+              <a href="/tags/Model-Compression/" rel="tag"># Model Compression</a>
+              <a href="/tags/SVD-LLM/" rel="tag"># SVD-LLM</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/10/2026-04-10-SVDLLM-technical-review-en/" rel="prev" title="SVD-LLM: Truncation-aware Singular Value Decomposition for Large Language Model Compression — Deep Technical Review">
+      <i class="fa fa-chevron-left"></i> SVD-LLM: Truncation-aware Singular Value Decomposition for Large Language Model Compression — Deep Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/11/2026-04-11-LATS-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="next" title="LATS（Language Agent Tree Search）：把推理、行动、规划统一到同一个语言模型代理框架里 — 深度技术评审">
+      LATS（Language Agent Tree Search）：把推理、行动、规划统一到同一个语言模型代理框架里 — 深度技术评审 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-这篇论文为什么值得认真读"><span class="nav-number">1.</span> <span class="nav-text">1. 这篇论文为什么值得认真读</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-前置知识：理解这篇论文前需要知道什么"><span class="nav-number">2.</span> <span class="nav-text">2. 前置知识：理解这篇论文前需要知道什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-LLM-里的“矩阵”到底是什么"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 LLM 里的“矩阵”到底是什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-为什么现在必须做模型压缩"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 为什么现在必须做模型压缩</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-SVD-是什么（直观版）"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 SVD 是什么（直观版）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-“低秩近似”到底在干嘛"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 “低秩近似”到底在干嘛</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-什么叫后训练压缩"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 什么叫后训练压缩</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-困惑度和准确率为什么都要看"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 困惑度和准确率为什么都要看</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-7-为什么剪枝和量化不总是够用"><span class="nav-number">2.7.</span> <span class="nav-text">2.7 为什么剪枝和量化不总是够用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-8-为什么激活分布会影响压缩效果"><span class="nav-number">2.8.</span> <span class="nav-text">2.8 为什么激活分布会影响压缩效果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-9-什么是-whitening，为什么会出现-Cholesky"><span class="nav-number">2.9.</span> <span class="nav-text">2.9 什么是 whitening，为什么会出现 Cholesky</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-10-LoRA-式参数更新是什么"><span class="nav-number">2.10.</span> <span class="nav-text">2.10 LoRA 式参数更新是什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-11-KV-cache-为什么是线上部署大头"><span class="nav-number">2.11.</span> <span class="nav-text">2.11 KV cache 为什么是线上部署大头</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-SVD-LLM-要解决的核心问题"><span class="nav-number">3.</span> <span class="nav-text">3. SVD-LLM 要解决的核心问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-方法总览（Figure-1）"><span class="nav-number">4.</span> <span class="nav-text">4. 方法总览（Figure 1）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-技术细节一：截断感知数据白化（Truncation-aware-Data-Whitening）"><span class="nav-number">5.</span> <span class="nav-text">5. 技术细节一：截断感知数据白化（Truncation-aware Data Whitening）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-目标函数与压缩损失"><span class="nav-number">5.1.</span> <span class="nav-text">5.1 目标函数与压缩损失</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-为什么“截断最小奇异值”在旧方法里不一定对"><span class="nav-number">5.2.</span> <span class="nav-text">5.2 为什么“截断最小奇异值”在旧方法里不一定对</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-白化矩阵如何构造"><span class="nav-number">5.3.</span> <span class="nav-text">5.3 白化矩阵如何构造</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-Theorem-Corollary-在工程上的意义"><span class="nav-number">5.4.</span> <span class="nav-text">5.4 Theorem&#x2F;Corollary 在工程上的意义</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-技术细节二：顺序式低秩参数更新（Sequential-Low-rank-Approximation）"><span class="nav-number">6.</span> <span class="nav-text">6. 技术细节二：顺序式低秩参数更新（Sequential Low-rank Approximation）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-整体算法流程（Algorithm-1-2-3）"><span class="nav-number">7.</span> <span class="nav-text">7. 整体算法流程（Algorithm 1&#x2F;2&#x2F;3）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Algorithm-1（总流程）"><span class="nav-number">7.1.</span> <span class="nav-text">Algorithm 1（总流程）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Algorithm-2（白化）"><span class="nav-number">7.2.</span> <span class="nav-text">Algorithm 2（白化）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Algorithm-3（顺序更新）"><span class="nav-number">7.3.</span> <span class="nav-text">Algorithm 3（顺序更新）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-推理效率分析"><span class="nav-number">8.</span> <span class="nav-text">8. 推理效率分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-计算复杂度"><span class="nav-number">8.1.</span> <span class="nav-text">8.1 计算复杂度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-权重内存与-KV-cache"><span class="nav-number">8.2.</span> <span class="nav-text">8.2 权重内存与 KV cache</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-实验设置"><span class="nav-number">9.</span> <span class="nav-text">9. 实验设置</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-模型"><span class="nav-number">9.1.</span> <span class="nav-text">9.1 模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-数据集"><span class="nav-number">9.2.</span> <span class="nav-text">9.2 数据集</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-校准与更新数据"><span class="nav-number">9.3.</span> <span class="nav-text">9.3 校准与更新数据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-对比基线"><span class="nav-number">9.4.</span> <span class="nav-text">9.4 对比基线</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-核心实验结果与图表证据"><span class="nav-number">10.</span> <span class="nav-text">10. 核心实验结果与图表证据</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-1-不同压缩率表现（Table-1）"><span class="nav-number">11.</span> <span class="nav-text">10.1 不同压缩率表现（Table 1）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#20-压缩"><span class="nav-number">11.1.</span> <span class="nav-text">20% 压缩</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#40-压缩"><span class="nav-number">11.2.</span> <span class="nav-text">40% 压缩</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#60-压缩"><span class="nav-number">11.3.</span> <span class="nav-text">60% 压缩</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#80-压缩"><span class="nav-number">11.4.</span> <span class="nav-text">80% 压缩</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-2-不同模型家族泛化（Table-2）"><span class="nav-number">12.</span> <span class="nav-text">10.2 不同模型家族泛化（Table 2）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-3-大模型规模泛化（Table-3）"><span class="nav-number">13.</span> <span class="nav-text">10.3 大模型规模泛化（Table 3）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-4-吞吐与显存（Figure-3-4）"><span class="nav-number">14.</span> <span class="nav-text">10.4 吞吐与显存（Figure 3&#x2F;4）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-5-消融与鲁棒性（Table-4-5-6）"><span class="nav-number">15.</span> <span class="nav-text">10.5 消融与鲁棒性（Table 4&#x2F;5&#x2F;6）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Table-4：组件贡献"><span class="nav-number">15.1.</span> <span class="nav-text">Table 4：组件贡献</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Table-5：更新顺序"><span class="nav-number">15.2.</span> <span class="nav-text">Table 5：更新顺序</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Table-6：校准数据敏感性"><span class="nav-number">15.3.</span> <span class="nav-text">Table 6：校准数据敏感性</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-6-与结构化剪枝比较（Table-7）"><span class="nav-number">16.</span> <span class="nav-text">10.6 与结构化剪枝比较（Table 7）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-7-与量化及混合方案比较（Table-8）"><span class="nav-number">17.</span> <span class="nav-text">10.7 与量化及混合方案比较（Table 8）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-很多人会忽略但非常重要的附录证据"><span class="nav-number">18.</span> <span class="nav-text">11. 很多人会忽略但非常重要的附录证据</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#11-1-奇异值谱分析（Appendix-A-4）"><span class="nav-number">18.1.</span> <span class="nav-text">11.1 奇异值谱分析（Appendix A.4）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-2-与-DRONE-的比较（Appendix-A-5）"><span class="nav-number">18.2.</span> <span class="nav-text">11.2 与 DRONE 的比较（Appendix A.5）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-3-与-FLAP、小模型从头训练对比（Appendix-A-6-A-7）"><span class="nav-number">18.3.</span> <span class="nav-text">11.3 与 FLAP、小模型从头训练对比（Appendix A.6&#x2F;A.7）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-4-压缩耗时（Appendix-A-8）"><span class="nav-number">18.4.</span> <span class="nav-text">11.4 压缩耗时（Appendix A.8）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-优点、局限与适用边界"><span class="nav-number">19.</span> <span class="nav-text">12. 优点、局限与适用边界</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-1-主要优点"><span class="nav-number">20.</span> <span class="nav-text">12.1 主要优点</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-2-主要局限"><span class="nav-number">21.</span> <span class="nav-text">12.2 主要局限</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-3-适用边界"><span class="nav-number">22.</span> <span class="nav-text">12.3 适用边界</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-复现清单"><span class="nav-number">23.</span> <span class="nav-text">13. 复现清单</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#14-工程落地建议"><span class="nav-number">24.</span> <span class="nav-text">14. 工程落地建议</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#15-总结性判断"><span class="nav-number">25.</span> <span class="nav-text">15. 总结性判断</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#16-参考文献"><span class="nav-number">26.</span> <span class="nav-text">16. 参考文献</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

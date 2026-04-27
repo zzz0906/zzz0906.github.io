@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. 多步任务中的错误传播 当草稿犯了微妙的错误时，标准 SD 的 token 级验证无法捕捉到它： 123草稿第 1 步：&quot;3 和 4 的和是 7&quot;      p_target &#x3D; 0.8  ✓ 接受草稿第 2 步：&quot;乘以 2 得到 15&quot;      p_target &#x3D; 0.7  ✓ 接受草稿第 3 步：&quot;答案是 15&amp;qu">
+<meta property="og:type" content="article">
+<meta property="og:title" content="SpecGuard：用于多步推理的验证感知推测解码">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/19/2026-04-19-SpecGuard-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. 多步任务中的错误传播 当草稿犯了微妙的错误时，标准 SD 的 token 级验证无法捕捉到它： 123草稿第 1 步：&quot;3 和 4 的和是 7&quot;      p_target &#x3D; 0.8  ✓ 接受草稿第 2 步：&quot;乘以 2 得到 15&quot;      p_target &#x3D; 0.7  ✓ 接受草稿第 3 步：&quot;答案是 15&amp;qu">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-19T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-22T02:16:01.401Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Speculative Decoding">
+<meta property="article:tag" content="SpecGuard">
+<meta property="article:tag" content="Verification">
+<meta property="article:tag" content="LLM Inference">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/19/2026-04-19-SpecGuard-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>SpecGuard：用于多步推理的验证感知推测解码 | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/19/2026-04-19-SpecGuard-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          SpecGuard：用于多步推理的验证感知推测解码
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-19 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-19T00:00:00+00:00">2026-04-19</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-22 02:16:01" itemprop="dateModified" datetime="2026-04-22T02:16:01+00:00">2026-04-22</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-多步任务中的错误传播">1. 多步任务中的错误传播</h2>
+<p>当草稿犯了微妙的错误时，标准 SD 的 token 级验证无法捕捉到它：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">草稿第 1 步：&quot;3 和 4 的和是 7&quot;      p_target &#x3D; 0.8  ✓ 接受</span><br><span class="line">草稿第 2 步：&quot;乘以 2 得到 15&quot;      p_target &#x3D; 0.7  ✓ 接受</span><br><span class="line">草稿第 3 步：&quot;答案是 15&quot;            p_target &#x3D; 0.6  ✓ 接受</span><br></pre></td></tr></table></figure>
+<p>每个单独的 token 都有合理的概率，但这个链条违反了算术规则。外部奖励模型会立即捕捉到这一点，但 SD 不能。</p>
+<h3 id="2-外部验证器的延迟和开销">2. 外部验证器的延迟和开销</h3>
+<p>PRM 通常需要：</p>
+<ul>
+<li>通过另一个模型的单独前向传递</li>
+<li>存储 PRM 权重的内存开销</li>
+<li>序列化开销（无法并行化 PRM 调用）</li>
+<li>额外 30-50% 的延迟</li>
+</ul>
+<p>对于实时应用（交互式 AI、实时编码），这违背了推测解码的初衷。</p>
+<h3 id="3-泛化能力有限">3. 泛化能力有限</h3>
+<p>在数学问题上训练的 PRM 在代码推理上表现不佳。每个新的任务域都需要重新训练或微调。</p>
+<hr>
+<h2 id="核心贡献：SpecGuard-框架">核心贡献：SpecGuard 框架</h2>
+<p>SpecGuard 提出了一个激进的想法：<strong>使用模型内部信号进行验证，而不是外部模型。</strong></p>
+<p>关键洞察是，语言模型已经编码了可信度指标：</p>
+<ol>
+<li><strong>注意力模式</strong>显示模型是否关注相关上下文</li>
+<li><strong>对数概率</strong>表示模型自身的置信度</li>
+</ol>
+<h3 id="高层架构">高层架构</h3>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">对于每个推理步骤 i：</span><br><span class="line">├─ 草稿模型采样 k 个候选：&#123;ŷ_i^(1), ..., ŷ_i^(k)&#125;</span><br><span class="line">├─ 自洽性选择器挑选最连贯的候选</span><br><span class="line">├─ 集成验证器检查两个信号：</span><br><span class="line">│  ├─ 基于注意力的接地验证（ABGV）：这是否接地于输入？</span><br><span class="line">│  └─ 基于对数概率的验证（LPBV）：模型置信吗？</span><br><span class="line">└─ 决策：</span><br><span class="line">   ├─ 如果两个信号都强：接受草稿（快速路径）</span><br><span class="line">   └─ 如果任一信号弱：调用目标模型（准确路径）</span><br></pre></td></tr></table></figure>
+<h3 id="关键创新：自洽性选择器">关键创新：自洽性选择器</h3>
+<p>与接受第一个草稿输出不同，SpecGuard <strong>采样 k 个候选</strong>并选择看起来最自洽的。</p>
+<p>这受到&quot;自洽性提示&quot;的启发——即如果从 LLM 采样多个推理路径并选择最常见的答案，你会获得更好的准确性。</p>
+<p>SpecGuard 在推理时应用这个，而不仅仅是采样启发式。</p>
+<hr>
+<h2 id="技术深入：验证机制详解">技术深入：验证机制详解</h2>
+<h3 id="机制-1：基于注意力的接地验证（ABGV）">机制 1：基于注意力的接地验证（ABGV）</h3>
+<p><strong>解决的问题：</strong> 检测幻觉——听起来似乎合理但实际上与输入无关的 token。</p>
+<p><strong>工作原理：</strong></p>
+<ol>
+<li>
+<p><strong>注意力展开（Attention Rollout）：</strong> 对于每个输出 token，我们使用矩阵乘法计算跨所有层的累积注意力权重：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">展开矩阵 &#x3D; A^(L) × A^(L-1) × ... × A^(1)</span><br></pre></td></tr></table></figure>
+<p>这告诉我们：&quot;每个输入 token 对这个输出 token 有多大影响？&quot;</p>
+</li>
+<li>
+<p><strong>接地分数：</strong> 将指向原始输入或之前验证步骤的注意力权重相加：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">G(y_t) &#x3D; Σ_&#123;j ∈ 输入&#125; R_&#123;y_t&#125;[j]</span><br></pre></td></tr></table></figure>
+<p>分数 1.0 意味着&quot;这个输出 100% 来自输入上下文&quot;。
+分数 0.1 意味着&quot;这个输出只有 10% 接地——大多是编造的&quot;。</p>
+</li>
+<li>
+<p><strong>步骤级阈值：</strong> 我们取步骤中所有 token 的<em>最小</em>接地分数：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">G_最小步骤 &#x3D; min_t G(y_&#123;i,t&#125;)</span><br></pre></td></tr></table></figure>
+<p>这防止了几个接地的 token 掩盖几个幻觉 token。</p>
+</li>
+</ol>
+<p><strong>为什么有效：</strong> 真正的推理需要关注先前的上下文。幻觉内容往往对输入的注意力很低。</p>
+<p><strong>内存优化：</strong></p>
+<ul>
+<li>仅存储最后 3 层的注意力（足以用于接地质量）</li>
+<li>稀疏化注意力权重 &lt; 0.01（忽略可能影响，显著内存节省）</li>
+</ul>
+<h3 id="机制-2：基于对数概率的验证（LPBV）">机制 2：基于对数概率的验证（LPBV）</h3>
+<p><strong>解决的问题：</strong> 检测可能错误的低置信预测。</p>
+<p><strong>工作原理：</strong></p>
+<ol>
+<li>
+<p><strong>每 Token 的对数概率：</strong> 生成每个 token 后，模型分配一个概率。我们取对数：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">L(y_&#123;i,t&#125;) &#x3D; log p(y_&#123;i,t&#125; | 输入, y_&#123;i,&lt;t&#125;)</span><br></pre></td></tr></table></figure>
+<p>高对数概率（-0.5 到 0）= 模型置信
+低对数概率（-5.0 到 -2.0）= 模型不确定</p>
+</li>
+<li>
+<p><strong>步骤级最小值：</strong> 同样，我们取跨 token 的最小值：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">L_最小步骤 &#x3D; min_t L(y_&#123;i,t&#125;)</span><br></pre></td></tr></table></figure>
+<p>即使一个概率非常低的 token 也表示模型对这个步骤不确定。</p>
+</li>
+</ol>
+<p><strong>为什么有效：</strong> 错误或幻觉步骤通常涉及模型以低置信度生成的 token。模型&quot;知道&quot;它在编造东西。</p>
+<p><strong>与不确定性量化的连接：</strong> 这类似于贝叶斯不确定性——模型对预测的熵表示它对答案的不确定程度。</p>
+<h3 id="机制-3：集成验证与自适应接受">机制 3：集成验证与自适应接受</h3>
+<p>ABGV 或 LPBV 单独都不充分。它们互为补充：</p>
+<ul>
+<li>ABGV 检测幻觉（高置信但无接地）</li>
+<li>LPBV 检测不确定性（低置信，可能有接地）</li>
+</ul>
+<p>SpecGuard 用加权集成组合它们：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">分数 &#x3D; β × LPBV_归一化 + (1-β) × ABGV_归一化</span><br><span class="line">阈值：分数 ≥ τ → 接受草稿</span><br><span class="line">      分数 &lt; τ → 调用目标模型</span><br></pre></td></tr></table></figure>
+<p>论文发现 β ≈ 0.5（等权重）效果最好，表明两个信号同样重要。</p>
+<p><strong>集成决策的具体示例：</strong></p>
+<p>考虑一个推理步骤：&quot;因此，我们将两边都乘以 2 得到 14。&quot;</p>
+<table>
+<thead>
+<tr>
+<th>信号</th>
+<th>分数</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LPBV (最小对数概率)</td>
+<td>-1.2</td>
+<td>✓ 置信</td>
+</tr>
+<tr>
+<td>ABGV (最小接地)</td>
+<td>0.8</td>
+<td>✓ 接地</td>
+</tr>
+<tr>
+<td>集成 (β=0.5)</td>
+<td>(1.0 + 0.8)/2 = 0.9</td>
+<td>✓ 如果 τ ≤ 0.9 则接受</td>
+</tr>
+</tbody>
+</table>
+<p>与幻觉步骤对比：&quot;答案是 42，因为量子力学。&quot;</p>
+<table>
+<thead>
+<tr>
+<th>信号</th>
+<th>分数</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LPBV (最小对数概率)</td>
+<td>0.9</td>
+<td>✓ 置信</td>
+</tr>
+<tr>
+<td>ABGV (最小接地)</td>
+<td>0.1</td>
+<td>✗ 无接地</td>
+</tr>
+<tr>
+<td>集成 (β=0.5)</td>
+<td>(0.9 + 0.1)/2 = 0.5</td>
+<td>✗ 如果 τ &gt; 0.5 则拒绝</td>
+</tr>
+</tbody>
+</table>
+<p>幻觉步骤在局部看起来很好（高置信），但在集成中评分很低，因为它缺乏在问题上下文中的接地。这正是标准 SD 表现出的失效模式。</p>
+<h3 id="自洽性选择器算法">自洽性选择器算法</h3>
+<p>自洽性选择器的工作流程如下：</p>
+<ol>
+<li><strong>采样阶段：</strong> 草稿模型生成 k 个候选延续，每个都从相同上下文新鲜开始</li>
+<li><strong>相似度评分：</strong> 计算成对语义相似度（例如，使用嵌入距离或 token 重叠）</li>
+<li><strong>选择：</strong> 选择与所有其他候选平均相似度最大的候选</li>
+<li><strong>理由：</strong> 最&quot;中心&quot;的候选最可能代表真实分布</li>
+</ol>
+<p>这不同于简单的&quot;温度采样&quot;：</p>
+<ul>
+<li>基于温度的方法增加多样性，但可能采样不合理的候选</li>
+<li>自洽性选择器在保留多样性的同时过滤不合理的异常值</li>
+</ul>
+<p><strong>为什么这对 SD 有帮助：</strong> 标准 SD 无需采样提交到第一个草稿 token。如果该 token 不合理但高概率（由于数据集偏差），它就被锁定。选择器通过比较多个路径避免了这一点。</p>
+<hr>
+<h2 id="实验评估">实验评估</h2>
+<h3 id="基准与设置">基准与设置</h3>
+<p>SpecGuard 在 <strong>4 个主要推理基准</strong>上进行评估：</p>
+<ol>
+<li>
+<p><strong>MATH</strong> (500 个竞赛数学问题)</p>
+<ul>
+<li>需要逐步符号推理</li>
+<li>基准真值：最终数值答案</li>
+</ul>
+</li>
+<li>
+<p><strong>GSM8K</strong> (8,500 个小学数学问题)</p>
+<ul>
+<li>比 MATH 更容易处理</li>
+<li>测试算术和逻辑一致性</li>
+</ul>
+</li>
+<li>
+<p><strong>MBPP</strong> (主要是基础 Python 编程)</p>
+<ul>
+<li>代码推理</li>
+<li>测试算法思维</li>
+</ul>
+</li>
+<li>
+<p><strong>TabMWP</strong> (基于表格的数学词问题)</p>
+<ul>
+<li>需要在表格上下文中接地</li>
+<li>测试上下文归因（ABGV 的完美测试）</li>
+</ul>
+</li>
+</ol>
+<h3 id="主要结果">主要结果</h3>
+<table>
+<thead>
+<tr>
+<th>基准</th>
+<th>模型</th>
+<th>基础 SD</th>
+<th>RSD (+ 奖励)</th>
+<th>SpecGuard</th>
+<th>延迟减少</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MATH</td>
+<td>LLaMA 2 70B</td>
+<td>52.1%</td>
+<td>54.2%</td>
+<td><strong>56.8%</strong></td>
+<td><strong>-11.3%</strong></td>
+</tr>
+<tr>
+<td>GSM8K</td>
+<td>LLaMA 2 70B</td>
+<td>91.2%</td>
+<td>92.1%</td>
+<td><strong>94.8%</strong></td>
+<td><strong>-10.8%</strong></td>
+</tr>
+<tr>
+<td>MBPP</td>
+<td>LLaMA 2 70B</td>
+<td>76.3%</td>
+<td>77.8%</td>
+<td><strong>80.2%</strong></td>
+<td><strong>-11.5%</strong></td>
+</tr>
+<tr>
+<td>TabMWP</td>
+<td>Qwen 72B</td>
+<td>68.5%</td>
+<td>70.1%</td>
+<td><strong>73.6%</strong></td>
+<td><strong>-11.2%</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>关键发现：</strong></p>
+<ol>
+<li>SpecGuard 相对基础 SD 实现<strong>平均 3.6% 准确度改进</strong></li>
+<li>性能<strong>超过奖励引导 SD</strong>，同时<strong>更快</strong>（RSD 产生延迟）</li>
+<li>延迟改进<strong>在各个域一致</strong>（~11%）</li>
+<li>加速略低于理论最大值（由于额外验证开销），但实用</li>
+</ol>
+<h3 id="消融研究">消融研究</h3>
+<p>论文对每个组件进行消融：</p>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th>MATH 准确度</th>
+<th>GSM8K 准确度</th>
+<th>延迟</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>基础 SD</td>
+<td>52.1%</td>
+<td>91.2%</td>
+<td>1.0x</td>
+</tr>
+<tr>
+<td>+ LPBV 仅</td>
+<td>53.8%</td>
+<td>92.4%</td>
+<td>0.95x</td>
+</tr>
+<tr>
+<td>+ ABGV 仅</td>
+<td>54.2%</td>
+<td>93.1%</td>
+<td>0.96x</td>
+</tr>
+<tr>
+<td>+ 两者 (SpecGuard)</td>
+<td>56.8%</td>
+<td>94.8%</td>
+<td>0.89x</td>
+</tr>
+</tbody>
+</table>
+<p><strong>解释：</strong></p>
+<ul>
+<li>LPBV 提供适度收益（置信度过滤有效）</li>
+<li>ABGV 提供更大收益（接地对推理更重要）</li>
+<li>一起它们有协同效应（比相加更好）</li>
+</ul>
+<h3 id="敏感性分析">敏感性分析</h3>
+<ol>
+<li>
+<p><strong>草稿样本数量 (k)：</strong></p>
+<ul>
+<li>k=1：标准 SD 行为</li>
+<li>k=2：边际改进（约 0.5% 准确度增益）</li>
+<li>k=4：最佳权衡（大多数论文使用这个，约 2% 增益）</li>
+<li>k=8：边际收益递减（约 2.2% 增益，但计算翻倍）</li>
+<li><strong>解释：</strong> 在 k=4 后，额外样本与早期样本高度相关，提供最少新信息</li>
+</ul>
+</li>
+<li>
+<p><strong>ABGV 的层子集：</strong></p>
+<ul>
+<li>最后 1 层：不足（仅捕获浅层注意力，准确度降低 1.2%）</li>
+<li>最后 2 层：中等（相对最后 3 层降低 0.5%）</li>
+<li>最后 3 层：甜蜜点（论文中的图 3）</li>
+<li>最后 6 层：最小改进（约 +0.1%），更高内存（3 倍）</li>
+<li><strong>解释：</strong> 中间层捕获语义接地；非常深的层（接近输出）对 token 选择太具体</li>
+</ul>
+</li>
+<li>
+<p><strong>接受阈值 τ：</strong></p>
+<ul>
+<li>非常严格 (τ=0.9)：准确度 +4.2%，加速 1.02x（很少调用目标模型）</li>
+<li>稍严格 (τ=0.7)：准确度 +3.8%，加速 1.08x</li>
+<li>均衡 (τ=0.5)：准确度 +3.6%，加速 1.11x（论文选择）</li>
+<li>稍宽松 (τ=0.3)：准确度 +2.1%，加速 1.14x</li>
+<li>非常宽松 (τ=0.1)：准确度 +0.8%，加速 1.15x（主要依赖目标模型）</li>
+<li><strong>解释：</strong> 甜蜜点为 τ ≈ 0.5；可按域调优</li>
+</ul>
+</li>
+<li>
+<p><strong>权重参数 β：</strong></p>
+<ul>
+<li>β=0（仅 ABGV）：准确度 +2.8%，加速 1.10x</li>
+<li>β=0.3（ABGV 为主）：准确度 +3.2%，加速 1.11x</li>
+<li>β=0.5（均衡）：准确度 +3.6%，加速 1.11x（论文选择）</li>
+<li>β=0.7（LPBV 为主）：准确度 +3.1%，加速 1.10x</li>
+<li>β=1（仅 LPBV）：准确度 +2.2%，加速 1.08x</li>
+<li><strong>解释：</strong> 等权重效果最好；无单个信号占主导</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h2 id="实际应用意义">实际应用意义</h2>
+<h3 id="1-推理成本降低">1. 推理成本降低</h3>
+<p>对于典型部署的 LLM（以 LLaMA 2 70B 为目标，7B 为草稿）：</p>
+<p><strong>每 Token 延迟分解：</strong></p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>仅目标模型</th>
+<th>SD</th>
+<th>SpecGuard</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>草稿前向传递</td>
+<td>—</td>
+<td>8ms</td>
+<td>8ms</td>
+</tr>
+<tr>
+<td>验证（并行）</td>
+<td>5ms</td>
+<td>0.5ms</td>
+<td>1.2ms</td>
+</tr>
+<tr>
+<td>每个 token 总时间</td>
+<td><strong>5.0ms</strong></td>
+<td><strong>1.3ms</strong></td>
+<td><strong>1.5ms</strong></td>
+</tr>
+<tr>
+<td>有效加速</td>
+<td>1.0x</td>
+<td><strong>3.8x</strong></td>
+<td><strong>3.3x</strong></td>
+</tr>
+</tbody>
+</table>
+<p>相对标准 SD 的 ~10% 延迟开销（1.5ms vs 1.3ms）来自：</p>
+<ul>
+<li>注意力展开计算：约 0.4ms</li>
+<li>自洽性采样：约 0.3ms</li>
+<li>集成评分：约 0.2ms</li>
+</ul>
+<p>但这充分被以下补偿：</p>
+<ul>
+<li>3.6% 准确度改进（更少被拒绝的草稿 token）</li>
+<li>更好的错误恢复（更少错误级联）</li>
+</ul>
+<p><strong>对于 1000 token 响应：</strong></p>
+<ul>
+<li><strong>之前：</strong> 5000ms（仅限目标模型）</li>
+<li><strong>标准 SD：</strong> 1300ms（3.8 倍加速）</li>
+<li><strong>SpecGuard：</strong> 1500ms（3.3 倍加速，但准确度高 3.6%）</li>
+<li><strong>成本减少：</strong> 5000ms → 1500ms (<strong>70% 更快</strong> 整体)</li>
+<li><strong>质量改进：</strong> +3.6% 准确度（推理质量显著提升）</li>
+</ul>
+<p><strong>真实场景：</strong> 需要 50 个 token 推理的数学问题</p>
+<ul>
+<li>仅目标模型：250ms + 验证计算</li>
+<li>SpecGuard：75ms + 更好的正确性（更少下游错误）</li>
+<li>用户感受：快得多而且答案更可靠</li>
+</ul>
+<h3 id="2-无需外部模型的可扩展性">2. 无需外部模型的可扩展性</h3>
+<p>与奖励引导方法不同，SpecGuard：</p>
+<ul>
+<li>仅使用已部署的模型（草稿 + 目标）</li>
+<li>不需要微调或特定任务模型</li>
+<li>跨不同推理域有效</li>
+<li>可以应用于<em>任何</em>推理任务而无需重新训练</li>
+</ul>
+<h3 id="3-内存高效的验证">3. 内存高效的验证</h3>
+<p>基于注意力的验证配合稀疏化和层子集选择意味着：</p>
+<ul>
+<li><strong>内存开销：</strong> 约 50-100MB（相对于模型权重可忽略）</li>
+<li><strong>无需加载模型：</strong> 不需要加载额外验证器模型</li>
+<li><strong>可并行化：</strong> 可在目标模型验证阶段计算</li>
+</ul>
+<hr>
+<h2 id="局限性与未来方向">局限性与未来方向</h2>
+<h3 id="已知局限">已知局限</h3>
+<ol>
+<li>
+<p><strong>接地分数局限</strong></p>
+<ul>
+<li>已知注意力展开将注意力和归因混淆（Serrano &amp; Smith 2019）
+<ul>
+<li>注意力模式 A→B 不保证 A 在因果上影响了对 B 的决定</li>
+<li>可能反映信息流而非推理依赖</li>
+</ul>
+</li>
+<li>一些虚假相关可能注册为高接地分数
+<ul>
+<li>示例：&quot;Apple&quot;的 token 可能关注输入中的&quot;fruit&quot;，显得接地，即使在推理公司时无关</li>
+</ul>
+</li>
+<li>无法区分复制上下文与推理它
+<ul>
+<li>直接从输入复制的步骤获得完美接地，即使创意不足或无关</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>对数概率偏差</strong></p>
+<ul>
+<li>对数概率深受训练数据频率影响
+<ul>
+<li>常见但不正确的 token 仍可能有高概率（即使公司背景下&quot;Apple 是水果&quot;也有高概率）</li>
+</ul>
+</li>
+<li>不直接测量正确性，仅置信度
+<ul>
+<li>模型可以对错答非常置信（如果在误导数据上训练）</li>
+</ul>
+</li>
+<li>跨域校准问题
+<ul>
+<li>数学问题 vs 代码生成有不同的概率分布</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>仅限于步骤级推理</strong></p>
+<ul>
+<li>需要推理分解为清晰的&quot;步骤&quot;（以换行分隔）</li>
+<li>可能不适用于连续推理的任务（故事生成、对话）</li>
+<li>如果草稿在步骤内 token 级失效，无法帮助
+<ul>
+<li>SpecGuard 接受/拒绝整个步骤，而非单个 token</li>
+</ul>
+</li>
+<li>对无清晰步骤结构的任务失效
+<ul>
+<li>创意写作、对话、开放式生成</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>参数调优</strong></p>
+<ul>
+<li>阈值 τ 和权重 β 需要按模型/域校准</li>
+<li>论文未提供如何设置这些的清晰指导
+<ul>
+<li>仅推荐 τ=0.5、β=0.5，未进行系统分析</li>
+</ul>
+</li>
+<li>无元学习方法自动调优阈值</li>
+<li>跨域转移不清楚
+<ul>
+<li>我们能否使用在 MATH 上调优的阈值用于 GSM8K？论文未说明</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>计算开销</strong></p>
+<ul>
+<li>采样 k 个候选增加开销（尽管最小）
+<ul>
+<li>k=4 意味着 4 个草稿前向传递而非 1 个</li>
+<li>通过使用较小草稿模型缓解，但仍有实际成本</li>
+</ul>
+</li>
+<li>注意力展开计算非零
+<ul>
+<li>需要存储注意力矩阵并执行矩阵乘法</li>
+<li>内存优化版本使用 3 层，但仍非免费</li>
+</ul>
+</li>
+<li>最佳加速低于理论最大值
+<ul>
+<li>标准 SD：可能达到 3.8 倍加速</li>
+<li>SpecGuard：实现 3.3 倍加速（相比 3.6% 准确度增益有 13% 税收）</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>泛化问题</strong></p>
+<ul>
+<li>所有实验使用 LLaMA 2 系列（除了一个 Qwen 实验）</li>
+<li>不清楚结果是否推广到其他架构（GPT、PaLM 等）</li>
+<li>ABGV 对不同注意力机制的模型有效吗？</li>
+<li>稀疏注意、分组查询注意力、MLA (DeepSeek) 呢？未测试</li>
+</ul>
+</li>
+</ol>
+<h3 id="未来研究方向">未来研究方向</h3>
+<ol>
+<li>
+<p><strong>混合方法：</strong> 为高风险任务组合 SpecGuard 与轻量级 PRM</p>
+<ul>
+<li>对于数学竞赛问题，可能值得在最终步骤上运行轻量 PRM</li>
+<li>成本：增加 ~5% 延迟，但获得额外可靠性</li>
+<li>权衡分析：何时混合胜过纯 SpecGuard？</li>
+</ul>
+</li>
+<li>
+<p><strong>自适应阈值：</strong> 从数据学习 τ 和 β 而不是手动调优</p>
+<ul>
+<li>使用贝叶斯优化为每个模型/任务自动调参</li>
+<li>元学习方法：从多个任务学习超参数初始化</li>
+<li>在线调整：根据错误率动态调整 τ</li>
+</ul>
+</li>
+<li>
+<p><strong>扩展验证：</strong> 使用其他内部信号</p>
+<ul>
+<li>梯度大小：大梯度可能表示模型不确定</li>
+<li>隐藏状态范数：异常高/低范数指示异常</li>
+<li>残差连接活动：跳过连接中有多少信息？</li>
+<li>熵分布：token 概率的熵如何分布？</li>
+</ul>
+</li>
+<li>
+<p><strong>跨模型验证：</strong> 不同目标模型的注意力模式能否帮助验证草稿输出？</p>
+<ul>
+<li>多目标设置中的混合信号</li>
+<li>集成多个目标的验证信号</li>
+<li>草稿模型自我验证（不需要目标）</li>
+</ul>
+</li>
+<li>
+<p><strong>理论分析：</strong> SpecGuard 下错误传播的形式保证</p>
+<ul>
+<li>什么情况下 ABGV + LPBV 充分？</li>
+<li>错误传播的上界与下界</li>
+<li>最优阈值的闭式解</li>
+</ul>
+</li>
+<li>
+<p><strong>更广泛的任务覆盖：</strong></p>
+<ul>
+<li>代码生成中的步骤识别</li>
+<li>创意写作的动态步骤</li>
+<li>多模态推理（涉及图像的推理）</li>
+</ul>
+</li>
+<li>
+<p><strong>部署优化：</strong></p>
+<ul>
+<li>在推理硬件上优化注意力展开（CUDA kernel）</li>
+<li>缓存展开矩阵以加快重复调用</li>
+<li>量化接地分数（int8 vs float32）</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h2 id="可复现性与实现细节">可复现性与实现细节</h2>
+<h3 id="关键实现细节">关键实现细节</h3>
+<ol>
+<li>
+<p><strong>注意力展开实现</strong></p>
+<ul>
+<li>使用矩阵乘法与层级平均</li>
+<li>归一化为概率分布</li>
+<li>批量处理以提高效率</li>
+</ul>
+</li>
+<li>
+<p><strong>草稿采样策略</strong></p>
+<ul>
+<li>采样 k=4 个候选（论文显示这是最优的）</li>
+<li>使用温度 T=0.7 获得多样性而无过度噪声</li>
+<li>选择自洽性分数最高的候选</li>
+</ul>
+</li>
+<li>
+<p><strong>集成组合</strong></p>
+<ul>
+<li>独立将 ABGV 和 LPBV 归一化为 [0,1]</li>
+<li>加权平均，β=0.5</li>
+<li>如需平滑阈值化可应用 sigmoid</li>
+</ul>
+</li>
+<li>
+<p><strong>与生产 SD 集成</strong></p>
+<ul>
+<li>应与现有 SD 实现兼容</li>
+<li>对草稿/目标管道的最小改变</li>
+<li>可切换用于 A/B 测试</li>
+</ul>
+</li>
+</ol>
+<h3 id="计算复杂度">计算复杂度</h3>
+<ul>
+<li><strong>ABGV:</strong> O(L × H × N²) 对于 N 个 token、L 层、H 头（使用稀疏版本：O(L × H × sN²) 其中 s &lt;&lt; 1）</li>
+<li><strong>LPBV:</strong> O(N)（仅提取对数概率）</li>
+<li><strong>总开销：</strong> 约占目标模型推理时间的 5-10%</li>
+</ul>
+<h3 id="代码与资源">代码与资源</h3>
+<p>作者应提供：</p>
+<ul>
+<li>PyTorch 中的参考实现</li>
+<li>标准模型的预计算 ABGV 统计</li>
+<li>阈值校准脚本</li>
+<li>MATH、GSM8K、MBPP 的基准脚本</li>
+</ul>
+<hr>
+<h2 id="总结">总结</h2>
+<p>SpecGuard 通过以下方式对 LLM 推理效率做出了有说服力的贡献：</p>
+<ol>
+<li><strong>识别真实问题</strong>：在现有 SD 中，token 级验证对推理不起作用</li>
+<li><strong>提出优雅解决方案</strong>：使用模型内部信号进行验证，不需要外部模型</li>
+<li><strong>展示一致改进</strong>：跨多个基准和推理域</li>
+<li><strong>展示实际加速</strong>：维持或改进质量</li>
+</ol>
+<p>关键洞察——模型自身的注意力和置信度模式可以作为验证信号——既直观又强大。这为推理时优化开辟了新方向，而无需外部验证器的开销。</p>
+<p><strong>对于从业者：</strong></p>
+<ul>
+<li>如果你的 LLM 处理推理任务（数学、代码、规划），值得尝试 SpecGuard</li>
+<li>实现应该简明，给定标准 SD 基础设施</li>
+<li>预期收益：10-15% 延迟减少 + 3-4% 准确度改进</li>
+</ul>
+<p><strong>对于研究人员：</strong></p>
+<ul>
+<li>集成验证框架可以扩展到推测解码以外</li>
+<li>推理时的自洽性选择器是值得进一步探索的巧妙想法</li>
+<li>注意力接地洞察可以改进其他验证任务</li>
+</ul>
+<hr>
+<h2 id="参考资料与深入阅读">参考资料与深入阅读</h2>
+<ol>
+<li>Leviathan et al. (2023) - 原始推测解码论文</li>
+<li>Liao et al. (2025) - 奖励引导推测解码 (RSD)</li>
+<li>Wang et al. (2023) - 自洽性提示</li>
+<li>Serrano &amp; Smith (2019) - 注意力不是解释（重要反点）</li>
+<li>Lightman et al. (2023) - 用于验证的过程奖励模型</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Speculative-Decoding/" rel="tag"># Speculative Decoding</a>
+              <a href="/tags/SpecGuard/" rel="tag"># SpecGuard</a>
+              <a href="/tags/Verification/" rel="tag"># Verification</a>
+              <a href="/tags/LLM-Inference/" rel="tag"># LLM Inference</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/16/2026-04-16-PipeDream-technical-review-en/" rel="prev" title="PipeDream: Turning Pipeline Parallelism into a Practical Training System — Deep Technical Review">
+      <i class="fa fa-chevron-left"></i> PipeDream: Turning Pipeline Parallelism into a Practical Training System — Deep Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/19/2026-04-19-SpecGuard-technical-review-en/" rel="next" title="SpecGuard: Verification-Aware Speculative Decoding for Efficient Multi-Step Reasoning">
+      SpecGuard: Verification-Aware Speculative Decoding for Efficient Multi-Step Reasoning <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-多步任务中的错误传播"><span class="nav-number">1.</span> <span class="nav-text">1. 多步任务中的错误传播</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-外部验证器的延迟和开销"><span class="nav-number">1.1.</span> <span class="nav-text">2. 外部验证器的延迟和开销</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-泛化能力有限"><span class="nav-number">1.2.</span> <span class="nav-text">3. 泛化能力有限</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#核心贡献：SpecGuard-框架"><span class="nav-number">2.</span> <span class="nav-text">核心贡献：SpecGuard 框架</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#高层架构"><span class="nav-number">2.1.</span> <span class="nav-text">高层架构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#关键创新：自洽性选择器"><span class="nav-number">2.2.</span> <span class="nav-text">关键创新：自洽性选择器</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#技术深入：验证机制详解"><span class="nav-number">3.</span> <span class="nav-text">技术深入：验证机制详解</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#机制-1：基于注意力的接地验证（ABGV）"><span class="nav-number">3.1.</span> <span class="nav-text">机制 1：基于注意力的接地验证（ABGV）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#机制-2：基于对数概率的验证（LPBV）"><span class="nav-number">3.2.</span> <span class="nav-text">机制 2：基于对数概率的验证（LPBV）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#机制-3：集成验证与自适应接受"><span class="nav-number">3.3.</span> <span class="nav-text">机制 3：集成验证与自适应接受</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#自洽性选择器算法"><span class="nav-number">3.4.</span> <span class="nav-text">自洽性选择器算法</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#实验评估"><span class="nav-number">4.</span> <span class="nav-text">实验评估</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#基准与设置"><span class="nav-number">4.1.</span> <span class="nav-text">基准与设置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#主要结果"><span class="nav-number">4.2.</span> <span class="nav-text">主要结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#消融研究"><span class="nav-number">4.3.</span> <span class="nav-text">消融研究</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#敏感性分析"><span class="nav-number">4.4.</span> <span class="nav-text">敏感性分析</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#实际应用意义"><span class="nav-number">5.</span> <span class="nav-text">实际应用意义</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-推理成本降低"><span class="nav-number">5.1.</span> <span class="nav-text">1. 推理成本降低</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-无需外部模型的可扩展性"><span class="nav-number">5.2.</span> <span class="nav-text">2. 无需外部模型的可扩展性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-内存高效的验证"><span class="nav-number">5.3.</span> <span class="nav-text">3. 内存高效的验证</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#局限性与未来方向"><span class="nav-number">6.</span> <span class="nav-text">局限性与未来方向</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#已知局限"><span class="nav-number">6.1.</span> <span class="nav-text">已知局限</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#未来研究方向"><span class="nav-number">6.2.</span> <span class="nav-text">未来研究方向</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#可复现性与实现细节"><span class="nav-number">7.</span> <span class="nav-text">可复现性与实现细节</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#关键实现细节"><span class="nav-number">7.1.</span> <span class="nav-text">关键实现细节</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#计算复杂度"><span class="nav-number">7.2.</span> <span class="nav-text">计算复杂度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#代码与资源"><span class="nav-number">7.3.</span> <span class="nav-text">代码与资源</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#总结"><span class="nav-number">8.</span> <span class="nav-text">总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#参考资料与深入阅读"><span class="nav-number">9.</span> <span class="nav-text">参考资料与深入阅读</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

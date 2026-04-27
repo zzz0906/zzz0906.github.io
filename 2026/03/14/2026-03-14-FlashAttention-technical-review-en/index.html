@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="A technical review of FlashAttention, analyzing how IO-aware tiling and kernel fusion achieve exact attention computation that is both faster and more memory-efficient than standard implementations.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="FlashAttention: The IO-Aware Algorithm That Made Transformers Actually Fast">
+<meta property="og:url" content="https://zzz0906.github.io/2026/03/14/2026-03-14-FlashAttention-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="A technical review of FlashAttention, analyzing how IO-aware tiling and kernel fusion achieve exact attention computation that is both faster and more memory-efficient than standard implementations.">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-03-14T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-03T01:05:33.805Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/03/14/2026-03-14-FlashAttention-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>FlashAttention: The IO-Aware Algorithm That Made Transformers Actually Fast | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/03/14/2026-03-14-FlashAttention-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          FlashAttention: The IO-Aware Algorithm That Made Transformers Actually Fast
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-03-14 00:00:00" itemprop="dateCreated datePublished" datetime="2026-03-14T00:00:00+00:00">2026-03-14</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-03 01:05:33" itemprop="dateModified" datetime="2026-04-03T01:05:33+00:00">2026-04-03</time>
+              </span>
+
+          
+            <div class="post-description">A technical review of FlashAttention, analyzing how IO-aware tiling and kernel fusion achieve exact attention computation that is both faster and more memory-efficient than standard implementations.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="FlashAttention-—-In-Depth-Technical-Review-English">FlashAttention — In-Depth Technical Review (English)</h1>
+<p><strong>Author: Zhongzhu Zhou</strong><br>
+Paper: <em>FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness</em> (arXiv 2022 / NeurIPS 2022)<br>
+ArXiv: <a href="https://arxiv.org/abs/2205.14135" target="_blank" rel="noopener">https://arxiv.org/abs/2205.14135</a></p>
+<hr>
+<h2 id="Abstract">Abstract</h2>
+<p>FlashAttention is one of the papers that changed how the community thinks about efficient Transformer attention. The core point is subtle but extremely important: many previous attempts to accelerate attention focused on reducing FLOPs, while real GPU runtime was often dominated by memory traffic rather than arithmetic. This paper argues that exact attention can be made much faster without changing model semantics if we redesign the algorithm around the GPU memory hierarchy instead of around the usual matrix formula alone. The result is an exact attention kernel that avoids materializing the full attention matrix in high-bandwidth memory, cuts memory usage from quadratic extra memory to linear extra memory, and delivers large end-to-end speedups in BERT, GPT-2, and long-context tasks. In my view, the paper matters because it turned “attention optimization” from a mostly mathematical approximation game into a systems problem with a rigorous IO model.</p>
+<a id="more"></a>
+<h2 id="1-Prerequisites-What-to-Know-Before-Reading-This-Paper">1. Prerequisites: What to Know Before Reading This Paper</h2>
+<p>This review is deliberately written for a reader who may be older, careful, and not immersed in GPU systems jargon. So I will slow down and build the needed background before touching the algorithm itself.</p>
+<h3 id="1-1-What-self-attention-actually-computes">1.1 What self-attention actually computes</h3>
+<p>Suppose we have a sequence of tokens, such as words in a sentence. A Transformer turns each token into three vectors:</p>
+<ul>
+<li><strong>Query</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi></mrow><annotation encoding="application/x-tex">Q</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8778em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">Q</span></span></span></span>: what this token is looking for.</li>
+<li><strong>Key</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span>: what this token offers to others.</li>
+<li><strong>Value</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi></mrow><annotation encoding="application/x-tex">V</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span></span></span></span>: the information this token will send if selected.</li>
+</ul>
+<p>For one attention head, if the sequence length is <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span></span></span></span> and the head dimension is <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi></mrow><annotation encoding="application/x-tex">d</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">d</span></span></span></span>, then <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo separator="true">,</mo><mi>K</mi><mo separator="true">,</mo><mi>V</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>N</mi><mo>×</mo><mi>d</mi></mrow></msup></mrow><annotation encoding="application/x-tex">Q, K, V \in \mathbb{R}^{N \times d}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8778em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">Q</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8491em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight">d</span></span></span></span></span></span></span></span></span></span></span></span>. Standard scaled dot-product attention does three conceptual steps:</p>
+<ol>
+<li>Compute the score matrix
+[</li>
+</ol>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>S</mi><mo>=</mo><mi>Q</mi><msup><mi>K</mi><mi>T</mi></msup><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>N</mi><mo>×</mo><mi>N</mi></mrow></msup><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">S = QK^T \in \mathbb{R}^{N \times N}.
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0858em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">Q</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8913em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8913em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8913em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span></span></span></span></span></span></span></span></span><span class="mord">.</span></span></span></span></span></p>
+<p>
+   Every row compares one query token against every key token.
+
+2. Apply row-wise softmax
+   \[
+
+</p>
+<p>P = \text{softmax}(S).</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex"></annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>This turns each row into attention weights that sum to one.</p>
+<ol start="3">
+<li>Mix values using those weights
+[</li>
+</ol>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>O</mi><mo>=</mo><mi>P</mi><mi>V</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>N</mi><mo>×</mo><mi>d</mi></mrow></msup><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">O = PV \in \mathbb{R}^{N \times d}.
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8991em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight">d</span></span></span></span></span></span></span></span></span><span class="mord">.</span></span></span></span></span></p>
+<p>
+
+The problem is the middle object $S$ or $P$: it has size $N \times N$. If $N$ doubles, that matrix becomes 4 times larger. For long sequences, this is painful both for runtime and memory.
+
+### 1.2 FLOPs are not the whole story
+
+A beginner often hears “this algorithm is faster because it uses fewer floating-point operations.” That is sometimes true, but not always. GPUs are not magic arithmetic boxes. They are machines with different layers of memory:
+
+* **HBM (High Bandwidth Memory)**: large but relatively slower GPU memory.
+* **SRAM / on-chip memory / shared memory / registers**: tiny compared to HBM, but much faster.
+
+The paper uses the term **IO-awareness** to mean: count how often data must travel between these memory levels, not just how many multiply-adds you do.
+
+This matters because in modern GPUs, arithmetic throughput has improved faster than memory movement. So an operation can be “cheap in math” but still “slow in real life” if it keeps reading and writing huge tensors from HBM. Attention is a classic example. The standard implementation repeatedly materializes large intermediate matrices in HBM. That memory traffic can dominate wall-clock time.
+
+A useful mental picture is a kitchen. Arithmetic is like chopping ingredients with a very sharp knife. Memory traffic is like walking back and forth to the pantry. If your knife becomes twice as fast but you still walk to the pantry 50 times, dinner is still slow.
+
+### 1.3 Why softmax usually seems to require the full row
+
+The attention formula looks like it wants the whole score row before normalization. If one row is $s_1, s_2, \dots, s_N$, then softmax needs:
+
+</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>softmax</mtext><mo stretchy="false">(</mo><msub><mi>s</mi><mi>j</mi></msub><mo stretchy="false">)</mo><mo>=</mo><mfrac><msup><mi>e</mi><msub><mi>s</mi><mi>j</mi></msub></msup><mrow><munder><mo>∑</mo><mi>k</mi></munder><msup><mi>e</mi><msub><mi>s</mi><mi>k</mi></msub></msup></mrow></mfrac><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">\text{softmax}(s_j) = \frac{e^{s_j}}{\sum_k e^{s_k}}.
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord text"><span class="mord">softmax</span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.3271em;vertical-align:-0.9857em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3414em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1864em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2997em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.5904em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.3488em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1512em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6644em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2819em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.9857em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mord">.</span></span></span></span></span></p>
+<p>
+
+At first glance, this suggests we must compute and store all $N$ scores in that row. But there is a trick: we can process scores block by block if we maintain running statistics. In particular, we can maintain:
+
+* the running row maximum $m$, used for numerical stability,
+* the running denominator $\ell = \sum_j e^{s_j - m}$.
+
+This “online softmax” idea is one of the essential ingredients that makes FlashAttention possible.
+
+### 1.4 Exact attention versus approximate attention
+
+Before FlashAttention, much efficient-attention work tried to avoid the $N^2$ cost by approximating attention:
+
+* sparse attention,
+* low-rank approximations,
+* kernelized linear attention,
+* locality assumptions.
+
+These methods can be useful, but they alter the operation. The paper makes a different promise:
+
+*keep exact attention semantics, but compute it in a more hardware-friendly way.*
+
+That distinction is important. If you deploy FlashAttention, you are not changing the model’s mathematical definition of dense attention. You are changing the schedule of computation and memory movement.
+
+## 2. What This Paper Does (The Core Idea)
+
+The core idea is simple to state and deep in consequence:
+
+> Do not materialize the full $N \times N$ attention matrix in HBM. Instead, tile Q, K, and V into blocks, move small blocks through fast SRAM, and update the output incrementally while carrying enough softmax statistics to remain exact.
+
+Figure 1 in the paper is worth understanding carefully. The left side shows standard attention as a pipeline that effectively creates and stores the large attention matrix. FlashAttention instead loops over blocks of $K$ and $V$, copies each block into fast SRAM, and then loops over blocks of $Q$. Inside SRAM it computes partial scores, partial softmax contributions, and partial output updates. Then it writes only the evolving output and a few per-row statistics back to HBM.
+
+This solves two problems at once:
+
+* **Memory problem**: extra memory becomes linear in sequence length rather than quadratic because the giant attention matrix is not stored.
+* **Runtime problem**: HBM reads and writes drop dramatically, which speeds up execution on real GPUs.
+
+The paper is careful to say that FlashAttention may do *more* arithmetic in some places, especially due to recomputation in the backward pass. But because the dominant bottleneck was often memory traffic, reducing HBM access can still make the method much faster overall. This is a systems lesson that shows up repeatedly in high-performance ML infrastructure.
+
+My interpretation is that the paper’s true breakthrough is not merely “fusing kernels.” Many earlier kernels fused operations. The stronger idea is to redesign the *algorithmic structure* around the memory hierarchy and prove that this new structure is IO-optimal over a meaningful range of SRAM sizes.
+
+## 3. Method Details
+
+### 3.1 Standard attention and where the waste happens
+
+The paper summarizes the standard implementation as three big stages:
+
+1. Read $Q$ and $K$, compute $S = QK^T$, write $S$ to HBM.
+
+</p>
+<ol start="2">
+<li>Read <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi></mrow><annotation encoding="application/x-tex">S</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05764em;">S</span></span></span></span>, compute <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mo>=</mo><mtext>softmax</mtext><mo stretchy="false">(</mo><mi>S</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">P = \text{softmax}(S)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">softmax</span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="mclose">)</span></span></span></span>, write <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi></mrow><annotation encoding="application/x-tex">P</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">P</span></span></span></span> to HBM.</li>
+<li>Read <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi></mrow><annotation encoding="application/x-tex">P</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">P</span></span></span></span> and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi></mrow><annotation encoding="application/x-tex">V</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span></span></span></span>, compute <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo>=</mo><mi>P</mi><mi>V</mi></mrow><annotation encoding="application/x-tex">O = PV</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span></span></span></span>, write <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi></mrow><annotation encoding="application/x-tex">O</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span></span></span></span> to HBM.</li>
+</ol>
+<p>
+
+This means the enormous $N \times N$ objects $S$ and $P$ are written to and read from HBM. That is exactly what FlashAttention tries to avoid.
+
+Notice something subtle. The matrix multiply itself is usually a compute-friendly operation. The softmax and masking steps are much more memory-sensitive. If these are implemented as separate kernels, you load and store large tensors multiple times. So even when the math is straightforward, the execution plan is not memory-friendly.
+
+### 3.2 Tiling: break the big matrices into small blocks
+
+FlashAttention partitions the matrices into tiles:
+
+* $Q$ is partitioned into row blocks $Q_i$ of size $B_r \times d$.
+* $K$ and $V$ are partitioned into row blocks $K_j, V_j$ of size $B_c \times d$.
+
+The algorithm then uses nested loops:
+
+* Outer loop over $K_j, V_j$ blocks.
+* Inner loop over $Q_i$ blocks.
+
+For each pair $(i, j)$, it loads one query block and one key/value block into SRAM, computes a local score block
+
+</p>
+<p>S_{ij} = Q_i K_j^T,</p>
+<p>
+then updates per-row softmax statistics and the partial output block.
+
+Why this layout? Because it ensures the expensive part—the block score matrix and its softmax—is handled while the data is resident in fast SRAM. The algorithm never needs to store the global $N \times N$ score matrix.
+
+A practical way to think about it is this: the algorithm sweeps through the sequence in small rectangular windows, but it carefully preserves exactly the same final result as if we had formed the whole attention matrix at once.
+
+### 3.3 Online softmax: how to remain exact without seeing the full row at once
+
+This is the heart of the paper.
+
+Suppose we have already processed some key blocks for a row of queries and stored two quantities:
+
+* $m_i$: the running maximum score for that row,
+* $\ell_i$: the running sum of exponentials, measured relative to the running maximum.
+
+When a new score block $S_{ij}$ arrives, we compute a local row maximum $\tilde{m}_{ij}$. Then we update the row maximum:
+
+</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msubsup><mi>m</mi><mi>i</mi><mtext>new</mtext></msubsup><mo>=</mo><mi>max</mi><mo>⁡</mo><mo stretchy="false">(</mo><msub><mi>m</mi><mi>i</mi></msub><mo separator="true">,</mo><msub><mover accent="true"><mi>m</mi><mo>~</mo></mover><mrow><mi>i</mi><mi>j</mi></mrow></msub><mo stretchy="false">)</mo><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">m_i^{\text{new}} = \max(m_i, \tilde{m}_{ij}).
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9614em;vertical-align:-0.247em;"></span><span class="mord"><span class="mord mathnormal">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7144em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">new</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mop">max</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6679em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">m</span></span><span style="top:-3.35em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.25em;"><span class="mord">~</span></span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mord">.</span></span></span></span></span></p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>W</mi><mi>e</mi><mi>a</mi><mi>l</mi><mi>s</mi><mi>o</mi><mi>r</mi><mi>e</mi><mi>s</mi><mi>c</mi><mi>a</mi><mi>l</mi><mi>e</mi><mi>t</mi><mi>h</mi><mi>e</mi><mi>o</mi><mi>l</mi><mi>d</mi><mi>d</mi><mi>e</mi><mi>n</mi><mi>o</mi><mi>m</mi><mi>i</mi><mi>n</mi><mi>a</mi><mi>t</mi><mi>o</mi><mi>r</mi><mi>a</mi><mi>n</mi><mi>d</mi><mi>a</mi><mi>d</mi><mi>d</mi><mi>t</mi><mi>h</mi><mi>e</mi><mi>n</mi><mi>e</mi><mi>w</mi><mi>b</mi><mi>l</mi><mi>o</mi><mi>c</mi><mi>k</mi><mi>c</mi><mi>o</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>i</mi><mi>b</mi><mi>u</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo>:</mo></mrow><annotation encoding="application/x-tex">
+
+We also rescale the old denominator and add the new block contribution:
+
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mord mathnormal">e</span><span class="mord mathnormal">a</span><span class="mord mathnormal" style="margin-right:0.01968em;">l</span><span class="mord mathnormal" style="margin-right:0.02778em;">sor</span><span class="mord mathnormal">esc</span><span class="mord mathnormal">a</span><span class="mord mathnormal" style="margin-right:0.01968em;">l</span><span class="mord mathnormal">e</span><span class="mord mathnormal">t</span><span class="mord mathnormal">h</span><span class="mord mathnormal">eo</span><span class="mord mathnormal" style="margin-right:0.01968em;">l</span><span class="mord mathnormal">dd</span><span class="mord mathnormal">e</span><span class="mord mathnormal">n</span><span class="mord mathnormal">o</span><span class="mord mathnormal">mina</span><span class="mord mathnormal">t</span><span class="mord mathnormal" style="margin-right:0.02778em;">or</span><span class="mord mathnormal">an</span><span class="mord mathnormal">d</span><span class="mord mathnormal">a</span><span class="mord mathnormal">dd</span><span class="mord mathnormal">t</span><span class="mord mathnormal">h</span><span class="mord mathnormal">e</span><span class="mord mathnormal">n</span><span class="mord mathnormal">e</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord mathnormal">b</span><span class="mord mathnormal" style="margin-right:0.01968em;">l</span><span class="mord mathnormal">oc</span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mord mathnormal">co</span><span class="mord mathnormal">n</span><span class="mord mathnormal">t</span><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="mord mathnormal">ib</span><span class="mord mathnormal">u</span><span class="mord mathnormal">t</span><span class="mord mathnormal">i</span><span class="mord mathnormal">o</span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">:</span></span></span></span></span></p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msubsup><mi mathvariant="normal">ℓ</mi><mi>i</mi><mtext>new</mtext></msubsup><mo>=</mo><msup><mi>e</mi><mrow><msub><mi>m</mi><mi>i</mi></msub><mo>−</mo><msubsup><mi>m</mi><mi>i</mi><mtext>new</mtext></msubsup></mrow></msup><msub><mi mathvariant="normal">ℓ</mi><mi>i</mi></msub><mo>+</mo><munder><mo>∑</mo><mi>j</mi></munder><msup><mi>e</mi><mrow><msub><mi>S</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><mo>−</mo><msubsup><mi>m</mi><mi>i</mi><mtext>new</mtext></msubsup></mrow></msup><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">\ell_i^{\text{new}} = e^{m_i - m_i^{\text{new}}} \ell_i + \sum_j e^{S_{ij} - m_i^{\text{new}}}.
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9614em;vertical-align:-0.247em;"></span><span class="mord"><span class="mord">ℓ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7144em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">new</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.08em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.93em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span><span class="mbin mtight">−</span><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7385em;"><span style="top:-2.214em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">i</span></span></span><span style="top:-2.931em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">new</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.286em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span><span class="mord"><span class="mord">ℓ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.4638em;vertical-align:-1.4138em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.4138em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.93em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05764em;">S</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:-0.0576em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2819em;"><span></span></span></span></span></span></span><span class="mbin mtight">−</span><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7385em;"><span style="top:-2.214em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">i</span></span></span><span style="top:-2.931em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">new</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.286em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span><span class="mord">.</span></span></span></span></span></p>
+<p>
+
+This is the key numerical trick. Because the reference maximum can change when a new block contains a larger score, the previously accumulated denominator must be rescaled. The same rescaling idea is also applied to the accumulated output contribution.
+
+In plain language:
+
+*We keep enough summary information about the part we have already seen so that when a new tile appears, we can merge it exactly and stably.*
+
+That is why the algorithm does not approximate softmax. It performs exact softmax row by row, but in a streaming tiled fashion.
+
+### 3.4 Updating the output block incrementally
+
+The output block $O_i$ is also accumulated online. After processing a new $(i,j)$ block, the algorithm combines the old partial output and the new block’s weighted value contribution. Conceptually it does:
+
+</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msubsup><mi>O</mi><mi>i</mi><mtext>new</mtext></msubsup><mo>=</mo><mfrac><mrow><msup><mi>e</mi><mrow><msub><mi>m</mi><mi>i</mi></msub><mo>−</mo><msubsup><mi>m</mi><mi>i</mi><mtext>new</mtext></msubsup></mrow></msup><msub><mi mathvariant="normal">ℓ</mi><mi>i</mi></msub><mo>⋅</mo><msub><mi>O</mi><mi>i</mi></msub><mo>+</mo><msup><mi>e</mi><mrow><msub><mover accent="true"><mi>m</mi><mo>~</mo></mover><mrow><mi>i</mi><mi>j</mi></mrow></msub><mo>−</mo><msubsup><mi>m</mi><mi>i</mi><mtext>new</mtext></msubsup></mrow></msup><msub><mover accent="true"><mi>P</mi><mo>~</mo></mover><mrow><mi>i</mi><mi>j</mi></mrow></msub><msub><mi>V</mi><mi>j</mi></msub></mrow><msubsup><mi mathvariant="normal">ℓ</mi><mi>i</mi><mtext>new</mtext></msubsup></mfrac><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">O_i^{\text{new}} = \frac{e^{m_i-m_i^{\text{new}}}\ell_i \cdot O_i + e^{\tilde{m}_{ij}-m_i^{\text{new}}} \tilde{P}_{ij}V_j}{\ell_i^{\text{new}}}.
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9614em;vertical-align:-0.247em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7144em;"><span style="top:-2.453em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">new</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.5601em;vertical-align:-0.9629em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.5972em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord">ℓ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6462em;"><span style="top:-2.4231em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span><span style="top:-3.0448em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">new</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2769em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.88em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span><span class="mbin mtight">−</span><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7385em;"><span style="top:-2.214em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">i</span></span></span><span style="top:-2.931em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">new</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.286em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span><span class="mord"><span class="mord">ℓ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.88em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord accent mtight"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6679em;"><span style="top:-2.7em;"><span class="pstrut" style="height:2.7em;"></span><span class="mord mathnormal mtight">m</span></span><span style="top:-3.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="accent-body" style="left:-0.25em;"><span class="mord mtight">~</span></span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2819em;"><span></span></span></span></span></span></span><span class="mbin mtight">−</span><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7385em;"><span style="top:-2.214em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">i</span></span></span><span style="top:-2.931em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">new</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.286em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span><span class="mord"><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9202em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">P</span></span><span style="top:-3.6023em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">~</span></span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.9629em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mord">.</span></span></span></span></span></p>
+<p>
+
+The exact notation in the paper is slightly more careful, but the message is the same: the old partial output must be renormalized if the running max changes, then combined with the new contribution.
+
+This is why FlashAttention needs to retain the per-row statistics $(m, \ell)$. Without them, you could not merge blocks exactly.
+
+### 3.5 Why the backward pass uses recomputation
+
+In standard training, the backward pass often reuses large saved intermediates. For attention, that would normally include the full attention probabilities $P$. But FlashAttention does not want to store $P$ because that would bring back quadratic memory and much of the HBM traffic.
+
+So the authors make a deliberate tradeoff:
+
+* save only the output $O$ and softmax statistics $(m, \ell)$,
+* recompute needed local attention quantities on-chip during backward.
+
+This increases FLOPs, but the paper argues that it is still faster overall because reading a giant $N \times N$ tensor from HBM is more expensive than recomputing local values in SRAM. This is one of those cases where “extra computation” is actually the faster systems choice.
+
+The paper compares this to checkpointing, but FlashAttention’s backward derivation is cleaner than generic checkpointing because it analytically simplifies what must be recomputed and what can be summarized.
+
+### 3.6 IO complexity analysis
+
+The theoretical contribution is not decoration; it supports the systems claim.
+
+The paper shows:
+
+* Standard attention requires $\Theta(Nd + N^2)$ HBM accesses.
+* FlashAttention requires $\Theta(N^2 d^2 / M)$ HBM accesses, where $M$ is SRAM size.
+
+For practical GPU regimes, this is substantially smaller. Theorem 2 and the related lower bound argue that FlashAttention is asymptotically optimal across a range of SRAM sizes for exact attention. That matters because it says the method is not just “a clever engineering trick that happened to work on one kernel.” It is close to the best possible under the stated model.
+
+A beginner may ask: “Why is the complexity still quadratic in $N$?” Because exact dense attention still compares all token pairs. FlashAttention does not repeal that fact. What it does is reduce *data movement cost* and eliminate the quadratic-size materialized matrix. So it attacks the practical bottleneck without changing the semantics of dense attention.
+
+### 3.7 Block-sparse FlashAttention
+
+The paper also extends the kernel to a block-sparse pattern. Here the attention matrix is not fully dense; only certain blocks are computed. The same IO-aware design is reused, but now only nonzero blocks are visited.
+
+This is no longer exact dense attention, but it is an efficient approximate/sparse variant built on the same systems principle. The authors show that block-sparse FlashAttention can be even faster and can scale to contexts like 64K, with good results on pathfinding tasks.
+
+I think this extension is strategically important. It shows FlashAttention is not a one-off optimization for one exact kernel. It is a reusable primitive for a whole family of attention implementations.
+
+## 4. Experiment Setup
+
+### 4.1 Hardware and implementation environment
+
+The paper centers on modern GPUs, especially NVIDIA A100. The hardware discussion is essential because FlashAttention’s argument depends on the gap between on-chip SRAM bandwidth and HBM bandwidth. The paper cites roughly terabytes-per-second bandwidth for HBM and an order-of-magnitude higher effective bandwidth for SRAM, though SRAM capacity is tiny.
+
+Implementation-wise, the authors write a custom CUDA kernel so they can control data movement directly. This is an important engineering cost. You do not get FlashAttention’s benefits merely by writing a mathematically equivalent PyTorch expression and hoping the compiler figures it out.
+
+### 4.2 Models and tasks
+
+The evaluation is broad rather than narrow. The authors test:
+
+* **BERT-large** training on Wikipedia, comparing with the NVIDIA MLPerf 1.1 implementation.
+* **GPT-2** small and medium on OpenWebText, comparing with HuggingFace and Megatron-LM implementations.
+* **Long Range Arena (LRA)** tasks, including ListOps, Text, Retrieval, Image, and Pathfinder.
+* **Long document classification** on MIMIC-III and ECtHR.
+* **Path-X and Path-256**, famous long-context stress tests.
+* Single-kernel benchmarks for runtime and memory across sequence lengths.
+
+This combination is good experimental design. It checks both micro-level kernel behavior and macro-level training impact.
+
+### 4.3 Metrics
+
+The paper does not rely on one vanity metric. It reports:
+
+* runtime of attention forward + backward,
+* attention memory usage,
+* end-to-end training time,
+* perplexity for language modeling,
+* accuracy or F1 for downstream tasks.
+
+This is exactly the right way to evaluate a systems paper in ML. If you only report FLOPs or kernel speed, you might miss whether the optimization matters for actual model training. If you only report task accuracy, you might hide systems tradeoffs. FlashAttention reports both.
+
+## 5. Results & Analysis
+
+### 5.1 Figure 1: why avoiding materialization matters
+
+Figure 1 is arguably the most educational figure in the paper. The left panel shows the dataflow change: standard attention writes the large attention matrix to HBM, whereas FlashAttention streams blocks through SRAM. The right panel shows a large speedup on GPT-2 attention computation—reported as up to 7.6× relative to the PyTorch implementation.
+
+My reading is that Figure 1 does more than show a speedup. It reframes the problem. If someone still thinks attention optimization is mostly about changing the $QK^T$ formula, they have missed the lesson. The true bottleneck here is that the default implementation drags an enormous intermediate through slow memory.
+
+### 5.2 Figure 2: HBM accesses track runtime better than FLOPs
+
+Figure 2 is the most important systems-validation result. The paper shows that FlashAttention can have more FLOPs than standard attention because of recomputation, yet still run faster because HBM accesses are much smaller. This directly supports the main thesis: for this workload on this hardware, IO—not raw arithmetic count—is the dominant factor.
+
+This is why the paper aged so well. Later GPU kernel work across ML repeatedly rediscovered the same principle: arithmetic is cheap, memory movement is expensive, and good kernels are often about keeping data on-chip.
+
+### 5.3 BERT-large: real end-to-end training speedup
+
+On BERT-large, the paper reports training time to target masked-language-modeling accuracy of 72.0%:
+
+* NVIDIA MLPerf 1.1 implementation: **20.0 ± 1.5 minutes**
+* FlashAttention: **17.4 ± 1.4 minutes**
+
+That is about a **15% speedup** on 8×A100 GPUs.
+
+This result is more meaningful than an isolated kernel benchmark because BERT training includes many operations besides attention. So when an attention optimization still improves end-to-end training by 15%, it means the optimization is genuinely moving the bottleneck.
+
+### 5.4 GPT-2: strong speedups without changing perplexity
+
+Table 2 is especially convincing. For GPT-2 small and medium on OpenWebText:
+
+* GPT-2 small:
+  * HuggingFace: 9.5 days
+  * Megatron-LM: 4.7 days
+  * FlashAttention: 2.7 days
+
+* GPT-2 medium:
+  * HuggingFace: 21.0 days
+  * Megatron-LM: 11.5 days
+  * FlashAttention: 6.9 days
+
+Perplexity remains essentially unchanged:
+
+* GPT-2 small: 18.2 across implementations
+* GPT-2 medium: 14.2–14.3 across implementations
+
+This is exactly what we want from an exact attention optimization. Same model quality, much lower training time.
+
+One subtle point: the comparison is not against a toy baseline. Megatron-LM was already an optimized systems implementation. So beating it by around 1.7–1.8× is a serious result.
+
+### 5.5 Long Range Arena: exact attention becomes surprisingly competitive
+
+Many people would assume approximate attention must dominate on long-range tasks. Table 3 complicates that story.
+
+On LRA, FlashAttention reaches an average score of **59.8**, compared with **59.3** for the standard Transformer, while also reporting around **2.4× speedup**. Block-sparse FlashAttention is even faster at **2.8×** while keeping similar average quality (**59.6**).
+
+The lesson is not that approximation is useless. The lesson is that naive dense-attention baselines often looked bad partly because their implementation was bad. Once exact attention is implemented well, the crossover point where approximations become clearly better may move much farther out than many expected.
+
+### 5.6 Longer contexts produce better models
+
+Table 4 is one of my favorite results because it connects systems efficiency to model quality. FlashAttention allows GPT-2 small to train with longer context lengths while still staying fast:
+
+* Megatron-LM, 1K context: 18.2 perplexity, 4.7 days
+* FlashAttention, 1K context: 18.2 perplexity, 2.7 days
+* FlashAttention, 2K context: 17.6 perplexity, 3.0 days
+* FlashAttention, 4K context: 17.5 perplexity, 3.6 days
+
+So with FlashAttention, a 4K-context GPT-2 is still **30% faster** than the 1K Megatron baseline while also improving perplexity by about **0.7**.
+
+That is a beautiful systems-and-modeling outcome. Efficiency is not merely saving money; it changes which model configurations are feasible.
+
+### 5.7 Long document tasks and Path-X / Path-256
+
+On long document classification, increasing context with FlashAttention improves micro-F1 substantially:
+
+* On **MIMIC-III**, length 16K reaches **57.1** vs **52.8** at length 512.
+* On **ECtHR**, length 8K reaches **80.7** vs **72.2** at length 512.
+
+These are large practical gains.
+
+Then comes the headline-grabbing result on pathfinding:
+
+* FlashAttention achieves **61.4** on **Path-X**.
+* Block-sparse FlashAttention achieves **63.1** on **Path-256**.
+
+The paper emphasizes these were the first Transformer results above chance on these benchmarks. This is a powerful example of a systems primitive enabling a capability result, not just a benchmark win.
+
+### 5.8 Figure 3: runtime and memory scaling
+
+Figure 3 shows two important curves:
+
+* runtime of forward + backward,
+* memory footprint.
+
+FlashAttention’s memory grows linearly in sequence length rather than requiring the huge quadratic attention matrix. The paper reports up to **20×** better memory efficiency than exact attention baselines, and notes that many competing methods run out of memory before 64K on an A100, while FlashAttention still fits.
+
+This matters because out-of-memory failure is a hard constraint, not a mild inconvenience. Many modeling ideas are dead on arrival if the kernel cannot fit the problem.
+
+## 6. Limitations & Boundary Conditions
+
+### 6.1 It does not remove quadratic pairwise interaction
+
+FlashAttention is often misunderstood as “solving quadratic attention.” That is not correct. Exact dense attention still has to consider all token pairs. The paper reduces IO complexity and memory footprint, but it does not magically turn exact dense attention into linear-time modeling.
+
+So if your sequence length becomes enormous, approximate or structured methods may still be necessary.
+
+### 6.2 The kernel engineering burden is real
+
+The paper openly admits that the implementation requires custom CUDA work. That is a genuine limitation. Research code and production code are different things; maintaining highly optimized kernels across GPU architectures is hard.
+
+This is one reason FlashAttention later became a software ecosystem, not just a paper. To make the idea useful, the community had to package it, maintain it, and integrate it into frameworks.
+
+### 6.3 Benefits depend on hardware and workload regime
+
+The speedup comes from the gap between on-chip and off-chip memory behavior. If the hardware changes, the sweet spots and block sizes change too. The paper’s conclusions are highly relevant for modern GPUs, but one should not blindly assume identical gains on every accelerator.
+
+Also, some approximate methods can overtake FlashAttention at sufficiently long sequence lengths because they change the asymptotic compute itself. The paper even shows crossover behavior in benchmarking.
+
+### 6.4 Numerical stability must be engineered carefully
+
+The online softmax update is exact, but only if implemented with the right rescaling and stable max-tracking. This is not the kind of kernel where one casual sign error merely hurts speed; it can silently damage correctness.
+
+So one practical boundary condition is engineering maturity. You want the battle-tested implementation, not a rushed re-implementation unless you have a strong reason.
+
+### 6.5 Exact attention is not always the globally best design choice
+
+Even though FlashAttention makes exact attention much more attractive, there remain scenarios where locality, recurrence, state-space models, retrieval, or sparse patterns are a better modeling decision. The paper’s contribution is to improve one important primitive, not to prove that every long-context problem should use dense attention forever.
+
+## 7. Reproducibility & Practical Notes
+
+### 7.1 Why this paper is highly reproducible by systems-paper standards
+
+The paper is unusually reproducible for three reasons:
+
+* the core algorithm is specified clearly,
+* the IO argument is formalized with theorems,
+* the authors released code.
+
+That said, “reproducible” does not mean “easy.” Reproducing the exact CUDA-level performance of a top kernel is much harder than reproducing a model-training recipe from Python.
+
+### 7.2 What a practitioner needs to use FlashAttention in production
+
+If you are a practitioner rather than a kernel author, you usually do **not** want to rewrite the algorithm from scratch. Instead you want:
+
+* a maintained FlashAttention library or framework integration,
+* GPU support matching your deployment fleet,
+* correctness tests against a trusted dense-attention reference,
+* profiling tools to verify the kernel is actually selected,
+* careful handling of masking, dropout, causal attention, and mixed precision.
+
+In other words, operational success depends as much on software integration and testing discipline as on the paper itself.
+
+### 7.3 When FlashAttention is most compelling
+
+In my opinion, FlashAttention is most compelling when at least one of the following is true:
+
+* sequence length is moderately large to large,
+* memory pressure is blocking batch size or context length,
+* attention is a noticeable share of runtime,
+* you want exact dense attention semantics,
+* you need a production-quality primitive rather than a research-only approximation.
+
+This is why it became standard infrastructure for LLM training and inference stacks.
+
+### 7.4 Practical mental model for beginners
+
+If I had to explain the entire paper to a careful beginner in one paragraph, I would say this:
+
+> Standard attention is like writing a giant temporary notebook page for every pairwise token interaction, then repeatedly carrying that notebook between a big cupboard and your desk. FlashAttention instead keeps a small working set on the desk, updates the answer as it goes, and only stores the final result plus a few small bookkeeping numbers. The math result is the same, but the walking is much smaller, so the whole job finishes faster.
+
+That is, in spirit, the entire contribution.
+
+## References
+
+1. Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra, and Christopher Ré. *FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness*. arXiv:2205.14135, 2022.
+2. Ashish Vaswani et al. *Attention Is All You Need*. NeurIPS, 2017.
+3. Nikita Kitaev, Łukasz Kaiser, and Anselm Levskaya. *Reformer: The Efficient Transformer*. ICLR, 2020.
+4. Sinong Wang et al. *Linformer: Self-Attention with Linear Complexity*. arXiv, 2020.
+5. Tri Dao. FlashAttention repository and follow-up implementations.
+
+---
+
+*Review written on 2026-03-14.*
+</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/03/13/2026-03-13-LoRA-technical-review-en/" rel="prev" title="LoRA: Fine-Tuning Giant Models with Pocket Change — The Low-Rank Revolution">
+      <i class="fa fa-chevron-left"></i> LoRA: Fine-Tuning Giant Models with Pocket Change — The Low-Rank Revolution
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/03/16/2026-03-16-MetaGPT-technical-review-en/" rel="next" title="MetaGPT: When LLM Agents Form a Software Company — Multi-Agent Collaboration Done Right">
+      MetaGPT: When LLM Agents Form a Software Company — Multi-Agent Collaboration Done Right <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#FlashAttention-—-In-Depth-Technical-Review-English"><span class="nav-number">1.</span> <span class="nav-text">FlashAttention — In-Depth Technical Review (English)</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#Abstract"><span class="nav-number">1.1.</span> <span class="nav-text">Abstract</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Prerequisites-What-to-Know-Before-Reading-This-Paper"><span class="nav-number">1.2.</span> <span class="nav-text">1. Prerequisites: What to Know Before Reading This Paper</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-What-self-attention-actually-computes"><span class="nav-number">1.2.1.</span> <span class="nav-text">1.1 What self-attention actually computes</span></a></li></ol></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

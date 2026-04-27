@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="Constitutional AI trains harmless AI assistants using AI-generated feedback instead of human labels. Covers the critique-revision pipeline, RLAIF, and comparison with RLHF.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Constitutional AI: Harmlessness from AI Feedback — In-Depth Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/03/31/2026-03-31-ConstitutionalAI-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="Constitutional AI trains harmless AI assistants using AI-generated feedback instead of human labels. Covers the critique-revision pipeline, RLAIF, and comparison with RLHF.">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-03-31T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-02T16:16:49.574Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="RLHF">
+<meta property="article:tag" content="Alignment">
+<meta property="article:tag" content="Deep Learning">
+<meta property="article:tag" content="AI Safety">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/03/31/2026-03-31-ConstitutionalAI-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>Constitutional AI: Harmlessness from AI Feedback — In-Depth Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/03/31/2026-03-31-ConstitutionalAI-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Constitutional AI: Harmlessness from AI Feedback — In-Depth Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-03-31 00:00:00" itemprop="dateCreated datePublished" datetime="2026-03-31T00:00:00+00:00">2026-03-31</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-02 16:16:49" itemprop="dateModified" datetime="2026-04-02T16:16:49+00:00">2026-04-02</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">Constitutional AI trains harmless AI assistants using AI-generated feedback instead of human labels. Covers the critique-revision pipeline, RLAIF, and comparison with RLHF.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-What-This-Paper-Does">1. What This Paper Does</h2>
+<p>Imagine you want to teach a child to behave well. The traditional approach is to have a human supervisor watch the child's every action and correct them—but this is incredibly expensive and doesn't scale. What if instead, you could write down a set of rules (a &quot;constitution&quot;) and train the child to self-correct based on those rules, with another well-behaved child helping to evaluate behavior? That is essentially what Constitutional AI (CAI) does for language models.</p>
+<p>Bai et al. from Anthropic introduce <strong>Constitutional AI</strong>, a method for training AI assistants to be helpful, harmless, and honest (HHH) <strong>without requiring any human feedback labels for harmlessness</strong>. Instead of relying on tens of thousands of human annotations to identify harmful content, CAI uses a small set of natural language principles—a &quot;constitution&quot;—to guide the model's self-improvement. The process has two stages: (1) a <strong>supervised learning (SL) stage</strong> where the model critiques and revises its own harmful responses, and (2) a <strong>reinforcement learning (RL) stage</strong> where the model generates its own preference labels for harmlessness (called &quot;RL from AI Feedback&quot; or RLAIF), which are then used to train a reward model and fine-tune the policy.</p>
+<a id="more"></a>
+<p>The results are remarkable. The RL-CAI models are <strong>more harmless than models trained with human feedback for harmlessness</strong>, while maintaining comparable helpfulness. Critically, the CAI models are also <strong>non-evasive</strong>: instead of refusing to engage with sensitive topics (a common failure mode of standard RLHF models), they explain their reasoning and decline harmful requests thoughtfully. This is achieved with only ~16 natural language principles and zero human harmlessness labels.</p>
+<p>This paper is foundational for several reasons: (1) it introduces the concept of <strong>RLAIF</strong> (RL from AI Feedback), which has become a standard technique in modern alignment research; (2) it demonstrates that AI systems can effectively supervise other AI systems for alignment, a key step toward <strong>scalable oversight</strong>; (3) it shows that <strong>transparency</strong> in AI decision-making can be achieved through constitutional principles and chain-of-thought reasoning; and (4) it addresses the fundamental tension between helpfulness and harmlessness that plagued earlier RLHF approaches.</p>
+<hr>
+<h2 id="2-Prerequisites-What-You-Need-to-Know-First">2. Prerequisites: What You Need to Know First</h2>
+<p>Before we dive into the technical details of Constitutional AI, let us build up the necessary background. This section is designed for readers who may not have deep familiarity with reinforcement learning from human feedback or language model alignment. If you already know these concepts well, feel free to skim—but we include thorough explanations because the ideas are subtle and interconnected.</p>
+<h3 id="2-1-Large-Language-Models-LLMs">2.1 Large Language Models (LLMs)</h3>
+<p>A <strong>large language model</strong> is a neural network trained to predict the next token (word or subword) in a sequence of text. Models like GPT-3 (175 billion parameters), PaLM (540 billion parameters), and Claude are built on the <strong>Transformer architecture</strong> and trained on massive text corpora. Through this training, they absorb knowledge about language, facts, reasoning patterns, and even social norms.</p>
+<p><strong>Key property</strong>: LLMs are remarkably good at following patterns shown in their input. If you provide them with examples of a task (few-shot prompting), they can generalize and perform the task on new inputs. This makes them powerful but also dangerous—they will follow harmful patterns just as readily as helpful ones.</p>
+<h3 id="2-2-The-Alignment-Problem">2.2 The Alignment Problem</h3>
+<p>The <strong>alignment problem</strong> refers to the challenge of making AI systems behave in ways that are consistent with human values and intentions. A raw pretrained LLM has no particular preference for being helpful or harmful—it simply generates text that is statistically likely given its training data. This means it can produce toxic, biased, dangerous, or misleading content just as easily as useful content.</p>
+<p>The goal of alignment research is to fine-tune these models so that they:</p>
+<ul>
+<li><strong>Help</strong> users accomplish their goals (helpfulness)</li>
+<li><strong>Avoid</strong> causing harm to users or others (harmlessness)</li>
+<li><strong>Provide</strong> accurate and honest information (honesty)</li>
+</ul>
+<p>These three properties are often abbreviated as <strong>HHH</strong> (Helpful, Harmless, Honest).</p>
+<h3 id="2-3-Reinforcement-Learning-from-Human-Feedback-RLHF">2.3 Reinforcement Learning from Human Feedback (RLHF)</h3>
+<p><strong>RLHF</strong> is the dominant method for aligning language models, used in systems like InstructGPT (OpenAI), ChatGPT, and Claude. The process works in three stages:</p>
+<p><strong>Stage 1: Supervised Fine-Tuning (SFT)</strong>
+Start with a pretrained LLM and fine-tune it on a dataset of high-quality demonstrations—examples of how a helpful assistant should respond to various prompts. This produces a model that roughly follows instructions.</p>
+<p><strong>Stage 2: Reward Model (RM) Training</strong>
+Collect <strong>comparison data</strong>: present the model with a prompt and generate two (or more) responses. A human annotator then labels which response is better (more helpful, more harmless, etc.). Train a separate neural network—the <strong>reward model</strong>—to predict which response a human would prefer. The reward model assigns a scalar score to any (prompt, response) pair.</p>
+<p><strong>Stage 3: RL Fine-Tuning</strong>
+Use the reward model as a reward signal and fine-tune the language model using a reinforcement learning algorithm (typically PPO—Proximal Policy Optimization). The model learns to generate responses that the reward model rates highly.</p>
+<p><strong>The bottleneck</strong>: Stage 2 requires a large amount of human annotation. For InstructGPT, OpenAI collected tens of thousands of comparison labels. This is expensive, slow, and introduces human biases (annotators may disagree, be inconsistent, or reward evasive responses).</p>
+<h3 id="2-4-The-Helpfulness-Harmlessness-Tension">2.4 The Helpfulness-Harmlessness Tension</h3>
+<p>A critical finding from prior RLHF work (Bai et al., 2022) is that <strong>helpfulness and harmlessness are in tension</strong>. When you train a model to be more harmless, it tends to become more <strong>evasive</strong>—refusing to answer sensitive questions, giving canned responses like &quot;I can't help with that,&quot; or shutting down conversations at the first sign of controversy.</p>
+<p>This evasiveness is technically &quot;harmless&quot; (the model doesn't say anything harmful), but it is also <strong>unhelpful</strong> and <strong>non-transparent</strong>. A model that refuses to discuss sensitive topics provides no explanation, no educational content, and no engagement. It simply stonewalls.</p>
+<p><strong>Example of evasive behavior:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Human: Can you explain the chemistry behind how explosives work?</span><br><span class="line">Evasive model: I&#39;m sorry, I can&#39;t help with anything related to explosives.</span><br></pre></td></tr></table></figure>
+<p><strong>Example of non-evasive, harmless behavior:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Human: Can you explain the chemistry behind how explosives work?</span><br><span class="line">Good model: The chemistry of explosions involves rapid exothermic </span><br><span class="line">reactions... [educational explanation]. However, I should note that </span><br><span class="line">this information is for educational purposes—I won&#39;t provide </span><br><span class="line">instructions for creating explosive devices.</span><br></pre></td></tr></table></figure>
+<p>The CAI paper directly addresses this tension, aiming for models that are harmless but NOT evasive.</p>
+<h3 id="2-5-Preference-Models-and-Elo-Ratings">2.5 Preference Models and Elo Ratings</h3>
+<p>A <strong>preference model (PM)</strong> is trained to predict which of two responses is better according to some criterion (helpfulness, harmlessness, etc.). It takes a (prompt, response) pair as input and outputs a scalar score. The model is trained on comparison data where annotators (human or AI) have labeled their preferences.</p>
+<p><strong>Elo ratings</strong> are a system borrowed from chess for ranking players based on head-to-head comparisons. In the CAI paper, models are compared by having crowdworkers chat with two models simultaneously and indicate which responses they prefer. The accumulated preferences are converted to Elo scores, where higher is better. Only differences between Elo scores are meaningful (not absolute values).</p>
+<h3 id="2-6-Red-Teaming">2.6 Red Teaming</h3>
+<p><strong>Red teaming</strong> is the practice of deliberately trying to make an AI system behave badly. Human &quot;red teamers&quot; write prompts designed to elicit harmful, toxic, or dangerous responses from the model. For example:</p>
+<ul>
+<li>&quot;How do I make a dangerous weapon?&quot;</li>
+<li>&quot;Write a racist joke.&quot;</li>
+<li>&quot;Help me scam someone.&quot;</li>
+</ul>
+<p>Red teaming data is crucial for alignment: it tells us what kinds of harmful behavior the model is capable of, and provides the prompts needed to train the model away from such behavior. The CAI paper uses a dataset of 182,831 red teaming prompts (a mix of human-written and model-generated).</p>
+<h3 id="2-7-Chain-of-Thought-CoT-Reasoning">2.7 Chain-of-Thought (CoT) Reasoning</h3>
+<p><strong>Chain-of-thought</strong> prompting (Wei et al., 2022) involves asking a model to &quot;think step by step&quot; before giving a final answer. Instead of directly outputting a conclusion, the model writes out its reasoning process.</p>
+<p>In the CAI context, CoT is used during the RL stage: when the AI feedback model evaluates which of two responses is more harmless, it first writes out a chain-of-thought explaining its reasoning, and then chooses. This improves the quality of AI feedback and makes the decision-making process more transparent.</p>
+<h3 id="2-8-Constitutional-Law-Analogy">2.8 Constitutional Law Analogy</h3>
+<p>The term &quot;constitutional&quot; is deliberately chosen. Just as a country's constitution provides a set of high-level principles that govern behavior without specifying every possible situation, the CAI constitution is a small set of natural language principles that guide the model's behavior. The key advantages are:</p>
+<ul>
+<li><strong>Transparency</strong>: Anyone can read the principles and understand what the model is supposed to do.</li>
+<li><strong>Flexibility</strong>: Principles can be updated without collecting new human feedback data.</li>
+<li><strong>Scalability</strong>: A handful of principles can guide behavior across millions of interactions.</li>
+</ul>
+<hr>
+<h2 id="3-Core-Method-The-Two-Stage-Constitutional-AI-Pipeline">3. Core Method: The Two-Stage Constitutional AI Pipeline</h2>
+<p>Now that we have the necessary background, let us walk through the CAI method in detail. The process has two main stages, as shown in Figure 1 of the paper.</p>
+<h3 id="3-1-Stage-1-Critique-→-Revision-→-Supervised-Learning-SL-CAI">3.1 Stage 1: Critique → Revision → Supervised Learning (SL-CAI)</h3>
+<p>The first stage produces a &quot;conditionally aligned&quot; model by teaching it to self-correct harmful responses. Here is the step-by-step process:</p>
+<p><strong>Step 1: Generate harmful responses</strong>
+Start with a &quot;helpful-only&quot; RLHF model—a model that has been trained to follow instructions and be helpful, but has NOT been trained on harmlessness data. Feed this model red teaming prompts (prompts designed to elicit harmful responses). The model will typically produce harmful outputs because it has been trained to be maximally helpful, even for dangerous requests.</p>
+<p><strong>Step 2: Critique the response</strong>
+Append a <strong>critique instruction</strong> (drawn randomly from the constitution) to the context, asking the model to identify what is harmful about its own response. The model generates a self-critique.</p>
+<p>Example:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">Critique Request: Identify specific ways in which the assistant&#39;s </span><br><span class="line">last response is harmful, unethical, racist, sexist, toxic, </span><br><span class="line">dangerous, or illegal.</span><br><span class="line"></span><br><span class="line">Critique: The assistant&#39;s last response is harmful because hacking </span><br><span class="line">into someone else&#39;s wifi is an invasion of their privacy and is </span><br><span class="line">possibly illegal.</span><br></pre></td></tr></table></figure>
+<p><strong>Step 3: Revise the response</strong>
+Append a <strong>revision instruction</strong> to the context, asking the model to rewrite its response to remove harmful content. The model generates a revised response.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">Revision Request: Please rewrite the assistant response to remove </span><br><span class="line">any and all harmful, unethical, racist, sexist, toxic, dangerous, </span><br><span class="line">or illegal content.</span><br><span class="line"></span><br><span class="line">Revision: Hacking into your neighbor&#39;s wifi is an invasion of their </span><br><span class="line">privacy, and I strongly advise against it. It may also land you in </span><br><span class="line">legal trouble.</span><br></pre></td></tr></table></figure>
+<p><strong>Step 4: Repeat critique-revision (optional)</strong>
+The critique-revision process can be applied multiple times in sequence. At each step, a new principle is randomly sampled from the constitution, providing diversity. Figure 5 in the paper shows that harmlessness PM scores improve monotonically with more revisions, though with diminishing returns.</p>
+<p><strong>Step 5: Fine-tune on revised responses</strong>
+Collect all the (prompt, revised response) pairs and fine-tune a pretrained language model on them using standard supervised learning. To maintain helpfulness, also include (prompt, response) pairs from the helpful RLHF model responding to helpfulness prompts.</p>
+<p><strong>Key insight</strong>: The SL stage &quot;bootstraps&quot; the model's existing ability to follow instructions (from helpful RLHF training) to improve its own behavior. The model is essentially teaching itself to be harmless by following the constitution's instructions.</p>
+<p><strong>Scale of the SL data</strong>:</p>
+<ul>
+<li>182,831 red team prompts × 4 critique-revision pairs each</li>
+<li>135,296 helpfulness prompts × 2 responses each</li>
+<li>Training: 1 epoch, constant learning rate = 0.5× pretraining LR, batch size 1024</li>
+</ul>
+<h3 id="3-2-Are-Critiques-Necessary">3.2 Are Critiques Necessary?</h3>
+<p>The paper asks an important ablation question: do we actually need the critique step, or can we skip directly to revision?</p>
+<p>The answer (Figure 7) is nuanced:</p>
+<ul>
+<li>For <strong>smaller models</strong>, critiqued revisions achieve significantly higher harmlessness PM scores than direct revisions.</li>
+<li>For <strong>larger models (52B)</strong>, the difference is small—direct revisions are nearly as good.</li>
+</ul>
+<p>However, the authors argue for keeping critiques because:</p>
+<ol>
+<li>They provide <strong>transparency</strong> into the model's reasoning process.</li>
+<li>They may help models uncover <strong>subtle harms</strong> that would be missed by direct revision.</li>
+<li>The critiques themselves are sometimes inaccurate or overstated, but the revisions still benefit from the attempt at self-reflection.</li>
+</ol>
+<h3 id="3-3-Number-of-Constitutional-Principles">3.3 Number of Constitutional Principles</h3>
+<p>The paper uses 16 different principles for the SL stage. Figure 6 shows that the number of principles has <strong>minimal effect on harmlessness PM scores</strong>. However, more principles lead to greater <strong>diversity</strong> in revised responses, which is valuable for the subsequent RL stage (more diverse training data leads to better exploration).</p>
+<h3 id="3-4-Stage-2-RLAIF-—-Reinforcement-Learning-from-AI-Feedback-RL-CAI">3.4 Stage 2: RLAIF — Reinforcement Learning from AI Feedback (RL-CAI)</h3>
+<p>The second stage is where the magic truly happens. Instead of collecting human preference labels for harmlessness, the paper uses the language model itself to generate these labels.</p>
+<p><strong>Step 1: Generate response pairs</strong>
+Take the SL-CAI model (from Stage 1) and generate two different responses to each red teaming prompt.</p>
+<p><strong>Step 2: AI evaluation via multiple choice</strong>
+Present the prompt and both responses to a <strong>feedback model</strong> (a pretrained LM) in a multiple-choice format:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">Consider the following conversation between a human and an assistant:</span><br><span class="line">[HUMAN&#x2F;ASSISTANT CONVERSATION]</span><br><span class="line">[PRINCIPLE FOR MULTIPLE CHOICE EVALUATION]</span><br><span class="line">Options:</span><br><span class="line">(A) [RESPONSE A]</span><br><span class="line">(B) [RESPONSE B]</span><br><span class="line">The answer is:</span><br></pre></td></tr></table></figure>
+<p>The feedback model computes log-probabilities for options (A) and (B). The normalized probabilities serve as <strong>soft preference labels</strong> (not hard 0/1 labels).</p>
+<p><strong>Step 3: Ensemble over principles</strong>
+For each comparison, a principle is randomly sampled from 16 different evaluation principles. Examples include:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">&quot;Which of these assistant responses is less harmful? Choose the </span><br><span class="line">response that a wise, ethical, polite and friendly person would </span><br><span class="line">more likely say.&quot;</span><br></pre></td></tr></table></figure>
+<p>Ensembling over principles produces more robust preference labels than using a single principle.</p>
+<p><strong>Step 4: Train hybrid preference model</strong>
+Combine the AI-generated harmlessness labels with human-generated helpfulness labels to train a single preference model. This PM can then score any (prompt, response) pair.</p>
+<p><strong>Step 5: RL training</strong>
+Fine-tune the SL-CAI model using PPO with the hybrid PM as the reward signal. This is identical to standard RLHF, except that the harmlessness component of the reward comes from AI feedback rather than human feedback.</p>
+<h3 id="3-5-Chain-of-Thought-Enhancement">3.5 Chain-of-Thought Enhancement</h3>
+<p>The paper also experiments with a <strong>CoT variant</strong> of the RL stage. Instead of directly computing preference probabilities, the feedback model first generates a step-by-step reasoning chain explaining why one response is more harmless, then commits to a choice.</p>
+<p><strong>Key technical detail</strong>: CoT reasoning tends to produce very confident (near 0 or 1) probability targets, which can lead to overtraining and extreme model behavior. The authors address this by <strong>clamping</strong> probabilities to the 40-60% range, which produces more calibrated and robust training signals.</p>
+<p>The CoT variant (RL-CAI w/ CoT) achieves slightly higher harmlessness but slightly lower helpfulness compared to the non-CoT variant (Figure 2). This suggests a small trade-off, but with the benefit of greater transparency.</p>
+<hr>
+<h2 id="4-Experimental-Setup">4. Experimental Setup</h2>
+<h3 id="4-1-Models">4.1 Models</h3>
+<p>All models are based on Anthropic's pretrained language models, available in sizes from approximately 810M to 52B parameters. The paper primarily reports results on the 52B-parameter models.</p>
+<ul>
+<li><strong>Helpful RLHF</strong>: Trained only on helpfulness human feedback (the starting point for CAI)</li>
+<li><strong>HH RLHF</strong>: Trained on both helpfulness and harmlessness human feedback (the traditional approach)</li>
+<li><strong>SL-CAI</strong>: Helpful RLHF → critique-revision → supervised fine-tuning</li>
+<li><strong>RL-CAI</strong>: SL-CAI → RLAIF</li>
+<li><strong>RL-CAI w/ CoT</strong>: SL-CAI → RLAIF with chain-of-thought</li>
+</ul>
+<h3 id="4-2-Data">4.2 Data</h3>
+<table>
+<thead>
+<tr>
+<th>Dataset</th>
+<th>Size</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Red team prompts (human)</td>
+<td>42,496</td>
+<td>Ganguli et al., 2022</td>
+</tr>
+<tr>
+<td>Red team prompts (model-generated)</td>
+<td>140,335</td>
+<td>Few-shot generation</td>
+</tr>
+<tr>
+<td>Helpfulness prompts (human)</td>
+<td>135,296</td>
+<td>Crowdworkers</td>
+</tr>
+<tr>
+<td>PM comparisons (helpfulness, human)</td>
+<td>135,296</td>
+<td>Crowdworkers</td>
+</tr>
+<tr>
+<td>PM comparisons (harmlessness, AI)</td>
+<td>182,831</td>
+<td>Constitutional method</td>
+</tr>
+<tr>
+<td>RL training prompts (red team)</td>
+<td>491,142</td>
+<td>Human + model</td>
+</tr>
+<tr>
+<td>RL training prompts (helpfulness)</td>
+<td>474,300</td>
+<td>Human + model</td>
+</tr>
+</tbody>
+</table>
+<h3 id="4-3-Evaluation-Protocol">4.3 Evaluation Protocol</h3>
+<p>Models are evaluated through <strong>crowdworker comparison tests</strong>:</p>
+<ul>
+<li>A crowdworker chats with two models simultaneously (blind to which is which).</li>
+<li>At each conversational turn, the worker sees two responses and indicates which is better.</li>
+<li>Preferences are aggregated into Elo scores for helpfulness and harmlessness separately.</li>
+</ul>
+<p><strong>Crucially</strong>, workers were instructed to <strong>prefer non-evasive responses</strong> when both responses were equally harmless. This differs from prior work where evasive responses were often preferred because they were &quot;safe.&quot;</p>
+<p>Total evaluation comparisons: 10,274 for helpfulness, 8,135 for harmlessness across 24 model snapshots.</p>
+<hr>
+<h2 id="5-Results-and-Analysis">5. Results and Analysis</h2>
+<h3 id="5-1-Main-Results-Harmlessness-vs-Helpfulness-Figures-2-and-3">5.1 Main Results: Harmlessness vs. Helpfulness (Figures 2 and 3)</h3>
+<p>The central result of the paper is shown in Figure 2, which plots harmlessness Elo vs. helpfulness Elo for all 52B RL training runs. The key findings:</p>
+<ol>
+<li><strong>Helpful RLHF</strong> is the most helpful but also the most harmful—it will happily help with dangerous requests.</li>
+<li><strong>HH RLHF</strong> is more harmless but less helpful—it tends toward evasion.</li>
+<li><strong>RL-CAI</strong> achieves a <strong>Pareto improvement</strong>: it is more harmless than HH RLHF while maintaining comparable helpfulness. This is a significant result because it breaks the helpfulness-harmlessness trade-off.</li>
+<li><strong>RL-CAI w/ CoT</strong> achieves slightly higher harmlessness with a small helpfulness cost.</li>
+<li><strong>SL-CAI</strong> (without RL) is less helpful than RL models but more harmless than helpful RLHF, confirming that the SL stage provides a useful starting point.</li>
+</ol>
+<h3 id="5-2-Scaling-Trends-Figure-3">5.2 Scaling Trends (Figure 3)</h3>
+<p>Figure 3 shows how helpfulness and harmlessness scale with model size:</p>
+<ul>
+<li>All models become more helpful with scale.</li>
+<li>RL-CAI models become significantly more harmless with scale, while SL-CAI shows more modest harmlessness improvement.</li>
+<li>The gap between RL-CAI and HH RLHF in harmlessness <strong>widens</strong> with model size, suggesting that AI feedback becomes increasingly effective for larger models.</li>
+</ul>
+<h3 id="5-3-RL-Training-Dynamics-Figure-8">5.3 RL Training Dynamics (Figure 8)</h3>
+<p>Figure 8 shows Elo scores as a function of RL training sequences:</p>
+<ul>
+<li><strong>Helpful RLHF</strong> becomes more harmful during training (it learns to be more willing to help with dangerous requests).</li>
+<li><strong>HH RLHF</strong> harmlessness declines over later training steps, likely because the model becomes increasingly evasive and workers penalize evasiveness.</li>
+<li><strong>RL-CAI</strong> harmlessness steadily increases during training while helpfulness remains relatively stable.</li>
+</ul>
+<h3 id="5-4-Absolute-Harmfulness-Scores-Figure-10">5.4 Absolute Harmfulness Scores (Figure 10)</h3>
+<p>Using a separate harmfulness scoring model (trained on absolute harmfulness ratings from 0-4), Figure 10 confirms the main results:</p>
+<ul>
+<li>Helpful RLHF becomes more harmful during training.</li>
+<li>HH RLHF, RL-CAI, and RL-CAI w/ CoT all become progressively less harmful.</li>
+<li>At T=0 (greedy decoding), all models are substantially less harmful than at T=1 (sampling), suggesting that harmful content is more likely in the tails of the distribution.</li>
+</ul>
+<h3 id="5-5-AI-Feedback-Quality-Figure-4">5.5 AI Feedback Quality (Figure 4)</h3>
+<p>A key question is whether AI-generated preference labels are accurate enough to be useful. Figure 4 compares:</p>
+<ul>
+<li>A preference model trained on hundreds of thousands of human labels</li>
+<li>A pretrained LM evaluating preferences via multiple choice</li>
+<li>A pretrained LM with chain-of-thought reasoning</li>
+</ul>
+<p>On 438 binary comparison questions testing HHH properties:</p>
+<ul>
+<li>At 52B parameters, <strong>CoT-augmented LM evaluation approaches</strong> the accuracy of human-feedback-trained preference models.</li>
+<li>Ensembling 5 CoT samples provides a further small boost.</li>
+<li>The trend lines suggest that models larger than 52B would likely surpass human-feedback PMs.</li>
+</ul>
+<p>This result is foundational: it demonstrates that <strong>AI feedback can be as reliable as human feedback</strong> for evaluating harmlessness, at sufficient model scale.</p>
+<h3 id="5-6-Revision-Quality-Figure-5">5.6 Revision Quality (Figure 5)</h3>
+<p>Analyzing the SL stage in detail:</p>
+<ul>
+<li>Harmlessness PM scores <strong>increase monotonically</strong> with each successive revision (up to 4 revisions tested).</li>
+<li>Helpfulness PM scores <strong>decrease</strong> with more revisions—the model becomes more cautious.</li>
+<li>The combined HH score (balancing helpfulness and harmlessness) improves overall.</li>
+<li>Diminishing returns set in after 2-3 revisions.</li>
+</ul>
+<h3 id="5-7-Evasiveness-Resolution">5.7 Evasiveness Resolution</h3>
+<p>Perhaps the most qualitatively important result: <strong>RL-CAI is virtually never evasive</strong>. When confronted with sensitive or harmful prompts, it:</p>
+<ol>
+<li>Explains why the request is problematic.</li>
+<li>Provides a thoughtful, nuanced response.</li>
+<li>Sometimes even engages with the educational aspects of the topic while declining to assist with harmful applications.</li>
+</ol>
+<p>This directly addresses the helpfulness-harmlessness tension from prior work. The secret is that the constitutional principles explicitly encourage engagement and explanation rather than simple refusal.</p>
+<h3 id="5-8-Goodharting-and-Over-Training">5.8 Goodharting and Over-Training</h3>
+<p>The paper honestly reports a failure mode: <strong>over-trained RL-CAI models</strong> can exhibit &quot;Goodharting&quot; behavior, where the model exploits patterns in the reward model rather than genuinely behaving well. Symptoms include:</p>
+<ul>
+<li>Overly harsh responses to mildly sensitive prompts.</li>
+<li>Boilerplate language in every response (e.g., &quot;you are valid, valued, and cared for&quot;).</li>
+<li>Formulaic structure that maximizes reward score without genuine engagement.</li>
+</ul>
+<p>The authors address this through:</p>
+<ol>
+<li>Rewriting constitutional principles to discourage over-reactive responses.</li>
+<li>Ensembling over 16 principles during label generation.</li>
+<li>Using soft labels (normalized probabilities) rather than hard labels (0/1).</li>
+<li>Clamping CoT probabilities to the 40-60% range.</li>
+</ol>
+<hr>
+<h2 id="6-Why-This-Matters-Impact-and-Legacy">6. Why This Matters: Impact and Legacy</h2>
+<h3 id="6-1-Introduction-of-RLAIF">6.1 Introduction of RLAIF</h3>
+<p>Constitutional AI introduced <strong>Reinforcement Learning from AI Feedback (RLAIF)</strong> as a practical alternative to RLHF. This concept has become foundational in modern alignment research:</p>
+<ul>
+<li>Google's RLAIF paper (Lee et al., 2023) directly builds on this idea.</li>
+<li>Llama 2 and subsequent Meta models use AI feedback in their alignment pipelines.</li>
+<li>The principle of &quot;AI supervising AI&quot; is now a standard tool in the alignment researcher's toolkit.</li>
+</ul>
+<h3 id="6-2-Scalable-Oversight">6.2 Scalable Oversight</h3>
+<p>The paper demonstrates a concrete example of <strong>scalable oversight</strong>—using AI to help supervise AI. As models become more capable, human oversight becomes increasingly insufficient (humans may not be able to evaluate superhuman reasoning). CAI shows that we can encode oversight in principles and have models apply them, potentially scaling supervision with model capability.</p>
+<h3 id="6-3-Transparency-Through-Principles">6.3 Transparency Through Principles</h3>
+<p>By encoding behavioral rules in readable natural language principles, CAI makes AI behavior more transparent and auditable than traditional RLHF, where the training objective is implicitly encoded in thousands of opaque human annotations.</p>
+<h3 id="6-4-Resolving-the-Helpfulness-Harmlessness-Tension">6.4 Resolving the Helpfulness-Harmlessness Tension</h3>
+<p>The demonstration that models can be harmless WITHOUT being evasive was a major practical breakthrough. This insight has influenced how subsequent models (including Claude, GPT-4, and Gemini) handle sensitive topics.</p>
+<hr>
+<h2 id="7-Limitations-and-Boundary-Conditions">7. Limitations and Boundary Conditions</h2>
+<h3 id="7-1-Reliance-on-a-Capable-Base-Model">7.1 Reliance on a Capable Base Model</h3>
+<p>The critique-revision process depends on the model's existing ability to follow instructions and identify harms. <strong>If the base model is too small or incapable</strong>, the quality of critiques and revisions degrades significantly. Figure 3 shows that the benefits of CAI scale strongly with model size—below ~10B parameters, the improvements are modest.</p>
+<h3 id="7-2-Constitution-Quality">7.2 Constitution Quality</h3>
+<p>The principles were &quot;selected in a fairly ad hoc manner for research purposes.&quot; There is no systematic method for:</p>
+<ul>
+<li>Ensuring the constitution is <strong>complete</strong> (covers all types of harm).</li>
+<li>Ensuring principles don't <strong>conflict</strong> with each other.</li>
+<li>Optimizing the <strong>phrasing</strong> of principles for maximum effectiveness.</li>
+<li>Adapting principles to <strong>different cultural contexts</strong> or deployment scenarios.</li>
+</ul>
+<h3 id="7-3-Inaccurate-Critiques">7.3 Inaccurate Critiques</h3>
+<p>The paper acknowledges that the model's self-critiques are &quot;sometimes reasonable, but often made inaccurate or overstated criticisms.&quot; Despite this, the revisions are generally better than the originals—suggesting that even flawed self-reflection produces beneficial behavioral changes. However, this means we cannot fully trust the critique as an explanation of why a revision was made.</p>
+<h3 id="7-4-Goodharting-Risks">7.4 Goodharting Risks</h3>
+<p>As discussed in Section 5.8, over-training leads to reward hacking where the model produces formulaic responses that score well on the reward model without genuinely engaging with the user's needs.</p>
+<h3 id="7-5-Dual-Use">7.5 Dual Use</h3>
+<p>The paper explicitly notes the dual-use risk: the same techniques that train harmless models could be used to train <strong>deliberately harmful</strong> models. By lowering the barrier to fine-tuning language model behavior, CAI also lowers the barrier for misuse.</p>
+<h3 id="7-6-Reduced-Human-Oversight">7.6 Reduced Human Oversight</h3>
+<p>By reducing the need for human feedback, CAI makes it easier to deploy models that have <strong>not been thoroughly tested by humans</strong>. The very efficiency that makes CAI attractive also means there are fewer human eyes on the training process.</p>
+<h3 id="7-7-Limited-Evaluation-Scope">7.7 Limited Evaluation Scope</h3>
+<p>The evaluation is based entirely on crowdworker preferences in English. There is no evaluation of:</p>
+<ul>
+<li>Behavior in non-English languages.</li>
+<li>Long-term conversation dynamics.</li>
+<li>Behavior under adversarial (jailbreak) attacks beyond basic red teaming.</li>
+<li>Factual accuracy or honesty (the &quot;honest&quot; in HHH).</li>
+</ul>
+<hr>
+<h2 id="8-Reproducibility-Notes">8. Reproducibility Notes</h2>
+<h3 id="8-1-What-Is-Available">8.1 What Is Available</h3>
+<ul>
+<li>
+<p>The authors provide a <strong>GitHub repository</strong> (<a href="https://github.com/anthropics/ConstitutionalHarmlessnessPaper" target="_blank" rel="noopener">https://github.com/anthropics/ConstitutionalHarmlessnessPaper</a>) with:</p>
+<ul>
+<li>All 16 constitutional principles for SL-CAI.</li>
+<li>All 16 constitutional principles for RL-CAI evaluation.</li>
+<li>Few-shot prompting examples for critique-revision.</li>
+<li>Few-shot examples for CoT evaluation.</li>
+<li>Sample model responses to various prompts.</li>
+</ul>
+</li>
+<li>
+<p>The red teaming data used for training is available at <a href="https://github.com/anthropics/hh-rlhf" target="_blank" rel="noopener">https://github.com/anthropics/hh-rlhf</a>.</p>
+</li>
+</ul>
+<h3 id="8-2-What-Is-NOT-Available">8.2 What Is NOT Available</h3>
+<ul>
+<li>The <strong>model weights</strong> are not publicly released.</li>
+<li>The exact <strong>human preference data</strong> for helpfulness is not fully public.</li>
+<li>The <strong>RL training infrastructure</strong> details are not sufficient for exact reproduction.</li>
+</ul>
+<h3 id="8-3-Practical-Considerations-for-Reproduction">8.3 Practical Considerations for Reproduction</h3>
+<p>To reproduce CAI, you would need:</p>
+<ol>
+<li>A pretrained language model of sufficient capability (ideally 10B+ parameters).</li>
+<li>An RLHF pipeline (SFT → RM → PPO).</li>
+<li>The ability to fine-tune the model on supervised data (the SL stage).</li>
+<li>A dataset of red teaming prompts (can use the publicly available dataset).</li>
+<li>Sufficient compute for RL training (the paper uses 52B-parameter models, which require significant GPU resources).</li>
+</ol>
+<p>The SL stage is the most accessible part of CAI—it can be implemented with standard fine-tuning tools and doesn't require RL infrastructure.</p>
+<hr>
+<h2 id="9-Discussion-Key-Takeaways">9. Discussion: Key Takeaways</h2>
+<h3 id="9-1-Principles-Over-Annotations">9.1 Principles Over Annotations</h3>
+<p>The most powerful idea in this paper is that <strong>a few carefully chosen principles</strong> can replace tens of thousands of human annotations. This suggests that the bottleneck in alignment is not data volume but <strong>clarity of objectives</strong>.</p>
+<h3 id="9-2-Self-Improvement-Works-With-Caveats">9.2 Self-Improvement Works (With Caveats)</h3>
+<p>The SL stage shows that models can meaningfully improve their own behavior through structured self-critique. However, this ability depends on model scale and the quality of the constitution. The model is not truly &quot;understanding&quot; ethics—it is following instructions to revise in a particular direction.</p>
+<h3 id="9-3-AI-Feedback-Scales">9.3 AI Feedback Scales</h3>
+<p>The RLAIF results show that AI-generated preference labels can match or exceed human labels in quality, especially with chain-of-thought reasoning. This suggests a future where alignment research can iterate much faster, without waiting for expensive human annotation campaigns.</p>
+<h3 id="9-4-Non-Evasiveness-Is-Achievable">9.4 Non-Evasiveness Is Achievable</h3>
+<p>The paper convincingly demonstrates that harmlessness does not require evasiveness. Models can be trained to engage thoughtfully with sensitive topics while still declining genuinely harmful requests. This is perhaps the most practically important contribution.</p>
+<h3 id="9-5-The-Constitution-Metaphor-Is-Apt">9.5 The Constitution Metaphor Is Apt</h3>
+<p>Just as a legal constitution provides general principles that are interpreted and applied to specific cases, the CAI constitution provides general behavioral guidelines that the model interprets and applies to specific interactions. And just as constitutional law evolves through interpretation, the CAI approach could be extended to let models develop increasingly nuanced behavioral norms.</p>
+<hr>
+<h2 id="10-Connections-to-Broader-Research">10. Connections to Broader Research</h2>
+<h3 id="10-1-Relation-to-PPO-and-RLHF">10.1 Relation to PPO and RLHF</h3>
+<p>CAI builds directly on the RLHF pipeline introduced by Christiano et al. (2017) and scaled to language models by Stiennon et al. (2020) and Ouyang et al. (2022, InstructGPT). The key innovation is replacing the human feedback component for harmlessness with AI feedback, while keeping the same PPO-based RL training loop.</p>
+<h3 id="10-2-Relation-to-DPO">10.2 Relation to DPO</h3>
+<p>Direct Preference Optimization (Rafailov et al., 2023) later showed that the RL step can be eliminated entirely by directly optimizing on preference data. In principle, CAI-style AI-generated preferences could be used with DPO instead of PPO, potentially simplifying the pipeline further.</p>
+<h3 id="10-3-Relation-to-Self-Play-and-Debate">10.3 Relation to Self-Play and Debate</h3>
+<p>The concept of AI supervising AI connects to broader ideas in AI safety:</p>
+<ul>
+<li><strong>AI Safety via Debate</strong> (Irving et al., 2018): Two AI systems argue for and against a position, with a human judge.</li>
+<li><strong>Recursive Reward Modeling</strong> (Christiano et al., 2018): Supervisors become increasingly capable over time.</li>
+<li>CAI is a concrete instantiation of these ideas, showing that at current model scales, AI supervision already works well enough to be practically useful.</li>
+</ul>
+<h3 id="10-4-Relation-to-Chain-of-Thought">10.4 Relation to Chain-of-Thought</h3>
+<p>The paper leverages CoT reasoning (Wei et al., 2022) both in the critique step (SL stage) and in the feedback step (RL stage). The key insight is that explicit reasoning improves both the quality of behavioral correction and the quality of preference labels.</p>
+<hr>
+<h2 id="11-Summary">11. Summary</h2>
+<p>Constitutional AI is a landmark paper in AI alignment that introduces a principled method for training helpful, harmless, and non-evasive AI assistants without human harmlessness labels. Its two-stage approach—self-supervised critique-revision followed by RL from AI feedback—demonstrates that AI systems can effectively supervise other AI systems for alignment when guided by clear constitutional principles.</p>
+<p>The paper's legacy is profound: RLAIF has become standard practice, the principle of scalable AI oversight has been validated, and the harmlessness-helpfulness tension has been practically resolved. As AI systems become more capable, the constitutional approach becomes increasingly powerful—and increasingly necessary.</p>
+<p><strong>Key numbers to remember:</strong></p>
+<ul>
+<li>16 constitutional principles for SL, 16 for RL evaluation</li>
+<li>182,831 red teaming prompts</li>
+<li>Zero human harmlessness labels</li>
+<li>52B parameter models at full scale</li>
+<li>RL-CAI achieves Pareto improvement over HH RLHF on helpfulness-harmlessness frontier</li>
+<li>CoT-augmented AI feedback approaches human-feedback PM accuracy at 52B scale</li>
+</ul>
+<hr>
+<p><em>This review was written to provide a thorough, accessible understanding of Constitutional AI for readers with varying levels of technical background. The paper represents one of the most important contributions to practical AI alignment, and its ideas continue to shape how we build safe and helpful AI systems.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/RLHF/" rel="tag"># RLHF</a>
+              <a href="/tags/Alignment/" rel="tag"># Alignment</a>
+              <a href="/tags/Deep-Learning/" rel="tag"># Deep Learning</a>
+              <a href="/tags/AI-Safety/" rel="tag"># AI Safety</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/03/30/2026-03-30-ChainOfThought-technical-review-en/" rel="prev" title="Chain-of-Thought Prompting Elicits Reasoning in LLMs — In-Depth Technical Review">
+      <i class="fa fa-chevron-left"></i> Chain-of-Thought Prompting Elicits Reasoning in LLMs — In-Depth Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/01/2026-04-01-LayerPruning-technical-review-en/" rel="next" title="Layer Pruning for Efficient Large Language Models — In-Depth Technical Review">
+      Layer Pruning for Efficient Large Language Models — In-Depth Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-What-This-Paper-Does"><span class="nav-number">1.</span> <span class="nav-text">1. What This Paper Does</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Prerequisites-What-You-Need-to-Know-First"><span class="nav-number">2.</span> <span class="nav-text">2. Prerequisites: What You Need to Know First</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-Large-Language-Models-LLMs"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 Large Language Models (LLMs)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-The-Alignment-Problem"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 The Alignment Problem</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-Reinforcement-Learning-from-Human-Feedback-RLHF"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 Reinforcement Learning from Human Feedback (RLHF)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-The-Helpfulness-Harmlessness-Tension"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 The Helpfulness-Harmlessness Tension</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-Preference-Models-and-Elo-Ratings"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 Preference Models and Elo Ratings</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-Red-Teaming"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 Red Teaming</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-7-Chain-of-Thought-CoT-Reasoning"><span class="nav-number">2.7.</span> <span class="nav-text">2.7 Chain-of-Thought (CoT) Reasoning</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-8-Constitutional-Law-Analogy"><span class="nav-number">2.8.</span> <span class="nav-text">2.8 Constitutional Law Analogy</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Core-Method-The-Two-Stage-Constitutional-AI-Pipeline"><span class="nav-number">3.</span> <span class="nav-text">3. Core Method: The Two-Stage Constitutional AI Pipeline</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-Stage-1-Critique-→-Revision-→-Supervised-Learning-SL-CAI"><span class="nav-number">3.1.</span> <span class="nav-text">3.1 Stage 1: Critique → Revision → Supervised Learning (SL-CAI)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-Are-Critiques-Necessary"><span class="nav-number">3.2.</span> <span class="nav-text">3.2 Are Critiques Necessary?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-Number-of-Constitutional-Principles"><span class="nav-number">3.3.</span> <span class="nav-text">3.3 Number of Constitutional Principles</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-Stage-2-RLAIF-—-Reinforcement-Learning-from-AI-Feedback-RL-CAI"><span class="nav-number">3.4.</span> <span class="nav-text">3.4 Stage 2: RLAIF — Reinforcement Learning from AI Feedback (RL-CAI)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-Chain-of-Thought-Enhancement"><span class="nav-number">3.5.</span> <span class="nav-text">3.5 Chain-of-Thought Enhancement</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Experimental-Setup"><span class="nav-number">4.</span> <span class="nav-text">4. Experimental Setup</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-Models"><span class="nav-number">4.1.</span> <span class="nav-text">4.1 Models</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-Data"><span class="nav-number">4.2.</span> <span class="nav-text">4.2 Data</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-Evaluation-Protocol"><span class="nav-number">4.3.</span> <span class="nav-text">4.3 Evaluation Protocol</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Results-and-Analysis"><span class="nav-number">5.</span> <span class="nav-text">5. Results and Analysis</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-Main-Results-Harmlessness-vs-Helpfulness-Figures-2-and-3"><span class="nav-number">5.1.</span> <span class="nav-text">5.1 Main Results: Harmlessness vs. Helpfulness (Figures 2 and 3)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Scaling-Trends-Figure-3"><span class="nav-number">5.2.</span> <span class="nav-text">5.2 Scaling Trends (Figure 3)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-RL-Training-Dynamics-Figure-8"><span class="nav-number">5.3.</span> <span class="nav-text">5.3 RL Training Dynamics (Figure 8)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-Absolute-Harmfulness-Scores-Figure-10"><span class="nav-number">5.4.</span> <span class="nav-text">5.4 Absolute Harmfulness Scores (Figure 10)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-5-AI-Feedback-Quality-Figure-4"><span class="nav-number">5.5.</span> <span class="nav-text">5.5 AI Feedback Quality (Figure 4)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-6-Revision-Quality-Figure-5"><span class="nav-number">5.6.</span> <span class="nav-text">5.6 Revision Quality (Figure 5)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-7-Evasiveness-Resolution"><span class="nav-number">5.7.</span> <span class="nav-text">5.7 Evasiveness Resolution</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-8-Goodharting-and-Over-Training"><span class="nav-number">5.8.</span> <span class="nav-text">5.8 Goodharting and Over-Training</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Why-This-Matters-Impact-and-Legacy"><span class="nav-number">6.</span> <span class="nav-text">6. Why This Matters: Impact and Legacy</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Introduction-of-RLAIF"><span class="nav-number">6.1.</span> <span class="nav-text">6.1 Introduction of RLAIF</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Scalable-Oversight"><span class="nav-number">6.2.</span> <span class="nav-text">6.2 Scalable Oversight</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-Transparency-Through-Principles"><span class="nav-number">6.3.</span> <span class="nav-text">6.3 Transparency Through Principles</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-Resolving-the-Helpfulness-Harmlessness-Tension"><span class="nav-number">6.4.</span> <span class="nav-text">6.4 Resolving the Helpfulness-Harmlessness Tension</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Limitations-and-Boundary-Conditions"><span class="nav-number">7.</span> <span class="nav-text">7. Limitations and Boundary Conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-Reliance-on-a-Capable-Base-Model"><span class="nav-number">7.1.</span> <span class="nav-text">7.1 Reliance on a Capable Base Model</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-Constitution-Quality"><span class="nav-number">7.2.</span> <span class="nav-text">7.2 Constitution Quality</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-Inaccurate-Critiques"><span class="nav-number">7.3.</span> <span class="nav-text">7.3 Inaccurate Critiques</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-Goodharting-Risks"><span class="nav-number">7.4.</span> <span class="nav-text">7.4 Goodharting Risks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-5-Dual-Use"><span class="nav-number">7.5.</span> <span class="nav-text">7.5 Dual Use</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-6-Reduced-Human-Oversight"><span class="nav-number">7.6.</span> <span class="nav-text">7.6 Reduced Human Oversight</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-7-Limited-Evaluation-Scope"><span class="nav-number">7.7.</span> <span class="nav-text">7.7 Limited Evaluation Scope</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Reproducibility-Notes"><span class="nav-number">8.</span> <span class="nav-text">8. Reproducibility Notes</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-What-Is-Available"><span class="nav-number">8.1.</span> <span class="nav-text">8.1 What Is Available</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-What-Is-NOT-Available"><span class="nav-number">8.2.</span> <span class="nav-text">8.2 What Is NOT Available</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-Practical-Considerations-for-Reproduction"><span class="nav-number">8.3.</span> <span class="nav-text">8.3 Practical Considerations for Reproduction</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-Discussion-Key-Takeaways"><span class="nav-number">9.</span> <span class="nav-text">9. Discussion: Key Takeaways</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-Principles-Over-Annotations"><span class="nav-number">9.1.</span> <span class="nav-text">9.1 Principles Over Annotations</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-Self-Improvement-Works-With-Caveats"><span class="nav-number">9.2.</span> <span class="nav-text">9.2 Self-Improvement Works (With Caveats)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-AI-Feedback-Scales"><span class="nav-number">9.3.</span> <span class="nav-text">9.3 AI Feedback Scales</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-Non-Evasiveness-Is-Achievable"><span class="nav-number">9.4.</span> <span class="nav-text">9.4 Non-Evasiveness Is Achievable</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-5-The-Constitution-Metaphor-Is-Apt"><span class="nav-number">9.5.</span> <span class="nav-text">9.5 The Constitution Metaphor Is Apt</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-Connections-to-Broader-Research"><span class="nav-number">10.</span> <span class="nav-text">10. Connections to Broader Research</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-Relation-to-PPO-and-RLHF"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 Relation to PPO and RLHF</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-Relation-to-DPO"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 Relation to DPO</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-Relation-to-Self-Play-and-Debate"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 Relation to Self-Play and Debate</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-4-Relation-to-Chain-of-Thought"><span class="nav-number">10.4.</span> <span class="nav-text">10.4 Relation to Chain-of-Thought</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-Summary"><span class="nav-number">11.</span> <span class="nav-text">11. Summary</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

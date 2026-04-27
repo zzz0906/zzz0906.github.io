@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="A detailed technical review of the Tree of Thoughts (ToT) framework, which generalizes chain-of-thought prompting to enable deliberate, search-based problem solving with large language models using BF">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Tree of Thoughts: Deliberate Problem Solving with Large Language Models — Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/02/16/2026-02-16-TreeOfThoughts-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="A detailed technical review of the Tree of Thoughts (ToT) framework, which generalizes chain-of-thought prompting to enable deliberate, search-based problem solving with large language models using BF">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-02-16T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-03-23T18:05:37.590Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Tree of Thoughts">
+<meta property="article:tag" content="ToT">
+<meta property="article:tag" content="Chain of Thought">
+<meta property="article:tag" content="BFS">
+<meta property="article:tag" content="DFS">
+<meta property="article:tag" content="LLM Reasoning">
+<meta property="article:tag" content="GPT-4">
+<meta property="article:tag" content="Game of 24">
+<meta property="article:tag" content="Creative Writing">
+<meta property="article:tag" content="Crosswords">
+<meta property="article:tag" content="NeurIPS 2023">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/02/16/2026-02-16-TreeOfThoughts-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>Tree of Thoughts: Deliberate Problem Solving with Large Language Models — Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/02/16/2026-02-16-TreeOfThoughts-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Tree of Thoughts: Deliberate Problem Solving with Large Language Models — Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-02-16 00:00:00" itemprop="dateCreated datePublished" datetime="2026-02-16T00:00:00+00:00">2026-02-16</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-03-23 18:05:37" itemprop="dateModified" datetime="2026-03-23T18:05:37+00:00">2026-03-23</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/AI-Research/" itemprop="url" rel="index"><span itemprop="name">AI Research</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/AI-Research/LLM-Reasoning/" itemprop="url" rel="index"><span itemprop="name">LLM Reasoning</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">A detailed technical review of the Tree of Thoughts (ToT) framework, which generalizes chain-of-thought prompting to enable deliberate, search-based problem solving with large language models using BFS and DFS over structured reasoning trees.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="Tree-of-Thoughts-Deliberate-Problem-Solving-with-Large-Language-Models-—-Detailed-Technical-Review">Tree of Thoughts: Deliberate Problem Solving with Large Language Models — Detailed Technical Review</h1>
+<p><strong>Paper</strong>: Tree of Thoughts: Deliberate Problem Solving with Large Language Models<br>
+<strong>Authors</strong>: Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas L. Griffiths, Yuan Cao, Karthik Narasimhan<br>
+<strong>Affiliations</strong>: Princeton University, Google DeepMind<br>
+<strong>Published</strong>: NeurIPS 2023 (arXiv: 2305.10601)<br>
+<strong>Reviewer</strong>: Zhongzhu Zhou<br>
+<strong>Review Date</strong>: February 16, 2026</p>
+<hr>
+<h2 id="I-Prerequisites-What-You-Need-to-Know">I. Prerequisites: What You Need to Know</h2>
+<p>Before diving into the Tree of Thoughts framework, let us establish the foundational concepts that make this paper accessible, even if you are new to LLM reasoning research.</p>
+<a id="more"></a>
+<h3 id="1-1-Autoregressive-Language-Models-and-Left-to-Right-Commitment">1.1 Autoregressive Language Models and Left-to-Right Commitment</h3>
+<p>A large language model (LLM) like GPT-4 generates text one token at a time, left to right. Given a sequence of tokens <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mo stretchy="false">(</mo><msub><mi>x</mi><mn>1</mn></msub><mo separator="true">,</mo><msub><mi>x</mi><mn>2</mn></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>x</mi><mi>n</mi></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">x = (x_1, x_2, \ldots, x_n)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">n</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span>, the model computes:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>p</mi><mi>θ</mi></msub><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><munderover><mo>∏</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover><msub><mi>p</mi><mi>θ</mi></msub><mo stretchy="false">(</mo><msub><mi>x</mi><mi>i</mi></msub><mo>∣</mo><msub><mi>x</mi><mn>1</mn></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>x</mi><mrow><mi>i</mi><mo>−</mo><mn>1</mn></mrow></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">p_\theta(x) = \prod_{i=1}^{n} p_\theta(x_i \mid x_1, \ldots, x_{i-1})
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">p</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.9291em;vertical-align:-1.2777em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.6514em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∏</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">n</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.2777em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">p</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span></span></p>
+<p>This autoregressive mechanism means each token is conditioned on all previous tokens. The critical implication is <strong>commitment</strong>: once a token is generated, there is no built-in mechanism to reconsider or undo that choice. For straightforward text generation this works fine, but for tasks requiring exploration — where an early choice might lead to a dead end — this left-to-right commitment becomes a severe structural limitation.</p>
+<h3 id="1-2-Chain-of-Thought-CoT-Prompting">1.2 Chain-of-Thought (CoT) Prompting</h3>
+<p>Chain-of-thought prompting (Wei et al., 2022) encourages LLMs to produce intermediate reasoning steps before giving a final answer. The mechanism is simple: include worked examples in the prompt that show step-by-step reasoning. Formally, CoT introduces a chain of thoughts <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mn>1</mn></msub><mo separator="true">,</mo><msub><mi>z</mi><mn>2</mn></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>z</mi><mi>n</mi></msub></mrow><annotation encoding="application/x-tex">z_1, z_2, \ldots, z_n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">n</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> to bridge input <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span> and output <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi></mrow><annotation encoding="application/x-tex">y</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span></span></span></span>:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>z</mi><mi>i</mi></msub><mo>∼</mo><msubsup><mi>p</mi><mi>θ</mi><mtext>CoT</mtext></msubsup><mo stretchy="false">(</mo><msub><mi>z</mi><mi>i</mi></msub><mo>∣</mo><mi>x</mi><mo separator="true">,</mo><msub><mi>z</mi><mn>1</mn></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>z</mi><mrow><mi>i</mi><mo>−</mo><mn>1</mn></mrow></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">z_i \sim p_\theta^{\text{CoT}}(z_i \mid x, z_1, \ldots, z_{i-1})
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∼</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1413em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">p</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8913em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">CoT</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">x</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span></span></p>
+<p>CoT is effective on many reasoning benchmarks but has a fundamental limitation: it generates a <strong>single, linear chain</strong> of reasoning. If the model makes a bad early decision, the entire chain is contaminated — there is no mechanism to reconsider or try a different path. This is exactly the limitation ToT addresses.</p>
+<h3 id="1-3-Self-Consistency-CoT-SC">1.3 Self-Consistency (CoT-SC)</h3>
+<p>Self-consistency (Wang et al., 2022) is the first attempt to work around CoT's single-path limitation. The idea: sample <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> independent chains of thought for the same problem, then majority-vote on the final answer:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mover accent="true"><mi>y</mi><mo>^</mo></mover><mo>=</mo><mi>arg</mi><mo>⁡</mo><munder><mrow><mi>max</mi><mo>⁡</mo></mrow><mi>y</mi></munder><mi mathvariant="normal">#</mi><mo stretchy="false">{</mo><mi>i</mi><mo>∣</mo><msup><mi>y</mi><mrow><mo stretchy="false">(</mo><mi>i</mi><mo stretchy="false">)</mo></mrow></msup><mo>=</mo><mi>y</mi><mo stretchy="false">}</mo></mrow><annotation encoding="application/x-tex">\hat{y} = \arg\max_y \#\{i \mid y^{(i)} = y\}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord accent"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6944em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1944em;"><span class="mord">^</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1944em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.5861em;vertical-align:-0.8361em;"></span><span class="mop">ar<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.4306em;"><span style="top:-2.4em;margin-left:0em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">y</span></span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span><span class="mop">max</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.8361em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">#</span><span class="mopen">{</span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1324em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.938em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathnormal mtight">i</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mclose">}</span></span></span></span></span></p>
+<p>It helps when different reasoning paths converge on the same answer. However, CoT-SC has two blind spots: (1) there is no local exploration within each chain — each chain is still a single committed path; (2) majority voting only works when the output space is small and discrete. For open-ended generation, CoT-SC offers little benefit.</p>
+<h3 id="1-4-Dual-Process-Theory-System-1-System-2">1.4 Dual Process Theory (System 1 / System 2)</h3>
+<p>Kahneman's dual process framework (2011) distinguishes between fast, automatic &quot;System 1&quot; thinking and slow, deliberate &quot;System 2&quot; thinking. Standard LLM autoregressive generation maps to System 1 — fast, pattern-matching, token-by-token, no explicit planning. ToT's ambition is to approximate System 2 — maintain multiple hypotheses, evaluate progress, decide whether to continue or backtrack, and plan ahead. The connection is conceptual, not neuroscientific, but it provides a useful lens for understanding what ToT is trying to achieve.</p>
+<h3 id="1-5-Classical-Search-Algorithms-BFS-and-DFS">1.5 Classical Search Algorithms: BFS and DFS</h3>
+<p>ToT plugs in standard search algorithms to explore the thought tree:</p>
+<ul>
+<li><strong>Breadth-first search (BFS)</strong>: Explore all nodes at the current depth before moving deeper. Keep only the top-<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi></mrow><annotation encoding="application/x-tex">b</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span> most promising nodes per level. Good for shallow trees where you want to compare multiple options before committing.</li>
+<li><strong>Depth-first search (DFS)</strong>: Explore one branch as deeply as possible, backtracking when the state evaluator says the branch is hopeless. Good for deeper problems where you need to explore full solutions before deciding.</li>
+</ul>
+<p>Understanding BFS and DFS is essential to understanding ToT's design choices for different tasks.</p>
+<h3 id="1-6-Heuristic-Evaluation-in-Search">1.6 Heuristic Evaluation in Search</h3>
+<p>In classical AI, search algorithms use <strong>heuristic functions</strong> to estimate how promising a partial solution is. In A* search, the heuristic estimates the remaining cost to a goal. In game-playing (e.g., chess), evaluation functions score board positions. The key insight of ToT is to use the LLM itself as this heuristic evaluator — asking the model &quot;how promising is this partial solution?&quot; Previously, such heuristics were either hand-coded (like DeepBlue) or learned from domain-specific data (like AlphaGo). Using the LLM's own reasoning capabilities as a general-purpose evaluator is novel.</p>
+<h3 id="1-7-The-Problem-When-Left-to-Right-Fails">1.7 The Problem: When Left-to-Right Fails</h3>
+<p>Every existing LLM inference method at the time of this paper (IO prompting, CoT, CoT-SC, self-refinement) fundamentally operates by committing to a left-to-right sequence. Even CoT-SC's multiple chains are each individually committed. For tasks requiring exploration, strategic lookahead, or where early decisions are pivotal (combinatorial math, planning, puzzle-solving), this left-to-right commitment is a severe constraint. ToT breaks it by introducing tree-structured reasoning with evaluation and backtracking.</p>
+<hr>
+<h2 id="II-What-This-Paper-Does-Core-Contributions">II. What This Paper Does: Core Contributions</h2>
+<h3 id="2-1-The-Key-Insight">2.1 The Key Insight</h3>
+<p>The central insight is reframing LLM problem-solving as <strong>search through a tree of thoughts</strong>. Instead of generating one continuous text sequence, the LM:</p>
+<ol>
+<li><strong>Decomposes</strong> the problem into intermediate &quot;thought steps&quot; (a thought = a coherent text chunk that represents partial progress toward a solution)</li>
+<li><strong>Generates</strong> multiple candidate thoughts at each step</li>
+<li><strong>Evaluates</strong> which partial solutions look most promising (using the LM itself as a heuristic evaluator)</li>
+<li><strong>Searches</strong> through the tree using classical algorithms (BFS or DFS), keeping good branches and pruning bad ones</li>
+</ol>
+<p>This is directly inspired by Newell, Shaw, and Simon's foundational work on problem-solving as search through combinatorial spaces (1959, 1972). The novelty is using the LM both as the generator of search states and as the heuristic evaluator.</p>
+<h3 id="2-2-The-Generalization-Hierarchy">2.2 The Generalization Hierarchy</h3>
+<p>ToT subsumes existing methods as special cases:</p>
+<ul>
+<li><strong>IO prompting</strong> = a tree of depth 1, breadth 1 (single shot)</li>
+<li><strong>CoT</strong> = a tree of depth <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span>, breadth 1 per node (single chain)</li>
+<li><strong>CoT-SC</strong> = <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> independent trees of depth <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span>, breadth 1, with majority voting (ensemble of chains, no cross-pollination)</li>
+<li><strong>ToT</strong> = a tree of depth <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi></mrow><annotation encoding="application/x-tex">T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span></span></span></span>, breadth <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi></mrow><annotation encoding="application/x-tex">b</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span>, with evaluation-guided pruning and backtracking (full search)</li>
+</ul>
+<p>This is elegant because it shows these methods are not fundamentally different paradigms — they are points on a spectrum of search depth and breadth. ToT simply moves to a region of this spectrum that allows genuine exploration.</p>
+<h3 id="2-3-How-It-Differs-from-Prior-Work">2.3 How It Differs from Prior Work</h3>
+<p>The key differentiation from self-refinement or Reflexion is structural:</p>
+<ul>
+<li><strong>Self-refinement</strong> iteratively improves a single solution. It is linear — no branching, no parallel alternatives.</li>
+<li><strong>Reflexion</strong> adds episodic memory across attempts but still follows one path per episode.</li>
+<li><strong>ToT</strong> maintains multiple active partial solutions simultaneously and uses evaluation to decide which to expand. It explores width and depth within a single episode.</li>
+</ul>
+<hr>
+<h2 id="III-Methodology-in-Depth">III. Methodology in Depth</h2>
+<h3 id="3-1-Thought-Decomposition">3.1 Thought Decomposition</h3>
+<p>The first design decision in applying ToT to any problem is: what is a &quot;thought&quot;? A thought must satisfy two constraints:</p>
+<ul>
+<li><strong>Small enough</strong> that the LM can generate diverse, high-quality candidates. If a thought is &quot;write an entire essay,&quot; diversity will be low and quality unpredictable.</li>
+<li><strong>Big enough</strong> that the LM can meaningfully evaluate whether it makes progress toward the goal. If a thought is a single token, evaluation is meaningless.</li>
+</ul>
+<p>The paper demonstrates this with three different granularities:</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Thought Granularity</th>
+<th>Tree Depth</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Game of 24</td>
+<td>One arithmetic equation using two numbers</td>
+<td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mo>=</mo><mn>3</mn></mrow><annotation encoding="application/x-tex">T = 3</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">3</span></span></span></span></td>
+</tr>
+<tr>
+<td>Creative Writing</td>
+<td>A writing plan (paragraph-level outline)</td>
+<td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">T = 2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span></td>
+</tr>
+<tr>
+<td>Mini Crosswords</td>
+<td>Filling in one word</td>
+<td>Up to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mo>=</mo><mn>10</mn></mrow><annotation encoding="application/x-tex">T = 10</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">10</span></span></span></span></td>
+</tr>
+</tbody>
+</table>
+<p>This design choice is problem-specific and is one of the most important practical decisions when deploying ToT. Getting the granularity wrong can make or break performance: too fine-grained wastes evaluation budget; too coarse-grained loses the exploration benefit.</p>
+<h3 id="3-2-Thought-Generation">3.2 Thought Generation</h3>
+<p>Two strategies for generating <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> candidate thoughts from a given state <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mo stretchy="false">[</mo><mi>x</mi><mo separator="true">,</mo><msub><mi>z</mi><mn>1</mn></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>z</mi><mi>i</mi></msub><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">s = [x, z_1, \ldots, z_i]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord mathnormal">x</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">]</span></span></span></span>:</p>
+<p><strong>Strategy A: i.i.d. Sampling</strong> — Sample <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> independent thoughts from a CoT-style prompt conditioned on the current state. Each sample is drawn independently, so diversity comes from sampling temperature:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msup><mi>z</mi><mrow><mo stretchy="false">(</mo><mi>j</mi><mo stretchy="false">)</mo></mrow></msup><mo>∼</mo><msubsup><mi>p</mi><mi>θ</mi><mtext>CoT</mtext></msubsup><mo stretchy="false">(</mo><msub><mi>z</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>∣</mo><mi>s</mi><mo stretchy="false">)</mo><mo separator="true">,</mo><mspace width="1em"/><mi>j</mi><mo>=</mo><mn>1</mn><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><mi>k</mi></mrow><annotation encoding="application/x-tex">z^{(j)} \sim p_\theta^{\text{CoT}}(z_{i+1} \mid s), \quad j = 1, \ldots, k
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.938em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.938em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∼</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1413em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">p</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8913em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">CoT</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.05724em;">j</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span></span></p>
+<p>This works best when the thought space is rich and open-ended (e.g., Creative Writing: generate <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> different paragraph plans).</p>
+<p><strong>Strategy B: Sequential Proposal</strong> — Use a &quot;propose prompt&quot; that asks the LM to enumerate <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> different next steps in a single generation:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mo stretchy="false">[</mo><msup><mi>z</mi><mrow><mo stretchy="false">(</mo><mn>1</mn><mo stretchy="false">)</mo></mrow></msup><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msup><mi>z</mi><mrow><mo stretchy="false">(</mo><mi>k</mi><mo stretchy="false">)</mo></mrow></msup><mo stretchy="false">]</mo><mo>∼</mo><msubsup><mi>p</mi><mi>θ</mi><mtext>propose</mtext></msubsup><mo stretchy="false">(</mo><msubsup><mi>z</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow><mrow><mo stretchy="false">(</mo><mn>1</mn><mo>…</mo><mi>k</mi><mo stretchy="false">)</mo></mrow></msubsup><mo>∣</mo><mi>s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">[z^{(1)}, \ldots, z^{(k)}] \sim p_\theta^{\text{propose}}(z_{i+1}^{(1 \ldots k)} \mid s)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.188em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.938em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mtight">1</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.938em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mclose">]</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∼</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.38em;vertical-align:-0.3352em;"></span><span class="mord"><span class="mord mathnormal">p</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7823em;"><span style="top:-2.3987em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span><span style="top:-3.1809em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">propose</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3013em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.04398em;">z</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.0448em;"><span style="top:-2.4231em;margin-left:-0.044em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.2198em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mtight">1</span><span class="minner mtight">…</span><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mclose mtight">)</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3352em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span></span></span></p>
+<p>This is better when the thought space is constrained (Game of 24: propose possible equations using remaining numbers; Crosswords: propose candidate words for unfilled clues). Sequential proposal avoids duplication and gives the LM context of what it has already proposed.</p>
+<p>The choice between strategies has real cost implications: i.i.d. sampling requires <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> separate LM calls; sequential proposal requires one. But sequential proposal can suffer from positional bias.</p>
+<h3 id="3-3-State-Evaluation">3.3 State Evaluation</h3>
+<p>This is where the framework derives its power. ToT uses the LM itself as a heuristic evaluator — essentially asking &quot;how promising is this partial solution?&quot;</p>
+<p><strong>Strategy A: Independent Value</strong> — Evaluate each state independently by prompting the LM to assess whether the current partial solution can lead to success. For Game of 24, this is a classification prompt:</p>
+<blockquote>
+<p>&quot;Can these remaining numbers reach 24?&quot; → &quot;sure / maybe / impossible&quot;</p>
+</blockquote>
+<p>The evaluator uses both forward reasoning (e.g., confirming <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>5</mn><mo>+</mo><mn>5</mn><mo>+</mo><mn>14</mn><mo>=</mo><mn>24</mn></mrow><annotation encoding="application/x-tex">5+5+14=24</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">5</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">5</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">14</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">24</span></span></span></span>) and commonsense pruning (e.g., &quot;1, 2, 3 are too small to reach 24&quot;). Values are sampled multiple times (3 times in the paper) and aggregated.</p>
+<p><strong>Strategy B: Deliberative Voting</strong> — Present all candidate states to the LM simultaneously and ask it to vote for the most promising one. This is better when absolute valuation is difficult but relative comparison is feasible (Creative Writing: &quot;which of these 5 plans is most coherent?&quot;). Votes are sampled multiple times and aggregated by count.</p>
+<p>Both strategies trade compute for evaluation quality — more samples mean more reliable heuristics but higher cost. The evaluation does not need to be perfect; it only needs to be approximately correct often enough to guide the search in the right direction. This is analogous to admissible heuristics in A* search — imperfect but directionally helpful.</p>
+<h3 id="3-4-Search-Algorithm-BFS">3.4 Search Algorithm: BFS</h3>
+<p>BFS (Algorithm 1 in the paper) is used for Game of 24 and Creative Writing (shallow trees, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mo>≤</mo><mn>3</mn></mrow><annotation encoding="application/x-tex">T \leq 3</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8193em;vertical-align:-0.136em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≤</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">3</span></span></span></span>):</p>
+<ol>
+<li>Start with the input as the root state: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>S</mi><mn>0</mn></msub><mo>=</mo><mo stretchy="false">{</mo><mi>x</mi><mo stretchy="false">}</mo></mrow><annotation encoding="application/x-tex">S_0 = \{x\}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.0576em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">0</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">{</span><span class="mord mathnormal">x</span><span class="mclose">}</span></span></span></span></li>
+<li>At each depth level <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi><mo>=</mo><mn>1</mn><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><mi>T</mi></mrow><annotation encoding="application/x-tex">t = 1, \ldots, T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6151em;"></span><span class="mord mathnormal">t</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8778em;vertical-align:-0.1944em;"></span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span></span></span></span>: generate <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> candidates from each of the <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi></mrow><annotation encoding="application/x-tex">b</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span> active states, evaluate all candidates, keep the top-<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi></mrow><annotation encoding="application/x-tex">b</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span></li>
+<li>After <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi></mrow><annotation encoding="application/x-tex">T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span></span></span></span> steps, generate the final output from the best state</li>
+</ol>
+<p>The beam width <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi></mrow><annotation encoding="application/x-tex">b</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span> controls the exploration-exploitation tradeoff. <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">b=1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> is greedy (no branching); <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">b=5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span></span></span></span> allows significant exploration. The paper shows that increasing <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi></mrow><annotation encoding="application/x-tex">b</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span> from 1 to 5 on Game of 24 improves success from 45% to 74%.</p>
+<h3 id="3-5-Search-Algorithm-DFS">3.5 Search Algorithm: DFS</h3>
+<p>DFS (Algorithm 2 in the paper) is used for Mini Crosswords (deeper trees, up to 10 steps):</p>
+<ol>
+<li>Expand the most promising child of the current state</li>
+<li>If the evaluator deems the current state &quot;impossible,&quot; prune the subtree and backtrack to the parent</li>
+<li>Continue until a solution is found, the step limit is reached, or all branches are pruned</li>
+</ol>
+<p>DFS with pruning is crucial for crosswords because the search space is much larger. Without pruning, budget is wasted on dead-end branches. Without backtracking, the solver gets stuck with bad early word choices that make later clues impossible.</p>
+<h3 id="3-6-The-Full-Framework-as-a-Modular-Composition">3.6 The Full Framework as a Modular Composition</h3>
+<p>The beauty of ToT is its modularity. For any new problem, you independently choose:</p>
+<ol>
+<li><strong>Thought decomposition</strong> — what granularity?</li>
+<li><strong>Thought generator</strong> — i.i.d. sampling or sequential proposal?</li>
+<li><strong>State evaluator</strong> — independent value or deliberative voting?</li>
+<li><strong>Search algorithm</strong> — BFS or DFS? What <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi></mrow><annotation encoding="application/x-tex">b</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span>, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi></mrow><annotation encoding="application/x-tex">T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span></span></span></span>, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>v</mi><mrow><mi>t</mi><mi>h</mi></mrow></msub></mrow><annotation encoding="application/x-tex">v_{th}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mord mathnormal mtight">h</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>?</li>
+</ol>
+<p>These choices are orthogonal and can be mixed-and-matched. This modularity means ToT is not a single algorithm but a framework, and practitioners can adapt it to their specific problem structure.</p>
+<hr>
+<h2 id="IV-Experimental-Setup-and-Results">IV. Experimental Setup and Results</h2>
+<h3 id="4-1-Game-of-24-Setup">4.1 Game of 24: Setup</h3>
+<ul>
+<li><strong>Dataset</strong>: 1,362 games from <a href="http://4nums.com" target="_blank" rel="noopener">4nums.com</a>, sorted by difficulty. Test set: 100 hardest games (indices 901–1000).</li>
+<li><strong>Metric</strong>: Success rate (valid equation = 24, using each input number exactly once).</li>
+<li><strong>Baselines</strong>: IO prompting (5-shot), CoT (5-shot with 3 intermediate equations), CoT-SC (majority of 100 samples), iterative refinement (up to 10 rounds with ground-truth correctness feedback).</li>
+<li><strong>ToT config</strong>: Depth <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mo>=</mo><mn>3</mn></mrow><annotation encoding="application/x-tex">T=3</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">3</span></span></span></span> (three equations), BFS with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">b=5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span></span></span></span>, sequential proposal for generation, 3-way value evaluation (&quot;sure/maybe/impossible&quot;), 3 value samples per state.</li>
+<li><strong>Model</strong>: GPT-4 (Chat Completion mode, temperature 0.7).</li>
+</ul>
+<h3 id="4-2-Game-of-24-Results">4.2 Game of 24: Results</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Success Rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IO prompting</td>
+<td>7.3%</td>
+</tr>
+<tr>
+<td>CoT prompting</td>
+<td>4.0%</td>
+</tr>
+<tr>
+<td>CoT-SC (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>100</mn></mrow><annotation encoding="application/x-tex">k=100</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">100</span></span></span></span>)</td>
+<td>9.0%</td>
+</tr>
+<tr>
+<td>ToT (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">b=1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>)</td>
+<td>45%</td>
+</tr>
+<tr>
+<td>ToT (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">b=5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span></span></span></span>)</td>
+<td><strong>74%</strong></td>
+</tr>
+<tr>
+<td>IO + Refine (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>10</mn></mrow><annotation encoding="application/x-tex">k=10</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">10</span></span></span></span>)</td>
+<td>27%</td>
+</tr>
+<tr>
+<td>IO best-of-100</td>
+<td>33%</td>
+</tr>
+<tr>
+<td>CoT best-of-100</td>
+<td>49%</td>
+</tr>
+</tbody>
+</table>
+<p>The improvement from CoT (4%) to ToT (74%) is not incremental — it is an 18.5× relative improvement. Even the oracle CoT best-of-100 only reaches 49%, while ToT with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">b=5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span></span></span></span> (visiting far fewer total nodes) achieves 74%. This demonstrates that ToT's structured exploration is fundamentally more efficient than random sampling with selection.</p>
+<p><strong>Error analysis</strong> is particularly revealing: approximately 60% of CoT samples fail at the very first step (the first arithmetic operation). Once you commit to a bad first operation, the remaining numbers often cannot reach 24. ToT avoids this by evaluating multiple first-step candidates and pruning unpromising ones before committing. This is exactly the &quot;lookahead&quot; capability that left-to-right decoding lacks.</p>
+<p><strong>Scaling analysis</strong> (Figure 3a in the paper) shows that ToT achieves better performance per node visited than either IO or CoT sampling. At equivalent computational budgets, tree search beats random sampling.</p>
+<h3 id="4-3-Creative-Writing-Setup-and-Results">4.3 Creative Writing: Setup and Results</h3>
+<ul>
+<li><strong>Dataset</strong>: 100 tasks, each requiring a 4-paragraph passage where each paragraph ends with a given random sentence.</li>
+<li><strong>Metrics</strong>: GPT-4 coherency score (1–10, average of 5 scores per output), human pairwise preference.</li>
+<li><strong>ToT config</strong>: Depth 2 (plan → passage), <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">k=5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span></span></span></span> candidates per step, vote-based evaluation (5 votes per step), <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">b=1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> (keep only the best plan/passage).</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>GPT-4 Score (avg)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IO prompting</td>
+<td>6.19</td>
+</tr>
+<tr>
+<td>CoT prompting</td>
+<td>6.93</td>
+</tr>
+<tr>
+<td>ToT</td>
+<td>7.56</td>
+</tr>
+<tr>
+<td>IO + Refine</td>
+<td>7.67</td>
+</tr>
+<tr>
+<td>ToT + Refine</td>
+<td><strong>7.91</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The gains are smaller (6.19 → 7.56) because creative writing is inherently more subjective and less prone to catastrophic early-decision failures. But human evaluation confirms the pattern: in pairwise comparison, annotators prefer ToT over CoT in 41/100 cases vs. only 21/100 for CoT over ToT (38 tied).</p>
+<p>The combination result is notable: ToT + iterative refinement achieves 7.91, better than either alone. This suggests that tree search (exploring multiple plans) and iterative refinement (polishing a single output) are <strong>complementary capabilities</strong>, not substitutes.</p>
+<h3 id="4-4-Mini-Crosswords-Setup-and-Results">4.4 Mini Crosswords: Setup and Results</h3>
+<ul>
+<li><strong>Dataset</strong>: 20 games from GooBix (5×5 crosswords), 5 games for prompting.</li>
+<li><strong>Metrics</strong>: Letter accuracy (25 per game), word accuracy (10 per game), games solved.</li>
+<li><strong>ToT config</strong>: DFS with pruning, up to 10 intermediate steps (one word per step), <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">k=5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span></span></span></span> proposals per step, state evaluation via per-clue feasibility check (&quot;impossible&quot; → prune), maximum 100 DFS steps per game.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Letters</th>
+<th>Words</th>
+<th>Games</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IO (10 avg)</td>
+<td>38.7%</td>
+<td>14%</td>
+<td>0/20</td>
+</tr>
+<tr>
+<td>CoT (10 avg)</td>
+<td>40.6%</td>
+<td>15.6%</td>
+<td>0/20</td>
+</tr>
+<tr>
+<td>ToT</td>
+<td><strong>78%</strong></td>
+<td><strong>60%</strong></td>
+<td><strong>4/20</strong></td>
+</tr>
+<tr>
+<td>ToT + best state</td>
+<td>85.4%</td>
+<td>67%</td>
+<td>7/20</td>
+</tr>
+<tr>
+<td>ToT − prune</td>
+<td>65.4%</td>
+<td>41%</td>
+<td>1/20</td>
+</tr>
+<tr>
+<td>ToT − backtrack</td>
+<td>47.2%</td>
+<td>20%</td>
+<td>0/20</td>
+</tr>
+</tbody>
+</table>
+<p>The crosswords results are the most instructive for understanding ToT's mechanics:</p>
+<ul>
+<li><strong>Backtracking is essential</strong>: Removing backtracking collapses word-level success from 60% to 20%. This directly validates the claim that left-to-right commitment is fundamentally limiting for constraint-satisfaction problems.</li>
+<li><strong>Pruning helps but is imperfect</strong>: Removing pruning drops performance (60% → 41%), but the unpruned search actually finds more game solutions (4 vs. 1) — some are found on branches that pruning would have killed. The evaluator sometimes declares valid words &quot;impossible&quot; because GPT-4 does not know obscure or archaic words (e.g., &quot;agend&quot; as an obsolete form of &quot;agendum&quot;).</li>
+<li><strong>Output heuristics matter</strong>: The oracle &quot;best state&quot; setting improves game solutions from 4/20 to 7/20, indicating that the search often finds the right solution but the selection heuristic sometimes picks the wrong final state.</li>
+</ul>
+<h3 id="4-5-Computational-Budget-Analysis">4.5 Computational Budget Analysis</h3>
+<p>The paper provides a revealing analysis of computation vs. performance:</p>
+<p><strong>Game of 24 — Nodes visited vs. success rate</strong> (Figure 3a):</p>
+<ul>
+<li>IO best-of-100 visits 100 nodes → 33% success</li>
+<li>CoT best-of-100 visits 100 nodes → 49% success</li>
+<li>ToT (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">b=5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span></span></span></span>) visits ~75 nodes → 74% success</li>
+</ul>
+<p>ToT achieves higher success with <em>fewer</em> total nodes visited. This is because informed search (evaluating and pruning) is more efficient than uninformed sampling. The evaluation heuristic directs search effort toward promising regions of the solution space, while random sampling wastes budget on unpromising paths.</p>
+<p><strong>Cost decomposition per task</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Generation Calls</th>
+<th>Evaluation Calls</th>
+<th>Total LM Calls</th>
+<th>Relative Cost vs. CoT</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Game of 24</td>
+<td>~75</td>
+<td>~225</td>
+<td>~300</td>
+<td>~60×</td>
+</tr>
+<tr>
+<td>Creative Writing</td>
+<td>10</td>
+<td>10</td>
+<td>~20</td>
+<td>~4×</td>
+</tr>
+<tr>
+<td>Crosswords</td>
+<td>up to 500</td>
+<td>up to 500</td>
+<td>~1000</td>
+<td>~200×</td>
+</tr>
+</tbody>
+</table>
+<p>The cost increase is substantial but task-dependent. For Game of 24, the 60× cost increase buys an 18.5× improvement in success rate. For Creative Writing, 4× cost buys a ~22% quality improvement. Whether this is worthwhile depends entirely on the value of solving the task correctly.</p>
+<h3 id="4-6-Ablation-Effect-of-Beam-Width">4.6 Ablation: Effect of Beam Width</h3>
+<p>On Game of 24, the paper systematically varies beam width <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi></mrow><annotation encoding="application/x-tex">b</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span>:</p>
+<table>
+<thead>
+<tr>
+<th>Beam Width (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi></mrow><annotation encoding="application/x-tex">b</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span>)</th>
+<th>Success Rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 (greedy)</td>
+<td>45%</td>
+</tr>
+<tr>
+<td>3</td>
+<td>65%</td>
+</tr>
+<tr>
+<td>5</td>
+<td>74%</td>
+</tr>
+</tbody>
+</table>
+<p>The improvement from <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">b=1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">b=5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span></span></span></span> is dramatic: exploration matters. But note that even <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">b=1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> (greedy tree search with evaluation but no branching) already reaches 45% — far above CoT's 4%. This suggests that the evaluation component alone provides significant value, even without breadth.</p>
+<h3 id="4-7-Detailed-Error-Analysis-for-Game-of-24">4.7 Detailed Error Analysis for Game of 24</h3>
+<p>The paper provides error breakdowns that reveal <em>why</em> CoT fails:</p>
+<ul>
+<li><strong>~60% of CoT failures</strong> occur at the very first arithmetic step. The model commits to an operation (e.g., <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4</mn><mo>+</mo><mn>9</mn><mo>=</mo><mn>13</mn></mrow><annotation encoding="application/x-tex">4 + 9 = 13</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">4</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">9</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">13</span></span></span></span>) that makes it impossible to reach 24 with the remaining numbers.</li>
+<li><strong>~20% of failures</strong> involve correct intermediate steps but an error in the final step (arithmetic mistakes or failing to use all numbers).</li>
+<li><strong>~20% of failures</strong> involve the model outputting an invalid expression (wrong format, repeated numbers, etc.).</li>
+</ul>
+<p>ToT addresses the first category directly: by generating multiple candidates for each step and evaluating them, the model can avoid the catastrophic first-step commitments that doom most CoT attempts.</p>
+<h3 id="4-8-Concrete-Worked-Example-Game-of-24">4.8 Concrete Worked Example: Game of 24</h3>
+<p>To make the framework concrete, consider the input numbers <strong>4, 5, 6, 10</strong>.</p>
+<p><strong>CoT approach</strong> (single chain):</p>
+<ul>
+<li>Step 1: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4</mn><mo>+</mo><mn>5</mn><mo>=</mo><mn>9</mn></mrow><annotation encoding="application/x-tex">4 + 5 = 9</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">4</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">9</span></span></span></span> (commits immediately)</li>
+<li>Step 2: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>9</mn><mo>+</mo><mn>6</mn><mo>=</mo><mn>15</mn></mrow><annotation encoding="application/x-tex">9 + 6 = 15</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">9</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">6</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">15</span></span></span></span> (continues linearly)</li>
+<li>Step 3: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>15</mn><mo>+</mo><mn>10</mn><mo>=</mo><mn>25</mn><mo mathvariant="normal">≠</mo><mn>24</mn></mrow><annotation encoding="application/x-tex">15 + 10 = 25 \neq 24</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">15</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">10</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord">25</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel"><span class="mrel"><span class="mord vbox"><span class="thinbox"><span class="rlap"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="inner"><span class="mord"><span class="mrel"></span></span></span><span class="fix"></span></span></span></span></span><span class="mspace nobreak"></span><span class="mrel">=</span></span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">24</span></span></span></span> → <strong>Failure</strong>. No way to recover.</li>
+</ul>
+<p><strong>ToT approach</strong> (tree search with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>3</mn></mrow><annotation encoding="application/x-tex">b=3</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">3</span></span></span></span>):</p>
+<ul>
+<li>Step 1 candidates:
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>a</mi></mrow><annotation encoding="application/x-tex">a</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">a</span></span></span></span>: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>5</mn><mo>−</mo><mn>4</mn><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">5 - 4 = 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">5</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> → remaining: {1, 6, 10} → Evaluator: &quot;maybe&quot;</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi></mrow><annotation encoding="application/x-tex">b</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span>: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>10</mn><mo>−</mo><mn>6</mn><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">10 - 6 = 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">10</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">6</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> → remaining: {4, 4, 5} → Evaluator: &quot;maybe&quot;</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>c</mi></mrow><annotation encoding="application/x-tex">c</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">c</span></span></span></span>: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>6</mn><mo>−</mo><mn>4</mn><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">6 - 4 = 2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">6</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span> → remaining: {2, 5, 10} → Evaluator: &quot;sure&quot; (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn><mo>×</mo><mo stretchy="false">(</mo><mn>10</mn><mo>+</mo><mn>5</mn><mo>−</mo><mn>10</mn><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">2 \times (10 + 5 - 10)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">2</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">10</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">5</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">10</span><span class="mclose">)</span></span></span></span>... actually: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>10</mn><mo>+</mo><mn>5</mn><mo>×</mo><mn>2</mn><mo>=</mo><mn>20</mn></mrow><annotation encoding="application/x-tex">10 + 5 \times 2 = 20</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">10</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">5</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">20</span></span></span></span>... let's try: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>5</mn><mo>×</mo><mn>2</mn><mo>=</mo><mn>10</mn><mo separator="true">,</mo><mn>10</mn><mo>+</mo><mn>10</mn><mo>=</mo><mn>20</mn></mrow><annotation encoding="application/x-tex">5 \times 2 = 10, 10 + 10 = 20</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">5</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8389em;vertical-align:-0.1944em;"></span><span class="mord">10</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">10</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">10</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">20</span></span></span></span>... hmm)</li>
+<li>Actually: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>10</mn><mo>−</mo><mn>4</mn><mo>=</mo><mn>6</mn></mrow><annotation encoding="application/x-tex">10 - 4 = 6</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">10</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">6</span></span></span></span> → remaining: {5, 6, 6} → Evaluator: &quot;sure&quot; (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>5</mn><mo>×</mo><mn>6</mn><mo>−</mo><mn>6</mn><mo>=</mo><mn>24</mn></mrow><annotation encoding="application/x-tex">5 \times 6 - 6 = 24</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">5</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">6</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">6</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">24</span></span></span></span>!)</li>
+</ul>
+</li>
+<li>Step 2 (expanding the &quot;sure&quot; candidate): <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>5</mn><mo>×</mo><mn>6</mn><mo>=</mo><mn>30</mn></mrow><annotation encoding="application/x-tex">5 \times 6 = 30</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">5</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">6</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">30</span></span></span></span> → remaining: {6, 30} → Evaluator: &quot;sure&quot;</li>
+<li>Step 3: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>30</mn><mo>−</mo><mn>6</mn><mo>=</mo><mn>24</mn></mrow><annotation encoding="application/x-tex">30 - 6 = 24</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">30</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">6</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">24</span></span></span></span> ✓ → <strong>Success!</strong></li>
+</ul>
+<p>The key difference: ToT can evaluate multiple first steps, identify that <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>10</mn><mo>−</mo><mn>4</mn><mo>=</mo><mn>6</mn></mrow><annotation encoding="application/x-tex">10 - 4 = 6</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">10</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">6</span></span></span></span> leaves a promising state (three numbers that can reach 24), and commit to that path. CoT's linear commitment to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4</mn><mo>+</mo><mn>5</mn><mo>=</mo><mn>9</mn></mrow><annotation encoding="application/x-tex">4 + 5 = 9</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">4</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">9</span></span></span></span> is a dead end from which there is no recovery.</p>
+<hr>
+<h2 id="V-Discussion-and-Insights">V. Discussion and Insights</h2>
+<h3 id="5-1-When-ToT-Helps-Most">5.1 When ToT Helps Most</h3>
+<p>ToT adds value specifically when:</p>
+<ul>
+<li>The task requires exploration of multiple alternatives</li>
+<li>Early decisions significantly constrain later options</li>
+<li>Intermediate progress can be meaningfully evaluated</li>
+<li>The task is combinatorial or constraint-based</li>
+</ul>
+<p>For straightforward QA, classification, summarization, or fluent text generation, standard prompting or CoT is both cheaper and sufficient. The paper itself notes (Appendix B.1) that ToT is unnecessary for tasks where GPT-4 already performs well with standard prompting.</p>
+<h3 id="5-2-Evaluation-Quality-as-the-Ceiling">5.2 Evaluation Quality as the Ceiling</h3>
+<p>The entire framework depends on the LM's ability to evaluate partial solutions. If evaluation is poor, the search degenerates into random exploration. The crosswords results demonstrate this directly — the evaluator sometimes prunes correct solutions because it does not recognize obscure words. For domains where intermediate-state evaluation is inherently difficult (e.g., long-horizon planning, creative endeavors with unclear success criteria), ToT's advantage may diminish. The quality of the evaluation heuristic is the ceiling for ToT's search effectiveness.</p>
+<h3 id="5-3-The-Evaluation-Generation-Asymmetry">5.3 The Evaluation-Generation Asymmetry</h3>
+<p>A subtle but important observation: for ToT to work, the LM must be <em>better at evaluating</em> partial solutions than at <em>generating</em> correct ones directly. If the model could generate the right answer in one shot, there would be no need for search. If the model cannot evaluate partial solutions better than chance, search provides no benefit.</p>
+<p>The Game of 24 results suggest this asymmetry exists: GPT-4 solves only 4% of problems via direct generation (CoT), but its 3-way value evaluations are accurate enough to guide search to 74% success. This means GPT-4's &quot;recognition&quot; of good intermediate states significantly exceeds its &quot;generation&quot; of correct solution chains.</p>
+<p>This evaluation-generation asymmetry is likely task-dependent. For tasks where evaluation is as hard as generation (e.g., some creative tasks where &quot;is this good?&quot; is as hard as &quot;make something good&quot;), the ToT advantage would diminish.</p>
+<h3 id="5-4-Relation-to-Modern-Inference-Time-Compute-Scaling">5.4 Relation to Modern Inference-Time Compute Scaling</h3>
+<p>Since this paper's publication, several systems have incorporated ToT-style ideas:</p>
+<ul>
+<li><strong>OpenAI o1/o3</strong> uses internal chain-of-thought with what appears to be search-like exploration during inference</li>
+<li><strong>Anthropic's extended thinking</strong> similarly allocates more inference compute for hard problems</li>
+<li><strong>DeepSeek-R1</strong> and other reasoning models use reinforcement learning to train models that naturally explore multiple reasoning paths</li>
+<li><strong>LATS</strong> (Language Agent Tree Search) combines ToT with Monte Carlo Tree Search for agentic tasks</li>
+</ul>
+<p>ToT can be seen as an important conceptual precursor to the &quot;inference-time compute scaling&quot; paradigm — the idea that harder problems should receive more computation at inference time, not just more parameters.</p>
+<h3 id="5-4-Connection-to-Planning-in-AI">5.4 Connection to Planning in AI</h3>
+<p>ToT directly connects the classical AI planning tradition with modern LLM capabilities. Classical planning systems (STRIPS, HTN planners) explicitly search through state spaces with backtracking. ToT achieves something analogous by using the LLM as both the state-transition function and the heuristic evaluator. The framework demonstrates that structured search remains valuable even when the underlying &quot;reasoning engine&quot; is a neural network rather than a symbolic system.</p>
+<h3 id="5-5-Comparison-with-Monte-Carlo-Tree-Search-MCTS">5.5 Comparison with Monte Carlo Tree Search (MCTS)</h3>
+<p>ToT bears a structural resemblance to Monte Carlo Tree Search (MCTS), the algorithm behind AlphaGo. Both involve:</p>
+<ul>
+<li>Tree-structured exploration of possible moves/thoughts</li>
+<li>Evaluation of intermediate states</li>
+<li>Backtracking and branch pruning</li>
+</ul>
+<p>However, there are key differences:</p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>MCTS (AlphaGo)</th>
+<th>ToT</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>State evaluator</td>
+<td>Learned neural network + rollouts</td>
+<td>LLM self-evaluation via prompting</td>
+</tr>
+<tr>
+<td>Search policy</td>
+<td>UCB1 balancing exploration/exploitation</td>
+<td>BFS top-<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi></mrow><annotation encoding="application/x-tex">b</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span> or DFS with pruning</td>
+</tr>
+<tr>
+<td>Training</td>
+<td>Value/policy networks trained on games</td>
+<td>No training, purely inference-time</td>
+</tr>
+<tr>
+<td>State space</td>
+<td>Well-defined (board positions)</td>
+<td>Open-ended (natural language)</td>
+</tr>
+<tr>
+<td>Rollout depth</td>
+<td>Full game simulation</td>
+<td>Limited by thought depth <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi></mrow><annotation encoding="application/x-tex">T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span></span></span></span></td>
+</tr>
+</tbody>
+</table>
+<p>The LATS paper (Zhou et al., 2024) later bridged this gap by combining ToT with MCTS-style value estimation for agentic tasks, demonstrating that the two approaches are complementary.</p>
+<h3 id="5-6-The-Role-of-Temperature-and-Sampling">5.6 The Role of Temperature and Sampling</h3>
+<p>ToT's effectiveness depends on generating <em>diverse</em> candidate thoughts. For i.i.d. sampling, this diversity comes from the sampling temperature. Higher temperature produces more diverse but potentially lower-quality candidates. The paper uses temperature 0.7 for Game of 24, which balances diversity against coherence.</p>
+<p>For sequential proposal, diversity is controlled by the prompt design (asking the model to enumerate multiple distinct options). The quality of the prompt directly affects the diversity and quality of proposals. This highlights that ToT's performance is a joint function of the search algorithm, the evaluation quality, <em>and</em> the generation diversity.</p>
+<hr>
+<h2 id="VI-Limitations-and-Boundary-Conditions">VI. Limitations and Boundary Conditions</h2>
+<h3 id="6-1-Computational-Cost">6.1 Computational Cost</h3>
+<p>ToT is significantly more expensive than standard prompting. Each step involves generating <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> candidates and evaluating each (potentially multiple times). For Game of 24 with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">b=5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span></span></span></span>: roughly 5 proposals × 3 value evaluations × 3 depth levels × 5 breadth ≈ 225 LM calls per game. For crosswords: up to 100 DFS steps, each with 5 proposals + evaluations = potentially 1000+ LM calls per game. In production settings with latency and cost constraints, this overhead is nontrivial.</p>
+<h3 id="6-2-Task-Scope">6.2 Task Scope</h3>
+<p>The three evaluation tasks, while well-chosen, are relatively small-scale and self-contained. Game of 24 has only 4 numbers, Creative Writing is 4 paragraphs, and Crosswords is 5×5. The paper does not demonstrate ToT on tasks requiring dozens of reasoning steps, integration with external tools, or real-time interaction. Scaling ToT to open-ended, multi-step tasks with large state spaces remains an open question.</p>
+<h3 id="6-3-No-Learning-or-Adaptation">6.3 No Learning or Adaptation</h3>
+<p>ToT uses a frozen pretrained LM with no training or adaptation. The thought generator, evaluator, and search procedure do not improve from experience. Each problem is solved from scratch. This is both a strength (no training needed, purely inference-time) and a limitation (no ability to learn from solved problems, improve heuristics, or adapt search strategies).</p>
+<h3 id="6-4-Prompt-Engineering-Overhead">6.4 Prompt Engineering Overhead</h3>
+<p>Each task requires careful prompt engineering for both thought generation and state evaluation. The &quot;propose prompt&quot; for Game of 24, the &quot;vote prompt&quot; for Creative Writing, and the confidence-based proposal prompt for Crosswords are all task-specific designs. Generalizing these prompts to new tasks without per-task tuning is an open challenge.</p>
+<h3 id="6-5-Evaluation-Heuristic-Failures">6.5 Evaluation Heuristic Failures</h3>
+<p>The crosswords ablation reveals that the LM evaluator can incorrectly prune valid solutions. This is a fundamental limitation: the search is only as good as its heuristic. For domains with vocabulary or knowledge gaps (e.g., specialized scientific reasoning, rare word puzzles), the evaluator's blind spots directly translate into missed solutions.</p>
+<hr>
+<h2 id="VII-Broader-Research-Context">VII. Broader Research Context</h2>
+<h3 id="7-1-Position-in-the-LLM-Reasoning-Landscape">7.1 Position in the LLM Reasoning Landscape</h3>
+<p>ToT arrived at a critical moment in LLM reasoning research. Chain-of-thought prompting had shown that intermediate reasoning steps improve performance, but the community was beginning to recognize that a single reasoning chain is insufficient for hard problems. ToT formalized the next step: structured search over multiple reasoning paths. It opened the door to viewing LLM inference as a planning problem amenable to classical AI techniques.</p>
+<h3 id="7-2-The-Inference-Time-Compute-Paradigm">7.2 The Inference-Time Compute Paradigm</h3>
+<p>Perhaps the most lasting impact of ToT is its contribution to the idea that <strong>more computation at inference time can substitute for more parameters or more training data</strong>. By spending more LM calls on a hard problem (through search), ToT achieves dramatic improvements without changing the model. This principle has been validated and extended by subsequent work on reasoning models (o1, DeepSeek-R1) that internalize search-like behavior through training.</p>
+<h3 id="7-3-From-Prompting-to-Architecture">7.3 From Prompting to Architecture</h3>
+<p>ToT operates entirely through prompting — it requires no model modifications. This is both its accessibility strength and a potential limitation. Later work has explored whether ToT-style search can be &quot;compiled&quot; into model weights through training, potentially achieving similar exploration benefits at lower inference cost.</p>
+<hr>
+<h2 id="VIII-Reproducibility-Assessment">VIII. Reproducibility Assessment</h2>
+<h3 id="8-1-Code-and-Data">8.1 Code and Data</h3>
+<p>The official code repository (<a href="https://github.com/princeton-nlp/tree-of-thought-llm" target="_blank" rel="noopener">https://github.com/princeton-nlp/tree-of-thought-llm</a>) is publicly available and includes all prompts used in the experiments. This is a significant strength for reproducibility.</p>
+<h3 id="8-2-Challenges">8.2 Challenges</h3>
+<p>Exact reproduction is challenging because the experiments use the GPT-4 API (May 2023 version), and OpenAI's models have been updated since. Results with current GPT-4 or GPT-4-turbo may differ. The paper does not report variance across runs, making stability assessment difficult.</p>
+<h3 id="8-3-Cost-Estimates">8.3 Cost Estimates</h3>
+<ul>
+<li><strong>Game of 24</strong>: ~225 LM calls per game → ~$675 for the 100-game test set at 2023 GPT-4 pricing</li>
+<li><strong>Crosswords</strong>: Up to 1000+ LM calls per game → significantly more expensive</li>
+<li><strong>Creative Writing</strong>: ~20 LM calls per task → cheapest of the three</li>
+</ul>
+<h3 id="8-4-Practical-Deployment-Guidance">8.4 Practical Deployment Guidance</h3>
+<p><strong>When to use ToT:</strong></p>
+<ul>
+<li>Math/logic puzzles, constraint satisfaction, planning problems</li>
+<li>Code generation where multiple approaches should be explored</li>
+<li>Creative tasks where plan-level exploration beats output-level refinement</li>
+</ul>
+<p><strong>How to adapt ToT to a new task:</strong></p>
+<ol>
+<li>Define the thought granularity (what constitutes one step?)</li>
+<li>Design a generation prompt (propose or sample?)</li>
+<li>Design an evaluation prompt (value or vote?)</li>
+<li>Choose search algorithm (shallow → BFS; deep → DFS)</li>
+<li>Tune hyperparameters (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi></mrow><annotation encoding="application/x-tex">b</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span>, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span>, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi></mrow><annotation encoding="application/x-tex">T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span></span></span></span>) on a small validation set</li>
+<li>Monitor evaluation accuracy — if the evaluator is wrong &gt;50% of the time, ToT will not help</li>
+</ol>
+<hr>
+<h2 id="IX-Summary-and-Significance">IX. Summary and Significance</h2>
+<p>Tree of Thoughts is one of those papers where the core idea is deceptively simple but the implications run deep. The contribution: instead of forcing a language model to commit to a single left-to-right reasoning chain, let it explore multiple reasoning paths organized as a tree, evaluate partial progress via self-assessment, and backtrack when things go wrong.</p>
+<p><strong>Core Value Propositions:</strong></p>
+<ol>
+<li>A general framework that subsumes IO, CoT, and CoT-SC as special cases within a unified search paradigm</li>
+<li>Dramatic performance improvements on tasks requiring exploration: 4% → 74% on Game of 24</li>
+<li>Demonstration that structured search is fundamentally more efficient than random sampling with selection</li>
+<li>The LM itself serves as both state generator and heuristic evaluator, eliminating the need for task-specific search infrastructure</li>
+</ol>
+<p><strong>Key Lessons for the Research Community:</strong></p>
+<ul>
+<li>Left-to-right commitment is a genuine structural limitation for combinatorial and constraint-satisfaction tasks</li>
+<li>The quality of intermediate-state evaluation is the ceiling for any search-based reasoning framework</li>
+<li>Structured exploration (tree search) and iterative refinement (polishing) are complementary, not substitutes</li>
+<li>Inference-time compute scaling via search is a viable alternative to scaling model parameters</li>
+</ul>
+<p>The practical payoff is dramatic: on the Game of 24 benchmark, GPT-4 with chain-of-thought prompting solves only 4% of problems, while ToT pushes that to 74%. ToT gives LLMs something closer to deliberate &quot;System 2&quot; thinking — the slow, conscious problem-solving mode that humans use for hard tasks — and in doing so, it established the conceptual foundation for the inference-time compute scaling paradigm that has since become central to LLM reasoning research.</p>
+<hr>
+<h2 id="References">References</h2>
+<ol>
+<li>Wei, J. et al. (2022). &quot;Chain-of-Thought Prompting Elicits Reasoning in Large Language Models.&quot; NeurIPS 2022.</li>
+<li>Wang, X. et al. (2022). &quot;Self-Consistency Improves Chain of Thought Reasoning in Language Models.&quot; ICLR 2023.</li>
+<li>Yao, S. et al. (2022). &quot;ReAct: Synergizing Reasoning and Acting in Language Models.&quot; ICLR 2023.</li>
+<li>Kahneman, D. (2011). <em>Thinking, Fast and Slow.</em></li>
+<li>Newell, A., Shaw, J.C., &amp; Simon, H.A. (1959). &quot;Report on a General Problem-Solving Program.&quot;</li>
+<li>Hao, S. et al. (2023). &quot;Reasoning with Language Model is Planning with World Model.&quot; EMNLP 2023.</li>
+<li>Shinn, N. et al. (2023). &quot;Reflexion: Language Agents with Verbal Reinforcement Learning.&quot; NeurIPS 2023.</li>
+<li>Silver, D. et al. (2017). &quot;Mastering the Game of Go without Human Knowledge.&quot; Nature.</li>
+<li>Zhou, A. et al. (2024). &quot;Language Agent Tree Search Unifies Reasoning Acting and Planning in Language Models.&quot; ICML 2024.</li>
+<li>Yao, S. et al. (2023). &quot;Tree of Thoughts: Deliberate Problem Solving with Large Language Models.&quot; NeurIPS 2023.</li>
+</ol>
+<hr>
+<p><em>This review was completed by Zhongzhu Zhou on February 16, 2026.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/LLM-Reasoning/" rel="tag"># LLM Reasoning</a>
+              <a href="/tags/Prompt-Engineering/" rel="tag"># Prompt Engineering</a>
+              <a href="/tags/Tree-Search/" rel="tag"># Tree Search</a>
+              <a href="/tags/Chain-of-Thought/" rel="tag"># Chain of Thought</a>
+              <a href="/tags/BFS/" rel="tag"># BFS</a>
+              <a href="/tags/DFS/" rel="tag"># DFS</a>
+              <a href="/tags/Game-of-24/" rel="tag"># Game of 24</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/02/09/react-v5-technical-review-en/" rel="prev" title="ReAct Technical Review: From Reasoning Ability to Executable Reasoning">
+      <i class="fa fa-chevron-left"></i> ReAct Technical Review: From Reasoning Ability to Executable Reasoning
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/02/17/2026-02-17-DPO-technical-review-en/" rel="next" title="Direct Preference Optimization: Your Language Model Is Secretly a Reward Model — Technical Review">
+      Direct Preference Optimization: Your Language Model Is Secretly a Reward Model — Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Tree-of-Thoughts-Deliberate-Problem-Solving-with-Large-Language-Models-—-Detailed-Technical-Review"><span class="nav-number">1.</span> <span class="nav-text">Tree of Thoughts: Deliberate Problem Solving with Large Language Models — Detailed Technical Review</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#I-Prerequisites-What-You-Need-to-Know"><span class="nav-number">1.1.</span> <span class="nav-text">I. Prerequisites: What You Need to Know</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-Autoregressive-Language-Models-and-Left-to-Right-Commitment"><span class="nav-number">1.1.1.</span> <span class="nav-text">1.1 Autoregressive Language Models and Left-to-Right Commitment</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-Chain-of-Thought-CoT-Prompting"><span class="nav-number">1.1.2.</span> <span class="nav-text">1.2 Chain-of-Thought (CoT) Prompting</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-Self-Consistency-CoT-SC"><span class="nav-number">1.1.3.</span> <span class="nav-text">1.3 Self-Consistency (CoT-SC)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-4-Dual-Process-Theory-System-1-System-2"><span class="nav-number">1.1.4.</span> <span class="nav-text">1.4 Dual Process Theory (System 1 &#x2F; System 2)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-5-Classical-Search-Algorithms-BFS-and-DFS"><span class="nav-number">1.1.5.</span> <span class="nav-text">1.5 Classical Search Algorithms: BFS and DFS</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-6-Heuristic-Evaluation-in-Search"><span class="nav-number">1.1.6.</span> <span class="nav-text">1.6 Heuristic Evaluation in Search</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-7-The-Problem-When-Left-to-Right-Fails"><span class="nav-number">1.1.7.</span> <span class="nav-text">1.7 The Problem: When Left-to-Right Fails</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#II-What-This-Paper-Does-Core-Contributions"><span class="nav-number">1.2.</span> <span class="nav-text">II. What This Paper Does: Core Contributions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-The-Key-Insight"><span class="nav-number">1.2.1.</span> <span class="nav-text">2.1 The Key Insight</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-The-Generalization-Hierarchy"><span class="nav-number">1.2.2.</span> <span class="nav-text">2.2 The Generalization Hierarchy</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-How-It-Differs-from-Prior-Work"><span class="nav-number">1.2.3.</span> <span class="nav-text">2.3 How It Differs from Prior Work</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#III-Methodology-in-Depth"><span class="nav-number">1.3.</span> <span class="nav-text">III. Methodology in Depth</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-Thought-Decomposition"><span class="nav-number">1.3.1.</span> <span class="nav-text">3.1 Thought Decomposition</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-Thought-Generation"><span class="nav-number">1.3.2.</span> <span class="nav-text">3.2 Thought Generation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-State-Evaluation"><span class="nav-number">1.3.3.</span> <span class="nav-text">3.3 State Evaluation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-Search-Algorithm-BFS"><span class="nav-number">1.3.4.</span> <span class="nav-text">3.4 Search Algorithm: BFS</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-Search-Algorithm-DFS"><span class="nav-number">1.3.5.</span> <span class="nav-text">3.5 Search Algorithm: DFS</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-6-The-Full-Framework-as-a-Modular-Composition"><span class="nav-number">1.3.6.</span> <span class="nav-text">3.6 The Full Framework as a Modular Composition</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#IV-Experimental-Setup-and-Results"><span class="nav-number">1.4.</span> <span class="nav-text">IV. Experimental Setup and Results</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-Game-of-24-Setup"><span class="nav-number">1.4.1.</span> <span class="nav-text">4.1 Game of 24: Setup</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-Game-of-24-Results"><span class="nav-number">1.4.2.</span> <span class="nav-text">4.2 Game of 24: Results</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-Creative-Writing-Setup-and-Results"><span class="nav-number">1.4.3.</span> <span class="nav-text">4.3 Creative Writing: Setup and Results</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-4-Mini-Crosswords-Setup-and-Results"><span class="nav-number">1.4.4.</span> <span class="nav-text">4.4 Mini Crosswords: Setup and Results</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-5-Computational-Budget-Analysis"><span class="nav-number">1.4.5.</span> <span class="nav-text">4.5 Computational Budget Analysis</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-6-Ablation-Effect-of-Beam-Width"><span class="nav-number">1.4.6.</span> <span class="nav-text">4.6 Ablation: Effect of Beam Width</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-7-Detailed-Error-Analysis-for-Game-of-24"><span class="nav-number">1.4.7.</span> <span class="nav-text">4.7 Detailed Error Analysis for Game of 24</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-8-Concrete-Worked-Example-Game-of-24"><span class="nav-number">1.4.8.</span> <span class="nav-text">4.8 Concrete Worked Example: Game of 24</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#V-Discussion-and-Insights"><span class="nav-number">1.5.</span> <span class="nav-text">V. Discussion and Insights</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-When-ToT-Helps-Most"><span class="nav-number">1.5.1.</span> <span class="nav-text">5.1 When ToT Helps Most</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Evaluation-Quality-as-the-Ceiling"><span class="nav-number">1.5.2.</span> <span class="nav-text">5.2 Evaluation Quality as the Ceiling</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-The-Evaluation-Generation-Asymmetry"><span class="nav-number">1.5.3.</span> <span class="nav-text">5.3 The Evaluation-Generation Asymmetry</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-Relation-to-Modern-Inference-Time-Compute-Scaling"><span class="nav-number">1.5.4.</span> <span class="nav-text">5.4 Relation to Modern Inference-Time Compute Scaling</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-Connection-to-Planning-in-AI"><span class="nav-number">1.5.5.</span> <span class="nav-text">5.4 Connection to Planning in AI</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-5-Comparison-with-Monte-Carlo-Tree-Search-MCTS"><span class="nav-number">1.5.6.</span> <span class="nav-text">5.5 Comparison with Monte Carlo Tree Search (MCTS)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-6-The-Role-of-Temperature-and-Sampling"><span class="nav-number">1.5.7.</span> <span class="nav-text">5.6 The Role of Temperature and Sampling</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#VI-Limitations-and-Boundary-Conditions"><span class="nav-number">1.6.</span> <span class="nav-text">VI. Limitations and Boundary Conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Computational-Cost"><span class="nav-number">1.6.1.</span> <span class="nav-text">6.1 Computational Cost</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Task-Scope"><span class="nav-number">1.6.2.</span> <span class="nav-text">6.2 Task Scope</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-No-Learning-or-Adaptation"><span class="nav-number">1.6.3.</span> <span class="nav-text">6.3 No Learning or Adaptation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-Prompt-Engineering-Overhead"><span class="nav-number">1.6.4.</span> <span class="nav-text">6.4 Prompt Engineering Overhead</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-5-Evaluation-Heuristic-Failures"><span class="nav-number">1.6.5.</span> <span class="nav-text">6.5 Evaluation Heuristic Failures</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#VII-Broader-Research-Context"><span class="nav-number">1.7.</span> <span class="nav-text">VII. Broader Research Context</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-Position-in-the-LLM-Reasoning-Landscape"><span class="nav-number">1.7.1.</span> <span class="nav-text">7.1 Position in the LLM Reasoning Landscape</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-The-Inference-Time-Compute-Paradigm"><span class="nav-number">1.7.2.</span> <span class="nav-text">7.2 The Inference-Time Compute Paradigm</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-From-Prompting-to-Architecture"><span class="nav-number">1.7.3.</span> <span class="nav-text">7.3 From Prompting to Architecture</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#VIII-Reproducibility-Assessment"><span class="nav-number">1.8.</span> <span class="nav-text">VIII. Reproducibility Assessment</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-Code-and-Data"><span class="nav-number">1.8.1.</span> <span class="nav-text">8.1 Code and Data</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-Challenges"><span class="nav-number">1.8.2.</span> <span class="nav-text">8.2 Challenges</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-Cost-Estimates"><span class="nav-number">1.8.3.</span> <span class="nav-text">8.3 Cost Estimates</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-4-Practical-Deployment-Guidance"><span class="nav-number">1.8.4.</span> <span class="nav-text">8.4 Practical Deployment Guidance</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#IX-Summary-and-Significance"><span class="nav-number">1.9.</span> <span class="nav-text">IX. Summary and Significance</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#References"><span class="nav-number">1.10.</span> <span class="nav-text">References</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

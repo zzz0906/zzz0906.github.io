@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="AWQ uses activation-aware scaling to protect salient weights during low-bit quantization, enabling strong LLM accuracy with efficient deployment on edge and server hardware.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration — In-Depth Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/03/2026-04-03-AWQ-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="AWQ uses activation-aware scaling to protect salient weights during low-bit quantization, enabling strong LLM accuracy with efficient deployment on edge and server hardware.">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-03T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-08T16:24:04.924Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Efficient Inference">
+<meta property="article:tag" content="Quantization">
+<meta property="article:tag" content="AWQ">
+<meta property="article:tag" content="LLM Compression">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/03/2026-04-03-AWQ-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration — In-Depth Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/03/2026-04-03-AWQ-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration — In-Depth Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-03 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-03T00:00:00+00:00">2026-04-03</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-08 16:24:04" itemprop="dateModified" datetime="2026-04-08T16:24:04+00:00">2026-04-08</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/Efficient-ML/" itemprop="url" rel="index"><span itemprop="name">Efficient ML</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">AWQ uses activation-aware scaling to protect salient weights during low-bit quantization, enabling strong LLM accuracy with efficient deployment on edge and server hardware.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-The-Problem-LLMs-Are-Too-Big-for-Your-Phone">1. The Problem: LLMs Are Too Big for Your Phone</h2>
+<p>Imagine you want to run ChatGPT-level AI on your phone, completely offline — no internet, no cloud server, total privacy. Sounds great, right? The problem is that modern large language models (LLMs) are <em>enormous</em>.</p>
+<p>GPT-3, released in 2020, has <strong>175 billion parameters</strong>. Each parameter is typically stored as a 16-bit floating-point number (FP16), meaning it occupies 2 bytes of memory. Total memory for GPT-3: <strong>350 GB</strong>. The best consumer GPUs have 24 GB of memory. Your phone has maybe 8-12 GB total RAM. Clearly, something has to give.</p>
+<a id="more"></a>
+<p>Even for &quot;smaller&quot; models like LLaMA-2-7B (7 billion parameters), you still need about <strong>14 GB</strong> in FP16, which barely fits on a high-end GPU. For a mobile phone, this is completely out of reach.</p>
+<p><strong>Model quantization</strong> is the most promising solution. Instead of storing each weight as a 16-bit number, what if we stored it as a 4-bit integer? That's a 4× compression. LLaMA-2-7B would shrink from 14 GB to about <strong>3.5 GB</strong> — suddenly plausible even for mobile devices.</p>
+<p>But here's the catch: naively converting 16-bit weights to 4-bit integers (called &quot;round-to-nearest&quot; or RTN quantization) causes dramatic accuracy loss. The model starts generating nonsense. This paper, AWQ (Activation-aware Weight Quantization), solves this problem elegantly — and it was awarded <strong>Best Paper at MLSys 2024</strong>.</p>
+<hr>
+<h2 id="2-Prerequisites-What-You-Need-to-Know-First">2. Prerequisites: What You Need to Know First</h2>
+<p>This section explains every concept from scratch. If you're a complete beginner, start here. If you know machine learning basics, you can skim to Section 3.</p>
+<h3 id="2-1-Neural-Network-Weights-and-Matrix-Multiplication">2.1 Neural Network Weights and Matrix Multiplication</h3>
+<p>A large language model like LLaMA or GPT-2 is, at its mathematical core, a very long sequence of <strong>matrix multiplications</strong>. The most fundamental building block is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>y</mi><mo>=</mo><mi>W</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">y = Wx
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mord mathnormal">x</span></span></span></span></span></p>
+<p>Here:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span> is the <strong>input vector</strong> — a list of numbers representing what the model is currently processing (e.g., the meaning of a word encoded as 4096 numbers)</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi></mrow><annotation encoding="application/x-tex">W</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span> is the <strong>weight matrix</strong> — a large grid of numbers that the model <em>learned</em> during training. A typical weight matrix in LLaMA-2-7B might be <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4096</mn><mo>×</mo><mn>4096</mn><mo>=</mo><mn>16</mn></mrow><annotation encoding="application/x-tex">4096 \times 4096 = 16</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">4096</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4096</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">16</span></span></span></span> million numbers.</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi></mrow><annotation encoding="application/x-tex">y</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span></span></span></span> is the <strong>output vector</strong> — the result of the computation</li>
+</ul>
+<p>The model has thousands of these weight matrices. Their collective values encode the model's &quot;knowledge&quot; about language, facts, and reasoning. The total number of values across all weight matrices is the model's <strong>parameter count</strong> — 7 billion for LLaMA-2-7B.</p>
+<p><strong>Why this matters for quantization</strong>: Everything we do to compress the model amounts to replacing the original <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi></mrow><annotation encoding="application/x-tex">W</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span> (stored in FP16) with a compressed version <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi>W</mi><mo>^</mo></mover></mrow><annotation encoding="application/x-tex">\hat{W}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9468em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9468em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.25em;"><span class="mord">^</span></span></span></span></span></span></span></span></span></span> (stored in INT4) while keeping <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mover accent="true"><mi>W</mi><mo>^</mo></mover><mi>x</mi></mrow><annotation encoding="application/x-tex">y = \hat{W}x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9468em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9468em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.25em;"><span class="mord">^</span></span></span></span></span></span></span><span class="mord mathnormal">x</span></span></span></span> as close to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><mi>W</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">y = Wx</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mord mathnormal">x</span></span></span></span> as possible.</p>
+<h3 id="2-2-Floating-Point-Numbers-FP32-FP16-and-Why-They-Matter">2.2 Floating-Point Numbers: FP32, FP16, and Why They Matter</h3>
+<p>Computers represent real numbers approximately using <strong>floating-point</strong> format. Think of scientific notation: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>3.14</mn><mo>×</mo><msup><mn>10</mn><mn>2</mn></msup><mo>=</mo><mn>314</mn></mrow><annotation encoding="application/x-tex">3.14 \times 10^2 = 314</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">3.14</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord">1</span><span class="mord"><span class="mord">0</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">314</span></span></span></span>. Floating-point numbers have:</p>
+<ul>
+<li>A <strong>sign</strong> (positive or negative)</li>
+<li>A <strong>mantissa</strong> (the significant digits, like 3.14)</li>
+<li>An <strong>exponent</strong> (the power of 2 or 10, like 2 above)</li>
+</ul>
+<p>Different precisions allocate different numbers of bits:</p>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Total Bits</th>
+<th>Range</th>
+<th>Precision</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FP32</td>
+<td>32</td>
+<td>±3.4×10³⁸</td>
+<td>~7 decimal digits</td>
+</tr>
+<tr>
+<td>FP16</td>
+<td>16</td>
+<td>±65504</td>
+<td>~3 decimal digits</td>
+</tr>
+<tr>
+<td>BF16</td>
+<td>16</td>
+<td>±3.4×10³⁸</td>
+<td>~2 decimal digits</td>
+</tr>
+<tr>
+<td>INT8</td>
+<td>8</td>
+<td>-128 to 127</td>
+<td>exact integers only</td>
+</tr>
+<tr>
+<td>INT4</td>
+<td>4</td>
+<td>-8 to 7</td>
+<td>exact integers only</td>
+</tr>
+</tbody>
+</table>
+<p>Modern LLMs are typically trained in FP32 but deployed in <strong>FP16</strong> (a 2× memory reduction with minimal accuracy loss). Quantization further reduces to <strong>INT8 or INT4</strong>, giving 4-8× compression relative to FP16.</p>
+<p>The key challenge: FP16 can represent about 65,000 distinct values in its range, while INT4 can represent only <strong>16</strong> distinct values (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mn>2</mn><mn>4</mn></msup><mo>=</mo><mn>16</mn></mrow><annotation encoding="application/x-tex">2^4 = 16</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">4</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">16</span></span></span></span>). Squeezing the rich information of a 16-bit weight into 4 bits inevitably loses precision — the question is <em>how much</em>.</p>
+<h3 id="2-3-What-Is-Quantization">2.3 What Is Quantization?</h3>
+<p><strong>Quantization</strong> is the process of mapping continuous (or high-precision) values to a discrete set of lower-precision values.</p>
+<p>The standard formula for uniform quantization is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo><mo>=</mo><mi mathvariant="normal">Δ</mi><mo>⋅</mo><mtext>Round</mtext><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mfrac><mi>w</mi><mi mathvariant="normal">Δ</mi></mfrac><mo fence="true">)</mo></mrow><mo separator="true">,</mo><mspace width="1em"/><mi mathvariant="normal">Δ</mi><mo>=</mo><mfrac><mrow><mi>max</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>w</mi><mi mathvariant="normal">∣</mi><mo stretchy="false">)</mo></mrow><msup><mn>2</mn><mrow><mi>N</mi><mo>−</mo><mn>1</mn></mrow></msup></mfrac></mrow><annotation encoding="application/x-tex">Q(w) = \Delta \cdot \text{Round}\!\left(\frac{w}{\Delta}\right), \quad \Delta = \frac{\max(|w|)}{2^{N-1} }
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.836em;vertical-align:-0.686em;"></span><span class="mord text"><span class="mord">Round</span></span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size2">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.1076em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">Δ</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size2">)</span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">Δ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.113em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7673em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop">max</span><span class="mopen">(</span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord">∣</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>Where:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi></mrow><annotation encoding="application/x-tex">w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span> is the original weight value (in FP16)</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span></span></span></span> is the number of quantization bits (e.g., <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">N=4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> for INT4)</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Δ</mi></mrow><annotation encoding="application/x-tex">\Delta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span></span></span></span> is the <strong>quantization scale</strong> — the step size between quantization levels</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>Round</mtext><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\text{Round}(\cdot)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">Round</span></span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span></span></span></span> rounds to the nearest integer</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">Q(w)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mclose">)</span></span></span></span> is the quantized approximation</li>
+</ul>
+<p>Let's trace through a concrete example. Suppose <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">N = 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> (4-bit), so we have <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mn>2</mn><mn>4</mn></msup><mo>=</mo><mn>16</mn></mrow><annotation encoding="application/x-tex">2^4 = 16</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">4</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">16</span></span></span></span> possible integer values (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>−</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">-8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">−</span><span class="mord">8</span></span></span></span> to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>7</mn></mrow><annotation encoding="application/x-tex">7</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">7</span></span></span></span>). If the maximum absolute weight value is <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>max</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>w</mi><mi mathvariant="normal">∣</mi><mo stretchy="false">)</mo><mo>=</mo><mn>2.0</mn></mrow><annotation encoding="application/x-tex">\max(|w|) = 2.0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">max</span><span class="mopen">(</span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord">∣</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2.0</span></span></span></span>, then:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">Δ</mi><mo>=</mo><mfrac><mn>2.0</mn><msup><mn>2</mn><mn>3</mn></msup></mfrac><mo>=</mo><mfrac><mn>2.0</mn><mn>8</mn></mfrac><mo>=</mo><mn>0.25</mn></mrow><annotation encoding="application/x-tex">\Delta = \frac{2.0}{2^3} = \frac{2.0}{8} = 0.25
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7401em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">3</span></span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">2.0</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">8</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">2.0</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.25</span></span></span></span></span></p>
+<p>A weight <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mo>=</mo><mn>1.7</mn></mrow><annotation encoding="application/x-tex">w = 1.7</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1.7</span></span></span></span> would be quantized to:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mn>1.7</mn><mo stretchy="false">)</mo><mo>=</mo><mn>0.25</mn><mo>⋅</mo><mtext>Round</mtext><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mfrac><mn>1.7</mn><mn>0.25</mn></mfrac><mo fence="true">)</mo></mrow><mo>=</mo><mn>0.25</mn><mo>⋅</mo><mtext>Round</mtext><mo stretchy="false">(</mo><mn>6.8</mn><mo stretchy="false">)</mo><mo>=</mo><mn>0.25</mn><mo>×</mo><mn>7</mn><mo>=</mo><mn>1.75</mn></mrow><annotation encoding="application/x-tex">Q(1.7) = 0.25 \cdot \text{Round}\!\left(\frac{1.7}{0.25}\right) = 0.25 \cdot \text{Round}(6.8) = 0.25 \times 7 = 1.75
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord">1.7</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.25</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="mord text"><span class="mord">Round</span></span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">0.25</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1.7</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">)</span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.25</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">Round</span></span><span class="mopen">(</span><span class="mord">6.8</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">0.25</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">7</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1.75</span></span></span></span></span></p>
+<p>The <strong>quantization error</strong> for this weight is <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">∣</mi><mn>1.75</mn><mo>−</mo><mn>1.70</mn><mi mathvariant="normal">∣</mi><mo>=</mo><mn>0.05</mn></mrow><annotation encoding="application/x-tex">|1.75 - 1.70| = 0.05</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∣1.75</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1.70∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.05</span></span></span></span> — small, but accumulated across billions of weights, these errors compound into significant model degradation.</p>
+<h3 id="2-4-The-Quantization-Error-Problem">2.4 The Quantization Error Problem</h3>
+<p>The challenge of low-bit quantization is best understood through perplexity comparison. For the OPT-6.7B model (a popular open-source LLM):</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Bits</th>
+<th>WikiText Perplexity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FP16 (full precision)</td>
+<td>16</td>
+<td>10.86</td>
+</tr>
+<tr>
+<td>RTN (round-to-nearest)</td>
+<td>INT3, g128</td>
+<td>23.54</td>
+</tr>
+<tr>
+<td>AWQ</td>
+<td>INT3, g128</td>
+<td><strong>11.39</strong></td>
+</tr>
+</tbody>
+</table>
+<p>RTN at 3-bit quantization nearly doubles the perplexity — meaning the model generates far less coherent text. AWQ brings it back almost to FP16 quality. How?</p>
+<p>The key insight is that <strong>rounding errors are not equally harmful</strong>. Some weights, when corrupted by quantization, cause catastrophic degradation. Others can be quantized aggressively with minimal effect. The art is in identifying and protecting the critical ones.</p>
+<h3 id="2-5-Post-Training-Quantization-vs-Quantization-Aware-Training">2.5 Post-Training Quantization vs. Quantization-Aware Training</h3>
+<p>There are two main families of quantization approaches:</p>
+<p><strong>Quantization-Aware Training (QAT)</strong>: During training, simulate low-bit arithmetic. The model learns to be robust to quantization errors. Works well but requires the full training process — for LLaMA-2 with 7B parameters trained on 2 trillion tokens, this means weeks on thousands of GPUs. Completely impractical for post-deployment compression.</p>
+<p><strong>Post-Training Quantization (PTQ)</strong>: Take an already-trained model and compress it using a small calibration dataset (typically 128-512 text samples). No retraining. Much cheaper, but you have less ability to correct quantization errors.</p>
+<p>AWQ is a <strong>post-training quantization</strong> method. It uses only a small calibration dataset to measure statistics (specifically, the average magnitude of activations per channel) — no gradient computation, no backpropagation. This makes it extremely fast and generalizable.</p>
+<h3 id="2-6-Weight-Only-vs-Weight-Activation-Quantization">2.6 Weight-Only vs. Weight+Activation Quantization</h3>
+<p>Another important distinction:</p>
+<p><strong>W8A8 (Weight 8-bit, Activation 8-bit)</strong>: Both weights and activations are quantized to INT8. Computations happen in INT8. Hardware can exploit fast INT8 matrix multiplication units. Example method: SmoothQuant.</p>
+<p><strong>W4A16 (Weight 4-bit, Activation 16-bit)</strong>: Only weights are stored as INT4; activations remain FP16. At inference time, weights are dequantized back to FP16 on the fly before the matrix multiplication.</p>
+<p>Why would W4A16 make sense? Look at the arithmetic:</p>
+<ul>
+<li><strong>Weight memory</strong>: 7B parameters × 4 bits = 3.5 GB (vs. 14 GB for FP16)</li>
+<li><strong>Activation memory</strong>: Much smaller (proportional to batch size × sequence length × hidden dim)</li>
+</ul>
+<p>For on-device inference with batch size 1 (single user), weight loading from memory dominates. The generation stage is <strong>memory-bandwidth-bound</strong> — the bottleneck is how fast you can load weights from DRAM, not how fast you can compute. By quantizing weights to 4 bits, you reduce memory traffic by 4×, leading to nearly 4× speedup.</p>
+<p>AWQ focuses on <strong>W4A16 quantization</strong> — exactly the right choice for on-device LLM deployment.</p>
+<h3 id="2-7-Perplexity-How-We-Measure-Language-Model-Quality">2.7 Perplexity: How We Measure Language Model Quality</h3>
+<p><strong>Perplexity</strong> is the standard metric for evaluating language model quality on text generation tasks. Intuitively, it measures how &quot;surprised&quot; or &quot;uncertain&quot; the model is when it sees real text.</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>Perplexity</mtext><mo>=</mo><mi>exp</mi><mo>⁡</mo><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mo>−</mo><mfrac><mn>1</mn><mi>N</mi></mfrac><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>N</mi></munderover><mi>log</mi><mo>⁡</mo><mi>P</mi><mo stretchy="false">(</mo><msub><mi>w</mi><mi>i</mi></msub><mo>∣</mo><msub><mi>w</mi><mn>1</mn></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>w</mi><mrow><mi>i</mi><mo>−</mo><mn>1</mn></mrow></msub><mo stretchy="false">)</mo><mo fence="true">)</mo></mrow></mrow><annotation encoding="application/x-tex">\text{Perplexity} = \exp\!\left(-\frac{1}{N}\sum_{i=1}^{N}\log P(w_i \mid w_1, \ldots, w_{i-1})\right)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord">Perplexity</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3.106em;vertical-align:-1.2777em;"></span><span class="mop">exp</span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size4">(</span></span><span class="mord">−</span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">N</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8283em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.2777em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">lo<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size4">)</span></span></span></span></span></span></span></p>
+<ul>
+<li><strong>Lower perplexity = better model</strong> (the model is less surprised, more confident)</li>
+<li>A perfect model that always predicts the next word correctly would have perplexity = 1</li>
+<li>A model that randomly guesses among 50,000 words would have perplexity ≈ 50,000</li>
+<li>Good LLMs typically have perplexity 5-15 on WikiText-2</li>
+</ul>
+<p>Think of perplexity as an inverse measure of fluency. A model with perplexity 11 reads much more naturally than one with perplexity 23. In the AWQ experiments, the goal is to achieve perplexity as close as possible to the FP16 baseline (e.g., 10.86 for OPT-6.7B) even after aggressive 3-bit or 4-bit quantization.</p>
+<h3 id="2-8-Group-Quantization-and-Per-Channel-Scaling">2.8 Group Quantization and Per-Channel Scaling</h3>
+<p><strong>Group quantization</strong> divides each weight row into small groups (e.g., 128 weights per group) and quantizes each group independently with its own scale <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Δ</mi></mrow><annotation encoding="application/x-tex">\Delta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span></span></span></span>. This is standard in modern LLM quantization:</p>
+<ul>
+<li>Notation: &quot;INT3-g128&quot; means 3-bit quantization with group size 128</li>
+<li>Smaller groups → more scale parameters stored → better accuracy but slightly higher overhead</li>
+<li>Group size 128 is the standard sweet spot</li>
+</ul>
+<p><strong>Per-channel scaling</strong> is a related concept: instead of using a single scale for an entire weight matrix, use one scale per output channel (one per row of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi></mrow><annotation encoding="application/x-tex">W</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span>). AWQ goes further by applying a <strong>per-input-channel</strong> scaling factor <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span> that is embedded into the weights before quantization.</p>
+<hr>
+<h2 id="3-What-AWQ-Does-The-Big-Picture">3. What AWQ Does: The Big Picture</h2>
+<p>AWQ makes one beautiful observation and builds an entire system around it:</p>
+<blockquote>
+<p><strong>Not all weights in an LLM are equally important. Protecting just 1% of them — the &quot;salient&quot; ones — dramatically reduces quantization error. And crucially, we can identify these salient weights not by looking at the weights themselves, but by looking at the activations that flow through them.</strong></p>
+</blockquote>
+<p>The naive approach to protecting important weights: keep them in FP16 while quantizing the rest to INT4. This is &quot;mixed precision&quot; quantization. It works (perplexity drops from 23.54 to 13.00 for OPT-6.7B at INT3), but has a major problem: <strong>hardware hates mixed precision</strong>. Real accelerators (GPUs, NPUs) are optimized for uniform data types. A weight matrix with 99% INT4 values and 1% FP16 values is awkward to work with and doesn't yield practical speedups.</p>
+<p>AWQ's solution: instead of keeping salient weights in FP16, <strong>scale them up before quantization and scale the corresponding activations down</strong>. This is a mathematical equivalence transformation that:</p>
+<ol>
+<li>Reduces the quantization error for salient weights</li>
+<li>Keeps everything in INT4 (no mixed precision)</li>
+<li>Incurs zero extra computation cost at inference time</li>
+</ol>
+<p>The scaling factor is determined by a simple grid search over activation statistics collected from a small calibration dataset — no backpropagation required.</p>
+<hr>
+<h2 id="4-The-Core-Insight-Not-All-Weights-Are-Equal">4. The Core Insight: Not All Weights Are Equal</h2>
+<p>This section explains the crucial observation that makes AWQ work.</p>
+<h3 id="The-experiment">The experiment</h3>
+<p>The authors quantized OPT models using INT3-g128 and asked: what happens if we keep a tiny fraction of weight channels in FP16 instead of quantizing them?</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>FP16 kept</th>
+<th>WikiText PPL (OPT-6.7B)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RTN (all quantized)</td>
+<td>0%</td>
+<td>23.54</td>
+</tr>
+<tr>
+<td>Keep top 1% by <strong>weight magnitude</strong></td>
+<td>1%</td>
+<td>22.37</td>
+</tr>
+<tr>
+<td>Keep top 1% by <strong>activation magnitude</strong></td>
+<td>1%</td>
+<td><strong>11.39</strong></td>
+</tr>
+<tr>
+<td>Keep top 1% randomly</td>
+<td>1%</td>
+<td>23.54</td>
+</tr>
+</tbody>
+</table>
+<p>Three findings jump out:</p>
+<ol>
+<li>Keeping 1% of weights in FP16 based on <strong>activation magnitude</strong> reduces perplexity from 23.54 to 11.39 — nearly recovering FP16 quality (10.86).</li>
+<li>Keeping 1% based on <strong>weight magnitude</strong> (the naive choice) barely helps: 22.37 vs. 23.54.</li>
+<li>Random selection does nothing.</li>
+</ol>
+<p><strong>Why does activation magnitude identify important weights?</strong></p>
+<p>A weight <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub></mrow><annotation encoding="application/x-tex">w_{ij}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> in matrix <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi></mrow><annotation encoding="application/x-tex">W</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span> connects input channel <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>j</mi></mrow><annotation encoding="application/x-tex">j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.854em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05724em;">j</span></span></span></span> to output channel <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi></mrow><annotation encoding="application/x-tex">i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span></span></span></span>. The &quot;importance&quot; of this weight to the final model output depends not just on <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub></mrow><annotation encoding="application/x-tex">w_{ij}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> itself, but on how large the corresponding input <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">x_j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> typically is. If <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">x_j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> is typically large, then even a small error in <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub></mrow><annotation encoding="application/x-tex">w_{ij}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> gets amplified: the error in the output is <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Δ</mi><msub><mi>w</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><mo>⋅</mo><msub><mi>x</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">\Delta w_{ij} \cdot x_j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord">Δ</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">ij</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span>, which grows with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">x_j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span>.</p>
+<p>So we should look at <strong>input channel <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>j</mi></mrow><annotation encoding="application/x-tex">j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.854em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05724em;">j</span></span></span></span>'s activation magnitude</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">∣</mi><msub><mi>x</mi><mi>j</mi></msub><mi mathvariant="normal">∣</mi></mrow><annotation encoding="application/x-tex">|x_j|</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord">∣</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mord">∣</span></span></span></span> to judge whether the weights in that channel are important. Weight channels corresponding to large activations are more &quot;salient&quot; — their quantization errors have larger effect on the output.</p>
+<p>This is the activation-awareness of AWQ: using input activation statistics to guide weight quantization decisions.</p>
+<hr>
+<h2 id="5-AWQ-Method-Details">5. AWQ Method Details</h2>
+<h3 id="5-1-Analyzing-Quantization-Error-Mathematically">5.1 Analyzing Quantization Error Mathematically</h3>
+<p>AWQ starts with a rigorous analysis. For a weight-only quantization setting, the linear layer computes:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>y</mi><mo>=</mo><mi mathvariant="bold">W</mi><mi mathvariant="bold">x</mi></mrow><annotation encoding="application/x-tex">y = \mathbf{W}\mathbf{x}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6861em;"></span><span class="mord mathbf">Wx</span></span></span></span></span></p>
+<p>After quantization, the weight becomes <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mi mathvariant="bold">w</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">Q(\mathbf{w})</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathbf" style="margin-right:0.01597em;">w</span><span class="mclose">)</span></span></span></span> (where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">w</mi></mrow><annotation encoding="application/x-tex">\mathbf{w}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4444em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">w</span></span></span></span> is a single weight value from <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">W</mi></mrow><annotation encoding="application/x-tex">\mathbf{W}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6861em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">W</span></span></span></span>), and the output becomes <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mi mathvariant="bold">w</mi><mo stretchy="false">)</mo><mo>⋅</mo><mi mathvariant="bold">x</mi></mrow><annotation encoding="application/x-tex">Q(\mathbf{w}) \cdot \mathbf{x}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathbf" style="margin-right:0.01597em;">w</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.4444em;"></span><span class="mord mathbf">x</span></span></span></span>.</p>
+<p>Recall the quantization function:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mi mathvariant="bold">w</mi><mo stretchy="false">)</mo><mo>=</mo><mi mathvariant="normal">Δ</mi><mo>⋅</mo><mtext>Round</mtext><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mfrac><mi mathvariant="bold">w</mi><mi mathvariant="normal">Δ</mi></mfrac><mo fence="true">)</mo></mrow><mo separator="true">,</mo><mspace width="1em"/><mi mathvariant="normal">Δ</mi><mo>=</mo><mfrac><mrow><mi>max</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi mathvariant="bold">w</mi><mi mathvariant="normal">∣</mi><mo stretchy="false">)</mo></mrow><msup><mn>2</mn><mrow><mi>N</mi><mo>−</mo><mn>1</mn></mrow></msup></mfrac></mrow><annotation encoding="application/x-tex">Q(\mathbf{w}) = \Delta \cdot \text{Round}\!\left(\frac{\mathbf{w} }{\Delta}\right), \quad \Delta = \frac{\max(|\mathbf{w}|)}{2^{N-1} }
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathbf" style="margin-right:0.01597em;">w</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.836em;vertical-align:-0.686em;"></span><span class="mord text"><span class="mord">Round</span></span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size2">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.1214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">Δ</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathbf" style="margin-right:0.01597em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size2">)</span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">Δ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.113em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7673em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop">max</span><span class="mopen">(</span><span class="mord">∣</span><span class="mord mathbf" style="margin-right:0.01597em;">w</span><span class="mord">∣</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>The quantization <strong>error</strong> for a single element is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mtext>Err</mtext><mo stretchy="false">(</mo><mi>Q</mi><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo><mo>⋅</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mi mathvariant="normal">Δ</mi><mo>⋅</mo><mtext>RoundErr</mtext><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mfrac><mi>w</mi><mi mathvariant="normal">Δ</mi></mfrac><mo fence="true">)</mo></mrow><mo>⋅</mo><mi>x</mi></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(3)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\text{Err}(Q(w) \cdot x) = \Delta \cdot \text{RoundErr}\!\left(\frac{w}{\Delta}\right) \cdot x \tag{3}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">Err</span></span><span class="mopen">(</span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">x</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.836em;vertical-align:-0.686em;"></span><span class="mord text"><span class="mord">RoundErr</span></span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size2">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.1076em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">Δ</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size2">)</span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span><span class="tag"><span class="strut" style="height:1.836em;vertical-align:-0.686em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">3</span></span><span class="mord">)</span></span></span></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>RoundErr</mtext><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo><mo>=</mo><mtext>Round</mtext><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo><mo>−</mo><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\text{RoundErr}(\cdot) = \text{Round}(\cdot) - (\cdot)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">RoundErr</span></span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">Round</span></span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span></span></span></span> is the rounding residual, roughly uniformly distributed in <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">[</mo><mo>−</mo><mn>0.5</mn><mo separator="true">,</mo><mn>0.5</mn><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">[-0.5, 0.5]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord">−</span><span class="mord">0.5</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">0.5</span><span class="mclose">]</span></span></span></span>, giving an expected absolute value of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0.25</mn></mrow><annotation encoding="application/x-tex">0.25</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.25</span></span></span></span>.</p>
+<p>Note two things:</p>
+<ol>
+<li>The error is proportional to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span> — larger activations amplify quantization error</li>
+<li>The error is proportional to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Δ</mi></mrow><annotation encoding="application/x-tex">\Delta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span></span></span></span> — larger scale factors amplify error</li>
+</ol>
+<h3 id="5-2-The-Activation-Aware-Scaling-Trick">5.2 The Activation-Aware Scaling Trick</h3>
+<p>Now suppose we multiply weight <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi></mrow><annotation encoding="application/x-tex">w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span> by a scaling factor <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>&gt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">s &gt; 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5782em;vertical-align:-0.0391em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">&gt;</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> before quantization and divide the activation <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span> by <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span> to compensate:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mi>w</mi><mo>⋅</mo><mi>s</mi><mo stretchy="false">)</mo><mo>⋅</mo><mfrac><mi>x</mi><mi>s</mi></mfrac></mrow><annotation encoding="application/x-tex">Q(w \cdot s) \cdot \frac{x}{s}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.7936em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.1076em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">s</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">x</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>This is mathematically equivalent to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo><mo>⋅</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">Q(w) \cdot x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span> in the ideal case (without quantization error), but behaves differently under quantization. The new scale becomes:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msup><mi mathvariant="normal">Δ</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>=</mo><mfrac><mrow><mi>max</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>w</mi><mo>⋅</mo><mi>s</mi><mi mathvariant="normal">∣</mi><mo stretchy="false">)</mo></mrow><msup><mn>2</mn><mrow><mi>N</mi><mo>−</mo><mn>1</mn></mrow></msup></mfrac><mo>≈</mo><mi>s</mi><mo>⋅</mo><mi mathvariant="normal">Δ</mi></mrow><annotation encoding="application/x-tex">\Delta&#x27; = \frac{\max(|w \cdot s|)}{2^{N-1} } \approx s \cdot \Delta
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8019em;"></span><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8019em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.113em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7673em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop">max</span><span class="mopen">(</span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal">s</span><span class="mord">∣</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.4445em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span></span></span></span></span></p>
+<p>(approximately, assuming multiplying by <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span> doesn't change which element is the maximum — valid when <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span> is not too large).</p>
+<p>The quantization error with scaling is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mtext>Err</mtext><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mi>Q</mi><mo stretchy="false">(</mo><mi>w</mi><mo>⋅</mo><mi>s</mi><mo stretchy="false">)</mo><mo>⋅</mo><mfrac><mi>x</mi><mi>s</mi></mfrac><mo fence="true">)</mo></mrow><mo>=</mo><msup><mi mathvariant="normal">Δ</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>⋅</mo><mtext>RoundErr</mtext><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mfrac><mrow><mi>w</mi><mi>s</mi></mrow><msup><mi mathvariant="normal">Δ</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup></mfrac><mo fence="true">)</mo></mrow><mo>⋅</mo><mi>x</mi><mo>⋅</mo><mfrac><mn>1</mn><mi>s</mi></mfrac></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(3b)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\text{Err}\!\left(Q(w \cdot s) \cdot \frac{x}{s}\right) = \Delta&#x27; \cdot \text{RoundErr}\!\left(\frac{ws}{\Delta&#x27;}\right) \cdot x \cdot \frac{1}{s} \tag{3b}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.836em;vertical-align:-0.686em;"></span><span class="mord text"><span class="mord">Err</span></span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size2">(</span></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.1076em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">s</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">x</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size2">)</span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8019em;"></span><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8019em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.836em;vertical-align:-0.686em;"></span><span class="mord text"><span class="mord">RoundErr</span></span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size2">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.1076em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6779em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord mathnormal">s</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size2">)</span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.4445em;"></span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">s</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span><span class="tag"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">3b</span></span><span class="mord">)</span></span></span></span></span></span></p>
+<p>Compare with Equation (3). The key ratio of new error to old error is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mfrac><msup><mi mathvariant="normal">Δ</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mi mathvariant="normal">Δ</mi></mfrac><mo>⋅</mo><mfrac><mn>1</mn><mi>s</mi></mfrac><mo>≈</mo><mfrac><mrow><mi>s</mi><mi mathvariant="normal">Δ</mi></mrow><mi mathvariant="normal">Δ</mi></mfrac><mo>⋅</mo><mfrac><mn>1</mn><mi>s</mi></mfrac><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">\frac{\Delta&#x27;}{\Delta} \cdot \frac{1}{s} \approx \frac{s\Delta}{\Delta} \cdot \frac{1}{s} = 1
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:2.1149em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.4289em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">Δ</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7519em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">s</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.0463em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3603em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">Δ</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">s</span><span class="mord">Δ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">s</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span></span></p>
+<p>Wait — they cancel out? Let's be more careful. The term <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>RoundErr</mtext><mo stretchy="false">(</mo><mi>w</mi><mi>s</mi><mi mathvariant="normal">/</mi><msup><mi mathvariant="normal">Δ</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\text{RoundErr}(ws/\Delta&#x27;)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0019em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">RoundErr</span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord mathnormal">s</span><span class="mord">/</span><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7519em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span> is the rounding error of the <strong>new</strong> quantized value. Since <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi mathvariant="normal">Δ</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>≈</mo><mi>s</mi><mi mathvariant="normal">Δ</mi></mrow><annotation encoding="application/x-tex">\Delta&#x27; \approx s\Delta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7519em;"></span><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7519em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">s</span><span class="mord">Δ</span></span></span></span>, we have <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mi>s</mi><mi mathvariant="normal">/</mi><msup><mi mathvariant="normal">Δ</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo>≈</mo><mi>w</mi><mi mathvariant="normal">/</mi><mi mathvariant="normal">Δ</mi></mrow><annotation encoding="application/x-tex">ws/\Delta&#x27; \approx w/\Delta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0019em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord mathnormal">s</span><span class="mord">/</span><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7519em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord">/Δ</span></span></span></span>. The rounding error doesn't change much (it's still in <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">[</mo><mo>−</mo><mn>0.5</mn><mo separator="true">,</mo><mn>0.5</mn><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">[-0.5, 0.5]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord">−</span><span class="mord">0.5</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">0.5</span><span class="mclose">]</span></span></span></span>).</p>
+<p>But the important thing is that for the <strong>salient channels</strong> (where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span> is large), scaling up <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span> shifts the quantization grid to better fit <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mo>⋅</mo><mi>s</mi></mrow><annotation encoding="application/x-tex">w \cdot s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4445em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span>. Specifically:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>RoundErr</mtext><mo stretchy="false">(</mo><mi>w</mi><mi>s</mi><mi mathvariant="normal">/</mi><msup><mi mathvariant="normal">Δ</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\text{RoundErr}(ws/\Delta&#x27;)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0019em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">RoundErr</span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord mathnormal">s</span><span class="mord">/</span><span class="mord"><span class="mord">Δ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7519em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span> changes (this is the key): the scaled weight <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">ws</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord mathnormal">s</span></span></span></span> might now sit closer to a grid point</li>
+<li>The <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mi mathvariant="normal">/</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">1/s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1/</span><span class="mord mathnormal">s</span></span></span></span> factor reduces the final error for large <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span> values</li>
+</ul>
+<p>Empirically, the authors find that for <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">s=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span>, the perplexity of OPT-6.7B under INT3 drops from 23.54 (no scaling) to <strong>11.92</strong> — nearly matching the 11.39 of mixed-precision FP16 (Table 2 in the paper).</p>
+<p><strong>Why doesn't scaling harm non-salient channels?</strong></p>
+<p>If <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span> is too large, it can increase the scale <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Δ</mi></mrow><annotation encoding="application/x-tex">\Delta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span></span></span></span> of the quantized group, making quantization coarser for all weights in the group, including non-salient ones. The authors observe that for <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">s=4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span>, 21.2% of weights have changed quantization bins (i.e., the rounding goes to a different integer), which increases error for non-salient channels. The optimal <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">s=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span> balances protecting salient channels without harming others.</p>
+<h3 id="5-3-Searching-for-the-Optimal-Scale">5.3 Searching for the Optimal Scale</h3>
+<p>Rather than hand-tuning a scale for each channel, AWQ defines an automatic search procedure.</p>
+<p><strong>The objective</strong>: Find per-channel scales <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">s</mi></mrow><annotation encoding="application/x-tex">\mathbf{s}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4444em;"></span><span class="mord mathbf">s</span></span></span></span> that minimize the output reconstruction error after quantization:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msup><mi mathvariant="bold">s</mi><mo>∗</mo></msup><mo>=</mo><mi>arg</mi><mo>⁡</mo><munder><mrow><mi>min</mi><mo>⁡</mo></mrow><mi mathvariant="bold">s</mi></munder><mi mathvariant="script">L</mi><mo stretchy="false">(</mo><mi mathvariant="bold">s</mi><mo stretchy="false">)</mo><mo separator="true">,</mo><mspace width="1em"/><mi mathvariant="script">L</mi><mo stretchy="false">(</mo><mi mathvariant="bold">s</mi><mo stretchy="false">)</mo><mo>=</mo><mi mathvariant="normal">∥</mi><mi>Q</mi><mo stretchy="false">(</mo><mi mathvariant="bold">W</mi><mo>⋅</mo><mtext>diag</mtext><mo stretchy="false">(</mo><mi mathvariant="bold">s</mi><mo stretchy="false">)</mo><mo stretchy="false">)</mo><mo stretchy="false">(</mo><mtext>diag</mtext><mo stretchy="false">(</mo><mi mathvariant="bold">s</mi><msup><mo stretchy="false">)</mo><mrow><mo>−</mo><mn>1</mn></mrow></msup><mo>⋅</mo><mi mathvariant="bold">X</mi><mo stretchy="false">)</mo><mo>−</mo><mi mathvariant="bold">W</mi><mi mathvariant="bold">X</mi><mi mathvariant="normal">∥</mi></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(4)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\mathbf{s}^* = \arg\min_{\mathbf{s} } \mathcal{L}(\mathbf{s}), \quad \mathcal{L}(\mathbf{s}) = \|Q(\mathbf{W} \cdot \text{diag}(\mathbf{s}))(\text{diag}(\mathbf{s})^{-1} \cdot \mathbf{X}) - \mathbf{W}\mathbf{X}\| \tag{4}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7387em;"></span><span class="mord"><span class="mord mathbf">s</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7387em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">∗</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.45em;vertical-align:-0.7em;"></span><span class="mop">ar<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6679em;"><span style="top:-2.4em;margin-left:0em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathbf mtight">s</span></span></span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span><span class="mop">min</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.7em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathcal">L</span><span class="mopen">(</span><span class="mord mathbf">s</span><span class="mclose">)</span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathcal">L</span><span class="mopen">(</span><span class="mord mathbf">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∥</span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord mathbf" style="margin-right:0.01597em;">W</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.1141em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">diag</span></span><span class="mopen">(</span><span class="mord mathbf">s</span><span class="mclose">))</span><span class="mopen">(</span><span class="mord text"><span class="mord">diag</span></span><span class="mopen">(</span><span class="mord mathbf">s</span><span class="mclose"><span class="mclose">)</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathbf">X</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathbf">WX</span><span class="mord">∥</span></span><span class="tag"><span class="strut" style="height:1.5641em;vertical-align:-0.7em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">4</span></span><span class="mord">)</span></span></span></span></span></span></p>
+<p>Here:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">W</mi></mrow><annotation encoding="application/x-tex">\mathbf{W}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6861em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">W</span></span></span></span> is the original weight matrix in FP16</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">Q(\cdot)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span></span></span></span> is the quantization function (INT3 or INT4)</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">X</mi></mrow><annotation encoding="application/x-tex">\mathbf{X}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6861em;"></span><span class="mord mathbf">X</span></span></span></span> is a small set of input activations collected from the calibration dataset</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>diag</mtext><mo stretchy="false">(</mo><mi mathvariant="bold">s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\text{diag}(\mathbf{s})</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">diag</span></span><span class="mopen">(</span><span class="mord mathbf">s</span><span class="mclose">)</span></span></span></span> is a diagonal matrix of per-channel scales</li>
+<li>The scales multiply the weights (columns of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi></mrow><annotation encoding="application/x-tex">W</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span>) and inversely divide the activations (rows of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi></mrow><annotation encoding="application/x-tex">X</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span></span></span></span>)</li>
+</ul>
+<p>Since <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">Q(\cdot)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">Q</span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span></span></span></span> is not differentiable (it involves rounding), gradient-based optimization is unreliable. Instead, AWQ uses a simple <strong>grid search</strong> over a compact 1D search space.</p>
+<p><strong>The search space</strong>: Since the salient channels are identified by large activation magnitude, AWQ uses the average activation magnitude per input channel <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi mathvariant="bold">s</mi><mi mathvariant="bold">X</mi></msub></mrow><annotation encoding="application/x-tex">\mathbf{s}_\mathbf{X}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5944em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathbf">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3303em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathbf mtight">X</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> as a reference, and searches for the best power <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span>:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mi mathvariant="bold">s</mi><mo>=</mo><msubsup><mi mathvariant="bold">s</mi><mi mathvariant="bold">X</mi><mi>α</mi></msubsup><mo separator="true">,</mo><mspace width="1em"/><msup><mi>α</mi><mo>∗</mo></msup><mo>=</mo><mi>arg</mi><mo>⁡</mo><munder><mrow><mi>min</mi><mo>⁡</mo></mrow><mi>α</mi></munder><mi mathvariant="script">L</mi><mo stretchy="false">(</mo><msubsup><mi mathvariant="bold">s</mi><mi mathvariant="bold">X</mi><mi>α</mi></msubsup><mo stretchy="false">)</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(5)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\mathbf{s} = \mathbf{s}_\mathbf{X}^\alpha, \quad \alpha^* = \arg\min_\alpha \mathcal{L}(\mathbf{s}_\mathbf{X}^\alpha) \tag{5}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4444em;"></span><span class="mord mathbf">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9857em;vertical-align:-0.247em;"></span><span class="mord"><span class="mord mathbf">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7144em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathbf mtight">X</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0037em;">α</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7387em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">∗</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.45em;vertical-align:-0.7em;"></span><span class="mop">ar<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6679em;"><span style="top:-2.4em;margin-left:0em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0037em;">α</span></span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span><span class="mop">min</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.7em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathcal">L</span><span class="mopen">(</span><span class="mord"><span class="mord mathbf">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7144em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathbf mtight">X</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0037em;">α</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span><span class="tag"><span class="strut" style="height:1.45em;vertical-align:-0.7em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">5</span></span><span class="mord">)</span></span></span></span></span></span></p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">\alpha = 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0</span></span></span></span>: no scaling (all channels get scale 1) — equivalent to RTN</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">\alpha = 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>: maximum scaling proportional to activation magnitude — most aggressive protection of salient channels</li>
+<li>Optimal <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> typically falls around 0.5, balancing salient and non-salient channel protection</li>
+</ul>
+<p>The grid search over <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>∈</mo><mo stretchy="false">[</mo><mn>0</mn><mo separator="true">,</mo><mn>1</mn><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">\alpha \in [0, 1]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5782em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord">0</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mclose">]</span></span></span></span> with step size 0.05 (20 evaluations) is <strong>extremely fast</strong> — it requires only forward passes through the quantized layer, no backpropagation. This is why AWQ runs without any GPU training infrastructure.</p>
+<p><strong>Additional trick: weight clipping</strong></p>
+<p>The authors also apply weight clipping to minimize MSE quantization error, but this is a secondary optimization on top of the main scaling approach.</p>
+<p><strong>How the scaling is absorbed into inference</strong></p>
+<p>At inference time, the scale <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi mathvariant="bold">s</mi><mrow><mo>−</mo><mn>1</mn></mrow></msup></mrow><annotation encoding="application/x-tex">\mathbf{s}^{-1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathbf">s</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span></span></span></span> that should multiply the activations is instead <strong>fused into the preceding layer</strong>. For example, if the preceding layer has a bias or normalization, the scaling can be absorbed there. This means inference runs with zero overhead from the scaling operation — the quantized weights are simply stored with the scale baked in.</p>
+<p>This equivalence transformation is the key to AWQ being hardware-friendly: everything remains in INT4, no mixed precision, no extra operations.</p>
+<hr>
+<h2 id="6-TinyChat-Deploying-AWQ-on-Real-Devices">6. TinyChat: Deploying AWQ on Real Devices</h2>
+<p>Having a compression algorithm is only half the story. The other half is actually running fast inference on real hardware. The AWQ paper introduces <strong>TinyChat</strong>, a specialized inference system built to realize the theoretical speed gains from W4A16 quantization.</p>
+<h3 id="Why-Converting-Memory-to-Speed-Is-Non-Trivial">Why Converting Memory to Speed Is Non-Trivial</h3>
+<p>W4A16 quantization saves memory (4× reduction in weight footprint) but doesn't automatically translate to 4× speed. The challenge: modern hardware doesn't natively multiply INT4 weights by FP16 activations. You need to:</p>
+<ol>
+<li>Load INT4 weights from memory (fast — only 4 bits per weight)</li>
+<li>Dequantize them to FP16 on-the-fly</li>
+<li>Multiply FP16 weights by FP16 activations</li>
+</ol>
+<p>The dequantization step is costly if done naively. TinyChat addresses this with two key techniques:</p>
+<h3 id="On-the-Fly-Weight-Dequantization-with-Kernel-Fusion">On-the-Fly Weight Dequantization with Kernel Fusion</h3>
+<p>Rather than dequantizing weights to DRAM (which would negate memory savings), TinyChat fuses the dequantization directly into the matrix multiplication kernel. The kernel reads INT4 weights from memory, converts them to FP16 registers, and immediately performs the multiply-accumulate — all without touching DRAM for the dequantized weights.</p>
+<p>For GPU inference, AWQ kernels are implemented in CUDA/PTX; for CPU/ARM, they use NEON SIMD instructions.</p>
+<h3 id="SIMD-Aware-Weight-Packing-ARM-NEON">SIMD-Aware Weight Packing (ARM NEON)</h3>
+<p>On ARM CPUs (phones, Apple Silicon, Raspberry Pi), SIMD (Single Instruction Multiple Data) registers process multiple values simultaneously. ARM NEON has 128-bit registers.</p>
+<p>The challenge: 4-bit weights don't align naturally to byte boundaries. TinyChat uses a <strong>reordering and packing</strong> strategy:</p>
+<ul>
+<li>Each 128-bit NEON register holds 32 4-bit weights</li>
+<li>Weights are reordered offline so that a single 128-bit AND operation followed by a shift can unpack all 32 weights at once</li>
+<li>This requires just <strong>3 SIMD instructions</strong> to unpack 32 weights, vs. 3 scalar instructions <strong>per weight</strong> in naive implementation</li>
+<li>Results in up to <strong>1.2× speedup</strong> for the packing/unpacking alone</li>
+</ul>
+<h3 id="Kernel-Fusion">Kernel Fusion</h3>
+<p>TinyChat fuses multiple operations into single CUDA/NEON kernels:</p>
+<ul>
+<li><strong>Layer normalization</strong>: Multiplication, division, and square root fused into one kernel</li>
+<li><strong>Attention layers</strong>: QKV projections and positional encoding fused; KV cache pre-allocated and updated inside the attention kernel</li>
+<li><strong>Benefits</strong>: Reduces kernel launch overhead and intermediate DRAM accesses</li>
+</ul>
+<p>On NVIDIA 4090, each FP16 kernel launches in ~0.01ms. For models like Falcon and StarCoder with many sequential operations, kernel fusion gives substantial speedups.</p>
+<hr>
+<h2 id="7-Experiments-and-Results">7. Experiments and Results</h2>
+<h3 id="7-1-Setup-and-Baselines">7.1 Setup and Baselines</h3>
+<p><strong>Quantization setting</strong>: Weight-only grouped quantization (INT4 and INT3 with group size 128). This is denoted as W4A16 or W3A16 — 4 or 3-bit weights, 16-bit activations.</p>
+<p><strong>Models evaluated</strong>:</p>
+<ul>
+<li>LLaMA family: 7B, 13B, 30B, 65B</li>
+<li>Llama-2 family: 7B, 13B, 70B</li>
+<li>OPT family: 1.3B, 2.7B, 6.7B, 13B, 30B</li>
+<li>Mistral-7B, Mixtral-8x7B (mixture of experts)</li>
+<li>Instruction-tuned: Vicuna-7B, Vicuna-13B</li>
+<li>Multi-modal: OpenFlamingo-9B, LLaVA-13B, VILA-7B, VILA-13B</li>
+</ul>
+<p><strong>Baselines</strong>:</p>
+<ul>
+<li><strong>RTN (Round-to-Nearest)</strong>: Simplest baseline, quantizes each group independently</li>
+<li><strong>GPTQ</strong>: State-of-the-art PTQ using second-order (Hessian) information for error correction</li>
+<li><strong>GPTQ-R</strong>: GPTQ with reordering trick for better performance</li>
+</ul>
+<p><strong>Calibration data</strong>: Pile dataset (Gao et al., 2020), grid size of 20 for <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> search.</p>
+<h3 id="7-2-Language-Model-Results">7.2 Language Model Results</h3>
+<p><strong>Table 4: Llama-2 and LLaMA perplexity (WikiText-2)</strong></p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>FP16</th>
+<th>RTN (INT3)</th>
+<th>GPTQ (INT3)</th>
+<th>AWQ (INT3)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Llama-2-7B</td>
+<td>5.47</td>
+<td>6.66</td>
+<td>6.43</td>
+<td><strong>6.24</strong></td>
+</tr>
+<tr>
+<td>Llama-2-13B</td>
+<td>4.88</td>
+<td>5.52</td>
+<td>5.48</td>
+<td><strong>5.32</strong></td>
+</tr>
+<tr>
+<td>Llama-2-70B</td>
+<td>3.32</td>
+<td>3.98</td>
+<td>3.88</td>
+<td><strong>3.74</strong></td>
+</tr>
+<tr>
+<td>LLaMA-7B</td>
+<td>5.68</td>
+<td>7.01</td>
+<td>8.81</td>
+<td><strong>6.35</strong></td>
+</tr>
+<tr>
+<td>LLaMA-13B</td>
+<td>5.09</td>
+<td>5.88</td>
+<td>5.66</td>
+<td><strong>5.52</strong></td>
+</tr>
+<tr>
+<td>LLaMA-30B</td>
+<td>4.10</td>
+<td>4.88</td>
+<td>4.88</td>
+<td><strong>4.61</strong></td>
+</tr>
+<tr>
+<td>LLaMA-65B</td>
+<td>3.53</td>
+<td>4.24</td>
+<td>4.17</td>
+<td><strong>3.95</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key observations</strong>:</p>
+<ol>
+<li>AWQ consistently beats both RTN and GPTQ at INT3 quantization</li>
+<li>At INT4, the gains are smaller (all methods work reasonably well at 4-bit) but AWQ still achieves the best perplexity</li>
+<li>For LLaMA-7B at INT3, GPTQ dramatically underperforms (8.81 PPL) while AWQ achieves 6.35 — this is because GPTQ overfits to the calibration set, hurting generalization</li>
+</ol>
+<p><strong>OPT models</strong> show similar trends. AWQ at INT3-g128 achieves:</p>
+<ul>
+<li>OPT-1.3B: 16.32 PPL (vs. FP16: 14.62, RTN: 119.47)</li>
+<li>OPT-6.7B: 11.39 PPL (vs. FP16: 10.86, RTN: 23.54)</li>
+<li>OPT-13B: 10.56 PPL (vs. FP16: 10.13, RTN: 46.04)</li>
+</ul>
+<h3 id="7-3-Instruction-Tuned-Models-Vicuna">7.3 Instruction-Tuned Models (Vicuna)</h3>
+<p>Instruction-tuned models (fine-tuned to follow human instructions) are harder to quantize because fine-tuning changes the weight distribution in subtle ways. The authors evaluate using GPT-4 as a judge on 80 questions.</p>
+<p><strong>Figure 5 results for Vicuna-7B (INT3-g128, GPT-4 evaluation)</strong>:</p>
+<ul>
+<li>AWQ wins on <strong>23</strong> questions, ties on <strong>5</strong>, loses on <strong>52</strong>... vs. FP16 counterpart</li>
+<li>vs. RTN: AWQ wins on 6 and ties on 3 more questions</li>
+<li>vs. GPTQ: AWQ wins 11 more questions</li>
+</ul>
+<p>The &quot;wins&quot; represent questions where the quantized model gives better-judged answers than FP16 (which can happen since quantization can act as slight regularization). More importantly, AWQ shows <strong>fewer losses</strong> compared to RTN and GPTQ.</p>
+<h3 id="7-4-Multi-Modal-Models-OpenFlamingo-LLaVA-VILA">7.4 Multi-Modal Models (OpenFlamingo, LLaVA, VILA)</h3>
+<p>This is a first for LLM quantization research — applying W4A16 quantization to <strong>vision-language models</strong>.</p>
+<p><strong>OpenFlamingo-9B on COCO Captioning (CIDEr↑)</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>INT4-g128</th>
+<th>INT3-g128</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FP16</td>
+<td>81.70 (32-shot)</td>
+<td>-</td>
+</tr>
+<tr>
+<td>RTN</td>
+<td>77.13</td>
+<td>64.79</td>
+</tr>
+<tr>
+<td>GPTQ</td>
+<td>74.98</td>
+<td>64.77</td>
+</tr>
+<tr>
+<td><strong>AWQ</strong></td>
+<td><strong>80.53</strong></td>
+<td><strong>74.47</strong></td>
+</tr>
+</tbody>
+</table>
+<p>AWQ reduces the quantization degradation from 4.57 to <strong>just 1.17</strong> CIDEr points at INT4 — a 4× model size reduction with negligible performance loss.</p>
+<p><strong>VILA-7B and VILA-13B on 11 visual-language benchmarks</strong> (Table 7): AWQ consistently shows lossless or near-lossless quantization performance across all 11 benchmarks including VQAv2, GQA, VizWiz, SQA, POPE, MME, MMB, SEED, LLaVA-bench, and MM-Vet.</p>
+<p>The success on multi-modal models demonstrates that AWQ's activation-based salient weight detection generalizes across modalities — the same calibration strategy works whether the model processes text or images.</p>
+<h3 id="7-5-Coding-and-Math-Benchmarks">7.5 Coding and Math Benchmarks</h3>
+<p><strong>CodeLlama-7b-Instruct on MBPP (programming) and GSM8K (math), INT4-g128</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>FP16</th>
+<th>RTN</th>
+<th>GPTQ</th>
+<th>AWQ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MBPP pass@1</td>
+<td>38.53</td>
+<td>37.51</td>
+<td>31.97</td>
+<td><strong>40.64</strong></td>
+</tr>
+<tr>
+<td>MBPP pass@10</td>
+<td>49.77</td>
+<td>48.49</td>
+<td>44.75</td>
+<td><strong>49.25</strong></td>
+</tr>
+<tr>
+<td>Llama-2-7B GSM8K</td>
+<td>13.87</td>
+<td>11.07</td>
+<td>12.13</td>
+<td><strong>13.57</strong></td>
+</tr>
+<tr>
+<td>Llama-2-13B GSM8K</td>
+<td>26.16</td>
+<td>21.23</td>
+<td>24.26</td>
+<td><strong>25.12</strong></td>
+</tr>
+<tr>
+<td>Llama-2-70B GSM8K</td>
+<td>56.41</td>
+<td>53.98</td>
+<td>56.03</td>
+<td><strong>56.40</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Remarkably, AWQ on MBPP <strong>exceeds FP16 performance</strong> (40.64 vs. 38.53 pass@1) — quantization as slight regularization can sometimes improve task-specific performance. For GSM8K, AWQ at INT4 nearly matches FP16 performance across all model scales.</p>
+<h3 id="7-6-Speedup-Results-TinyChat">7.6 Speedup Results (TinyChat)</h3>
+<p><strong>RTX 4090 (desktop GPU) — tokens/sec</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>FP16 (Huggingface)</th>
+<th>AWQ + TinyChat</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Llama-2-7B</td>
+<td>62</td>
+<td><strong>194</strong> (3.1×)</td>
+</tr>
+<tr>
+<td>Llama-2-13B</td>
+<td>52</td>
+<td><strong>110</strong> (2.1×)</td>
+</tr>
+<tr>
+<td>MPT-7B</td>
+<td>85</td>
+<td><strong>158</strong> (1.9×)</td>
+</tr>
+<tr>
+<td>MPT-30B</td>
+<td>OOM</td>
+<td><strong>49</strong></td>
+</tr>
+<tr>
+<td>Falcon-7B</td>
+<td>53</td>
+<td><strong>53</strong> (1.0×)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Jetson Orin (mobile GPU) — tokens/sec</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>FP16</th>
+<th>AWQ + TinyChat</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Llama-2-7B</td>
+<td>12</td>
+<td><strong>39</strong> (3.3×)</td>
+</tr>
+<tr>
+<td>Llama-2-13B</td>
+<td>9</td>
+<td><strong>25</strong> (2.8×)</td>
+</tr>
+<tr>
+<td>MPT-30B</td>
+<td>OOM</td>
+<td><strong>12</strong></td>
+</tr>
+<tr>
+<td>Falcon-7B</td>
+<td>12</td>
+<td><strong>38</strong> (3.2×)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key results</strong>:</p>
+<ul>
+<li>Consistent <strong>3-4× speedup</strong> over FP16 Huggingface on both desktop and mobile GPUs</li>
+<li>Enables models that couldn't fit in memory (MPT-30B = OOM in FP16) to run at interactive speeds</li>
+<li>Llama-2-70B: deployable on a <strong>single NVIDIA Jetson Orin</strong> with 64GB memory</li>
+</ul>
+<p><strong>VILA visual-language models on multiple platforms</strong> (Table 10):</p>
+<ul>
+<li>VILA-7B: 155.3 tokens/sec (4090) vs. 81.6 (FP16) — 1.9× speedup</li>
+<li>VILA-13B: 102.1 tokens/sec (4090) — runs where FP16 is OOM</li>
+</ul>
+<hr>
+<h2 id="8-Limitations-and-Open-Questions">8. Limitations and Open Questions</h2>
+<p>AWQ is an excellent method, but it has several limitations worth understanding:</p>
+<h3 id="8-1-Still-Requires-Calibration-Data">8.1 Still Requires Calibration Data</h3>
+<p>AWQ needs a small calibration dataset to measure average activation magnitudes per channel. While the dataset is small (16 sequences of 2048 tokens, 10× less than GPTQ's 192 sequences), it still:</p>
+<ul>
+<li>Requires access to representative data for the target domain</li>
+<li>Introduces a mild dependence on calibration distribution</li>
+</ul>
+<p>The authors show AWQ is more robust to calibration distribution mismatch than GPTQ (Figure 8b — PPL increase of only 0.5-0.6 vs. GPTQ's 2.3-4.9 when calibration and evaluation domains don't match). But this robustness is a matter of degree, not elimination.</p>
+<h3 id="8-2-Simplified-Search-Space">8.2 Simplified Search Space</h3>
+<p>The scaling search uses a single parameter <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> per layer, with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">s</mi><mo>=</mo><msubsup><mi mathvariant="bold">s</mi><mi mathvariant="bold">X</mi><mi>α</mi></msubsup></mrow><annotation encoding="application/x-tex">\mathbf{s} = \mathbf{s}_\mathbf{X}^\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4444em;"></span><span class="mord mathbf">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9417em;vertical-align:-0.2773em;"></span><span class="mord"><span class="mord mathbf">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6644em;"><span style="top:-2.4227em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathbf mtight">X</span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0037em;">α</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2773em;"><span></span></span></span></span></span></span></span></span></span>. This constrains the search to a 1D curve in the space of all possible per-channel scales. A more expressive search might find better scales, at the cost of more computation.</p>
+<h3 id="8-3-Extreme-Low-Bit-Quantization-INT2">8.3 Extreme Low-Bit Quantization (INT2)</h3>
+<p>At very aggressive 2-bit quantization (INT2), AWQ degrades significantly and GPTQ's reconstruction-based approach helps. The authors show that <strong>combining AWQ + GPTQ</strong> (Table 9) achieves the best INT2 results — AWQ alone is insufficient here.</p>
+<h3 id="8-4-Generative-Tasks-vs-Discriminative-Tasks">8.4 Generative Tasks vs. Discriminative Tasks</h3>
+<p>AWQ is evaluated primarily on <strong>generative tasks</strong> (text generation, captioning). For classification or embedding tasks where the model architecture and use pattern differ, the activation magnitude heuristic may be less valid.</p>
+<h3 id="8-5-Quantization-of-Certain-Architectures">8.5 Quantization of Certain Architectures</h3>
+<p>Some architectures (e.g., attention layers with specific normalization strategies) may have different activation distribution patterns. The authors tested Mistral and Mixtral (Mixture-of-Experts) and found AWQ generalizes well, but the scaling heuristic could theoretically fail for exotic architectures.</p>
+<h3 id="8-6-No-Formal-Convergence-Guarantee">8.6 No Formal Convergence Guarantee</h3>
+<p>The search in Equation (5) is a heuristic grid search. There is no theoretical guarantee that <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>α</mi><mo>∗</mo></msup></mrow><annotation encoding="application/x-tex">\alpha^*</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6887em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6887em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">∗</span></span></span></span></span></span></span></span></span></span></span> found by the search is globally optimal. The 1D grid search is practical and effective empirically, but a more rigorous optimization (with accompanying theory) would strengthen the method.</p>
+<hr>
+<h2 id="9-Reproducibility-and-Code">9. Reproducibility and Code</h2>
+<p>AWQ is among the most practically impactful quantization methods and has excellent open-source support.</p>
+<p><strong>Official Implementation</strong>: <a href="https://github.com/mit-han-lab/llm-awq" target="_blank" rel="noopener">https://github.com/mit-han-lab/llm-awq</a></p>
+<p><strong>TinyChat</strong>: Available within the same repository, supporting CUDA, ARM NEON, and Apple Metal backends.</p>
+<p><strong>Ecosystem Adoption</strong>: AWQ has been integrated into virtually every major LLM serving framework:</p>
+<ul>
+<li>HuggingFace Transformers (<code>AutoAWQForCausalLM</code>)</li>
+<li>NVIDIA TensorRT-LLM</li>
+<li>Microsoft DirectML</li>
+<li>Google Vertex AI</li>
+<li>Intel Neural Compressor</li>
+<li>Amazon SageMaker</li>
+<li>vLLM, LMDeploy, FastChat</li>
+</ul>
+<p><strong>Reproducing the key experiment</strong> (Table 3 from the paper — OPT-6.7B INT3-g128):</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">pip install awq</span><br><span class="line">python -m awq.quantize \</span><br><span class="line">    --model facebook/opt-6.7b \</span><br><span class="line">    --bits 3 \</span><br><span class="line">    --group-size 128 \</span><br><span class="line">    --calib-data pile \</span><br><span class="line">    --output opt-6.7b-awq-int3</span><br></pre></td></tr></table></figure>
+<p>Expected result: WikiText-2 PPL ≈ 11.39 (vs. RTN's 23.54, FP16's 10.86)</p>
+<p><strong>Minimal implementation</strong> of the core AWQ scaling search (pseudocode):</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">awq_quantize_layer</span><span class="params">(W, X, bits=<span class="number">4</span>, group_size=<span class="number">128</span>, grid_size=<span class="number">20</span>)</span>:</span></span><br><span class="line">    <span class="comment"># W: weight matrix [out_features, in_features]</span></span><br><span class="line">    <span class="comment"># X: calibration activations [in_features, num_samples]</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># Compute per-input-channel activation magnitude</span></span><br><span class="line">    s_X = X.abs().mean(dim=<span class="number">1</span>)  <span class="comment"># [in_features]</span></span><br><span class="line"></span><br><span class="line">    best_alpha = <span class="number">0.0</span></span><br><span class="line">    best_loss = float(<span class="string">'inf'</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># Grid search over alpha in [0, 1]</span></span><br><span class="line">    <span class="keyword">for</span> alpha <span class="keyword">in</span> [i / grid_size <span class="keyword">for</span> i <span class="keyword">in</span> range(grid_size + <span class="number">1</span>)]:</span><br><span class="line">        s = s_X.pow(alpha)  <span class="comment"># Per-channel scale [in_features]</span></span><br><span class="line"></span><br><span class="line">        <span class="comment"># Scale weights and activations</span></span><br><span class="line">        W_scaled = W * s.unsqueeze(<span class="number">0</span>)   <span class="comment"># [out, in] * [in] → [out, in]</span></span><br><span class="line">        X_scaled = X / s.unsqueeze(<span class="number">1</span>)   <span class="comment"># [in, samples] / [in, 1]</span></span><br><span class="line"></span><br><span class="line">        <span class="comment"># Quantize scaled weights</span></span><br><span class="line">        W_q = quantize(W_scaled, bits, group_size)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># Compute reconstruction error</span></span><br><span class="line">        loss = (W_q @ X_scaled - W @ X).norm()</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> loss &lt; best_loss:</span><br><span class="line">            best_loss = loss</span><br><span class="line">            best_alpha = alpha</span><br><span class="line"></span><br><span class="line">    <span class="comment"># Apply optimal scaling</span></span><br><span class="line">    s_opt = s_X.pow(best_alpha)</span><br><span class="line">    W_awq = quantize(W * s_opt.unsqueeze(<span class="number">0</span>), bits, group_size)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># s_opt^&#123;-1&#125; is absorbed into the previous layer's bias/scale</span></span><br><span class="line">    <span class="keyword">return</span> W_awq, s_opt</span><br></pre></td></tr></table></figure>
+<hr>
+<h2 id="10-Connection-to-the-Bigger-Picture-Compression-Landscape">10. Connection to the Bigger Picture: Compression Landscape</h2>
+<p>AWQ sits in the broader landscape of LLM compression, alongside methods that target different axes:</p>
+<h3 id="10-1-Relation-to-GPTQ">10.1 Relation to GPTQ</h3>
+<p>Both AWQ and GPTQ are post-training quantization methods targeting the same problem. Their key differences:</p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>AWQ</th>
+<th>GPTQ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Core principle</td>
+<td>Activation-aware scaling</td>
+<td>Hessian-based error correction</td>
+</tr>
+<tr>
+<td>Calibration data</td>
+<td>16 sequences</td>
+<td>192 sequences</td>
+</tr>
+<tr>
+<td>Backpropagation</td>
+<td>No</td>
+<td>No (but uses Hessian)</td>
+</tr>
+<tr>
+<td>Overfitting risk</td>
+<td>Low</td>
+<td>Higher (Table 4, LLaMA-7B INT3)</td>
+</tr>
+<tr>
+<td>Orthogonality</td>
+<td>Yes — can combine</td>
+<td>Yes — can combine</td>
+</tr>
+</tbody>
+</table>
+<p>The authors show in Table 9 that <strong>AWQ + GPTQ combined</strong> outperforms either alone at extreme low-bit (INT2) quantization. They are complementary, not competing.</p>
+<h3 id="10-2-Relation-to-SVD-Based-Compression">10.2 Relation to SVD-Based Compression</h3>
+<p>AWQ is a <strong>weight-space</strong> compression method. An alternative approach is <strong>low-rank decomposition</strong> via SVD (Singular Value Decomposition):</p>
+<p>Given weight matrix <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">W</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>m</mi><mo>×</mo><mi>n</mi></mrow></msup></mrow><annotation encoding="application/x-tex">\mathbf{W} \in \mathbb{R}^{m \times n}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7252em;vertical-align:-0.0391em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">W</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7713em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7713em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight">n</span></span></span></span></span></span></span></span></span></span></span></span>, compute:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="bold">W</mi><mo>≈</mo><msub><mi mathvariant="bold">U</mi><mi>k</mi></msub><msub><mi mathvariant="bold">Σ</mi><mi>k</mi></msub><msubsup><mi mathvariant="bold">V</mi><mi>k</mi><mi>T</mi></msubsup></mrow><annotation encoding="application/x-tex">\mathbf{W} \approx \mathbf{U}_k \mathbf{\Sigma}_k \mathbf{V}_k^T
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6861em;"></span><span class="mord mathbf" style="margin-right:0.01597em;">W</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1383em;vertical-align:-0.247em;"></span><span class="mord"><span class="mord mathbf">U</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathbf">Σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathbf" style="margin-right:0.01597em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8913em;"><span style="top:-2.453em;margin-left:-0.016em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>≪</mo><mi>min</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi>m</mi><mo separator="true">,</mo><mi>n</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">k \ll \min(m, n)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7335em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≪</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">min</span><span class="mopen">(</span><span class="mord mathnormal">m</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">n</span><span class="mclose">)</span></span></span></span> captures the dominant singular values. Methods like <strong>AdaLoRA</strong> and <strong>ASVD</strong> (activation-aware SVD) use this principle.</p>
+<p>The connection to AWQ: ASVD uses activation statistics similarly to AWQ — scaling rows and columns of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi></mrow><annotation encoding="application/x-tex">W</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span> by activation magnitudes before performing SVD, so the decomposition focuses compression budget on less-activated directions. This is the same activation-awareness principle, applied to a different compression primitive (rank reduction vs. quantization).</p>
+<p><strong>Key difference</strong>: Quantization preserves the exact matrix structure but reduces precision; SVD changes the matrix structure (it becomes a product of two smaller matrices) but preserves precision. Quantization generally achieves better compression ratios for the same accuracy on large models.</p>
+<h3 id="10-3-Relation-to-Knowledge-Distillation-and-Pruning">10.3 Relation to Knowledge Distillation and Pruning</h3>
+<p>The compression methods for LLMs form a landscape:</p>
+<ul>
+<li><strong>Quantization</strong> (AWQ, GPTQ, BitNet): Reduce precision of weights</li>
+<li><strong>Pruning</strong> (SparseGPT, Wanda): Remove weights entirely (set to zero)</li>
+<li><strong>Low-rank decomposition</strong> (SVD, LoRA): Replace full matrices with low-rank products</li>
+<li><strong>Knowledge distillation</strong>: Train a smaller model to mimic a larger one</li>
+</ul>
+<p>AWQ focuses on quantization and is orthogonal to pruning and distillation — in principle, you could combine all three.</p>
+<hr>
+<h2 id="11-Conclusion">11. Conclusion</h2>
+<p>AWQ (Activation-aware Weight Quantization) is a landmark contribution to on-device LLM deployment. Let's recap its key contributions:</p>
+<p><strong>The intellectual insight</strong>: Weight importance in LLMs is determined by the activations flowing through them, not by the weights themselves. A 1% minority of &quot;salient&quot; weight channels — those corresponding to large-magnitude activations — are responsible for the majority of quantization-induced accuracy degradation.</p>
+<p><strong>The technical solution</strong>: Rather than using hardware-unfriendly mixed precision, AWQ applies a mathematically equivalent per-channel scaling that protects salient weights within the uniform INT4 format. The scaling factor is found by a fast, calibration-free grid search over activation statistics.</p>
+<p><strong>The system contribution</strong>: TinyChat translates the theoretical 4× memory savings into 3-4× real-world inference speedup on both desktop GPUs and mobile devices, through careful kernel fusion, SIMD-aware weight packing, and platform-specific optimization.</p>
+<p><strong>The impact</strong>: AWQ is now the de facto standard for 4-bit LLM quantization in production systems. It enables the Llama-2-70B model — which previously required 8 high-end GPUs — to run on a <strong>single mobile GPU</strong> (NVIDIA Jetson Orin with 64GB), or the 13B model to run interactively on a laptop GPU (RTX 4070 with 8GB).</p>
+<p>The paper asks a simple question — &quot;which weights matter most?&quot; — and finds a simple answer: look at the activations. This is the essence of activation-awareness, and it's a principle that will likely continue to guide compression research for years to come.</p>
+<hr>
+<p><em>Reviewed by Zhongzhu Zhou on 2026-04-03.</em>
+<em>Paper: AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration</em>
+<em>arXiv: 2306.00978 | MLSys 2024 Best Paper Award</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Efficient-Inference/" rel="tag"># Efficient Inference</a>
+              <a href="/tags/Quantization/" rel="tag"># Quantization</a>
+              <a href="/tags/AWQ/" rel="tag"># AWQ</a>
+              <a href="/tags/LLM-Compression/" rel="tag"># LLM Compression</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/02/2026-04-02-GPipe-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="prev" title="GPipe：微批次流水线并行的大规模模型训练 — 深度技术评审">
+      <i class="fa fa-chevron-left"></i> GPipe：微批次流水线并行的大规模模型训练 — 深度技术评审
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/03/2026-04-03-AWQ-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="next" title="AWQ：感知激活值的大模型权重量化压缩与加速 — 深度技术评审">
+      AWQ：感知激活值的大模型权重量化压缩与加速 — 深度技术评审 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-The-Problem-LLMs-Are-Too-Big-for-Your-Phone"><span class="nav-number">1.</span> <span class="nav-text">1. The Problem: LLMs Are Too Big for Your Phone</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Prerequisites-What-You-Need-to-Know-First"><span class="nav-number">2.</span> <span class="nav-text">2. Prerequisites: What You Need to Know First</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-Neural-Network-Weights-and-Matrix-Multiplication"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 Neural Network Weights and Matrix Multiplication</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-Floating-Point-Numbers-FP32-FP16-and-Why-They-Matter"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 Floating-Point Numbers: FP32, FP16, and Why They Matter</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-What-Is-Quantization"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 What Is Quantization?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-The-Quantization-Error-Problem"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 The Quantization Error Problem</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-Post-Training-Quantization-vs-Quantization-Aware-Training"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 Post-Training Quantization vs. Quantization-Aware Training</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-Weight-Only-vs-Weight-Activation-Quantization"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 Weight-Only vs. Weight+Activation Quantization</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-7-Perplexity-How-We-Measure-Language-Model-Quality"><span class="nav-number">2.7.</span> <span class="nav-text">2.7 Perplexity: How We Measure Language Model Quality</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-8-Group-Quantization-and-Per-Channel-Scaling"><span class="nav-number">2.8.</span> <span class="nav-text">2.8 Group Quantization and Per-Channel Scaling</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-What-AWQ-Does-The-Big-Picture"><span class="nav-number">3.</span> <span class="nav-text">3. What AWQ Does: The Big Picture</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-The-Core-Insight-Not-All-Weights-Are-Equal"><span class="nav-number">4.</span> <span class="nav-text">4. The Core Insight: Not All Weights Are Equal</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#The-experiment"><span class="nav-number">4.1.</span> <span class="nav-text">The experiment</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-AWQ-Method-Details"><span class="nav-number">5.</span> <span class="nav-text">5. AWQ Method Details</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-Analyzing-Quantization-Error-Mathematically"><span class="nav-number">5.1.</span> <span class="nav-text">5.1 Analyzing Quantization Error Mathematically</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-The-Activation-Aware-Scaling-Trick"><span class="nav-number">5.2.</span> <span class="nav-text">5.2 The Activation-Aware Scaling Trick</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-Searching-for-the-Optimal-Scale"><span class="nav-number">5.3.</span> <span class="nav-text">5.3 Searching for the Optimal Scale</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-TinyChat-Deploying-AWQ-on-Real-Devices"><span class="nav-number">6.</span> <span class="nav-text">6. TinyChat: Deploying AWQ on Real Devices</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Why-Converting-Memory-to-Speed-Is-Non-Trivial"><span class="nav-number">6.1.</span> <span class="nav-text">Why Converting Memory to Speed Is Non-Trivial</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#On-the-Fly-Weight-Dequantization-with-Kernel-Fusion"><span class="nav-number">6.2.</span> <span class="nav-text">On-the-Fly Weight Dequantization with Kernel Fusion</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#SIMD-Aware-Weight-Packing-ARM-NEON"><span class="nav-number">6.3.</span> <span class="nav-text">SIMD-Aware Weight Packing (ARM NEON)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Kernel-Fusion"><span class="nav-number">6.4.</span> <span class="nav-text">Kernel Fusion</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Experiments-and-Results"><span class="nav-number">7.</span> <span class="nav-text">7. Experiments and Results</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-Setup-and-Baselines"><span class="nav-number">7.1.</span> <span class="nav-text">7.1 Setup and Baselines</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-Language-Model-Results"><span class="nav-number">7.2.</span> <span class="nav-text">7.2 Language Model Results</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-Instruction-Tuned-Models-Vicuna"><span class="nav-number">7.3.</span> <span class="nav-text">7.3 Instruction-Tuned Models (Vicuna)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-Multi-Modal-Models-OpenFlamingo-LLaVA-VILA"><span class="nav-number">7.4.</span> <span class="nav-text">7.4 Multi-Modal Models (OpenFlamingo, LLaVA, VILA)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-5-Coding-and-Math-Benchmarks"><span class="nav-number">7.5.</span> <span class="nav-text">7.5 Coding and Math Benchmarks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-6-Speedup-Results-TinyChat"><span class="nav-number">7.6.</span> <span class="nav-text">7.6 Speedup Results (TinyChat)</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Limitations-and-Open-Questions"><span class="nav-number">8.</span> <span class="nav-text">8. Limitations and Open Questions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-Still-Requires-Calibration-Data"><span class="nav-number">8.1.</span> <span class="nav-text">8.1 Still Requires Calibration Data</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-Simplified-Search-Space"><span class="nav-number">8.2.</span> <span class="nav-text">8.2 Simplified Search Space</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-Extreme-Low-Bit-Quantization-INT2"><span class="nav-number">8.3.</span> <span class="nav-text">8.3 Extreme Low-Bit Quantization (INT2)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-4-Generative-Tasks-vs-Discriminative-Tasks"><span class="nav-number">8.4.</span> <span class="nav-text">8.4 Generative Tasks vs. Discriminative Tasks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-5-Quantization-of-Certain-Architectures"><span class="nav-number">8.5.</span> <span class="nav-text">8.5 Quantization of Certain Architectures</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-6-No-Formal-Convergence-Guarantee"><span class="nav-number">8.6.</span> <span class="nav-text">8.6 No Formal Convergence Guarantee</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-Reproducibility-and-Code"><span class="nav-number">9.</span> <span class="nav-text">9. Reproducibility and Code</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-Connection-to-the-Bigger-Picture-Compression-Landscape"><span class="nav-number">10.</span> <span class="nav-text">10. Connection to the Bigger Picture: Compression Landscape</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-Relation-to-GPTQ"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 Relation to GPTQ</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-Relation-to-SVD-Based-Compression"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 Relation to SVD-Based Compression</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-Relation-to-Knowledge-Distillation-and-Pruning"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 Relation to Knowledge Distillation and Pruning</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-Conclusion"><span class="nav-number">11.</span> <span class="nav-text">11. Conclusion</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

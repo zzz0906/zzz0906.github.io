@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="GPipe introduces micro-batch pipeline parallelism for efficient training of large neural networks. This review covers the pipeline scheduling algorithm, gradient accumulation, re-materialization for m">
+<meta property="og:type" content="article">
+<meta property="og:title" content="GPipe: Easy Scaling with Micro-Batch Pipeline Parallelism — In-Depth Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/02/2026-04-02-GPipe-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="GPipe introduces micro-batch pipeline parallelism for efficient training of large neural networks. This review covers the pipeline scheduling algorithm, gradient accumulation, re-materialization for m">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-02T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-02T16:13:08.363Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Deep Learning">
+<meta property="article:tag" content="Distributed Training">
+<meta property="article:tag" content="Model Parallelism">
+<meta property="article:tag" content="Pipeline Parallelism">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/02/2026-04-02-GPipe-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>GPipe: Easy Scaling with Micro-Batch Pipeline Parallelism — In-Depth Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/02/2026-04-02-GPipe-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          GPipe: Easy Scaling with Micro-Batch Pipeline Parallelism — In-Depth Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2026-04-02 00:00:00 / Modified: 16:13:08" itemprop="dateCreated datePublished" datetime="2026-04-02T00:00:00+00:00">2026-04-02</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">GPipe introduces micro-batch pipeline parallelism for efficient training of large neural networks. This review covers the pipeline scheduling algorithm, gradient accumulation, re-materialization for memory optimization, and experimental results on AmoebaNet and Transformer models.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="Technical-Review-Pipeline-Parallelism-for-Training-Giant-Neural-Networks">Technical Review: Pipeline Parallelism for Training Giant Neural Networks</h2>
+<p><strong>Author:</strong> Zhongzhu Zhou<br>
+<strong>Date:</strong> 2026-04-02<br>
+<strong>Paper Title:</strong> GPipe: Easy Scaling with Micro-Batch Pipeline Parallelism<br>
+<strong>Original Authors:</strong> Yanping Huang, Youlong Cheng, Ankur Bapna, Orhan Firat, Dehao Chen, Mia Xu Chen, HyoukJoong Lee, Jiquan Ngiam, Quoc V. Le, Yonghui Wu, Zhifeng Chen<br>
+<strong>Affiliation:</strong> Google Brain<br>
+<strong>Published at:</strong> NeurIPS 2019<br>
+<strong>ArXiv ID:</strong> 1811.06965</p>
+<hr>
+<h2 id="Executive-Summary-Core-Contributions">Executive Summary &amp; Core Contributions</h2>
+<p>GPipe is a foundational library for pipeline parallelism that solved one of the hardest practical problems in deep learning in 2019: <strong>how do you train a neural network that is too large to fit on a single accelerator, without writing architecture-specific distributed code?</strong> Before GPipe, scaling a model across multiple GPUs or TPUs required custom engineering for each architecture. GPipe changed this by providing a general-purpose pipeline parallelism framework applicable to <em>any</em> network expressible as a sequence of layers.</p>
+<a id="more"></a>
+<p>The key contributions are:</p>
+<ol>
+<li><strong>A novel micro-batch pipeline parallelism algorithm</strong> that splits mini-batches into smaller micro-batches and pipelines their execution across accelerators, achieving near-linear speedup.</li>
+<li><strong>Synchronous gradient updates</strong> that guarantee training consistency regardless of how many devices you use—unlike earlier asynchronous approaches like PipeDream that suffered from weight staleness.</li>
+<li><strong>Re-materialization (activation checkpointing)</strong> integration that dramatically reduces peak activation memory, enabling models far larger than the raw memory budget would suggest.</li>
+<li><strong>Empirical validation at unprecedented scale</strong>: a 557M-parameter AmoebaNet achieving 84.4% ImageNet top-1 accuracy, and a 6-billion-parameter Transformer for 100+ language translation.</li>
+</ol>
+<p>This paper is a cornerstone of the ML Systems literature. Its ideas directly influenced subsequent systems like Megatron-LM, DeepSpeed, and PyTorch's pipeline parallelism APIs.</p>
+<hr>
+<h2 id="Foundational-Concepts-Background">Foundational Concepts &amp; Background</h2>
+<p>Before we can appreciate what GPipe does, we need to understand the fundamental challenges of training large neural networks and the parallelism strategies available. This section is written for readers who may have heard terms like &quot;data parallelism&quot; or &quot;model parallelism&quot; but haven't worked with them in practice.</p>
+<h3 id="1-Why-Do-We-Need-Bigger-Models">1. Why Do We Need Bigger Models?</h3>
+<p>The central observation motivating GPipe is simple but powerful: <strong>bigger models tend to perform better</strong>. The paper demonstrates this with two compelling pieces of evidence:</p>
+<ul>
+<li><strong>Image classification</strong> (Figure 1a in the paper): From 2014 to 2019, ImageNet accuracy improved from ~74% to 84%, and model sizes grew by 36×. Every major jump in accuracy came with a major jump in model size.</li>
+<li><strong>Machine translation</strong> (Figure 1b): Translation quality (measured in BLEU) improves consistently as Transformer model size increases from 400M to 6B parameters.</li>
+</ul>
+<p>This is not merely a correlation—it reflects a fundamental property of neural networks. Larger models have more capacity to represent complex functions, store more knowledge, and generalize better (when properly regularized). The challenge is purely practical: how do you <em>train</em> these massive models?</p>
+<h3 id="2-The-Memory-Wall-Problem">2. The Memory Wall Problem</h3>
+<p>Training a neural network requires storing several things in accelerator (GPU/TPU) memory simultaneously:</p>
+<ul>
+<li><strong>Model parameters</strong> (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi></mrow><annotation encoding="application/x-tex">w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span>): The learnable weights of the network. A 1B-parameter model in 32-bit floating point needs ~4 GB just for parameters.</li>
+<li><strong>Optimizer states</strong>: Optimizers like Adam or RMSProp maintain additional state per parameter (momentum, variance). This typically multiplies parameter memory by 2-3×. The paper notes each parameter needs ~12 bytes with RMSProp.</li>
+<li><strong>Activations</strong>: During the forward pass, intermediate outputs at each layer must be cached for use during backpropagation. For deep networks with large batch sizes, activation memory often <em>dominates</em> total memory usage.</li>
+<li><strong>Gradients</strong>: During backpropagation, gradients are computed and stored for each parameter.</li>
+</ul>
+<p>For a concrete example: a 82M-parameter AmoebaNet model requires 1.05 GB for parameters but 6.26 GB for activations during training (Table 1 in the paper). The activation memory is <strong>6× larger</strong> than the parameter memory! This is why simply having &quot;enough memory for the weights&quot; is never sufficient.</p>
+<p>When total memory exceeds what a single accelerator can hold, you need parallelism strategies.</p>
+<h3 id="3-Data-Parallelism-The-Easy-But-Limited-Solution">3. Data Parallelism: The Easy (But Limited) Solution</h3>
+<p>Data parallelism is the most common approach to distributed training:</p>
+<ol>
+<li>Replicate the entire model on every accelerator.</li>
+<li>Split the mini-batch across accelerators—each processes a different subset of training examples.</li>
+<li>After the forward and backward pass, synchronize gradients across all replicas (typically via AllReduce).</li>
+<li>Each replica applies the same gradient update.</li>
+</ol>
+<p><strong>Advantages:</strong> Simple to implement, near-linear scaling of throughput, well-supported in frameworks (PyTorch DDP, tf.distribute).</p>
+<p><strong>Limitation:</strong> Every accelerator must hold the <em>entire</em> model. Data parallelism cannot help when the model itself doesn't fit on a single device. If your model needs 32 GB but your GPU has 16 GB, no amount of data parallelism will save you.</p>
+<h3 id="4-Model-Parallelism-Splitting-the-Model-Itself">4. Model Parallelism: Splitting the Model Itself</h3>
+<p>Model parallelism addresses the memory limitation by partitioning the model across multiple devices. There are two major flavors:</p>
+<h4 id="4a-Tensor-Parallelism-SPMD-Intra-Layer">4a. Tensor Parallelism (SPMD / Intra-Layer)</h4>
+<p>Tensor parallelism splits individual operations (like matrix multiplications) across devices. For example, if a linear layer has a weight matrix <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mn>4096</mn><mo>×</mo><mn>4096</mn></mrow></msup></mrow><annotation encoding="application/x-tex">W \in \mathbb{R}^{4096 \times 4096}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">4096</span><span class="mbin mtight">×</span><span class="mord mtight">4096</span></span></span></span></span></span></span></span></span></span></span></span>, you could split it column-wise across 4 GPUs, each holding a <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4096</mn><mo>×</mo><mn>1024</mn></mrow><annotation encoding="application/x-tex">4096 \times 1024</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">4096</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1024</span></span></span></span> slice and computing a portion of the output.</p>
+<p><strong>Advantage:</strong> Each layer's computation is distributed, so very large individual layers can be handled.</p>
+<p><strong>Disadvantages:</strong></p>
+<ul>
+<li>Requires <strong>heavy inter-device communication</strong> (AllReduce after every split operation).</li>
+<li>Only practical when devices are connected with high-bandwidth interconnects (NVLink, TPU interconnect).</li>
+<li>Architecture-specific—splitting convolutions is much harder than splitting linear layers.</li>
+</ul>
+<p>This is the approach taken by Mesh-TensorFlow (Shazeer et al., 2018).</p>
+<h4 id="4b-Pipeline-Parallelism-Inter-Layer">4b. Pipeline Parallelism (Inter-Layer)</h4>
+<p>Pipeline parallelism partitions the model <em>layer-wise</em>: the first few layers go on device 0, the next few on device 1, and so on. Data flows through devices sequentially, like an assembly line.</p>
+<p><strong>Advantage:</strong> Minimal inter-device communication—only activation tensors need to be passed at partition boundaries.</p>
+<p><strong>Disadvantage (naive version):</strong> Severe under-utilization. In a naive implementation, while device <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> is computing the forward pass for layer group <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span>, all other devices sit idle. This is the &quot;bubble&quot; problem, and it makes naive pipeline parallelism almost useless.</p>
+<p><strong>GPipe's innovation is solving the bubble problem</strong> through micro-batch pipelining.</p>
+<h3 id="5-Activation-Checkpointing-Re-Materialization">5. Activation Checkpointing (Re-Materialization)</h3>
+<p>A memory optimization technique proposed by Chen et al. (2016): instead of caching all activations during the forward pass, only store activations at certain &quot;checkpoints&quot; (e.g., partition boundaries). During backpropagation, recompute the intermediate activations from the nearest checkpoint.</p>
+<p><strong>Trade-off:</strong> Uses less memory at the cost of additional computation (~33% more FLOPs for a full recompute strategy).</p>
+<p>GPipe integrates this technique to reduce peak activation memory from <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><mi>N</mi><mo>×</mo><mi>L</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(N \times L)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">L</span><span class="mclose">)</span></span></span></span> to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><mi>N</mi><mo>+</mo><mfrac><mi>L</mi><mi>K</mi></mfrac><mo>×</mo><mfrac><mi>N</mi><mi>M</mi></mfrac><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(N + \frac{L}{K} \times \frac{N}{M})</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.2173em;vertical-align:-0.345em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8723em;"><span style="top:-2.655em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.07153em;">K</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.394em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">L</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.345em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.2173em;vertical-align:-0.345em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8723em;"><span style="top:-2.655em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">M</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.394em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.345em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose">)</span></span></span></span>, where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span></span></span></span> is batch size, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi></mrow><annotation encoding="application/x-tex">L</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">L</span></span></span></span> is number of layers, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span> is number of partitions, and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi></mrow><annotation encoding="application/x-tex">M</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span></span></span></span> is number of micro-batches.</p>
+<hr>
+<h2 id="GPipe-Architecture-Algorithm-A-Detailed-Walkthrough">GPipe Architecture &amp; Algorithm: A Detailed Walkthrough</h2>
+<h3 id="The-Interface">The Interface</h3>
+<p>GPipe's interface is remarkably simple. The user specifies three things:</p>
+<ol>
+<li><strong><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span></strong>: Number of model partitions (= number of accelerators).</li>
+<li><strong><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi></mrow><annotation encoding="application/x-tex">M</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span></span></span></span></strong>: Number of micro-batches to split each mini-batch into.</li>
+<li><strong><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi></mrow><annotation encoding="application/x-tex">L</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">L</span></span></span></span> layers</strong>: The neural network defined as a sequence of layers, each with a forward function <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>f</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">f_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1076em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>, parameters <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">w_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>, and an optional cost estimator <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>c</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">c_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">c</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>.</li>
+</ol>
+<p>GPipe then automatically:</p>
+<ul>
+<li>Partitions consecutive layers into <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span> cells, placing cell <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> on accelerator <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span>.</li>
+<li>Inserts communication primitives at partition boundaries.</li>
+<li>Balances partitions by minimizing variance in estimated computation costs.</li>
+</ul>
+<h3 id="The-Pipeline-Algorithm-Step-by-Step">The Pipeline Algorithm Step by Step</h3>
+<p>Let's walk through exactly what happens during one training step with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">K = 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> accelerators and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">M = 8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span> micro-batches (Figure 2c in the paper):</p>
+<p><strong>Forward Pass:</strong></p>
+<ol>
+<li>The mini-batch of size <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span></span></span></span> is split into 8 micro-batches of size <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mi mathvariant="normal">/</mi><mn>8</mn></mrow><annotation encoding="application/x-tex">N/8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mord">/8</span></span></span></span> each.</li>
+<li>Micro-batch 1 enters Accelerator 0 (containing layers 1 through <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi mathvariant="normal">/</mi><mn>4</mn></mrow><annotation encoding="application/x-tex">L/4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">L</span><span class="mord">/4</span></span></span></span>). Accelerator 0 computes the forward pass for these layers and sends the output activation to Accelerator 1.</li>
+<li>While Accelerator 1 processes micro-batch 1 through layers <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi mathvariant="normal">/</mi><mn>4</mn><mo>+</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">L/4+1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">L</span><span class="mord">/4</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi mathvariant="normal">/</mi><mn>2</mn></mrow><annotation encoding="application/x-tex">L/2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">L</span><span class="mord">/2</span></span></span></span>, Accelerator 0 simultaneously starts processing micro-batch 2.</li>
+<li>This pipelining continues: at steady state, all 4 accelerators are working simultaneously on different micro-batches.</li>
+<li>Only the activation tensors at partition boundaries are stored; internal activations are discarded (re-materialization).</li>
+</ol>
+<p><strong>Backward Pass:</strong></p>
+<ol start="6">
+<li>Once micro-batch 1 completes the forward pass through all 4 accelerators, Accelerator 3 begins its backward pass for micro-batch 1.</li>
+<li>During backpropagation on accelerator <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span>, the forward computation <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>F</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">F_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">F</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is <strong>recomputed</strong> to recover the intermediate activations needed for gradient computation.</li>
+<li>Gradients from the backward pass are <strong>accumulated</strong> (not applied) for each micro-batch.</li>
+</ol>
+<p><strong>Gradient Update:</strong></p>
+<ol start="9">
+<li>After all <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi></mrow><annotation encoding="application/x-tex">M</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span></span></span></span> micro-batches have completed both forward and backward passes, the accumulated gradients are applied in a single synchronous update across all accelerators.</li>
+<li>This ensures the gradient update is <strong>mathematically identical</strong> to processing the full mini-batch on a single device—no approximation, no staleness.</li>
+</ol>
+<h3 id="The-Bubble-Overhead">The Bubble Overhead</h3>
+<p>The &quot;bubble&quot; is the idle time at the start and end of each mini-batch step when not all accelerators are active. The paper derives that the bubble overhead, amortized over the total computation, is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>Bubble fraction</mtext><mo>=</mo><mi>O</mi><mrow><mo fence="true">(</mo><mfrac><mrow><mi>K</mi><mo>−</mo><mn>1</mn></mrow><mrow><mi>M</mi><mo>+</mo><mi>K</mi><mo>−</mo><mn>1</mn></mrow></mfrac><mo fence="true">)</mo></mrow></mrow><annotation encoding="application/x-tex">\text{Bubble fraction} = O\left(\frac{K - 1}{M + K - 1}\right)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord text"><span class="mord">Bubble fraction</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3603em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord">1</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.7693em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">)</span></span></span></span></span></span></span></p>
+<p>When <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>≥</mo><mn>4</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">M \geq 4K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8193em;vertical-align:-0.136em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">4</span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span>, this fraction becomes very small. For example, with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">K = 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> partitions and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>32</mn></mrow><annotation encoding="application/x-tex">M = 32</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">32</span></span></span></span> micro-batches, the bubble fraction is approximately <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mn>3</mn><mn>35</mn></mfrac><mo>≈</mo><mn>8.6</mn><mi mathvariant="normal">%</mi></mrow><annotation encoding="application/x-tex">\frac{3}{35} \approx 8.6\%</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.1901em;vertical-align:-0.345em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8451em;"><span style="top:-2.655em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">35</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.394em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">3</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.345em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8056em;vertical-align:-0.0556em;"></span><span class="mord">8.6%</span></span></span></span>—quite acceptable. The paper reports that in practice, re-computation during the backward pass can be scheduled earlier (overlapping with bubble time), making the overhead even smaller.</p>
+<h3 id="Batch-Normalization-Handling">Batch Normalization Handling</h3>
+<p>A subtle but important detail: batch normalization layers compute statistics (mean, variance) over the batch. With micro-batching, the statistics are computed per micro-batch rather than over the full mini-batch. During training, each micro-batch uses its own statistics. For evaluation, GPipe tracks moving averages over the full mini-batch. This is an important correctness detail that many pipeline parallelism implementations must handle carefully.</p>
+<hr>
+<h2 id="Experimental-Results-Detailed-Analysis">Experimental Results: Detailed Analysis</h2>
+<h3 id="Experiment-1-Scaling-Model-Size-Table-1">Experiment 1: Scaling Model Size (Table 1)</h3>
+<p>The paper's first key result demonstrates how GPipe enables dramatically larger models:</p>
+<p><strong>AmoebaNet on GPUs (8 GB each):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Configuration</th>
+<th>Parameters</th>
+<th>Param Memory</th>
+<th>Activation Memory</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>No GPipe (1 GPU)</td>
+<td>82M</td>
+<td>1.05 GB</td>
+<td>6.26 GB</td>
+</tr>
+<tr>
+<td>GPipe, 1 GPU (re-mat only)</td>
+<td>318M</td>
+<td>3.8 GB</td>
+<td>3.46 GB</td>
+</tr>
+<tr>
+<td>GPipe, 2 GPUs</td>
+<td>542M</td>
+<td>6.45 GB</td>
+<td>8.11 GB</td>
+</tr>
+<tr>
+<td>GPipe, 4 GPUs</td>
+<td>1.05B</td>
+<td>12.53 GB</td>
+<td>15.21 GB</td>
+</tr>
+<tr>
+<td>GPipe, 8 GPUs</td>
+<td>1.8B</td>
+<td>24.62 GB</td>
+<td>26.24 GB</td>
+</tr>
+</tbody>
+</table>
+<p>Key observations:</p>
+<ul>
+<li>Re-materialization alone (Pipeline-1) reduces activation memory from 6.26 GB to 3.46 GB, enabling a 3.9× larger model on the same GPU.</li>
+<li>8-GPU pipeline supports a 1.8B model—<strong>22× larger</strong> than single-GPU without GPipe.</li>
+<li>Scaling is sub-linear for AmoebaNet because its layers have uneven parameter distributions.</li>
+</ul>
+<p><strong>Transformer on TPUs (16 GB each):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Configuration</th>
+<th>Layers</th>
+<th>Parameters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>No GPipe (1 TPU)</td>
+<td>3</td>
+<td>282M</td>
+</tr>
+<tr>
+<td>GPipe, 1 TPU</td>
+<td>13</td>
+<td>786M</td>
+</tr>
+<tr>
+<td>GPipe, 8 TPUs</td>
+<td>103</td>
+<td>5.3B</td>
+</tr>
+<tr>
+<td>GPipe, 32 TPUs</td>
+<td>415</td>
+<td>21B</td>
+</tr>
+<tr>
+<td>GPipe, 128 TPUs</td>
+<td>1,663</td>
+<td>83.9B</td>
+</tr>
+</tbody>
+</table>
+<p>The Transformer scales <strong>perfectly linearly</strong> because all layers have identical structure and size. With 128 TPUs, GPipe supports an astonishing 83.9B parameters—<strong>298× more</strong> than a single TPU.</p>
+<h3 id="Experiment-2-Training-Throughput-Table-2">Experiment 2: Training Throughput (Table 2)</h3>
+<p>The throughput experiments confirm the theoretical analysis of bubble overhead:</p>
+<p><strong>Transformer model:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Micro-batches (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi></mrow><annotation encoding="application/x-tex">M</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span></span></span></span>)</th>
+<th>2 partitions</th>
+<th>4 partitions</th>
+<th>8 partitions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">M = 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span></td>
+<td>1.0×</td>
+<td>1.07×</td>
+<td>1.3×</td>
+</tr>
+<tr>
+<td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">M = 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span></td>
+<td>1.7×</td>
+<td>3.2×</td>
+<td>4.8×</td>
+</tr>
+<tr>
+<td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>32</mn></mrow><annotation encoding="application/x-tex">M = 32</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">32</span></span></span></span></td>
+<td>1.8×</td>
+<td>3.4×</td>
+<td>6.3×</td>
+</tr>
+</tbody>
+</table>
+<p>With <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>32</mn></mrow><annotation encoding="application/x-tex">M = 32</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">32</span></span></span></span> and 8 partitions, the Transformer achieves 6.3× throughput—close to the ideal 8× linear speedup. When <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">M = 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> (no pipelining), adding more devices barely helps because only one device computes at a time.</p>
+<p>For AmoebaNet, speedup is sub-linear (3.48× with 8 partitions at <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>32</mn></mrow><annotation encoding="application/x-tex">M = 32</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">32</span></span></span></span>) due to computation imbalance across layers. This highlights an important practical lesson: <strong>pipeline parallelism works best when layers have uniform computation costs.</strong></p>
+<h3 id="Experiment-3-Communication-Overhead-Table-3">Experiment 3: Communication Overhead (Table 3)</h3>
+<p>A crucial experiment: running on NVIDIA P100 GPUs <strong>without NVLink</strong> (only PCI-E interconnect). Even with this slow interconnect:</p>
+<table>
+<thead>
+<tr>
+<th>Config</th>
+<th>2 GPUs</th>
+<th>4 GPUs</th>
+<th>8 GPUs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AmoebaNet</td>
+<td>1.0×</td>
+<td>1.7×</td>
+<td>2.7×</td>
+</tr>
+<tr>
+<td>Transformer</td>
+<td>1.0×</td>
+<td>1.8×</td>
+<td>3.3×</td>
+</tr>
+</tbody>
+</table>
+<p>The near-linear scaling demonstrates GPipe's minimal communication requirements. Unlike tensor parallelism (which needs AllReduce after every operation), pipeline parallelism only transfers activation tensors at partition boundaries—a much smaller communication volume.</p>
+<h3 id="Experiment-4-ImageNet-Classification-Table-4">Experiment 4: ImageNet Classification (Table 4)</h3>
+<p>The 557M-parameter AmoebaNet-B (18, 512) trained with GPipe achieved:</p>
+<ul>
+<li><strong>84.4% top-1 accuracy</strong> on ImageNet-2012 (single crop)</li>
+<li><strong>97.0% top-5 accuracy</strong></li>
+</ul>
+<p>This was state-of-the-art at the time of publication, surpassing the previous best of 83.9% (without Instagram pre-training). The model was trained on 480 × 480 input images across 4 partitions.</p>
+<p>Transfer learning results were equally impressive:</p>
+<table>
+<thead>
+<tr>
+<th>Dataset</th>
+<th>GPipe Result</th>
+<th>Previous Best</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CIFAR-10</td>
+<td>99.0%</td>
+<td>98.5%</td>
+</tr>
+<tr>
+<td>CIFAR-100</td>
+<td>91.3%</td>
+<td>89.3%</td>
+</tr>
+<tr>
+<td>Stanford Cars</td>
+<td>94.6%</td>
+<td>94.8%</td>
+</tr>
+<tr>
+<td>Oxford Pets</td>
+<td>95.9%</td>
+<td>93.8%</td>
+</tr>
+<tr>
+<td>Food-101</td>
+<td>93.0%</td>
+<td>90.4%</td>
+</tr>
+</tbody>
+</table>
+<p>These results validate the &quot;bigger ImageNet models transfer better&quot; hypothesis of Kornblith et al. (2018).</p>
+<h3 id="Experiment-5-Multilingual-Machine-Translation">Experiment 5: Multilingual Machine Translation</h3>
+<p>This is perhaps GPipe's most impressive demonstration. A single 6B-parameter, 128-layer Transformer was trained to translate 102 languages to English simultaneously.</p>
+<p><strong>Architecture scaling:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Parameters</th>
+<th>Partitions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>T(6, 8192, 16)</td>
+<td>400M</td>
+<td>1</td>
+</tr>
+<tr>
+<td>T(12, 16384, 32)</td>
+<td>1.3B (wide)</td>
+<td>2</td>
+</tr>
+<tr>
+<td>T(24, 8192, 16)</td>
+<td>1.3B (deep)</td>
+<td>4</td>
+</tr>
+<tr>
+<td>T(32, 16384, 32)</td>
+<td>3B</td>
+<td>8</td>
+</tr>
+<tr>
+<td>T(64, 16384, 32)</td>
+<td>6B</td>
+<td>16</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key findings:</strong></p>
+<ol>
+<li>
+<p><strong>Scaling consistently improves quality</strong>: Going from 400M to 6B parameters improved translation quality across all 102 languages.</p>
+</li>
+<li>
+<p><strong>Depth vs. width trade-off</strong>: The 1.3B deep model T(24, 8192, 16) significantly outperformed the 1.3B wide model T(12, 16384, 32) on low-resource languages, while performing similarly on high-resource languages. This suggests <strong>depth aids generalization and knowledge transfer</strong>, while width primarily increases capacity for individual tasks.</p>
+</li>
+<li>
+<p><strong>Low-resource languages benefit most</strong>: The single 6B multilingual model outperformed <em>individually trained</em> 350M bilingual models on all 100+ language pairs. Low-resource languages showed the largest improvements, benefiting from positive transfer from high-resource languages.</p>
+</li>
+<li>
+<p><strong>Large batch training helps</strong>: Increasing batch size from 260K to 4M tokens improved both BLEU (30.92 → 32.71) and NLL loss (2.58 → 2.46), as shown in Table 5.</p>
+</li>
+</ol>
+<h3 id="Training-Stability-Challenges">Training Stability Challenges</h3>
+<p>The paper candidly discusses training instability with very deep models—a valuable contribution often overlooked. Two problems emerged:</p>
+<ol>
+<li><strong>Sharp activations</strong>: After thousands of training steps, predictions became extremely &quot;peaky&quot; (high-confidence, low-entropy), making the model fragile to noise.</li>
+<li><strong>Exploding gradients</strong>: The peaky predictions led to large or non-finite gradients that destroyed training progress.</li>
+</ol>
+<p>Solutions applied:</p>
+<ul>
+<li><strong>Scaled initialization</strong> (Zhang et al., 2019): Feed-forward layer initializations are scaled down by <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mi mathvariant="normal">/</mi><mi>L</mi></mrow><annotation encoding="application/x-tex">1/L</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1/</span><span class="mord mathnormal">L</span></span></span></span> (number of layers).</li>
+<li><strong>Logit clipping</strong>: Pre-softmax activations are clipped when they exceed a threshold.</li>
+</ul>
+<p>These practical insights are invaluable for anyone training very deep Transformer models.</p>
+<hr>
+<h2 id="Comparison-with-Alternative-Approaches">Comparison with Alternative Approaches</h2>
+<h3 id="GPipe-vs-Mesh-TensorFlow-SPMD">GPipe vs. Mesh-TensorFlow (SPMD)</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>GPipe</th>
+<th>Mesh-TF</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Parallelism type</td>
+<td>Pipeline (inter-layer)</td>
+<td>Tensor (intra-layer)</td>
+</tr>
+<tr>
+<td>Communication</td>
+<td>Low (boundary activations only)</td>
+<td>High (AllReduce per operation)</td>
+</tr>
+<tr>
+<td>Interconnect requirement</td>
+<td>Works with PCI-E</td>
+<td>Needs high-speed (NVLink/TPU mesh)</td>
+</tr>
+<tr>
+<td>Architecture generality</td>
+<td>Any sequential network</td>
+<td>Requires operations to be &quot;splittable&quot;</td>
+</tr>
+<tr>
+<td>Scaling dimension</td>
+<td>Model depth (more layers)</td>
+<td>Layer width (larger matrices)</td>
+</tr>
+<tr>
+<td>Implementation complexity</td>
+<td>Simple (user specifies K, M, layers)</td>
+<td>Complex (user defines mesh splits)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="GPipe-vs-PipeDream">GPipe vs. PipeDream</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>GPipe</th>
+<th>PipeDream</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gradient updates</td>
+<td>Synchronous</td>
+<td>Asynchronous</td>
+</tr>
+<tr>
+<td>Weight staleness</td>
+<td>None</td>
+<td>Present (mitigated by versioning)</td>
+</tr>
+<tr>
+<td>Memory overhead</td>
+<td>Re-materialization reduces memory</td>
+<td>Must store multiple weight versions</td>
+</tr>
+<tr>
+<td>Training consistency</td>
+<td>Guaranteed identical to single-device</td>
+<td>Approximate due to asynchrony</td>
+</tr>
+<tr>
+<td>Bubble handling</td>
+<td>Micro-batch pipelining (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>≫</mo><mi>K</mi></mrow><annotation encoding="application/x-tex">M \gg K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≫</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span>)</td>
+<td>Interleaved forward/backward</td>
+</tr>
+</tbody>
+</table>
+<p>GPipe's synchronous approach trades slightly more bubble time for guaranteed training correctness. PipeDream's asynchronous approach has higher utilization but introduces gradient staleness that requires careful handling.</p>
+<h3 id="GPipe-vs-Data-Parallelism">GPipe vs. Data Parallelism</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>GPipe</th>
+<th>Data Parallelism</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Scales what?</td>
+<td>Model size</td>
+<td>Training throughput</td>
+</tr>
+<tr>
+<td>Can exceed single-device memory?</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Communication volume</td>
+<td>Small (activations at boundaries)</td>
+<td>Large (all gradients via AllReduce)</td>
+</tr>
+<tr>
+<td>Complementary?</td>
+<td>Yes—combine both</td>
+<td>Yes—combine both</td>
+</tr>
+</tbody>
+</table>
+<p>In practice, modern systems like Megatron-LM and DeepSpeed combine all three: data parallelism, tensor parallelism, and pipeline parallelism (the &quot;3D parallelism&quot; paradigm).</p>
+<hr>
+<h2 id="Limitations-Boundary-Conditions-Critical-Analysis">Limitations, Boundary Conditions &amp; Critical Analysis</h2>
+<h3 id="1-Single-Layer-Memory-Constraint">1. Single-Layer Memory Constraint</h3>
+<p>GPipe assumes each individual layer fits within a single accelerator's memory. If a single layer has, say, 20B parameters (which would need ~240 GB for parameters + optimizer states), GPipe alone cannot handle it. You would need tensor parallelism to split that layer across devices. This is why modern systems combine pipeline parallelism with tensor parallelism.</p>
+<h3 id="2-The-Bubble-Problem-Is-Not-Fully-Solved">2. The Bubble Problem Is Not Fully Solved</h3>
+<p>While the bubble overhead is manageable when <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>≥</mo><mn>4</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">M \geq 4K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8193em;vertical-align:-0.136em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">4</span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span>, this constraint can be limiting:</p>
+<ul>
+<li>It requires the global batch size to be at least <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">4K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">4</span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span> times the per-micro-batch size.</li>
+<li>For tasks or models where large batch sizes hurt convergence, this forces a trade-off.</li>
+<li>The overhead grows linearly with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span>, so very deep pipelines (e.g., <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi><mo>=</mo><mn>32</mn></mrow><annotation encoding="application/x-tex">K = 32</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">32</span></span></span></span>) need very large <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi></mrow><annotation encoding="application/x-tex">M</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span></span></span></span>.</li>
+</ul>
+<p>Subsequent work (e.g., 1F1B scheduling in PipeDream-2BW, interleaved schedules in Megatron-LM) has proposed better scheduling to further reduce bubble time.</p>
+<h3 id="3-Load-Imbalance">3. Load Imbalance</h3>
+<p>The paper acknowledges that AmoebaNet's sub-linear scaling is due to uneven computation across layers. GPipe's cost-based partitioning is a heuristic; it minimizes <em>estimated</em> cost variance but may not perfectly balance actual runtime. Real-world networks often have:</p>
+<ul>
+<li>Embedding layers with different compute profiles</li>
+<li>Attention layers whose cost depends on sequence length</li>
+<li>MoE layers with variable expert activation</li>
+</ul>
+<p>Better partitioning algorithms remain an open problem.</p>
+<h3 id="4-Micro-Batch-Size-and-Batch-Normalization">4. Micro-Batch Size and Batch Normalization</h3>
+<p>Splitting into many micro-batches means each micro-batch is small. For batch normalization, statistics computed over small micro-batches may be noisy, potentially degrading model quality. The paper handles this by tracking mini-batch moving averages for evaluation, but training-time statistics remain per-micro-batch. This is one reason why models using LayerNorm (most modern Transformers) are better suited for pipeline parallelism than those using BatchNorm.</p>
+<h3 id="5-Memory-Savings-vs-Compute-Cost">5. Memory Savings vs. Compute Cost</h3>
+<p>Re-materialization reduces memory at the cost of recomputing forward passes during backpropagation. The paper doesn't quantify this overhead precisely, but typical activation checkpointing adds ~33% to total training time. When combined with pipelining, some recomputation can overlap with bubble time, mitigating the cost.</p>
+<h3 id="6-Fault-Tolerance">6. Fault Tolerance</h3>
+<p>The paper does not address fault tolerance. With 128 TPUs, accelerator failures become a real concern. Synchronous training means a single device failure stalls the entire pipeline. Modern systems like DeepSpeed add checkpointing and elastic training to handle this.</p>
+<hr>
+<h2 id="Legacy-and-Influence">Legacy and Influence</h2>
+<p>GPipe's influence on the ML Systems field is enormous:</p>
+<ol>
+<li>
+<p><strong>Megatron-LM</strong> (2020, 2021): Combines pipeline parallelism (inspired by GPipe) with tensor parallelism and data parallelism for &quot;3D parallelism&quot;—the standard approach for training models like GPT-3, LLaMA, etc.</p>
+</li>
+<li>
+<p><strong>DeepSpeed ZeRO</strong> (2020): While primarily a data-parallelism memory optimization, DeepSpeed's pipeline parallelism module directly builds on GPipe's ideas.</p>
+</li>
+<li>
+<p><strong>PyTorch Pipe</strong> (torch.distributed.pipeline): PyTorch's official pipeline parallelism API is a direct descendant of GPipe's design.</p>
+</li>
+<li>
+<p><strong>1F1B Scheduling</strong> (PipeDream-2BW, 2020): Improved GPipe's schedule by interleaving forward and backward passes to reduce peak memory from activation accumulation.</p>
+</li>
+<li>
+<p><strong>Virtual Pipeline Parallelism</strong> (Narayanan et al., 2021): Further reduces bubble overhead by assigning multiple non-contiguous layer groups to each device.</p>
+</li>
+</ol>
+<p>The trajectory from GPipe → Megatron-LM → modern training frameworks is a clear line of evolution that enabled the era of foundation models (GPT-3, PaLM, LLaMA, etc.).</p>
+<hr>
+<h2 id="Reproducibility-Assessment">Reproducibility Assessment</h2>
+<p><strong>Reproducibility: Moderate</strong></p>
+<p>Positive factors:</p>
+<ul>
+<li>Algorithm is clearly described and relatively simple to implement.</li>
+<li>Open-sourced under the Lingvo framework.</li>
+<li>Key hyperparameters (model architectures, batch sizes, partition counts) are specified.</li>
+</ul>
+<p>Challenges:</p>
+<ul>
+<li>The ImageNet experiments require 4+ TPUs and significant compute time.</li>
+<li>The multilingual NMT experiments use a proprietary Google-internal corpus of 25B examples across 102 languages—this dataset is not publicly available.</li>
+<li>Exact training configurations for the NMT experiments reference supplementary material which provides additional details but still relies on internal infrastructure.</li>
+</ul>
+<p>For practitioners: The algorithm is straightforward to implement from the paper description. PyTorch's <code>torch.distributed.pipeline.sync</code> is essentially GPipe and is freely available.</p>
+<hr>
+<h2 id="Key-Takeaways-for-Practitioners">Key Takeaways for Practitioners</h2>
+<ol>
+<li>
+<p><strong>Pipeline parallelism is your go-to for scaling model depth</strong> when your model exceeds single-device memory. It's simpler to implement and has lower communication requirements than tensor parallelism.</p>
+</li>
+<li>
+<p><strong>Use enough micro-batches</strong>: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>≥</mo><mn>4</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">M \geq 4K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8193em;vertical-align:-0.136em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">4</span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span> is the practical rule of thumb. Fewer micro-batches = more bubble waste.</p>
+</li>
+<li>
+<p><strong>Combine with other strategies</strong>: In modern practice, pipeline parallelism alone is rarely sufficient. Use it in combination with data parallelism (for throughput) and tensor parallelism (for very large individual layers).</p>
+</li>
+<li>
+<p><strong>Prefer uniform layer architectures</strong>: Pipeline parallelism works best when all layers have similar computation costs. Transformers are ideal; heterogeneous architectures like AmoebaNet are harder to balance.</p>
+</li>
+<li>
+<p><strong>Activation checkpointing is nearly free</strong>: The memory savings from re-materialization are dramatic, and the compute overhead (~33%) is often acceptable. For pipeline parallelism, it's almost mandatory.</p>
+</li>
+<li>
+<p><strong>Don't fear slow interconnects</strong>: Unlike tensor parallelism, pipeline parallelism transfers small activation tensors at partition boundaries. It works well even without NVLink.</p>
+</li>
+</ol>
+<hr>
+<h2 id="Conclusion">Conclusion</h2>
+<p>GPipe is one of those papers that seems simple in hindsight—split the mini-batch into micro-batches, pipeline them through model partitions, accumulate gradients synchronously—but had enormous practical impact. It provided the first general-purpose, architecture-agnostic pipeline parallelism solution that actually worked at scale, training models up to 83.9 billion parameters on 128 TPUs with near-linear speedup.</p>
+<p>The paper's clarity of exposition, honest discussion of limitations (load imbalance, batch normalization, training instability), and diverse experimental validation (image classification + multilingual NMT) make it a model of applied ML Systems research. Every subsequent large-model training system—Megatron-LM, DeepSpeed, FairScale, PyTorch FSDP—has GPipe's DNA in it.</p>
+<p>For anyone working on distributed training systems, understanding GPipe is not optional. It's the foundation on which modern 3D parallelism is built.</p>
+<hr>
+<h2 id="References">References</h2>
+<ol>
+<li>Huang, Y., Cheng, Y., Bapna, A., et al. &quot;GPipe: Easy Scaling with Micro-Batch Pipeline Parallelism.&quot; NeurIPS 2019. arXiv:1811.06965.</li>
+<li>Shazeer, N., et al. &quot;Mesh-TensorFlow: Deep Learning for Supercomputers.&quot; NeurIPS 2018.</li>
+<li>Harlap, A., et al. &quot;PipeDream: Fast and Efficient Pipeline Parallel DNN Training.&quot; arXiv:1806.03377.</li>
+<li>Narayanan, D., et al. &quot;Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM.&quot; SC 2021.</li>
+<li>Rajbhandari, S., et al. &quot;ZeRO: Memory Optimizations Toward Training Trillion Parameter Models.&quot; SC 2020.</li>
+<li>Chen, T., et al. &quot;Training Deep Nets with Sublinear Memory Cost.&quot; arXiv:1604.06174.</li>
+<li>Vaswani, A., et al. &quot;Attention Is All You Need.&quot; NeurIPS 2017.</li>
+<li>Real, E., et al. &quot;Regularized Evolution for Image Classifier Architecture Search.&quot; AAAI 2019.</li>
+<li>Narayanan, D., et al. &quot;Memory-Efficient Pipeline-Parallel DNN Training.&quot; ICML 2021 (PipeDream-2BW).</li>
+<li>Zhang, H., Dauphin, Y.N., Ma, T. &quot;Fixup Initialization: Residual Learning Without Normalization.&quot; ICLR 2019.</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Deep-Learning/" rel="tag"># Deep Learning</a>
+              <a href="/tags/Distributed-Training/" rel="tag"># Distributed Training</a>
+              <a href="/tags/Model-Parallelism/" rel="tag"># Model Parallelism</a>
+              <a href="/tags/Pipeline-Parallelism/" rel="tag"># Pipeline Parallelism</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/01/2026-04-01-LayerPruning-technical-review-en/" rel="prev" title="Layer Pruning for Efficient Large Language Models — In-Depth Technical Review">
+      <i class="fa fa-chevron-left"></i> Layer Pruning for Efficient Large Language Models — In-Depth Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/02/2026-04-02-GPipe-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="next" title="GPipe：微批次流水线并行的大规模模型训练 — 深度技术评审">
+      GPipe：微批次流水线并行的大规模模型训练 — 深度技术评审 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Technical-Review-Pipeline-Parallelism-for-Training-Giant-Neural-Networks"><span class="nav-number">1.</span> <span class="nav-text">Technical Review: Pipeline Parallelism for Training Giant Neural Networks</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Executive-Summary-Core-Contributions"><span class="nav-number">2.</span> <span class="nav-text">Executive Summary &amp; Core Contributions</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Foundational-Concepts-Background"><span class="nav-number">3.</span> <span class="nav-text">Foundational Concepts &amp; Background</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Why-Do-We-Need-Bigger-Models"><span class="nav-number">3.1.</span> <span class="nav-text">1. Why Do We Need Bigger Models?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-The-Memory-Wall-Problem"><span class="nav-number">3.2.</span> <span class="nav-text">2. The Memory Wall Problem</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Data-Parallelism-The-Easy-But-Limited-Solution"><span class="nav-number">3.3.</span> <span class="nav-text">3. Data Parallelism: The Easy (But Limited) Solution</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Model-Parallelism-Splitting-the-Model-Itself"><span class="nav-number">3.4.</span> <span class="nav-text">4. Model Parallelism: Splitting the Model Itself</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#4a-Tensor-Parallelism-SPMD-Intra-Layer"><span class="nav-number">3.4.1.</span> <span class="nav-text">4a. Tensor Parallelism (SPMD &#x2F; Intra-Layer)</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#4b-Pipeline-Parallelism-Inter-Layer"><span class="nav-number">3.4.2.</span> <span class="nav-text">4b. Pipeline Parallelism (Inter-Layer)</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Activation-Checkpointing-Re-Materialization"><span class="nav-number">3.5.</span> <span class="nav-text">5. Activation Checkpointing (Re-Materialization)</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#GPipe-Architecture-Algorithm-A-Detailed-Walkthrough"><span class="nav-number">4.</span> <span class="nav-text">GPipe Architecture &amp; Algorithm: A Detailed Walkthrough</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#The-Interface"><span class="nav-number">4.1.</span> <span class="nav-text">The Interface</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#The-Pipeline-Algorithm-Step-by-Step"><span class="nav-number">4.2.</span> <span class="nav-text">The Pipeline Algorithm Step by Step</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#The-Bubble-Overhead"><span class="nav-number">4.3.</span> <span class="nav-text">The Bubble Overhead</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Batch-Normalization-Handling"><span class="nav-number">4.4.</span> <span class="nav-text">Batch Normalization Handling</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Experimental-Results-Detailed-Analysis"><span class="nav-number">5.</span> <span class="nav-text">Experimental Results: Detailed Analysis</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Experiment-1-Scaling-Model-Size-Table-1"><span class="nav-number">5.1.</span> <span class="nav-text">Experiment 1: Scaling Model Size (Table 1)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Experiment-2-Training-Throughput-Table-2"><span class="nav-number">5.2.</span> <span class="nav-text">Experiment 2: Training Throughput (Table 2)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Experiment-3-Communication-Overhead-Table-3"><span class="nav-number">5.3.</span> <span class="nav-text">Experiment 3: Communication Overhead (Table 3)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Experiment-4-ImageNet-Classification-Table-4"><span class="nav-number">5.4.</span> <span class="nav-text">Experiment 4: ImageNet Classification (Table 4)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Experiment-5-Multilingual-Machine-Translation"><span class="nav-number">5.5.</span> <span class="nav-text">Experiment 5: Multilingual Machine Translation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Training-Stability-Challenges"><span class="nav-number">5.6.</span> <span class="nav-text">Training Stability Challenges</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Comparison-with-Alternative-Approaches"><span class="nav-number">6.</span> <span class="nav-text">Comparison with Alternative Approaches</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#GPipe-vs-Mesh-TensorFlow-SPMD"><span class="nav-number">6.1.</span> <span class="nav-text">GPipe vs. Mesh-TensorFlow (SPMD)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#GPipe-vs-PipeDream"><span class="nav-number">6.2.</span> <span class="nav-text">GPipe vs. PipeDream</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#GPipe-vs-Data-Parallelism"><span class="nav-number">6.3.</span> <span class="nav-text">GPipe vs. Data Parallelism</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Limitations-Boundary-Conditions-Critical-Analysis"><span class="nav-number">7.</span> <span class="nav-text">Limitations, Boundary Conditions &amp; Critical Analysis</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Single-Layer-Memory-Constraint"><span class="nav-number">7.1.</span> <span class="nav-text">1. Single-Layer Memory Constraint</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-The-Bubble-Problem-Is-Not-Fully-Solved"><span class="nav-number">7.2.</span> <span class="nav-text">2. The Bubble Problem Is Not Fully Solved</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Load-Imbalance"><span class="nav-number">7.3.</span> <span class="nav-text">3. Load Imbalance</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Micro-Batch-Size-and-Batch-Normalization"><span class="nav-number">7.4.</span> <span class="nav-text">4. Micro-Batch Size and Batch Normalization</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Memory-Savings-vs-Compute-Cost"><span class="nav-number">7.5.</span> <span class="nav-text">5. Memory Savings vs. Compute Cost</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-Fault-Tolerance"><span class="nav-number">7.6.</span> <span class="nav-text">6. Fault Tolerance</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Legacy-and-Influence"><span class="nav-number">8.</span> <span class="nav-text">Legacy and Influence</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Reproducibility-Assessment"><span class="nav-number">9.</span> <span class="nav-text">Reproducibility Assessment</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Key-Takeaways-for-Practitioners"><span class="nav-number">10.</span> <span class="nav-text">Key Takeaways for Practitioners</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Conclusion"><span class="nav-number">11.</span> <span class="nav-text">Conclusion</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#References"><span class="nav-number">12.</span> <span class="nav-text">References</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

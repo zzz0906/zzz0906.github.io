@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. Why this paper deserves a careful read If I explain this paper in one sentence to a reader who has never built an AI agent before, I would say this:  LATS tries to make language-model agents less i">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Language Agent Tree Search (LATS): Unifying Reasoning, Acting, and Planning in Language Models — Deep Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/11/2026-04-11-LATS-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. Why this paper deserves a careful read If I explain this paper in one sentence to a reader who has never built an AI agent before, I would say this:  LATS tries to make language-model agents less i">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-11T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-16T12:57:27.431Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Tree Search">
+<meta property="article:tag" content="LLM Agent">
+<meta property="article:tag" content="LATS">
+<meta property="article:tag" content="Reasoning">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/11/2026-04-11-LATS-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>Language Agent Tree Search (LATS): Unifying Reasoning, Acting, and Planning in Language Models — Deep Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/11/2026-04-11-LATS-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Language Agent Tree Search (LATS): Unifying Reasoning, Acting, and Planning in Language Models — Deep Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-11 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-11T00:00:00+00:00">2026-04-11</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-16 12:57:27" itemprop="dateModified" datetime="2026-04-16T12:57:27+00:00">2026-04-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-Why-this-paper-deserves-a-careful-read">1. Why this paper deserves a careful read</h2>
+<p>If I explain this paper in one sentence to a reader who has never built an AI agent before, I would say this:</p>
+<blockquote>
+<p><strong>LATS tries to make language-model agents less impulsive and more deliberate by letting them search over multiple possible action paths instead of committing to the first plausible answer.</strong></p>
+</blockquote>
+<p>That may sound simple, but it addresses one of the biggest weaknesses of many LM agents.</p>
+<p>A lot of agent systems look smart for the first two or three steps and then fail because they:</p>
+<ul>
+<li>choose a bad early action,</li>
+<li>never seriously consider alternatives,</li>
+<li>get trapped in their own earlier mistake,</li>
+<li>or cannot make good use of external feedback once they receive it.</li>
+</ul>
+<p>Human beings do not usually solve hard tasks by blurting out one chain of thought and marching forward forever. We often:</p>
+<ul>
+<li>consider multiple options,</li>
+<li>test one path,</li>
+<li>notice that it is going badly,</li>
+<li>backtrack,</li>
+<li>compare another path,</li>
+<li>and only then commit.</li>
+</ul>
+<p>This paper asks a very important question:</p>
+<blockquote>
+<p>Can we make LM agents behave a little more like that without retraining the model from scratch?</p>
+</blockquote>
+<p>The authors’ answer is <strong>yes, to a meaningful extent</strong>, by combining three capabilities that earlier work usually treated separately:</p>
+<ul>
+<li><strong>reasoning</strong> — internal thinking in language,</li>
+<li><strong>acting</strong> — interacting with tools or environments,</li>
+<li><strong>planning</strong> — using search to compare candidate futures before fully committing.</li>
+</ul>
+<p>The reason I think this paper matters is not that it proves agentic search is fully solved. It absolutely does not. The reason it matters is that it gives a concrete, general framework that works across very different tasks:</p>
+<ul>
+<li>multi-hop question answering,</li>
+<li>programming,</li>
+<li>web shopping/navigation,</li>
+<li>and even mathematical reasoning.</li>
+</ul>
+<p>That breadth is rare. Many agent papers look good on one benchmark and then collapse outside that niche. LATS is interesting because it is trying to be a <strong>general agent framework</strong>, not just a benchmark-specific trick.</p>
+<hr>
+<a id="more"></a>
+<h2 id="2-Beginner-prerequisites-assuming-the-reader-starts-from-zero">2. Beginner prerequisites (assuming the reader starts from zero)</h2>
+<p>I will explain the background as if the reader is intelligent, curious, and starting from nearly no technical background.</p>
+<h3 id="2-1-What-an-LM-agent-is">2.1 What an LM agent is</h3>
+<p>A plain language model takes text in and predicts text out.</p>
+<p>For example, you ask a question, and it generates an answer.</p>
+<p>An <strong>LM agent</strong> is a stronger setup where the model is not only writing text, but also using text to:</p>
+<ul>
+<li>plan,</li>
+<li>call tools,</li>
+<li>interact with an environment,</li>
+<li>inspect observations,</li>
+<li>and decide what to do next.</li>
+</ul>
+<p>So instead of one input and one output, the process becomes a loop:</p>
+<ol>
+<li>read current situation,</li>
+<li>think,</li>
+<li>act,</li>
+<li>observe result,</li>
+<li>think again,</li>
+<li>continue until success or failure.</li>
+</ol>
+<p>That loop is what makes the system “agent-like.”</p>
+<h3 id="2-2-The-difference-between-reasoning-acting-and-planning">2.2 The difference between reasoning, acting, and planning</h3>
+<p>These three words are easy to blur together, but the paper is careful to separate them.</p>
+<p><strong>Reasoning</strong> means internal thinking.</p>
+<p>Example:</p>
+<ul>
+<li>“If city A is east of city B, and B is in country C, then maybe A is also in country C.”</li>
+</ul>
+<p>The model is manipulating ideas in language.</p>
+<p><strong>Acting</strong> means doing something that changes or queries the outside world.</p>
+<p>Example:</p>
+<ul>
+<li>search Wikipedia,</li>
+<li>run code,</li>
+<li>click a product page,</li>
+<li>call a calculator,</li>
+<li>query an API.</li>
+</ul>
+<p><strong>Planning</strong> means exploring multiple possible futures before deciding which path to follow.</p>
+<p>Example:</p>
+<ul>
+<li>“If I search for this entity first, I may get evidence faster.</li>
+<li>If I search that other entity first, I may waste a step.</li>
+<li>Let me compare both options.”</li>
+</ul>
+<p>A lot of earlier methods had one or two of these abilities, but not all three together.</p>
+<h3 id="2-3-Why-one-shot-prompting-often-breaks-on-hard-tasks">2.3 Why one-shot prompting often breaks on hard tasks</h3>
+<p>Suppose I ask a model to solve a hard problem and it produces one chain of thought from left to right.</p>
+<p>That is cheap and sometimes impressive.</p>
+<p>But there is a built-in weakness:</p>
+<ul>
+<li>if step 2 is wrong,</li>
+<li>step 3 is built on step 2,</li>
+<li>step 4 is built on step 3,</li>
+<li>and now the whole trajectory is contaminated.</li>
+</ul>
+<p>This is a form of <strong>error propagation</strong>.</p>
+<p>The longer the reasoning chain, the more dangerous it becomes.</p>
+<p>This is why methods like Chain-of-Thought often help on moderately hard tasks, but not always enough on tasks where:</p>
+<ul>
+<li>multiple branches are plausible,</li>
+<li>partial failure is common,</li>
+<li>tool use is needed,</li>
+<li>or the environment gives feedback that should change the plan.</li>
+</ul>
+<h3 id="2-4-What-an-external-environment-and-external-feedback-mean">2.4 What an external environment and external feedback mean</h3>
+<p>In this paper, the model is not trapped inside its own head.</p>
+<p>It can interact with an <strong>environment</strong>.</p>
+<p>That environment may return feedback such as:</p>
+<ul>
+<li>a search result,</li>
+<li>a sentence from Wikipedia,</li>
+<li>compiler/test output for code,</li>
+<li>a changed web page,</li>
+<li>or a reward/success signal.</li>
+</ul>
+<p>This matters because large language models are powerful, but they are not perfect internal world simulators.</p>
+<p>If a model is uncertain or wrong, outside feedback can correct it.</p>
+<p>That is one of the main motivations behind ReAct-style systems and also one of the main motivations behind LATS.</p>
+<h3 id="2-5-What-tree-search-is-in-everyday-language">2.5 What tree search is, in everyday language</h3>
+<p>Imagine you are at a road intersection.</p>
+<p>From here, you can go:</p>
+<ul>
+<li>left,</li>
+<li>right,</li>
+<li>or straight.</li>
+</ul>
+<p>If you always take the first road that looks okay, you may miss a much better route.</p>
+<p>Tree search means representing the problem as a branching structure:</p>
+<ul>
+<li>each node is a state,</li>
+<li>each edge is a choice,</li>
+<li>and the algorithm explores the tree to find a better route.</li>
+</ul>
+<p>For language agents, a state may mean:</p>
+<ul>
+<li>the original question,</li>
+<li>the actions already taken,</li>
+<li>and the observations already received.</li>
+</ul>
+<h3 id="2-6-What-Monte-Carlo-Tree-Search-MCTS-is-trying-to-do">2.6 What Monte Carlo Tree Search (MCTS) is trying to do</h3>
+<p>Monte Carlo Tree Search is a famous search method used in planning and game-playing systems.</p>
+<p>You can think of it as a repeated cycle with a simple philosophy:</p>
+<ol>
+<li>go toward promising parts of the tree,</li>
+<li>still try underexplored branches sometimes,</li>
+<li>simulate outcomes,</li>
+<li>use those outcomes to update which branches look good.</li>
+</ol>
+<p>It is called “Monte Carlo” because it uses sampling.</p>
+<p>It is called “tree search” because it grows and evaluates a search tree.</p>
+<p>MCTS became famous partly through systems like AlphaGo, but the core idea is broader:</p>
+<blockquote>
+<p>Do not commit too early. Sample, compare, and revise where you explore.</p>
+</blockquote>
+<h3 id="2-7-What-the-exploration-vs-exploitation-trade-off-means">2.7 What the exploration-vs-exploitation trade-off means</h3>
+<p>This is a classic idea in decision-making.</p>
+<p><strong>Exploitation</strong> means:</p>
+<ul>
+<li>keep choosing what already looks best.</li>
+</ul>
+<p><strong>Exploration</strong> means:</p>
+<ul>
+<li>try paths that are not yet proven, because they might be even better.</li>
+</ul>
+<p>If you exploit too much, you get stuck in local habits.</p>
+<p>If you explore too much, you waste time wandering.</p>
+<p>Good search methods try to balance both.</p>
+<p>That is exactly what MCTS is designed to do.</p>
+<h3 id="2-8-What-a-value-function-is">2.8 What a value function is</h3>
+<p>A value function is just a way to estimate:</p>
+<blockquote>
+<p>“How promising is this state?”</p>
+</blockquote>
+<p>It does not have to be perfect.</p>
+<p>It only needs to be useful enough to guide the search toward states that seem more likely to lead to success.</p>
+<p>In reinforcement learning, value functions are often learned.</p>
+<p>In LATS, the clever trick is that the value function is not trained separately. Instead, the language model itself is prompted to help judge the state.</p>
+<h3 id="2-9-What-self-consistency-means">2.9 What self-consistency means</h3>
+<p>Self-consistency is the idea that if multiple independent reasoning samples point to the same answer or action, that answer is more trustworthy.</p>
+<p>It is a kind of “wisdom of multiple samples.”</p>
+<p>LATS uses this as one ingredient in its value estimate.</p>
+<p>That is important because a single LM judgment can be noisy.</p>
+<h3 id="2-10-What-self-reflection-means-in-LM-agents">2.10 What self-reflection means in LM agents</h3>
+<p>Self-reflection means the model looks back at a failed attempt and generates a language summary like:</p>
+<ul>
+<li>what went wrong,</li>
+<li>where the logic failed,</li>
+<li>what should be tried next time.</li>
+</ul>
+<p>This is weaker than gradient-based learning, but it is cheap and flexible.</p>
+<p>You can think of it as a text-based lesson extracted from failure.</p>
+<h3 id="2-11-Why-rollback-reversion-matters-so-much-here">2.11 Why rollback/reversion matters so much here</h3>
+<p>Many planning algorithms assume you can undo actions or simulate from earlier states.</p>
+<p>In the real physical world, that is not always easy.</p>
+<p>But in many language tasks, rollback is actually simple.</p>
+<p>Why?</p>
+<p>Because the “state” is mostly text.</p>
+<p>If I want to go back to an earlier point, I can often reconstruct the state by reusing the earlier text context.</p>
+<p>This is one of the key insights of the paper:</p>
+<blockquote>
+<p>For many LM tasks, reverting to an earlier state is much easier than in standard embodied RL.</p>
+</blockquote>
+<p>That makes tree search much more practical than one might first assume.</p>
+<hr>
+<h2 id="3-The-exact-problem-LATS-is-trying-to-solve">3. The exact problem LATS is trying to solve</h2>
+<p>The paper argues that existing LM-agent methods have three core weaknesses.</p>
+<h3 id="Weakness-1-They-are-not-flexible-enough">Weakness 1: They are not flexible enough</h3>
+<p>Methods like CoT or ReAct often generate one trajectory autoregressively.</p>
+<p>That means they do not systematically consider strong alternative paths from the same state.</p>
+<h3 id="Weakness-2-They-are-not-sensible-enough-about-feedback">Weakness 2: They are not sensible enough about feedback</h3>
+<p>Pure reasoning methods such as CoT, ToT, or RAP rely heavily on the model’s internal knowledge.</p>
+<p>That can be impressive, but it risks:</p>
+<ul>
+<li>hallucination,</li>
+<li>stale knowledge,</li>
+<li>weak adaptation to external evidence,</li>
+<li>and a hard ceiling on performance.</li>
+</ul>
+<h3 id="Weakness-3-They-are-not-adaptive-enough">Weakness 3: They are not adaptive enough</h3>
+<p>Some planning methods search over internal reasoning chains, but do not really integrate environment feedback and learning-from-failure in a unified way.</p>
+<p>Others do use feedback, but remain too reflexive and do not plan ahead.</p>
+<p>So the big problem is:</p>
+<blockquote>
+<p><strong>How do we build an LM agent that can reason internally, act externally, plan over alternatives, and improve from feedback, all inside one framework?</strong></p>
+</blockquote>
+<p>That is the problem LATS is designed to solve.</p>
+<hr>
+<h2 id="4-Big-picture-overview-of-the-method-Figure-1">4. Big-picture overview of the method (Figure 1)</h2>
+<p>Figure 1 gives the clean high-level story.</p>
+<p>LATS treats a language model as the center of a larger decision-making loop.</p>
+<p>Instead of using the LM only once, LATS uses it in several roles:</p>
+<ul>
+<li>as an <strong>agent</strong> that proposes actions or thoughts,</li>
+<li>as an <strong>evaluator</strong> that judges promising states,</li>
+<li>and as a <strong>reflection generator</strong> that summarizes mistakes.</li>
+</ul>
+<p>The search procedure is based on Monte Carlo Tree Search.</p>
+<p>The environment provides feedback.</p>
+<p>The combined system therefore has three information sources:</p>
+<ol>
+<li>internal language-model reasoning,</li>
+<li>external environment observations,</li>
+<li>search statistics gathered during exploration.</li>
+</ol>
+<p>That combination is the real idea of the paper.</p>
+<p>The authors are not claiming that a bigger model alone is enough.
+They are saying the <strong>inference-time control loop</strong> matters.</p>
+<hr>
+<h2 id="5-Technical-deep-dive-how-LATS-actually-works">5. Technical deep dive: how LATS actually works</h2>
+<p>Now let us unpack the mechanics carefully.</p>
+<h2 id="5-1-State-action-and-observation-design">5.1 State, action, and observation design</h2>
+<p>The paper represents each search node as a state:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>s</mi><mo>=</mo><mo stretchy="false">[</mo><mi>x</mi><mo separator="true">,</mo><msub><mi>a</mi><mrow><mn>1</mn><mo>⋯</mo><mi>i</mi></mrow></msub><mo separator="true">,</mo><msub><mi>o</mi><mrow><mn>1</mn><mo>⋯</mo><mi>i</mi></mrow></msub><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">s = [x, a_{1\cdots i}, o_{1\cdots i}]
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord mathnormal">x</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span><span class="minner mtight">⋯</span><span class="mord mathnormal mtight">i</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span><span class="minner mtight">⋯</span><span class="mord mathnormal mtight">i</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">]</span></span></span></span></span></p>
+<p>where:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span> is the original input,</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mrow><mn>1</mn><mo>⋯</mo><mi>i</mi></mrow></msub></mrow><annotation encoding="application/x-tex">a_{1\cdots i}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span><span class="minner mtight">⋯</span><span class="mord mathnormal mtight">i</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is the sequence of actions taken so far,</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>o</mi><mrow><mn>1</mn><mo>⋯</mo><mi>i</mi></mrow></msub></mrow><annotation encoding="application/x-tex">o_{1\cdots i}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span><span class="minner mtight">⋯</span><span class="mord mathnormal mtight">i</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is the sequence of observations received so far.</li>
+</ul>
+<p>This is an important design choice.</p>
+<p>LATS is not just searching over pure text thoughts. It is searching over <strong>interaction histories</strong>.</p>
+<p>In the ReAct-style setting, the action space is extended to include both:</p>
+<ul>
+<li>environment actions <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi></mrow><annotation encoding="application/x-tex">A</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">A</span></span></span></span>,</li>
+<li>reasoning traces <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Z</mi></mrow><annotation encoding="application/x-tex">Z</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">Z</span></span></span></span>.</li>
+</ul>
+<p>So the effective action space is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mover accent="true"><mi>A</mi><mo>^</mo></mover><mo>=</mo><mi>A</mi><mo>∪</mo><mi>Z</mi></mrow><annotation encoding="application/x-tex">\hat{A} = A \cup Z
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9468em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9468em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">A</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1111em;"><span class="mord">^</span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">A</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">∪</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">Z</span></span></span></span></span></p>
+<p>This means a node expansion may include:</p>
+<ul>
+<li>a concrete tool call,</li>
+<li>a website action,</li>
+<li>a search action,</li>
+<li>or a thought that organizes future action.</li>
+</ul>
+<p>That is one of the main reasons the method feels general.</p>
+<h2 id="5-2-Selection-with-UCT">5.2 Selection with UCT</h2>
+<p>LATS uses the standard UCT-style selection rule:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>U</mi><mi>C</mi><mi>T</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mo>=</mo><mi>V</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mo>+</mo><mi>w</mi><msqrt><mfrac><mrow><mi>ln</mi><mo>⁡</mo><mi>N</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo></mrow><mrow><mi>N</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo></mrow></mfrac></msqrt></mrow><annotation encoding="application/x-tex">UCT(s) = V(s) + w \sqrt{\frac{\ln N(p)}{N(s)} }
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">U</span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:3.04em;vertical-align:-1.1606em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8794em;"><span class="svg-align" style="top:-5em;"><span class="pstrut" style="height:5em;"></span><span class="mord" style="padding-left:1em;"><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop">ln</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mopen">(</span><span class="mord mathnormal">p</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span><span style="top:-3.8394em;"><span class="pstrut" style="height:5em;"></span><span class="hide-tail" style="min-width:1.02em;height:3.08em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="3.08em" viewBox="0 0 400000 3240" preserveAspectRatio="xMinYMin slice"><path d="M473,2793
+c339.3,-1799.3,509.3,-2700,510,-2702 l0 -0
+c3.3,-7.3,9.3,-11,18,-11 H400000v40H1017.7
+s-90.5,478,-276.2,1466c-185.7,988,-279.5,1483,-281.5,1485c-2,6,-10,9,-24,9
+c-8,0,-12,-0.7,-12,-2c0,-1.3,-5.3,-32,-16,-92c-50.7,-293.3,-119.7,-693.3,-207,-1200
+c0,-1.3,-5.3,8.7,-16,30c-10.7,21.3,-21.3,42.7,-32,64s-16,33,-16,33s-26,-26,-26,-26
+s76,-153,76,-153s77,-151,77,-151c0.7,0.7,35.7,202,105,604c67.3,400.7,102,602.7,104,
+606zM1001 80h400000v40H1017.7z"/></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.1606em;"><span></span></span></span></span></span></span></span></span></span></p>
+<p>where:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">V(s)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span></span> is the current value estimate of node <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span>,</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">N(s)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span></span> is the number of visits to node <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span>,</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo stretchy="false">(</mo><mi>p</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">N(p)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mopen">(</span><span class="mord mathnormal">p</span><span class="mclose">)</span></span></span></span> is the number of visits to the parent,</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi></mrow><annotation encoding="application/x-tex">w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span> is the exploration weight.</li>
+</ul>
+<p>The intuition is simple.</p>
+<p>The first term, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">V(s)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span></span>, favors states that already look promising.</p>
+<p>The second term favors states that have not been explored much yet.</p>
+<p>So selection does not blindly chase the currently best-looking branch. It also reserves attention for underexplored options.</p>
+<p>For language agents, this matters because the first plausible action suggested by the LM is often not the best one.</p>
+<h2 id="5-3-Expansion-by-sampling-multiple-next-moves">5.3 Expansion by sampling multiple next moves</h2>
+<p>After selecting a node, LATS expands it by sampling multiple candidate next actions from the LM.</p>
+<p>The paper uses <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span> sampled actions during expansion, with default settings often using <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">n = 5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span></span></span></span>.</p>
+<p>This is critical.</p>
+<p>If you only sample one next action, you are almost back to a standard greedy agent with some extra bookkeeping.</p>
+<p>Sampling multiple actions gives the search real branching power.</p>
+<p>This is where LATS becomes genuinely different from simple ReAct prompting.</p>
+<p>The environment then executes or responds to each candidate action, producing observations and therefore new child nodes.</p>
+<p>So LATS is not only branching over thoughts; it is branching over <strong>thought + action + feedback</strong> trajectories.</p>
+<h2 id="5-4-Evaluation-with-LM-score-self-consistency">5.4 Evaluation with LM score + self-consistency</h2>
+<p>This is one of the most interesting parts of the paper.</p>
+<p>LATS needs a scalar value for new states. Because it does not train a separate critic, it constructs a heuristic value from two components:</p>
+<ol>
+<li>an LM-generated score,</li>
+<li>a self-consistency score.</li>
+</ol>
+<p>The combined value is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>V</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mo>=</mo><mi>λ</mi><mo>⋅</mo><mi>L</mi><mi>M</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mo>+</mo><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><mi>λ</mi><mo stretchy="false">)</mo><mo>⋅</mo><mi>S</mi><mi>C</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">V(s) = \lambda \cdot LM(s) + (1-\lambda) \cdot SC(s)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">λ</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">L</span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">λ</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span></span></span></p>
+<p>where:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi>M</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">LM(s)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">L</span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span></span> is the language model’s own evaluation of how promising the state is,</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>S</mi><mi>C</mi><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">SC(s)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)</span></span></span></span> is the self-consistency signal,</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>λ</mi></mrow><annotation encoding="application/x-tex">\lambda</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">λ</span></span></span></span> balances the two.</li>
+</ul>
+<p>This design is more subtle than it first appears.</p>
+<h3 id="Why-the-LM-score-matters">Why the LM score matters</h3>
+<p>The LM is prompted to inspect the current state and reason about whether the trajectory looks correct or promising.</p>
+<p>That is like turning the model into a lightweight textual critic.</p>
+<h3 id="Why-self-consistency-matters">Why self-consistency matters</h3>
+<p>If similar actions or answers keep showing up from repeated sampling, that is evidence the direction may be more reliable.</p>
+<p>This helps stabilize noisy LM judgments.</p>
+<h3 id="Why-this-is-important">Why this is important</h3>
+<p>Without such a heuristic, search would depend too heavily on sparse final rewards.</p>
+<p>That would make the process much less efficient.</p>
+<p>The appendix confirms this directly: removing the LM heuristic hurts performance badly.</p>
+<h2 id="5-5-Simulation-until-a-terminal-state">5.5 Simulation until a terminal state</h2>
+<p>After expansion and evaluation, LATS continues by simulating forward until a terminal state is reached.</p>
+<p>At each depth level, it again samples and evaluates candidates, then prioritizes higher-value ones.</p>
+<p>A terminal state may mean:</p>
+<ul>
+<li>the question is answered,</li>
+<li>the program is complete,</li>
+<li>the product is bought,</li>
+<li>or the episode ends in success/failure.</li>
+</ul>
+<p>If a successful terminal state is found, the search can stop early.</p>
+<p>If not, the failure becomes useful information for later updates.</p>
+<h2 id="5-6-Backpropagation-of-reward">5.6 Backpropagation of reward</h2>
+<p>After reaching a terminal outcome, LATS propagates reward information back along the path.</p>
+<p>Conceptually, it updates node values so that earlier states in successful trajectories become more attractive in future selection.</p>
+<p>This is standard MCTS logic, but here it is applied to language-agent trajectories rather than game-board states.</p>
+<p>The important thing for a beginner to understand is this:</p>
+<blockquote>
+<p><strong>A later success changes how the algorithm judges earlier choices.</strong></p>
+</blockquote>
+<p>That is how search gradually learns where promising paths tend to begin.</p>
+<h2 id="5-7-Reflection-and-external-memory">5.7 Reflection and external memory</h2>
+<p>This is the part that makes LATS feel much more agentic than a plain search algorithm.</p>
+<p>When a trajectory fails, LATS asks the model to produce a reflection about the failure.</p>
+<p>That reflection might summarize:</p>
+<ul>
+<li>the incorrect assumption,</li>
+<li>the missing evidence,</li>
+<li>the bad action choice,</li>
+<li>or the better alternative.</li>
+</ul>
+<p>Both failed trajectories and reflections are stored in memory and injected into future trials as additional context.</p>
+<p>This gives the system a kind of in-context learning loop:</p>
+<ul>
+<li>not gradient learning,</li>
+<li>not parameter updates,</li>
+<li>but still a meaningful use of prior failure.</li>
+</ul>
+<p>Figure 2 presents the whole LATS pipeline as six operations:</p>
+<ol>
+<li>selection,</li>
+<li>expansion,</li>
+<li>evaluation,</li>
+<li>simulation,</li>
+<li>backpropagation,</li>
+<li>reflection.</li>
+</ol>
+<p>That figure is one of the most useful in the paper because it makes clear that LATS is a <strong>full control architecture</strong>, not a single prompting trick.</p>
+<hr>
+<h2 id="6-Why-LATS-is-not-just-“MCTS-ReAct”-glued-together">6. Why LATS is not just “MCTS + ReAct” glued together</h2>
+<p>This is a good skeptical question.</p>
+<p>Could someone say:</p>
+<blockquote>
+<p>“Come on, this is just MCTS pasted on top of a ReAct-style agent.”</p>
+</blockquote>
+<p>My answer is: <strong>that description is not entirely wrong, but it is too shallow to capture the real contribution.</strong></p>
+<p>The authors themselves emphasize that adapting search to LM agents is not trivial. I agree.</p>
+<p>Here is why.</p>
+<h3 id="6-1-The-node-representation-is-different">6.1 The node representation is different</h3>
+<p>Traditional MCTS often deals with clean symbolic states.</p>
+<p>LATS deals with language-heavy states that mix:</p>
+<ul>
+<li>prompts,</li>
+<li>action histories,</li>
+<li>observations,</li>
+<li>and reflection memory.</li>
+</ul>
+<p>That is messier and more design-sensitive.</p>
+<h3 id="6-2-The-value-function-is-different">6.2 The value function is different</h3>
+<p>Standard MCTS often relies on explicit environment simulations and learned or handcrafted evaluation.</p>
+<p>LATS instead uses LM-based verbal evaluation plus self-consistency.</p>
+<p>That is specifically adapted to the language-agent regime.</p>
+<h3 id="6-3-External-feedback-is-integrated-into-planning">6.3 External feedback is integrated into planning</h3>
+<p>ReAct uses external feedback, but usually in a reflexive step-by-step way.</p>
+<p>ToT and RAP search over reasoning, but do not naturally handle acting environments in the same unified way.</p>
+<p>LATS tries to merge both worlds.</p>
+<h3 id="6-4-Reflection-is-treated-as-a-reusable-semantic-signal">6.4 Reflection is treated as a reusable semantic signal</h3>
+<p>This is not just scalar reward.</p>
+<p>It is language-level feedback that can shape future behavior through prompting context.</p>
+<p>That is extremely natural for LM systems.</p>
+<p>So yes, LATS is built from known ingredients, but the system-level composition is genuinely meaningful.</p>
+<p>In agent research, such composition is often where the real progress happens.</p>
+<hr>
+<h2 id="7-Experimental-setup">7. Experimental setup</h2>
+<p>The paper evaluates LATS on four very different task families.</p>
+<h3 id="7-1-HotPotQA">7.1 HotPotQA</h3>
+<p>A multi-hop QA benchmark where the model may need to retrieve and combine evidence from multiple Wikipedia passages.</p>
+<p>This is useful because it supports both:</p>
+<ul>
+<li>internal reasoning,</li>
+<li>and acting via retrieval tools.</li>
+</ul>
+<h3 id="7-2-Programming-HumanEval-and-MBPP">7.2 Programming: HumanEval and MBPP</h3>
+<p>Here the “action” is proposing code.</p>
+<p>The external feedback comes from compiler output and generated tests.</p>
+<p>This is a great benchmark for agent methods because code execution gives clear evidence.</p>
+<h3 id="7-3-WebShop">7.3 WebShop</h3>
+<p>A grounded web-navigation environment with real products and user instructions.</p>
+<p>This is much closer to realistic agentic interaction than isolated reasoning benchmarks.</p>
+<h3 id="7-4-Game-of-24">7.4 Game of 24</h3>
+<p>A pure internal reasoning task.</p>
+<p>This is important because it tests whether LATS still helps even when external environment interaction is minimal.</p>
+<h3 id="7-5-Models-and-hyperparameters">7.5 Models and hyperparameters</h3>
+<p>From the appendix:</p>
+<ul>
+<li>default sampled nodes during expansion are often <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">n = 5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span></span></span></span>,</li>
+<li>exploration weight <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">w = 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> by default,</li>
+<li>self-consistency weight <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>λ</mi><mo>=</mo><mn>0.5</mn></mrow><annotation encoding="application/x-tex">\lambda = 0.5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">λ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.5</span></span></span></span> for HotPotQA and Game of 24,</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>λ</mi><mo>=</mo><mn>0.8</mn></mrow><annotation encoding="application/x-tex">\lambda = 0.8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">λ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.8</span></span></span></span> for Programming and WebShop.</li>
+</ul>
+<p>For HotPotQA the paper uses a subset of 100 questions and usually samples up to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>50</mn></mrow><annotation encoding="application/x-tex">k = 50</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">50</span></span></span></span> trajectories.</p>
+<p>For programming they use <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">k = 8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span> iterations and sample <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">n = 5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">5</span></span></span></span> solutions during expansion.</p>
+<p>For WebShop they evaluate on 50 instructions with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>30</mn></mrow><annotation encoding="application/x-tex">k = 30</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">30</span></span></span></span>.</p>
+<p>This is not tiny, but it is also not absurdly large. The experiments are substantial enough to reveal whether the framework is robust.</p>
+<hr>
+<h2 id="8-Main-results-and-what-they-really-mean">8. Main results and what they really mean</h2>
+<p>This section is the heart of the review.</p>
+<h2 id="8-1-HotPotQA-internal-reasoning-only">8.1 HotPotQA: internal reasoning only</h2>
+<p>Table 2 reports GPT-3.5 results in the reasoning-only setting:</p>
+<ul>
+<li>Base LM: <strong>0.32</strong> exact match</li>
+<li>CoT: <strong>0.34</strong></li>
+<li>CoT-SC: <strong>0.38</strong></li>
+<li>ToT: <strong>0.55</strong></li>
+<li>RAP: <strong>0.60</strong></li>
+<li>LATS (CoT): <strong>0.62</strong></li>
+</ul>
+<p>What does this tell me?</p>
+<p>First, plain chain-of-thought gives only a small lift over the base model.</p>
+<p>Second, search-based reasoning methods help a lot.</p>
+<p>Third, LATS still beats RAP and ToT even in a setting where acting is removed.</p>
+<p>That means LATS is not only a tool-use framework. It is also a strong reasoning-time search framework.</p>
+<h2 id="8-2-HotPotQA-acting-with-tools-and-feedback">8.2 HotPotQA: acting with tools and feedback</h2>
+<p>Table 3 is even more interesting because it moves into the acting setting:</p>
+<ul>
+<li>ReAct: <strong>0.32</strong></li>
+<li>ReAct (best of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span>): <strong>0.38</strong></li>
+<li>Reflexion: <strong>0.51</strong></li>
+<li>ToT (ReAct): <strong>0.39</strong></li>
+<li>RAP (ReAct): <strong>0.54</strong></li>
+<li>LATS (ReAct): <strong>0.63</strong></li>
+<li>LATS (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>10</mn></mrow><annotation encoding="application/x-tex">n=10</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">10</span></span></span></span>): <strong>0.65</strong></li>
+<li>LATS (CoT + ReAct): <strong>0.71</strong></li>
+</ul>
+<p>This is a very strong result.</p>
+<p>The most striking part is not just that LATS beats ReAct. That is expected if search works.</p>
+<p>The more interesting part is that simply extending ToT or RAP with ReAct-style prompting does <strong>not</strong> solve the problem well. ToT(ReAct) is only <strong>0.39</strong>, barely above simple repeated ReAct.</p>
+<p>This supports the paper’s core claim:</p>
+<blockquote>
+<p>planning for acting environments is not trivial; you cannot just naively paste a search method onto ReAct and expect it to work.</p>
+</blockquote>
+<p>Also, the hybrid LATS(CoT + ReAct) result of <strong>0.71</strong> is notable. It suggests that internal reasoning and external acting are complementary rather than mutually exclusive.</p>
+<p>That feels psychologically realistic too: smart agents should use internal knowledge first, then consult tools when needed.</p>
+<h3 id="Important-caveat-on-HotPotQA">Important caveat on HotPotQA</h3>
+<p>The paper uses an <strong>oracle setting</strong> where the environment can tell the agent whether an answer is correct.</p>
+<p>That is useful for controlled evaluation, but it is also optimistic.</p>
+<p>In many real applications, feedback is noisier than that.</p>
+<p>So I take the HotPotQA results as strong evidence of the framework’s potential, but not as a direct guarantee of real-world deployment performance.</p>
+<h2 id="8-3-HumanEval-programming">8.3 HumanEval: programming</h2>
+<p>Table 4 is one of the most impressive parts of the paper.</p>
+<p>For GPT-3.5 on HumanEval pass@1:</p>
+<ul>
+<li>CoT: <strong>46.9</strong></li>
+<li>ReAct: <strong>56.9</strong></li>
+<li>Reflexion: <strong>68.1</strong></li>
+<li>ToT: <strong>54.4</strong></li>
+<li>RAP: <strong>63.1</strong></li>
+<li>LATS (ReAct): <strong>83.8</strong></li>
+</ul>
+<p>For GPT-4:</p>
+<ul>
+<li>Base LM: <strong>80.1</strong></li>
+<li>Reflexion: <strong>91.0</strong></li>
+<li>LATS (ReAct): <strong>92.7</strong></li>
+</ul>
+<p>The GPT-3.5 jump is huge.</p>
+<p>An increase from <strong>68.1</strong> with Reflexion to <strong>83.8</strong> with LATS is not a cosmetic gain. It is a different performance regime.</p>
+<p>Why might programming benefit so much?</p>
+<p>Because code gives rich feedback:</p>
+<ul>
+<li>tests pass or fail,</li>
+<li>compiler errors are concrete,</li>
+<li>partial success is measurable,</li>
+<li>and the search can meaningfully compare candidates.</li>
+</ul>
+<p>This is exactly the kind of domain where structured search plus execution feedback should shine.</p>
+<p>The GPT-4 result of <strong>92.7</strong> is also strong because it shows that LATS is not only useful for weaker models. Better models still benefit from better inference-time control.</p>
+<h2 id="8-4-MBPP-more-programming-evidence">8.4 MBPP: more programming evidence</h2>
+<p>Table 5 on MBPP reports GPT-3.5 pass@1:</p>
+<ul>
+<li>CoT: <strong>54.9</strong></li>
+<li>ReAct: <strong>67.0</strong></li>
+<li>Reflexion: <strong>70.0</strong></li>
+<li>ToT: <strong>65.8</strong></li>
+<li>RAP: <strong>71.4</strong></li>
+<li>LATS (ReAct): <strong>81.1</strong></li>
+</ul>
+<p>Again LATS wins by a healthy margin.</p>
+<p>This matters because one benchmark can always be quirky. Two programming benchmarks showing the same pattern is much more convincing.</p>
+<h2 id="8-5-WebShop-web-navigation-and-grounded-decision-making">8.5 WebShop: web navigation and grounded decision-making</h2>
+<p>Table 6 evaluates a much more realistic interactive environment.</p>
+<p>Prompting methods:</p>
+<ul>
+<li>ReAct: score <strong>53.8</strong>, success rate <strong>28.0</strong></li>
+<li>ReAct (best of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span>): <strong>59.1</strong>, <strong>32.0</strong></li>
+<li>Reflexion: <strong>64.2</strong>, <strong>35.0</strong></li>
+<li>LATS (ReAct): <strong>75.9</strong>, <strong>38.0</strong></li>
+</ul>
+<p>Training-based baselines:</p>
+<ul>
+<li>IL: <strong>59.9</strong>, <strong>29.1</strong></li>
+<li>IL+RL: <strong>62.4</strong>, <strong>28.7</strong></li>
+<li>Fine-tuning: <strong>67.5</strong>, <strong>45.0</strong></li>
+<li>Expert: <strong>82.1</strong>, <strong>59.6</strong></li>
+</ul>
+<p>This table deserves careful reading.</p>
+<h3 id="What-is-impressive">What is impressive</h3>
+<p>LATS reaches an average score of <strong>75.9</strong>, which is substantially above the prompting baselines and even above some RL-based approaches.</p>
+<p>That is strong evidence that better inference-time search can compete with some learned approaches in grounded decision-making.</p>
+<h3 id="What-is-less-impressive-than-the-score-first-suggests">What is less impressive than the score first suggests</h3>
+<p>The success rate improves from <strong>35.0</strong> with Reflexion to <strong>38.0</strong> with LATS. That is real progress, but not an explosion.</p>
+<p>So the gain on WebShop is meaningful, but not magical.</p>
+<p>My interpretation is:</p>
+<ul>
+<li>LATS clearly improves the quality of navigation and decision-making,</li>
+<li>but WebShop remains hard,</li>
+<li>and full task success is still far from expert or strong fine-tuned performance.</li>
+</ul>
+<p>This is actually a healthy sign. The paper is not pretending the problem is solved.</p>
+<h2 id="8-6-Game-of-24-pure-internal-reasoning">8.6 Game of 24: pure internal reasoning</h2>
+<p>Table 7 reports success rate on Game of 24 with GPT-3.5:</p>
+<ul>
+<li>CoT: <strong>0.08</strong></li>
+<li>Reflexion: <strong>0.12</strong></li>
+<li>ToT: <strong>0.20</strong></li>
+<li>RAP: <strong>0.40</strong></li>
+<li>LATS (CoT): <strong>0.44</strong></li>
+</ul>
+<p>This is a smaller benchmark, but it matters conceptually.</p>
+<p>It shows that LATS is not dependent on web tools or code execution to be useful. Its search-and-value design also helps on pure reasoning tasks.</p>
+<p>The paper further shows in Table 13 that using both LM score and self-consistency is better than using LM score alone:</p>
+<ul>
+<li>LATS (CoT, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>λ</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">\lambda = 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">λ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>): <strong>0.40</strong></li>
+<li>LATS (CoT, default mixed weighting): <strong>0.44</strong></li>
+</ul>
+<p>So the self-consistency term is doing real work.</p>
+<h2 id="8-7-Ablations-which-parts-actually-matter">8.7 Ablations: which parts actually matter</h2>
+<p>A good paper does not only show the final number. It also shows which pieces are necessary.</p>
+<p>Table 8 on HotPotQA is excellent for this.</p>
+<ul>
+<li>ToT (ReAct): <strong>0.39</strong></li>
+<li>RAP (ReAct): <strong>0.54</strong></li>
+<li>LATS (No LM Heuristic): <strong>0.37</strong></li>
+<li>LATS (DFS): <strong>0.42</strong></li>
+<li>LATS (No Reflection): <strong>0.58</strong></li>
+<li>LATS (ReAct): <strong>0.63</strong></li>
+</ul>
+<p>This table tells us several things.</p>
+<h3 id="The-LM-heuristic-is-crucial">The LM heuristic is crucial</h3>
+<p>Removing the LM heuristic drops performance to <strong>0.37</strong>.</p>
+<p>That is almost catastrophic.</p>
+<p>So the value-function design is not optional decoration. It is central.</p>
+<h3 id="Reflection-helps-but-it-is-not-the-only-reason-LATS-works">Reflection helps, but it is not the only reason LATS works</h3>
+<p>Removing reflection drops performance from <strong>0.63</strong> to <strong>0.58</strong>.</p>
+<p>That is meaningful but smaller than the effect of removing the heuristic.</p>
+<p>So reflection is useful, but search + value estimation carry more of the load.</p>
+<h3 id="The-search-algorithm-itself-matters">The search algorithm itself matters</h3>
+<p>Replacing MCTS-style search with DFS drops performance to <strong>0.42</strong>.</p>
+<p>This supports the paper’s claim that principled exploration-exploitation balance matters.</p>
+<p>The appendix adds more detail:</p>
+<ul>
+<li>reducing exploration weight <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi></mrow><annotation encoding="application/x-tex">w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span> to 0.5 hurts HotPotQA,</li>
+<li>reducing depth from 7 to 4 only slightly hurts performance,</li>
+<li>and default settings are reasonably robust.</li>
+</ul>
+<p>Figure 3, showing performance over successive iterations on HumanEval, also indicates that LATS scales better with more iterations than Reflexion.</p>
+<h2 id="8-8-Efficiency-sample-complexity-and-token-cost">8.8 Efficiency, sample complexity, and token cost</h2>
+<p>This is the part many people skip, but it matters a lot.</p>
+<p>Search-based methods often look great until you ask how much they cost.</p>
+<p>The paper addresses this with Tables 9 and 10.</p>
+<p>Table 9 argues that LATS has the same asymptotic sample complexity as other tree-based search methods like ToT and RAP, while achieving stronger performance.</p>
+<p>Table 10 gives more concrete evidence on HotPotQA.</p>
+<p>At <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>50</mn></mrow><annotation encoding="application/x-tex">k = 50</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">50</span></span></span></span> trajectories:</p>
+<ul>
+<li>ToT: performance <strong>0.49</strong>, average nodes <strong>84.05</strong></li>
+<li>RAP: performance <strong>0.54</strong>, average nodes <strong>70.60</strong></li>
+<li>LATS: performance <strong>0.61</strong>, average nodes <strong>66.65</strong></li>
+</ul>
+<p>At <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>30</mn></mrow><annotation encoding="application/x-tex">k = 30</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">30</span></span></span></span>:</p>
+<ul>
+<li>ToT: <strong>0.39</strong>, <strong>47.54</strong> nodes</li>
+<li>RAP: <strong>0.50</strong>, <strong>37.71</strong> nodes</li>
+<li>LATS: <strong>0.52</strong>, <strong>34.12</strong> nodes</li>
+</ul>
+<p>At <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>10</mn></mrow><annotation encoding="application/x-tex">k = 10</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">10</span></span></span></span>:</p>
+<ul>
+<li>ToT: <strong>0.34</strong>, <strong>33.97</strong> nodes</li>
+<li>RAP: <strong>0.44</strong>, <strong>31.53</strong> nodes</li>
+<li>LATS: <strong>0.44</strong>, <strong>28.42</strong> nodes</li>
+</ul>
+<p>This is surprisingly encouraging.</p>
+<p>LATS is not merely buying better performance by exploding the tree uncontrollably. It is often getting <strong>better accuracy with fewer expanded nodes</strong> than competing tree-search baselines.</p>
+<p>That does not make it cheap in an absolute sense. It is still costlier than simple prompting.</p>
+<p>But it does support the paper’s claim that LATS is a <strong>better search procedure</strong>, not just a more wasteful one.</p>
+<hr>
+<h2 id="9-What-I-found-most-convincing-in-this-paper">9. What I found most convincing in this paper</h2>
+<p>Several things impressed me.</p>
+<h3 id="9-1-The-method-works-across-qualitatively-different-task-types">9.1 The method works across qualitatively different task types</h3>
+<p>This is probably the biggest strength.</p>
+<p>A framework that improves:</p>
+<ul>
+<li>retrieval QA,</li>
+<li>programming,</li>
+<li>web navigation,</li>
+<li>and arithmetic reasoning</li>
+</ul>
+<p>is much more interesting than one that only wins on one reasoning benchmark.</p>
+<h3 id="9-2-The-paper-does-not-rely-on-one-single-magic-component">9.2 The paper does not rely on one single magic component</h3>
+<p>The gains come from a coherent architecture:</p>
+<ul>
+<li>search,</li>
+<li>value estimation,</li>
+<li>external feedback,</li>
+<li>reflection,</li>
+<li>and memory.</li>
+</ul>
+<p>That feels more robust than a brittle prompt-only trick.</p>
+<h3 id="9-3-The-programming-results-are-genuinely-strong">9.3 The programming results are genuinely strong</h3>
+<p>The HumanEval jump is big enough that I take it seriously.</p>
+<p>Programming is a domain where many weak agent ideas get exposed quickly. LATS surviving there is a positive signal.</p>
+<h3 id="9-4-The-ablations-are-informative">9.4 The ablations are informative</h3>
+<p>Table 8 and the appendix ablations do real explanatory work.</p>
+<p>The authors are not just saying “trust us.” They show which parts matter.</p>
+<h3 id="9-5-The-paper-has-a-healthy-system-design-perspective">9.5 The paper has a healthy system-design perspective</h3>
+<p>This is not a paper obsessed only with pretrained model size. It focuses on how to use a model better at inference time.</p>
+<p>That remains one of the most practical themes in agent research.</p>
+<hr>
+<h2 id="10-Limitations-caveats-and-boundary-conditions">10. Limitations, caveats, and boundary conditions</h2>
+<p>Now for the skepticism.</p>
+<p>This paper is strong, but it is not a universal solution.</p>
+<h2 id="10-1-Higher-inference-time-cost-is-real">10.1 Higher inference-time cost is real</h2>
+<p>The paper is transparent about this.</p>
+<p>LATS is more expensive than simpler prompting methods like ReAct or Reflexion.</p>
+<p>Even if it is efficient relative to ToT and RAP, it is still more involved than a single trajectory prompt.</p>
+<p>So I would not use LATS by default for every easy task.</p>
+<p>I would save it for tasks where:</p>
+<ul>
+<li>mistakes are costly,</li>
+<li>external feedback is informative,</li>
+<li>and the problem has meaningful branching structure.</li>
+</ul>
+<h2 id="10-2-The-rollback-assumption-is-not-universal">10.2 The rollback assumption is not universal</h2>
+<p>LATS benefits from the fact that many text-based tasks can be reset by reconstructing earlier context.</p>
+<p>That is true for many LM tasks, but not all real environments behave that way.</p>
+<p>If an environment is truly irreversible, messy, or physically grounded, the framework becomes harder to apply.</p>
+<h2 id="10-3-Some-evaluation-settings-are-optimistic">10.3 Some evaluation settings are optimistic</h2>
+<p>The HotPotQA oracle feedback setup is fair for comparison, but stronger than what many real systems receive.</p>
+<p>That means some gains may shrink in noisier settings.</p>
+<h2 id="10-4-Reflection-quality-is-variable">10.4 Reflection quality is variable</h2>
+<p>The paper itself notes that reflections in complex environments like WebShop can be generic and sometimes not very useful.</p>
+<p>That matches broader experience with reflection-based agents.</p>
+<p>Reflection is helpful, but it is not magic.</p>
+<h2 id="10-5-The-paper-is-stronger-as-a-framework-paper-than-as-a-theory-paper">10.5 The paper is stronger as a framework paper than as a theory paper</h2>
+<p>There is no deep new theorem here about agent optimality.</p>
+<p>The novelty is largely in the system architecture and adaptation of search to language agents.</p>
+<p>That is not a criticism in the negative sense. It is just important to classify the contribution correctly.</p>
+<h2 id="10-6-WebShop-still-shows-a-significant-gap-to-expert-performance">10.6 WebShop still shows a significant gap to expert performance</h2>
+<p>LATS improves WebShop a lot, but it is not close to solving grounded web navigation in a robust human-level way.</p>
+<p>So anyone reading the paper should avoid overclaiming.</p>
+<hr>
+<h2 id="11-Reproducibility-checklist">11. Reproducibility checklist</h2>
+<p>If I were reproducing this paper seriously, I would lock down the following.</p>
+<h3 id="11-1-Model-and-prompting-details">11.1 Model and prompting details</h3>
+<ul>
+<li>exact model versions (GPT-3.5, GPT-4, etc.),</li>
+<li>exact prompts for agent, value scoring, and reflection,</li>
+<li>temperature and sampling settings,</li>
+<li>stop tokens and parsing conventions.</li>
+</ul>
+<h3 id="11-2-Search-hyperparameters">11.2 Search hyperparameters</h3>
+<ul>
+<li>number of sampled children <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span>,</li>
+<li>number of trajectories/rollouts <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span>,</li>
+<li>exploration weight <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi></mrow><annotation encoding="application/x-tex">w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span>,</li>
+<li>depth limit <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi></mrow><annotation encoding="application/x-tex">d</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">d</span></span></span></span>,</li>
+<li>self-consistency weight <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>λ</mi></mrow><annotation encoding="application/x-tex">\lambda</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">λ</span></span></span></span>.</li>
+</ul>
+<h3 id="11-3-Environment-interfaces">11.3 Environment interfaces</h3>
+<ul>
+<li>exact API/tool wrappers for HotPotQA retrieval,</li>
+<li>exact execution and test setup for HumanEval/MBPP,</li>
+<li>exact browser/action abstraction for WebShop,</li>
+<li>exact success checker for Game of 24.</li>
+</ul>
+<h3 id="11-4-Reflection-and-memory-handling">11.4 Reflection and memory handling</h3>
+<ul>
+<li>how failed trajectories are stored,</li>
+<li>how many reflections are kept,</li>
+<li>how reflection text is inserted back into prompts,</li>
+<li>any truncation policy for long contexts.</li>
+</ul>
+<h3 id="11-5-Evaluation-protocol">11.5 Evaluation protocol</h3>
+<ul>
+<li>exact question subsets,</li>
+<li>whether HumanEval uses 161 or 164 problems,</li>
+<li>whether synthetic tests are generated once or multiple times,</li>
+<li>pass@1 calculation details,</li>
+<li>number of runs and variance reporting.</li>
+</ul>
+<p>I would also add one practical reproducibility step that many papers underreport:</p>
+<blockquote>
+<p>record actual token usage and wall-clock latency per successful episode.</p>
+</blockquote>
+<p>For real agent systems, that matters almost as much as task accuracy.</p>
+<hr>
+<h2 id="12-Practical-engineering-lessons-for-people-building-agents-today">12. Practical engineering lessons for people building agents today</h2>
+<p>This is where I think the paper is most useful to practitioners.</p>
+<h3 id="Lesson-1-harder-tasks-need-search-not-just-better-prompting">Lesson 1: harder tasks need search, not just better prompting</h3>
+<p>If the task has branching structure and delayed feedback, a single-shot or single-trajectory policy is often not enough.</p>
+<h3 id="Lesson-2-external-feedback-should-be-integrated-into-planning-not-merely-appended-to-context">Lesson 2: external feedback should be integrated into planning, not merely appended to context</h3>
+<p>A lot of weak agent systems do this:</p>
+<ul>
+<li>act,</li>
+<li>observe,</li>
+<li>stuff the observation into the prompt,</li>
+<li>continue.</li>
+</ul>
+<p>That is useful, but it is not enough.</p>
+<p>LATS shows the benefit of making feedback shape the search itself.</p>
+<h3 id="Lesson-3-verbal-critics-are-surprisingly-powerful">Lesson 3: verbal critics are surprisingly powerful</h3>
+<p>Using the LM itself as a lightweight state evaluator is a smart design pattern.</p>
+<p>It avoids separate critic training while still giving the search richer guidance than sparse reward alone.</p>
+<h3 id="Lesson-4-failure-summaries-can-be-useful-even-without-gradient-updates">Lesson 4: failure summaries can be useful even without gradient updates</h3>
+<p>Reflection is not equivalent to learning, but it is often much cheaper and easier to deploy.</p>
+<h3 id="Lesson-5-do-not-confuse-“agent”-with-“one-prompt-plus-tools”">Lesson 5: do not confuse “agent” with “one prompt plus tools”</h3>
+<p>Real agents usually need some combination of:</p>
+<ul>
+<li>memory,</li>
+<li>branching,</li>
+<li>evaluation,</li>
+<li>and deliberate control.</li>
+</ul>
+<p>This paper is a good reminder that agent quality is often a systems problem.</p>
+<h3 id="Lesson-6-use-the-method-selectively">Lesson 6: use the method selectively</h3>
+<p>If I were building a production system, I would apply LATS-like search when:</p>
+<ul>
+<li>each failure is expensive,</li>
+<li>the environment offers informative feedback,</li>
+<li>multiple candidate paths are plausible,</li>
+<li>and latency budget allows deeper search.</li>
+</ul>
+<p>I would not waste this machinery on trivial tasks with obvious next steps.</p>
+<hr>
+<h2 id="13-Final-verdict">13. Final verdict</h2>
+<p>My conclusion is straightforward:</p>
+<blockquote>
+<p><strong>LATS is one of the better early framework papers for language-model agents because it treats agents as a search-and-control problem rather than only a prompting problem.</strong></p>
+</blockquote>
+<p>What the paper does especially well is unify three things that were often treated separately:</p>
+<ul>
+<li>reasoning,</li>
+<li>acting,</li>
+<li>planning.</li>
+</ul>
+<p>The strongest evidence comes from programming and from the acting version of HotPotQA, where naive combinations of search and acting do not work nearly as well.</p>
+<p>I do not think LATS is the final word on agent planning.</p>
+<p>Its costs are real.
+Its rollback assumption is task-dependent.
+Its reflection mechanism is imperfect.
+Its evaluation settings are sometimes optimistic.</p>
+<p>But I do think it marks an important shift in perspective:</p>
+<blockquote>
+<p><strong>better agents are not only about bigger models; they are also about better inference-time structure.</strong></p>
+</blockquote>
+<p>If I were advising a reader who wants one practical takeaway, it would be this:</p>
+<p><em>When an LM agent keeps making locally plausible but globally bad decisions, the next thing to improve may not be the prompt — it may be the search procedure.</em></p>
+<p>That is the main lesson of LATS.</p>
+<hr>
+<h2 id="14-References">14. References</h2>
+<ol>
+<li>Andy Zhou, Kai Yan, Michal Shlapentokh-Rothman, Haohan Wang, Yu-Xiong Wang. <strong>Language Agent Tree Search Unifies Reasoning, Acting, and Planning in Language Models</strong>. ICML 2024. arXiv:2310.04406.</li>
+<li>Shunyu Yao et al. <strong>ReAct: Synergizing Reasoning and Acting in Language Models</strong>. ICLR 2023.</li>
+<li>Shunyu Yao et al. <strong>Tree of Thoughts: Deliberate Problem Solving with Large Language Models</strong>. NeurIPS 2023.</li>
+<li>Hao et al. <strong>Reasoning with Language Model is Planning with World Model</strong>. EMNLP 2023.</li>
+<li>Shinn et al. <strong>Reflexion: Language Agents with Verbal Reinforcement Learning</strong>. NeurIPS 2023.</li>
+<li>Wei et al. <strong>Chain-of-Thought Prompting Elicits Reasoning in Large Language Models</strong>. NeurIPS 2022.</li>
+<li>Wang et al. <strong>Self-Consistency Improves Chain of Thought Reasoning in Language Models</strong>. ICLR 2023.</li>
+<li>Chen et al. <strong>Evaluating Large Language Models Trained on Code</strong>. arXiv 2021.</li>
+<li>Austin et al. <strong>Program Synthesis with Large Language Models</strong>. NeurIPS 2022.</li>
+<li>Yao et al. <strong>WebShop: Towards Scalable Real-World Web Interaction with Grounded Language Agents</strong>. NeurIPS 2022.</li>
+</ol>
+<hr>
+<p><em>Review written on 2026-04-11.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Tree-Search/" rel="tag"># Tree Search</a>
+              <a href="/tags/LLM-Agent/" rel="tag"># LLM Agent</a>
+              <a href="/tags/LATS/" rel="tag"># LATS</a>
+              <a href="/tags/Reasoning/" rel="tag"># Reasoning</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/11/2026-04-11-LATS-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="prev" title="LATS（Language Agent Tree Search）：把推理、行动、规划统一到同一个语言模型代理框架里 — 深度技术评审">
+      <i class="fa fa-chevron-left"></i> LATS（Language Agent Tree Search）：把推理、行动、规划统一到同一个语言模型代理框架里 — 深度技术评审
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/12/2026-04-12-Voyager-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="next" title="Voyager：一个能在 Minecraft 中持续成长的 LLM 具身智能体 —— 深度技术评审">
+      Voyager：一个能在 Minecraft 中持续成长的 LLM 具身智能体 —— 深度技术评审 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Why-this-paper-deserves-a-careful-read"><span class="nav-number">1.</span> <span class="nav-text">1. Why this paper deserves a careful read</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Beginner-prerequisites-assuming-the-reader-starts-from-zero"><span class="nav-number">2.</span> <span class="nav-text">2. Beginner prerequisites (assuming the reader starts from zero)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-What-an-LM-agent-is"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 What an LM agent is</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-The-difference-between-reasoning-acting-and-planning"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 The difference between reasoning, acting, and planning</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-Why-one-shot-prompting-often-breaks-on-hard-tasks"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 Why one-shot prompting often breaks on hard tasks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-What-an-external-environment-and-external-feedback-mean"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 What an external environment and external feedback mean</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-What-tree-search-is-in-everyday-language"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 What tree search is, in everyday language</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-What-Monte-Carlo-Tree-Search-MCTS-is-trying-to-do"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 What Monte Carlo Tree Search (MCTS) is trying to do</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-7-What-the-exploration-vs-exploitation-trade-off-means"><span class="nav-number">2.7.</span> <span class="nav-text">2.7 What the exploration-vs-exploitation trade-off means</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-8-What-a-value-function-is"><span class="nav-number">2.8.</span> <span class="nav-text">2.8 What a value function is</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-9-What-self-consistency-means"><span class="nav-number">2.9.</span> <span class="nav-text">2.9 What self-consistency means</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-10-What-self-reflection-means-in-LM-agents"><span class="nav-number">2.10.</span> <span class="nav-text">2.10 What self-reflection means in LM agents</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-11-Why-rollback-reversion-matters-so-much-here"><span class="nav-number">2.11.</span> <span class="nav-text">2.11 Why rollback&#x2F;reversion matters so much here</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-The-exact-problem-LATS-is-trying-to-solve"><span class="nav-number">3.</span> <span class="nav-text">3. The exact problem LATS is trying to solve</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Weakness-1-They-are-not-flexible-enough"><span class="nav-number">3.1.</span> <span class="nav-text">Weakness 1: They are not flexible enough</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Weakness-2-They-are-not-sensible-enough-about-feedback"><span class="nav-number">3.2.</span> <span class="nav-text">Weakness 2: They are not sensible enough about feedback</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Weakness-3-They-are-not-adaptive-enough"><span class="nav-number">3.3.</span> <span class="nav-text">Weakness 3: They are not adaptive enough</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Big-picture-overview-of-the-method-Figure-1"><span class="nav-number">4.</span> <span class="nav-text">4. Big-picture overview of the method (Figure 1)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Technical-deep-dive-how-LATS-actually-works"><span class="nav-number">5.</span> <span class="nav-text">5. Technical deep dive: how LATS actually works</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-1-State-action-and-observation-design"><span class="nav-number">6.</span> <span class="nav-text">5.1 State, action, and observation design</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-2-Selection-with-UCT"><span class="nav-number">7.</span> <span class="nav-text">5.2 Selection with UCT</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-3-Expansion-by-sampling-multiple-next-moves"><span class="nav-number">8.</span> <span class="nav-text">5.3 Expansion by sampling multiple next moves</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-4-Evaluation-with-LM-score-self-consistency"><span class="nav-number">9.</span> <span class="nav-text">5.4 Evaluation with LM score + self-consistency</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Why-the-LM-score-matters"><span class="nav-number">9.1.</span> <span class="nav-text">Why the LM score matters</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Why-self-consistency-matters"><span class="nav-number">9.2.</span> <span class="nav-text">Why self-consistency matters</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Why-this-is-important"><span class="nav-number">9.3.</span> <span class="nav-text">Why this is important</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-5-Simulation-until-a-terminal-state"><span class="nav-number">10.</span> <span class="nav-text">5.5 Simulation until a terminal state</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-6-Backpropagation-of-reward"><span class="nav-number">11.</span> <span class="nav-text">5.6 Backpropagation of reward</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-7-Reflection-and-external-memory"><span class="nav-number">12.</span> <span class="nav-text">5.7 Reflection and external memory</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Why-LATS-is-not-just-“MCTS-ReAct”-glued-together"><span class="nav-number">13.</span> <span class="nav-text">6. Why LATS is not just “MCTS + ReAct” glued together</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-The-node-representation-is-different"><span class="nav-number">13.1.</span> <span class="nav-text">6.1 The node representation is different</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-The-value-function-is-different"><span class="nav-number">13.2.</span> <span class="nav-text">6.2 The value function is different</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-External-feedback-is-integrated-into-planning"><span class="nav-number">13.3.</span> <span class="nav-text">6.3 External feedback is integrated into planning</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-Reflection-is-treated-as-a-reusable-semantic-signal"><span class="nav-number">13.4.</span> <span class="nav-text">6.4 Reflection is treated as a reusable semantic signal</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Experimental-setup"><span class="nav-number">14.</span> <span class="nav-text">7. Experimental setup</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-HotPotQA"><span class="nav-number">14.1.</span> <span class="nav-text">7.1 HotPotQA</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-Programming-HumanEval-and-MBPP"><span class="nav-number">14.2.</span> <span class="nav-text">7.2 Programming: HumanEval and MBPP</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-WebShop"><span class="nav-number">14.3.</span> <span class="nav-text">7.3 WebShop</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-Game-of-24"><span class="nav-number">14.4.</span> <span class="nav-text">7.4 Game of 24</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-5-Models-and-hyperparameters"><span class="nav-number">14.5.</span> <span class="nav-text">7.5 Models and hyperparameters</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Main-results-and-what-they-really-mean"><span class="nav-number">15.</span> <span class="nav-text">8. Main results and what they really mean</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-1-HotPotQA-internal-reasoning-only"><span class="nav-number">16.</span> <span class="nav-text">8.1 HotPotQA: internal reasoning only</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-2-HotPotQA-acting-with-tools-and-feedback"><span class="nav-number">17.</span> <span class="nav-text">8.2 HotPotQA: acting with tools and feedback</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Important-caveat-on-HotPotQA"><span class="nav-number">17.1.</span> <span class="nav-text">Important caveat on HotPotQA</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-3-HumanEval-programming"><span class="nav-number">18.</span> <span class="nav-text">8.3 HumanEval: programming</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-4-MBPP-more-programming-evidence"><span class="nav-number">19.</span> <span class="nav-text">8.4 MBPP: more programming evidence</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-5-WebShop-web-navigation-and-grounded-decision-making"><span class="nav-number">20.</span> <span class="nav-text">8.5 WebShop: web navigation and grounded decision-making</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#What-is-impressive"><span class="nav-number">20.1.</span> <span class="nav-text">What is impressive</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#What-is-less-impressive-than-the-score-first-suggests"><span class="nav-number">20.2.</span> <span class="nav-text">What is less impressive than the score first suggests</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-6-Game-of-24-pure-internal-reasoning"><span class="nav-number">21.</span> <span class="nav-text">8.6 Game of 24: pure internal reasoning</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-7-Ablations-which-parts-actually-matter"><span class="nav-number">22.</span> <span class="nav-text">8.7 Ablations: which parts actually matter</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#The-LM-heuristic-is-crucial"><span class="nav-number">22.1.</span> <span class="nav-text">The LM heuristic is crucial</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Reflection-helps-but-it-is-not-the-only-reason-LATS-works"><span class="nav-number">22.2.</span> <span class="nav-text">Reflection helps, but it is not the only reason LATS works</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#The-search-algorithm-itself-matters"><span class="nav-number">22.3.</span> <span class="nav-text">The search algorithm itself matters</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-8-Efficiency-sample-complexity-and-token-cost"><span class="nav-number">23.</span> <span class="nav-text">8.8 Efficiency, sample complexity, and token cost</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-What-I-found-most-convincing-in-this-paper"><span class="nav-number">24.</span> <span class="nav-text">9. What I found most convincing in this paper</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-The-method-works-across-qualitatively-different-task-types"><span class="nav-number">24.1.</span> <span class="nav-text">9.1 The method works across qualitatively different task types</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-The-paper-does-not-rely-on-one-single-magic-component"><span class="nav-number">24.2.</span> <span class="nav-text">9.2 The paper does not rely on one single magic component</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-The-programming-results-are-genuinely-strong"><span class="nav-number">24.3.</span> <span class="nav-text">9.3 The programming results are genuinely strong</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-The-ablations-are-informative"><span class="nav-number">24.4.</span> <span class="nav-text">9.4 The ablations are informative</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-5-The-paper-has-a-healthy-system-design-perspective"><span class="nav-number">24.5.</span> <span class="nav-text">9.5 The paper has a healthy system-design perspective</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-Limitations-caveats-and-boundary-conditions"><span class="nav-number">25.</span> <span class="nav-text">10. Limitations, caveats, and boundary conditions</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-1-Higher-inference-time-cost-is-real"><span class="nav-number">26.</span> <span class="nav-text">10.1 Higher inference-time cost is real</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-2-The-rollback-assumption-is-not-universal"><span class="nav-number">27.</span> <span class="nav-text">10.2 The rollback assumption is not universal</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-3-Some-evaluation-settings-are-optimistic"><span class="nav-number">28.</span> <span class="nav-text">10.3 Some evaluation settings are optimistic</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-4-Reflection-quality-is-variable"><span class="nav-number">29.</span> <span class="nav-text">10.4 Reflection quality is variable</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-5-The-paper-is-stronger-as-a-framework-paper-than-as-a-theory-paper"><span class="nav-number">30.</span> <span class="nav-text">10.5 The paper is stronger as a framework paper than as a theory paper</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-6-WebShop-still-shows-a-significant-gap-to-expert-performance"><span class="nav-number">31.</span> <span class="nav-text">10.6 WebShop still shows a significant gap to expert performance</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-Reproducibility-checklist"><span class="nav-number">32.</span> <span class="nav-text">11. Reproducibility checklist</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#11-1-Model-and-prompting-details"><span class="nav-number">32.1.</span> <span class="nav-text">11.1 Model and prompting details</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-2-Search-hyperparameters"><span class="nav-number">32.2.</span> <span class="nav-text">11.2 Search hyperparameters</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-3-Environment-interfaces"><span class="nav-number">32.3.</span> <span class="nav-text">11.3 Environment interfaces</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-4-Reflection-and-memory-handling"><span class="nav-number">32.4.</span> <span class="nav-text">11.4 Reflection and memory handling</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-5-Evaluation-protocol"><span class="nav-number">32.5.</span> <span class="nav-text">11.5 Evaluation protocol</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-Practical-engineering-lessons-for-people-building-agents-today"><span class="nav-number">33.</span> <span class="nav-text">12. Practical engineering lessons for people building agents today</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Lesson-1-harder-tasks-need-search-not-just-better-prompting"><span class="nav-number">33.1.</span> <span class="nav-text">Lesson 1: harder tasks need search, not just better prompting</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Lesson-2-external-feedback-should-be-integrated-into-planning-not-merely-appended-to-context"><span class="nav-number">33.2.</span> <span class="nav-text">Lesson 2: external feedback should be integrated into planning, not merely appended to context</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Lesson-3-verbal-critics-are-surprisingly-powerful"><span class="nav-number">33.3.</span> <span class="nav-text">Lesson 3: verbal critics are surprisingly powerful</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Lesson-4-failure-summaries-can-be-useful-even-without-gradient-updates"><span class="nav-number">33.4.</span> <span class="nav-text">Lesson 4: failure summaries can be useful even without gradient updates</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Lesson-5-do-not-confuse-“agent”-with-“one-prompt-plus-tools”"><span class="nav-number">33.5.</span> <span class="nav-text">Lesson 5: do not confuse “agent” with “one prompt plus tools”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Lesson-6-use-the-method-selectively"><span class="nav-number">33.6.</span> <span class="nav-text">Lesson 6: use the method selectively</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-Final-verdict"><span class="nav-number">34.</span> <span class="nav-text">13. Final verdict</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#14-References"><span class="nav-number">35.</span> <span class="nav-text">14. References</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

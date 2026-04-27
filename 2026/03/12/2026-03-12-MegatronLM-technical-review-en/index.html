@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="A technical review of Megatron-LM&#39;s efficient large-scale training system, analyzing how tensor, pipeline, and data parallelism are composed to train trillion-parameter models on GPU clusters.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Megatron-LM: NVIDIA&#39;s Blueprint for Training Billion-Parameter Models at Scale">
+<meta property="og:url" content="https://zzz0906.github.io/2026/03/12/2026-03-12-MegatronLM-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="A technical review of Megatron-LM&#39;s efficient large-scale training system, analyzing how tensor, pipeline, and data parallelism are composed to train trillion-parameter models on GPU clusters.">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-03-12T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-03T01:05:33.805Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/03/12/2026-03-12-MegatronLM-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>Megatron-LM: NVIDIA's Blueprint for Training Billion-Parameter Models at Scale | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/03/12/2026-03-12-MegatronLM-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Megatron-LM: NVIDIA's Blueprint for Training Billion-Parameter Models at Scale
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-03-12 00:00:00" itemprop="dateCreated datePublished" datetime="2026-03-12T00:00:00+00:00">2026-03-12</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-03 01:05:33" itemprop="dateModified" datetime="2026-04-03T01:05:33+00:00">2026-04-03</time>
+              </span>
+
+          
+            <div class="post-description">A technical review of Megatron-LM's efficient large-scale training system, analyzing how tensor, pipeline, and data parallelism are composed to train trillion-parameter models on GPU clusters.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="Efficient-Large-Scale-Language-Model-Training-on-GPU-Clusters-Using-Megatron-LM-—-In-Depth-Technical-Review-English">Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM — In-Depth Technical Review (English)</h1>
+<p><strong>Author: Steve</strong><br>
+<strong>TL;DR:</strong> I think this paper is one of the clearest “systems bridge” papers in large-model training. Its core contribution is not a brand-new model architecture, but a training recipe for <em>making very large Transformers practical</em>: use <strong>tensor parallelism inside a node</strong>, <strong>pipeline parallelism across nodes</strong>, and <strong>data parallelism across replicas</strong>, then make the composition efficient with a better pipeline schedule and communication-aware engineering.<br>
+<strong>Estimated reading time:</strong> 28–35 minutes<br>
+Paper: <strong>Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM</strong> (2021)<br>
+ArXiv: <a href="https://arxiv.org/abs/2104.04473" target="_blank" rel="noopener">https://arxiv.org/abs/2104.04473</a></p>
+<a id="more"></a>
+<hr>
+<h2 id="Abstract">Abstract</h2>
+<p>When I read this paper, the central message feels simple but very powerful: training trillion-parameter language models is not blocked by a single missing trick, but by the <em>interaction</em> between memory limits, communication costs, and GPU utilization. Megatron-LM solves that interaction problem by combining three forms of parallelism—tensor, pipeline, and data parallelism—into one coherent recipe the authors call <strong>PTD-P</strong>. On top of that, they add a better pipeline schedule, communication optimizations, and fused kernels so that the system scales to <strong>3072 A100 GPUs</strong> and trains a <strong>1-trillion-parameter GPT-style model</strong> at <strong>502 petaFLOP/s aggregate throughput</strong>, or <strong>163 teraFLOP/s per GPU</strong>, which is <strong>52% of A100 peak</strong>.</p>
+<p>What makes the paper important is that it turns “we can technically fit the model” into “we can train it in a realistic amount of time.” The authors estimate about <strong>34 days for GPT-3 175B</strong> on 1024 A100 GPUs and about <strong>84 days for a 1T model</strong> on 3072 A100 GPUs. In other words, this paper is less about a clever single algorithm and more about showing how systems choices determine whether frontier model training is merely possible or actually practical.</p>
+<h2 id="1-Prerequisites-What-to-Know-Before-Reading-This-Paper">1. Prerequisites: What to Know Before Reading This Paper</h2>
+<h3 id="1-1-Why-large-language-model-training-is-hard-in-the-first-place">1.1 Why large language model training is hard in the first place</h3>
+<p>Let me start from the most basic question: why can’t I just take a huge Transformer and train it on one GPU? There are two separate reasons.</p>
+<p>First, the model may simply <strong>not fit into GPU memory</strong>. Parameters consume memory, but so do optimizer states, gradients, activations, temporary buffers, and communication workspaces. Even if a GPU has tens of gigabytes of memory, a very large model quickly blows past that limit.</p>
+<p>Second, even if I somehow squeezed the model in, the <strong>time-to-train</strong> would still be absurd. The paper points out that GPT-3-scale training on a single V100 would take on the order of centuries. So the problem is not only “store the model,” but also “finish training before the research direction is obsolete.”</p>
+<p>This is why parallelism matters. We need to spread the model and computation over many GPUs. But spreading work over more devices introduces communication overhead, synchronization overhead, and smaller matrix multiplications that can hurt hardware efficiency. The real challenge is therefore not merely parallelization, but <strong>parallelization without destroying throughput</strong>.</p>
+<h3 id="1-2-Three-forms-of-parallelism-data-pipeline-and-tensor">1.2 Three forms of parallelism: data, pipeline, and tensor</h3>
+<p>This paper assumes the reader understands that “parallelism” is not one thing.</p>
+<ul>
+<li><strong>Data parallelism</strong>: every worker keeps a copy of the model, but processes different data shards. Workers later synchronize gradients.</li>
+<li><strong>Pipeline parallelism</strong>: different layers live on different GPUs or groups of GPUs, and microbatches flow through the layers like items on an assembly line.</li>
+<li><strong>Tensor model parallelism</strong>: a single layer itself is split across multiple GPUs, so matrix multiplications are partitioned.</li>
+</ul>
+<p>A useful beginner analogy is a restaurant kitchen:</p>
+<ul>
+<li>Data parallelism is opening multiple identical kitchens.</li>
+<li>Pipeline parallelism is turning one kitchen into stations: prep, cook, plate, pack.</li>
+<li>Tensor parallelism is having multiple cooks work on the same large pot at once.</li>
+</ul>
+<p>Each style solves a different bottleneck. Data parallelism scales well when the model fits. Pipeline parallelism helps when the model is too large to keep on one device. Tensor parallelism helps split a <em>single layer</em> when even one stage is too large. Megatron-LM’s thesis is that large-model training only becomes truly effective when these are composed carefully.</p>
+<h3 id="1-3-Why-communication-topology-matters">1.3 Why communication topology matters</h3>
+<p>A detail that beginners often underestimate is that “3072 GPUs” is not a flat space. Some links are much faster than others.</p>
+<p>Inside a server node, GPUs can communicate through <strong>NVLink/NVSwitch</strong>, which is extremely fast. Across nodes, communication typically goes through <strong>InfiniBand</strong>, which is still fast by networking standards but much slower than local GPU interconnects.</p>
+<p>This matters because a parallelization strategy that looks elegant on paper can become terrible in practice if it forces too much cross-node communication. The paper’s first major systems insight is exactly this: <strong>put the communication-heavy tensor parallelism inside a node when possible, and use pipeline parallelism to cross nodes</strong>. That design aligns the parallelization strategy with the hardware topology.</p>
+<h3 id="1-4-Why-microbatches-and-pipeline-bubbles-matter">1.4 Why microbatches and pipeline bubbles matter</h3>
+<p>Pipeline parallelism sounds ideal: just keep all GPUs busy by streaming microbatches. In practice, there are idle periods at the beginning and end of the pipeline. The paper calls this the <strong>pipeline bubble</strong>.</p>
+<p>For the default schedule, the bubble fraction is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex">
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>\text{bubble fraction} = \frac{p-1}{m}</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex"></annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi></mrow><annotation encoding="application/x-tex">p</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">p</span></span></span></span> is pipeline depth and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi></mrow><annotation encoding="application/x-tex">m</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">m</span></span></span></span> is the number of microbatches.</p>
+<p>This equation is deceptively important. It says that deeper pipelines waste more time unless you also increase the number of microbatches. But increasing microbatches or shrinking microbatch size changes memory usage and GPU efficiency. So even a parameter as innocent-sounding as microbatch size becomes a systems tuning knob with real consequences.</p>
+<h3 id="1-5-Why-this-paper-matters-historically">1.5 Why this paper matters historically</h3>
+<p>I see this paper as a systems milestone in the post-GPT-3 era. GPT-3 showed that scaling helps. Megatron-LM asked the next question: <strong>how do we scale efficiently enough that trillion-parameter training is not just a stunt?</strong></p>
+<p>That is why the paper keeps returning to practical numbers: throughput per GPU, aggregate FLOP/s, batch size, training-time estimates, communication bandwidth, and comparison against ZeRO-3. This is not just architecture research; it is an argument about <em>operational feasibility</em>.</p>
+<h2 id="2-What-This-Paper-Does-The-Core-Idea">2. What This Paper Does (The Core Idea)</h2>
+<p>The paper’s core idea is to combine three parallelization dimensions into a unified training strategy called <strong>PTD-P</strong>:</p>
+<ul>
+<li><strong>P</strong>ipeline parallelism across nodes,</li>
+<li><strong>T</strong>ensor model parallelism within nodes,</li>
+<li><strong>D</strong>ata parallelism across replicated groups,</li>
+<li>and then use an optimized pipeline schedule plus communication/computation optimizations to keep utilization high.</li>
+</ul>
+<p>I like Figure 2 because it gives the right mental picture immediately. A transformer is not treated as a single monolith. Instead, the authors slice the problem in two ways at once:</p>
+<ol>
+<li>split <em>layers</em> across pipeline stages;</li>
+<li>split <em>individual layers</em> across tensor-parallel ranks.</li>
+</ol>
+<p>That combination matters because neither style is enough on its own.</p>
+<ul>
+<li>If I rely only on <strong>tensor parallelism</strong>, communication-heavy all-reduces eventually spill across nodes and become expensive.</li>
+<li>If I rely only on <strong>pipeline parallelism</strong>, I suffer more pipeline bubble and can be limited by how many layers I have.</li>
+<li>If I rely only on <strong>data parallelism</strong>, the model may not fit and scaling is capped by batch-size semantics.</li>
+</ul>
+<p>The paper’s first big claim is therefore conceptual: <strong>different parallelism dimensions are complementary, not interchangeable</strong>.</p>
+<p>The second big claim is operational: once I compose them, the exact schedule and communication path matter a lot. Figures 3 and 4 show that pipeline scheduling is not a cosmetic implementation detail. The authors compare the classic GPipe “all forward then all backward” style against 1F1B-style schedules and then introduce an <strong>interleaved 1F1B schedule</strong>. The intuition is that giving each device multiple smaller chunks of the model lets the pipeline flush sooner and reduces bubble time.</p>
+<p>The interleaved pipeline bubble fraction becomes:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex">
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>\text{interleaved bubble fraction} = \frac{1}{v}\cdot\frac{p-1}{m}</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex"></annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>v</mi></mrow><annotation encoding="application/x-tex">v</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">v</span></span></span></span> is the number of model chunks per device.</p>
+<p>In plain language: if each device holds multiple interleaved chunks, the idle fraction can shrink by about a factor of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>v</mi></mrow><annotation encoding="application/x-tex">v</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">v</span></span></span></span>, though extra communication is introduced. This “reduce idle time, but pay some communication” tradeoff is the kind of systems trade that defines the whole paper.</p>
+<p>The third big claim is that communication layout must respect the machine. Figure 9’s <strong>scatter/gather optimization</strong> is a great example. Without optimization, tensor-parallel replicas on one node may send redundant copies of the same activations across InfiniBand links to the next pipeline stage. With scatter/gather, the sender splits the tensor into chunks, sends distinct chunks across multiple links, and reconstructs the full tensor locally on the receiving node using fast NVLink/NVSwitch communication. This is not mathematically glamorous, but it is exactly the sort of engineering choice that makes the interleaved schedule practical.</p>
+<p>In short, I would summarize the paper’s core insight like this:</p>
+<blockquote>
+<p>Large-model training is a topology-aware scheduling problem as much as it is a numerical optimization problem.</p>
+</blockquote>
+<p>That sentence captures why I find the paper so influential.</p>
+<h2 id="3-Method-Details">3. Method Details</h2>
+<h3 id="3-1-Pipeline-parallelism-and-strict-optimizer-semantics">3.1 Pipeline parallelism and strict optimizer semantics</h3>
+<p>The paper spends significant effort on pipeline parallelism because this is where throughput and correctness can pull in opposite directions.</p>
+<p>The authors want <strong>strict optimizer semantics</strong>. That means a microbatch should not see one version of weights during the forward pass and a different version during the backward pass. Some earlier pipeline systems relax this and allow staleness, but Megatron-LM chooses a synchronous design with <strong>pipeline flushes</strong> to preserve exact semantics.</p>
+<p>Figure 3 illustrates the GPipe-style schedule. All forward passes happen first, then all backward passes. The nice part is conceptual simplicity. The bad part is that devices sit idle at the beginning and end of the batch, producing the pipeline bubble. Also, many microbatches are in flight, so activation memory grows.</p>
+<p>The authors therefore prefer a <strong>1F1B schedule</strong> in which, after warm-up, each worker alternates one forward and one backward pass. This keeps the number of outstanding activations much lower than GPipe while preserving semantics through batch-level flushes.</p>
+<p>My reading here is that Megatron-LM is making a very deliberate choice: it refuses to get headline throughput by hiding semantic looseness under the rug. That is an important design philosophy, especially for large expensive runs where debugging convergence is already hard.</p>
+<h3 id="3-2-The-interleaved-pipeline-schedule">3.2 The interleaved pipeline schedule</h3>
+<p>Figure 4 is one of the most important figures in the paper. The baseline 1F1B schedule still leaves bubble time because each device owns one contiguous chunk of layers. The authors improve this by assigning <strong>multiple model chunks per device</strong> and interleaving them.</p>
+<p>Suppose a device originally owned layers 1–4. In the interleaved design, it might instead own layers 1–2 and 9–10 while another device owns 3–4 and 11–12, and so on. This effectively increases the number of stages without increasing the number of physical devices.</p>
+<p>Why is this useful? Because smaller chunks let the warm-up and flush phases complete sooner, reducing idle time. The paper gives the clean formula above showing that bubble fraction falls by a factor of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>v</mi></mrow><annotation encoding="application/x-tex">v</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">v</span></span></span></span>, the number of chunks.</p>
+<p>The tradeoff is equally important: communication rises by about the same factor. I appreciate that the authors do not pretend the interleaved schedule is a free lunch. Instead, they pair it with the scatter/gather communication optimization so the extra traffic becomes tolerable.</p>
+<p>This is a pattern throughout the paper:</p>
+<ul>
+<li>one optimization creates a new pressure point,</li>
+<li>another optimization absorbs it,</li>
+<li>the full system only works because both are present.</li>
+</ul>
+<p>That is why I think the paper should be read as a <em>composition</em> paper rather than a single-technique paper.</p>
+<h3 id="3-3-Tensor-model-parallelism-inside-transformer-layers">3.3 Tensor model parallelism inside transformer layers</h3>
+<p>Figure 5 shows the Megatron tensor-parallel recipe. This is the paper’s “intra-layer” scaling mechanism.</p>
+<p>For the MLP block, the feed-forward network computes:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex">
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>Y = \text{GeLU}(XA), \qquad Z = \text{Dropout}(YB)</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex"></annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>The trick is to split the first weight matrix <strong>column-wise</strong>, so each GPU computes part of the expansion independently. Because GeLU is nonlinear, splitting in the wrong dimension would force synchronization before the nonlinearity, which is expensive. By splitting along columns, each shard can apply GeLU locally. Then the second matrix is arranged so that communication is postponed until after the second GEMM, requiring a reduction at a more favorable point.</p>
+<p>For self-attention, the key/query/value projections are partitioned so that different attention heads are computed on different ranks. Again, the design tries to minimize synchronization points. The paper notes that only <strong>two all-reduces in the forward pass and two in the backward pass</strong> are needed for each transformer block under their formulation.</p>
+<p>This is a beautiful systems result because it turns a layer that looks inherently monolithic into a reasonably communication-efficient distributed operator. At the same time, the authors are honest that tensor parallelism becomes unattractive when the tensor-parallel group crosses node boundaries. All-reduce traffic is simply too expensive there.</p>
+<p>That is why one of the paper’s main takeaways is:</p>
+<blockquote>
+<p><strong>Use tensor parallelism up to the number of GPUs in a node, then use pipeline parallelism to go beyond that.</strong></p>
+</blockquote>
+<p>For the Selene setup, that means <strong>tensor parallel size 8</strong> is a natural sweet spot.</p>
+<h3 id="3-4-Communication-cost-reasoning-why-topology-aware-partitioning-wins">3.4 Communication-cost reasoning: why topology-aware partitioning wins</h3>
+<p>Section 3 is where the paper becomes especially valuable for systems readers. Instead of just presenting final performance numbers, the authors explain <em>why</em> certain configurations win.</p>
+<p>For pipeline parallelism, point-to-point communication per neighboring stage per microbatch scales with approximately <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi><mi>s</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">bsh</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span><span class="mord mathnormal">s</span><span class="mord mathnormal">h</span></span></span></span>, where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>b</mi></mrow><annotation encoding="application/x-tex">b</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span> is microbatch size, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi></mrow><annotation encoding="application/x-tex">s</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">s</span></span></span></span> sequence length, and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi></mrow><annotation encoding="application/x-tex">h</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">h</span></span></span></span> hidden size.</p>
+<p>For tensor parallelism, communication is more expensive because each layer requires all-reduce style collectives. The cost scales with layer count and tensor-parallel degree, so a large tensor-parallel group spread across slow links becomes painful.</p>
+<p>Figures 13, 14, and 15 make these tradeoffs visible:</p>
+<ul>
+<li><strong>Figure 13</strong>: neither pure tensor nor pure pipeline dominates; the best result comes from combining them appropriately.</li>
+<li><strong>Figure 14</strong>: for models that fit with small model-parallel size, increasing pipeline depth hurts because the bubble grows.</li>
+<li><strong>Figure 15</strong>: heavy tensor parallelism across devices can also hurt because all-reduce and smaller GEMMs reduce efficiency.</li>
+</ul>
+<p>This is the heart of the paper’s systems argument: <strong>the best parallel configuration is constrained by both hardware topology and workload shape</strong>.</p>
+<h3 id="3-5-Microbatch-size-as-a-real-systems-hyperparameter">3.5 Microbatch size as a real systems hyperparameter</h3>
+<p>I like that the paper treats microbatch size not as a bookkeeping detail but as a first-class optimization target.</p>
+<p>Equation (1) and Figures 7, 8, and 16 explain the tension clearly:</p>
+<ul>
+<li>Larger microbatches improve arithmetic intensity and can make GEMMs more efficient.</li>
+<li>But larger microbatches reduce the number of microbatches <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi></mrow><annotation encoding="application/x-tex">m</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">m</span></span></span></span> in the pipeline, which increases bubble fraction.</li>
+</ul>
+<p>So the “best” microbatch size is model-dependent and configuration-dependent. In one of their examples, the optimal microbatch size is 4; in another, it is 2.</p>
+<p>This matters in practice because many training setups treat microbatch size mainly as a memory limit. Megatron-LM shows that it is also a <strong>throughput-shaping knob</strong>. If I were implementing a large training stack, I would absolutely put microbatch-size search into the standard tuning workflow after reading this paper.</p>
+<h3 id="3-6-Activation-recomputation-paying-extra-compute-to-unlock-scale">3.6 Activation recomputation: paying extra compute to unlock scale</h3>
+<p>The paper also uses <strong>activation recomputation</strong>. This means I do not store all intermediate activations from the forward pass. Instead, I keep a smaller checkpoint set and recompute portions of the forward pass during backward propagation.</p>
+<p>The obvious downside is extra compute. Figure 17 shows that for small batch sizes, activation recomputation can reduce throughput by up to <strong>33%</strong>.</p>
+<p>The less obvious upside is strategic: recomputation makes it possible to run larger batch sizes or larger models without running out of memory, and those larger batches may reduce pipeline bubble enough that <strong>overall throughput becomes better</strong>. The paper reports up to <strong>2× higher throughput</strong> at large batch sizes with recomputation than the best no-recomputation point at smaller batch sizes.</p>
+<p>I think this is one of the paper’s most important practical lessons: memory-saving techniques should not be evaluated only by their immediate overhead. Sometimes they unlock a different part of the configuration space that is globally better.</p>
+<h3 id="3-7-Computation-optimizations-in-the-implementation">3.7 Computation optimizations in the implementation</h3>
+<p>Megatron-LM is not just parallelism. The implementation also improves single-step efficiency.</p>
+<p>The authors highlight three main computation optimizations:</p>
+<ol>
+<li><strong>Data layout change</strong> from <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">[</mo><mi>b</mi><mo separator="true">,</mo><mi>s</mi><mo separator="true">,</mo><mi>a</mi><mo separator="true">,</mo><mi>h</mi><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">[b, s, a, h]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord mathnormal">b</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">a</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">h</span><span class="mclose">]</span></span></span></span> to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">[</mo><mi>s</mi><mo separator="true">,</mo><mi>b</mi><mo separator="true">,</mo><mi>a</mi><mo separator="true">,</mo><mi>h</mi><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">[s, b, a, h]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord mathnormal">s</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">b</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">a</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">h</span><span class="mclose">]</span></span></span></span>, avoiding expensive transposes and enabling better batched GEMM behavior.</li>
+<li><strong>Fused elementwise kernels</strong>, such as bias+GeLU and bias+dropout+add.</li>
+<li><strong>Custom fused scale-mask-softmax kernels</strong>, including a version specialized for causal masking.</li>
+</ol>
+<p>These are classic GPU-optimization moves: reduce memory traffic, reduce kernel-launch overhead, and fuse bandwidth-bound operations into fewer passes.</p>
+<p>The reported benefit is not trivial. Section 5.9 says fused operators improved throughput by <strong>19% for GPT-3 175B</strong> and <strong>11% for the 530B model</strong>. In other words, even if the parallelization strategy were perfect, an unfused implementation would still leave a lot of performance on the table.</p>
+<h3 id="3-8-Scatter-gather-communication-optimization">3.8 Scatter/gather communication optimization</h3>
+<p>Figure 9 is the paper’s most “systems engineer” figure, and I mean that as a compliment.</p>
+<p>Because the output of certain tensor-parallel computations is replicated across ranks, naïve pipeline transfer sends redundant copies over cross-node InfiniBand links. The optimization is to:</p>
+<ol>
+<li>split the tensor into chunks on the sender,</li>
+<li>send different chunks over different network paths,</li>
+<li>reconstruct the full tensor on the receiver with fast local communication.</li>
+</ol>
+<p>This reduces cross-node communication volume from roughly full-tensor replication to a fraction scaled by the tensor-parallel degree. For tensor-parallel size 8, the savings are especially meaningful.</p>
+<p>Figure 18 shows the payoff: up to <strong>11% throughput improvement</strong> on communication-intensive interleaved schedules. This is exactly the kind of “small but decisive” optimization that often separates an academic prototype from a production-capable training stack.</p>
+<h2 id="4-Experiment-Setup">4. Experiment Setup</h2>
+<p>The evaluation runs on <strong>Selene</strong>, a large NVIDIA supercomputer. The hardware setup matters because the paper is fundamentally about scaling under realistic topology constraints.</p>
+<p>Each node contains:</p>
+<ul>
+<li><strong>8 NVIDIA A100 GPUs (80 GB)</strong>,</li>
+<li><strong>NVLink/NVSwitch</strong> for fast intra-node GPU communication,</li>
+<li><strong>8 Mellanox 200 Gbps HDR InfiniBand HCAs</strong> for application communication,</li>
+<li>plus storage-oriented links and a large fat-tree network.</li>
+</ul>
+<p>The peak throughput of an A100 in 16-bit precision is stated as <strong>312 teraFLOP/s</strong>. The paper reports end-to-end throughput, which I appreciate because it includes not only forward/backward computation but also communication, optimization steps, and the practical overheads of a real training iteration.</p>
+<p>The models are GPT-style models with sequence length <strong>2048</strong> and vocabulary size <strong>51,200</strong>. The authors vary hidden size, number of layers, attention heads, batch size, and parallelization settings to create model scales ranging from <strong>1.7B to 1T parameters</strong>.</p>
+<p>The paper provides a parameter-count formula and a lower-bound FLOP estimate. I do not think the exact algebra is the most important part for most readers, but the practical point is: the authors use these formulas to connect architecture choices to expected work, then compare that against achieved throughput.</p>
+<p>This evaluation style is good science. It does not just say “our system is fast”; it says “our system achieves this fraction of hardware peak on these exact model sizes and training settings.”</p>
+<h2 id="5-Results-Analysis">5. Results &amp; Analysis</h2>
+<h3 id="5-1-End-to-end-throughput-and-training-time-realism">5.1 End-to-end throughput and training-time realism</h3>
+<p>Table 1 is the paper’s headline table. It shows weak-scaling results from roughly <strong>1B to 1T parameters</strong>.</p>
+<p>What jumps out to me is not just the aggregate number <strong>502 petaFLOP/s</strong>, but the <strong>per-GPU throughput</strong> staying impressively high even at huge scale. For the trillion-parameter model on 3072 GPUs, the system achieves <strong>163 teraFLOP/s per GPU</strong>, which is about <strong>52% of theoretical peak</strong>.</p>
+<p>That matters because large distributed systems often look good only in aggregate while each device is actually underutilized. Here, utilization improves as models grow because the larger GEMMs make the hardware happier while communication remains controlled.</p>
+<p>The training-time estimates are equally important:</p>
+<ul>
+<li><strong>GPT-3 175B</strong>: about <strong>34 days</strong> on <strong>1024 A100 GPUs</strong>.</li>
+<li><strong>1T GPT-like model</strong>: about <strong>84 days</strong> on <strong>3072 A100 GPUs</strong>.</li>
+</ul>
+<p>These are still extremely expensive runs, but they cross the boundary from fantasy to operational planning. That boundary is exactly what this paper is about.</p>
+<h3 id="5-2-Comparison-to-ZeRO-3">5.2 Comparison to ZeRO-3</h3>
+<p>Table 2 and Figure 10 compare PTD-P against <strong>ZeRO-3 without model parallelism</strong>. This is a useful baseline because ZeRO-style sharding is often the first thing people think about for large-model training.</p>
+<p>The paper reports that PTD-P is already ahead at smaller scales—about <strong>6% better for 175B</strong> and <strong>24% better for 530B</strong> in one setup—and then widens the gap at larger scales. By doubling GPU count while keeping batch size fixed, PTD-P can outperform ZeRO-3 by <strong>around 70%</strong>.</p>
+<p>The authors attribute this to reduced cross-node communication. That explanation is persuasive to me. ZeRO-3 is extremely elegant for memory reduction, but the communication pattern becomes painful when the system is large and the model does not fit comfortably.</p>
+<p>To be fair, the comparison is not the final word. The paper itself notes that ZeRO can be combined with model parallelism, and that a stronger hybrid baseline might behave differently. Still, the result is enough to support the paper’s main point: <strong>for extreme scales, model-parallel topology-aware designs matter</strong>.</p>
+<h3 id="5-3-Pipeline-scheduling-results">5.3 Pipeline scheduling results</h3>
+<p>Figures 11 and 12 focus on pipeline parallelism.</p>
+<ul>
+<li><strong>Figure 11</strong> shows that larger batch sizes help amortize the bubble, so throughput scales better with pipeline depth.</li>
+<li><strong>Figure 12</strong> shows that the <strong>interleaved schedule</strong> beats the non-interleaved one, especially when batch size is not large enough to naturally hide bubble overhead.</li>
+</ul>
+<p>This matches the paper’s theory cleanly. I like when a systems paper gives an analytical intuition and the graphs later behave exactly the way the intuition predicts.</p>
+<p>The key caveat is important: without the scatter/gather optimization, interleaving can lose at larger batch sizes because communication grows. Again, the paper’s improvements work as a package.</p>
+<h3 id="5-4-Tensor-vs-pipeline-vs-data-parallelism">5.4 Tensor vs pipeline vs data parallelism</h3>
+<p>Figures 13, 14, and 15 are, in my opinion, the most educational part of the evaluation.</p>
+<p><strong>Figure 13</strong> shows that the best throughput comes from a balanced combination of tensor and pipeline parallelism. Pure tensor scaling is hurt by collective communication. Pure pipeline scaling is hurt by bubble overhead. Together, they cover each other’s weaknesses.</p>
+<p><strong>Figure 14</strong> shows that for smaller models that can fit with modest model parallelism, increasing pipeline depth is not a free win. More stages mean a bigger bubble unless batch size is large enough.</p>
+<p><strong>Figure 15</strong> shows that aggressive tensor parallelism also degrades throughput because all-reduces occur frequently and smaller local matrix multiplications are less hardware-efficient.</p>
+<p>If I had to compress all three figures into one sentence, it would be:</p>
+<blockquote>
+<p>Parallelism is not additive; it is constrained optimization under topology, batch semantics, and kernel efficiency.</p>
+</blockquote>
+<p>That is a genuinely useful lesson for anyone building distributed training systems.</p>
+<h3 id="5-5-Microbatch-size-and-activation-recomputation-results">5.5 Microbatch size and activation recomputation results</h3>
+<p><strong>Figure 16</strong> demonstrates the microbatch-size tradeoff. Too small, and kernels are weakly utilized. Too large, and the number of microbatches shrinks, making the bubble worse. The optimum is model-specific.</p>
+<p><strong>Figure 17</strong> shows the activation recomputation tradeoff. Small-batch throughput gets worse due to extra forward passes, but larger memory headroom can enable better global operating points. This is exactly the type of second-order effect that makes large-scale training hard to tune by intuition alone.</p>
+<h3 id="5-6-Communication-and-operator-fusion-gains">5.6 Communication and operator fusion gains</h3>
+<p>The paper reports two especially practical wins:</p>
+<ul>
+<li><strong>Figure 18</strong>: up to <strong>11% improvement</strong> from scatter/gather on communication-heavy schedules.</li>
+<li><strong>Section 5.9</strong>: <strong>11–19% improvement</strong> from operator fusion.</li>
+</ul>
+<p>Neither result changes the asymptotic theory of distributed training, but both have major real-world value. If I am paying for thousands of GPUs, 10% is not “small”; it is a massive cost and schedule difference.</p>
+<h3 id="5-7-Bandwidth-pressure-and-checkpointing">5.7 Bandwidth pressure and checkpointing</h3>
+<p>I also appreciate the paper’s discussion of real operational pain points.</p>
+<p>For the trillion-parameter run, the effective bisection bandwidth reaches roughly:</p>
+<ul>
+<li><strong>892 GB/s</strong> for pipeline point-to-point communication,</li>
+<li><strong>12.9 TB/s</strong> for data-parallel all-reduce.</li>
+</ul>
+<p>Those are huge numbers. They make it clear that this paper’s results rely not only on software cleverness but also on access to a very high-end interconnect fabric.</p>
+<p>Checkpointing is equally striking. The trillion-parameter model has a checkpoint size of <strong>13.8 TB</strong>. Reading and writing those checkpoints requires serious filesystem capability. This is one of the paper’s most important implicit lessons: once models reach this scale, <em>storage and restart logistics become first-class systems problems too</em>.</p>
+<h2 id="6-Limitations-Boundary-Conditions">6. Limitations &amp; Boundary Conditions</h2>
+<h3 id="6-1-The-paper-is-strongly-tied-to-high-end-hardware">6.1 The paper is strongly tied to high-end hardware</h3>
+<p>One obvious limitation is that the strongest results depend on a very capable cluster: A100 GPUs, NVLink/NVSwitch, many InfiniBand links per node, and a large fat-tree topology. I do not think the methods are invalid on weaker clusters, but the exact performance story will not carry over automatically.</p>
+<p>If I tried to reproduce this on commodity Ethernet or a small mixed GPU cluster, I would expect the communication-heavy parts—especially inter-node tensor communication and large-scale all-reduce—to degrade significantly.</p>
+<h3 id="6-2-The-approach-is-specialized-to-Transformer-like-repeated-blocks">6.2 The approach is specialized to Transformer-like repeated blocks</h3>
+<p>Pipeline partitioning is relatively straightforward here because the model is a stack of repeated transformer blocks. The paper explicitly avoids harder asymmetric architectures. That means the scheduling heuristics may be less direct for multimodal networks, mixture-of-experts systems with irregular routing, or highly asymmetric encoder-decoder layouts.</p>
+<h3 id="6-3-The-optimizer-semantics-choice-is-conservative-but-not-always-optimal">6.3 The optimizer-semantics choice is conservative but not always optimal</h3>
+<p>I respect the paper’s choice to preserve strict optimizer semantics. But it also means the design accepts periodic pipeline flushes and their associated bubble. More relaxed approaches like PipeDream variants may achieve higher raw throughput under some conditions. The right choice depends on how much one values exactness versus throughput and how robust convergence is to staleness.</p>
+<h3 id="6-4-Cost-models-are-suggestive-not-full-automatic-planners">6.4 Cost models are suggestive, not full automatic planners</h3>
+<p>The paper gives strong heuristics and analytical reasoning, but it does not provide a full automatic search over the parallelization space. In real production environments, this space is enormous:</p>
+<ul>
+<li>pipeline depth,</li>
+<li>tensor group size,</li>
+<li>data-parallel degree,</li>
+<li>microbatch size,</li>
+<li>activation-checkpoint granularity,</li>
+<li>scheduling style,</li>
+<li>fused-kernel variants,</li>
+<li>cluster-topology constraints.</li>
+</ul>
+<p>The authors are honest about this. But it means practical deployment still requires tuning skill.</p>
+<h3 id="6-5-Training-throughput-is-not-the-same-as-convergence-efficiency">6.5 Training throughput is not the same as convergence efficiency</h3>
+<p>This paper is about systems throughput, not about whether a trillion-parameter model is the best use of compute from a scaling-law or alignment perspective. Faster training is useful, but it does not by itself answer whether the chosen batch sizes, optimizer settings, and data allocation are statistically optimal.</p>
+<p>That is not a flaw in scope, but it is an important boundary condition.</p>
+<h3 id="6-6-Comparison-scope-could-be-stronger">6.6 Comparison scope could be stronger</h3>
+<p>The ZeRO-3 comparison is helpful, but it is not the last word. Stronger baselines combining ZeRO with model parallelism, more recent FSDP-style approaches, or hardware-aware pipeline schedulers might narrow the gap in some cases. Readers should therefore treat the baseline comparison as evidence for the paper’s thesis, not as eternal closure of the design space.</p>
+<h2 id="7-Reproducibility-Practical-Notes">7. Reproducibility &amp; Practical Notes</h2>
+<h3 id="7-1-What-is-reproducible-from-the-paper-alone">7.1 What is reproducible from the paper alone?</h3>
+<p>The paper is better than average on systems detail. It gives:</p>
+<ul>
+<li>the exact parallelization dimensions,</li>
+<li>formulas for bubble behavior and throughput reasoning,</li>
+<li>hardware environment,</li>
+<li>model configurations,</li>
+<li>implementation ideas,</li>
+<li>key quantitative results,</li>
+<li>and an open-source codebase reference.</li>
+</ul>
+<p>That said, reproducing the trillion-parameter headline results from the paper alone is still extremely hard. The hidden requirements include:</p>
+<ul>
+<li>access to thousands of modern GPUs,</li>
+<li>near-equivalent network topology,</li>
+<li>mature NCCL tuning,</li>
+<li>stable storage for multi-terabyte checkpoints,</li>
+<li>operational expertise for handling failures at scale.</li>
+</ul>
+<p>So I would say the paper is <strong>algorithmically reproducible</strong>, but the <em>full-scale performance claims</em> are only reproducible for a small number of institutions.</p>
+<h3 id="7-2-Code-availability">7.2 Code availability</h3>
+<p>The paper points to the open-source <strong>Megatron-LM</strong> repository. That is a major strength. Open code does not magically make trillion-scale training easy, but it does make the ideas inspectable and extensible. Historically, Megatron-LM went on to become one of the key training stacks in the ecosystem, which is itself a strong retrospective validation of the paper’s usefulness.</p>
+<h3 id="7-3-Practical-advice-for-practitioners">7.3 Practical advice for practitioners</h3>
+<p>If I were advising a team after reading this paper, my checklist would be:</p>
+<ol>
+<li>
+<p><strong>Fit the model first</strong>, then add data parallelism.<br>
+Use enough model parallelism to make memory feasible, but no more than necessary.</p>
+</li>
+<li>
+<p><strong>Keep tensor parallelism inside a node if possible.</strong><br>
+This is the paper’s clearest hardware-topology rule.</p>
+</li>
+<li>
+<p><strong>Use pipeline parallelism to cross nodes.</strong><br>
+Point-to-point communication is often easier to stomach than large cross-node all-reduces.</p>
+</li>
+<li>
+<p><strong>Tune microbatch size explicitly.</strong><br>
+Do not treat it as a side effect of memory only.</p>
+</li>
+<li>
+<p><strong>Expect activation recomputation to be globally beneficial even if locally expensive.</strong></p>
+</li>
+<li>
+<p><strong>Do not neglect fused kernels and layout tuning.</strong><br>
+Distributed scaling cannot rescue a bandwidth-poor local implementation.</p>
+</li>
+<li>
+<p><strong>Plan checkpointing and restart strategy early.</strong><br>
+At this scale, storage is part of the training system.</p>
+</li>
+</ol>
+<h3 id="7-4-My-overall-judgment">7.4 My overall judgment</h3>
+<p>I think this paper aged well because it solved a real bottleneck that the field actually encountered. Many papers propose exotic alternatives; Megatron-LM instead taught the community how to make dense Transformer training scale in a disciplined, topology-aware way.</p>
+<p>Its key lessons still hold:</p>
+<ul>
+<li>communication placement matters,</li>
+<li>schedule design matters,</li>
+<li>system topology matters,</li>
+<li>and “just add more GPUs” is not a strategy.</li>
+</ul>
+<p>If I had to recommend one systems paper to a researcher who wants to understand why large-model training infrastructure looks the way it does today, this would be high on the list.</p>
+<h2 id="References">References</h2>
+<ol>
+<li>Narayanan et al. Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM. 2021.</li>
+<li>Shoeybi et al. Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism. 2019.</li>
+<li>Brown et al. Language Models are Few-Shot Learners. 2020.</li>
+<li>Rajbhandari et al. ZeRO: Memory Optimizations Toward Training Trillion Parameter Models. 2020.</li>
+<li>Huang et al. GPipe: Efficient Training of Giant Neural Networks using Pipeline Parallelism. 2019.</li>
+</ol>
+<hr>
+<p><em>Review written on 2026-03-12.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/03/12/2026-03-12-PaRO-technical-review-en/" rel="prev" title="PaRO: Smarter Partitioning for Distributed Training — Beyond ZeRO's One-Size-Fits-All">
+      <i class="fa fa-chevron-left"></i> PaRO: Smarter Partitioning for Distributed Training — Beyond ZeRO's One-Size-Fits-All
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/03/13/2026-03-13-LoRA-technical-review-en/" rel="next" title="LoRA: Fine-Tuning Giant Models with Pocket Change — The Low-Rank Revolution">
+      LoRA: Fine-Tuning Giant Models with Pocket Change — The Low-Rank Revolution <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Efficient-Large-Scale-Language-Model-Training-on-GPU-Clusters-Using-Megatron-LM-—-In-Depth-Technical-Review-English"><span class="nav-number">1.</span> <span class="nav-text">Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM — In-Depth Technical Review (English)</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#Abstract"><span class="nav-number">1.1.</span> <span class="nav-text">Abstract</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Prerequisites-What-to-Know-Before-Reading-This-Paper"><span class="nav-number">1.2.</span> <span class="nav-text">1. Prerequisites: What to Know Before Reading This Paper</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-Why-large-language-model-training-is-hard-in-the-first-place"><span class="nav-number">1.2.1.</span> <span class="nav-text">1.1 Why large language model training is hard in the first place</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-Three-forms-of-parallelism-data-pipeline-and-tensor"><span class="nav-number">1.2.2.</span> <span class="nav-text">1.2 Three forms of parallelism: data, pipeline, and tensor</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-Why-communication-topology-matters"><span class="nav-number">1.2.3.</span> <span class="nav-text">1.3 Why communication topology matters</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-4-Why-microbatches-and-pipeline-bubbles-matter"><span class="nav-number">1.2.4.</span> <span class="nav-text">1.4 Why microbatches and pipeline bubbles matter</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-5-Why-this-paper-matters-historically"><span class="nav-number">1.2.5.</span> <span class="nav-text">1.5 Why this paper matters historically</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-What-This-Paper-Does-The-Core-Idea"><span class="nav-number">1.3.</span> <span class="nav-text">2. What This Paper Does (The Core Idea)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Method-Details"><span class="nav-number">1.4.</span> <span class="nav-text">3. Method Details</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-Pipeline-parallelism-and-strict-optimizer-semantics"><span class="nav-number">1.4.1.</span> <span class="nav-text">3.1 Pipeline parallelism and strict optimizer semantics</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-The-interleaved-pipeline-schedule"><span class="nav-number">1.4.2.</span> <span class="nav-text">3.2 The interleaved pipeline schedule</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-Tensor-model-parallelism-inside-transformer-layers"><span class="nav-number">1.4.3.</span> <span class="nav-text">3.3 Tensor model parallelism inside transformer layers</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-Communication-cost-reasoning-why-topology-aware-partitioning-wins"><span class="nav-number">1.4.4.</span> <span class="nav-text">3.4 Communication-cost reasoning: why topology-aware partitioning wins</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-Microbatch-size-as-a-real-systems-hyperparameter"><span class="nav-number">1.4.5.</span> <span class="nav-text">3.5 Microbatch size as a real systems hyperparameter</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-6-Activation-recomputation-paying-extra-compute-to-unlock-scale"><span class="nav-number">1.4.6.</span> <span class="nav-text">3.6 Activation recomputation: paying extra compute to unlock scale</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-7-Computation-optimizations-in-the-implementation"><span class="nav-number">1.4.7.</span> <span class="nav-text">3.7 Computation optimizations in the implementation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-8-Scatter-gather-communication-optimization"><span class="nav-number">1.4.8.</span> <span class="nav-text">3.8 Scatter&#x2F;gather communication optimization</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Experiment-Setup"><span class="nav-number">1.5.</span> <span class="nav-text">4. Experiment Setup</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Results-Analysis"><span class="nav-number">1.6.</span> <span class="nav-text">5. Results &amp; Analysis</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-End-to-end-throughput-and-training-time-realism"><span class="nav-number">1.6.1.</span> <span class="nav-text">5.1 End-to-end throughput and training-time realism</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Comparison-to-ZeRO-3"><span class="nav-number">1.6.2.</span> <span class="nav-text">5.2 Comparison to ZeRO-3</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-Pipeline-scheduling-results"><span class="nav-number">1.6.3.</span> <span class="nav-text">5.3 Pipeline scheduling results</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-Tensor-vs-pipeline-vs-data-parallelism"><span class="nav-number">1.6.4.</span> <span class="nav-text">5.4 Tensor vs pipeline vs data parallelism</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-5-Microbatch-size-and-activation-recomputation-results"><span class="nav-number">1.6.5.</span> <span class="nav-text">5.5 Microbatch size and activation recomputation results</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-6-Communication-and-operator-fusion-gains"><span class="nav-number">1.6.6.</span> <span class="nav-text">5.6 Communication and operator fusion gains</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-7-Bandwidth-pressure-and-checkpointing"><span class="nav-number">1.6.7.</span> <span class="nav-text">5.7 Bandwidth pressure and checkpointing</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Limitations-Boundary-Conditions"><span class="nav-number">1.7.</span> <span class="nav-text">6. Limitations &amp; Boundary Conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-The-paper-is-strongly-tied-to-high-end-hardware"><span class="nav-number">1.7.1.</span> <span class="nav-text">6.1 The paper is strongly tied to high-end hardware</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-The-approach-is-specialized-to-Transformer-like-repeated-blocks"><span class="nav-number">1.7.2.</span> <span class="nav-text">6.2 The approach is specialized to Transformer-like repeated blocks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-The-optimizer-semantics-choice-is-conservative-but-not-always-optimal"><span class="nav-number">1.7.3.</span> <span class="nav-text">6.3 The optimizer-semantics choice is conservative but not always optimal</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-Cost-models-are-suggestive-not-full-automatic-planners"><span class="nav-number">1.7.4.</span> <span class="nav-text">6.4 Cost models are suggestive, not full automatic planners</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-5-Training-throughput-is-not-the-same-as-convergence-efficiency"><span class="nav-number">1.7.5.</span> <span class="nav-text">6.5 Training throughput is not the same as convergence efficiency</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-6-Comparison-scope-could-be-stronger"><span class="nav-number">1.7.6.</span> <span class="nav-text">6.6 Comparison scope could be stronger</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Reproducibility-Practical-Notes"><span class="nav-number">1.8.</span> <span class="nav-text">7. Reproducibility &amp; Practical Notes</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-What-is-reproducible-from-the-paper-alone"><span class="nav-number">1.8.1.</span> <span class="nav-text">7.1 What is reproducible from the paper alone?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-Code-availability"><span class="nav-number">1.8.2.</span> <span class="nav-text">7.2 Code availability</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-Practical-advice-for-practitioners"><span class="nav-number">1.8.3.</span> <span class="nav-text">7.3 Practical advice for practitioners</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-My-overall-judgment"><span class="nav-number">1.8.4.</span> <span class="nav-text">7.4 My overall judgment</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#References"><span class="nav-number">1.9.</span> <span class="nav-text">References</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

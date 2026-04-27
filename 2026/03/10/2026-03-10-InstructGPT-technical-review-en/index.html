@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="A detailed technical review of InstructGPT (OpenAI, 2022), analyzing how Reinforcement Learning from Human Feedback (RLHF) with a three-stage pipeline — SFT, reward modeling, and PPO — transformed nex">
+<meta property="og:type" content="article">
+<meta property="og:title" content="InstructGPT: The RLHF Recipe That Turned GPT-3 Into a Helpful Assistant">
+<meta property="og:url" content="https://zzz0906.github.io/2026/03/10/2026-03-10-InstructGPT-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="A detailed technical review of InstructGPT (OpenAI, 2022), analyzing how Reinforcement Learning from Human Feedback (RLHF) with a three-stage pipeline — SFT, reward modeling, and PPO — transformed nex">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-03-10T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-16T07:57:18.570Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="InstructGPT">
+<meta property="article:tag" content="RLHF">
+<meta property="article:tag" content="PPO-ptx">
+<meta property="article:tag" content="reward model">
+<meta property="article:tag" content="preference data">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/03/10/2026-03-10-InstructGPT-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>InstructGPT: The RLHF Recipe That Turned GPT-3 Into a Helpful Assistant | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/03/10/2026-03-10-InstructGPT-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          InstructGPT: The RLHF Recipe That Turned GPT-3 Into a Helpful Assistant
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-03-10 00:00:00" itemprop="dateCreated datePublished" datetime="2026-03-10T00:00:00+00:00">2026-03-10</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-16 07:57:18" itemprop="dateModified" datetime="2026-04-16T07:57:18+00:00">2026-04-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/RL-Training/" itemprop="url" rel="index"><span itemprop="name">RL Training</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">A detailed technical review of InstructGPT (OpenAI, 2022), analyzing how Reinforcement Learning from Human Feedback (RLHF) with a three-stage pipeline — SFT, reward modeling, and PPO — transformed next-token prediction into instruction-following behavior that aligned with human intent.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="InstructGPT-2203-02155-—-Technical-Review">InstructGPT (2203.02155) — Technical Review</h1>
+<p><strong>TL;DR (1 minute):</strong> InstructGPT is the paper that turned “next-token prediction models” into “helpful assistant models” at scale. The core pipeline is simple but powerful: (1) supervised fine-tuning on human-written demonstrations, (2) reward-model training from pairwise preference data, and (3) PPO optimization against that reward while constraining drift from the base model via a KL penalty. I think this paper’s long-term contribution is not just better outputs, but a <em>production training recipe</em> that changed how almost all modern assistant models are built.</p>
+<p><strong>Estimated reading time:</strong> 45–60 minutes</p>
+<a id="more"></a>
+<hr>
+<h2 id="1-What-problem-is-this-paper-solving-exactly">1) What problem is this paper solving, exactly?</h2>
+<p>Before InstructGPT, GPT-3 was very strong at language modeling, but weak at reliably following user intent. If you asked for an answer with a specific tone, structure, or safety behavior, base GPT-3 could ignore parts of the instruction. This creates a practical mismatch:</p>
+<ul>
+<li><strong>Objective during pretraining:</strong> predict Internet text continuation.</li>
+<li><strong>Objective users actually care about:</strong> be helpful, honest, harmless, and instruction-following.</li>
+</ul>
+<p>This mismatch is called <strong>objective misalignment</strong> (in a narrow engineering sense, not philosophical alignment). The paper asks: can we fine-tune a large pretrained LM so that human raters prefer its outputs over those of a much larger base model?</p>
+<p>Their answer: yes — surprisingly strongly. A 1.3B InstructGPT variant can beat 175B GPT-3 in human preference evaluations on API prompts.</p>
+<h3 id="Why-this-was-a-big-deal">Why this was a big deal</h3>
+<p>I see three practical shocks from this result:</p>
+<ol>
+<li><strong>Preference optimization can dominate pure scale</strong> for assistant behavior.</li>
+<li><strong>Human-feedback loops are tractable</strong> in large-scale product settings.</li>
+<li><strong>Post-training became first-class</strong> (not just a small finishing step).</li>
+</ol>
+<hr>
+<h2 id="2-Prerequisites">2) Prerequisites</h2>
+<p>If you are new, here are the minimum concepts.</p>
+<h3 id="2-1-Language-model-pretraining">2.1 Language model pretraining</h3>
+<p>A model like GPT learns to predict the next token in huge text corpora. It becomes statistically competent but not necessarily obedient to user intent.</p>
+<h3 id="2-2-Supervised-fine-tuning-SFT">2.2 Supervised fine-tuning (SFT)</h3>
+<p>You show the model examples of prompts and high-quality responses written by human labelers. Training minimizes token prediction loss on those target responses.</p>
+<h3 id="2-3-Preference-data-and-reward-models">2.3 Preference data and reward models</h3>
+<p>Instead of absolute “correct scores,” humans compare two outputs and choose which one is better. From many pairwise comparisons, we train a <strong>reward model (RM)</strong> that predicts which answer humans would prefer.</p>
+<h3 id="2-4-PPO-Proximal-Policy-Optimization">2.4 PPO (Proximal Policy Optimization)</h3>
+<p>PPO is an RL algorithm that updates a policy while limiting destructive update steps. In this paper, the policy is the language model; the scalar reward comes from the reward model.</p>
+<h3 id="2-5-KL-regularization">2.5 KL regularization</h3>
+<p>If RL optimization chases reward too aggressively, outputs can become weird or exploit reward-model bugs. KL penalty keeps the policy close to a reference model (usually SFT), acting like a leash.</p>
+<hr>
+<h2 id="3-Method-details-the-three-stage-InstructGPT-pipeline">3) Method details: the three-stage InstructGPT pipeline</h2>
+<p>The training recipe is the main contribution.</p>
+<h2 id="Stage-A-Supervised-Fine-Tuning-SFT">Stage A: Supervised Fine-Tuning (SFT)</h2>
+<ul>
+<li>Collect prompts from real API traffic + labeler-written prompts.</li>
+<li>Labelers write ideal responses.</li>
+<li>Fine-tune GPT-3 checkpoints on this demonstration dataset.</li>
+</ul>
+<p>This gives an instruction-following base policy that is already much better than raw pretrained GPT-3.</p>
+<h2 id="Stage-B-Reward-Model-RM">Stage B: Reward Model (RM)</h2>
+<ul>
+<li>For each prompt, sample multiple candidate responses from the SFT model.</li>
+<li>Human labelers rank the candidates.</li>
+<li>Convert rankings (or pairwise comparisons) into training tuples.</li>
+<li>Train reward model to score preferred outputs higher.</li>
+</ul>
+<p>The reward model approximates latent human preference but is noisy and biased by labeler pool, prompt mix, and annotation policy.</p>
+<h2 id="Stage-C-PPO-with-KL-control-PPO-ptx">Stage C: PPO with KL control (PPO-ptx)</h2>
+<p>Optimize policy to maximize:</p>
+<ul>
+<li>Reward model score</li>
+<li>minus KL(policy || reference)</li>
+</ul>
+<p>The paper also discusses mixing in pretraining gradients (the “ptx” variant) to stabilize linguistic quality and reduce catastrophic drift. In practice, this often helps avoid over-optimization artifacts.</p>
+<h3 id="Figure-level-interpretation-conceptual">Figure-level interpretation (conceptual)</h3>
+<p>The pipeline diagram in the paper can be read as a “refinery”:</p>
+<ol>
+<li>Pretrained LM = crude capability oil.</li>
+<li>SFT = first refinement pass (obey obvious instructions).</li>
+<li>RM + PPO = selective catalytic pass (optimize human preference dimensions).</li>
+</ol>
+<p>I like this mental model because it explains why both stages matter: SFT gives coarse direction, RLHF gives preference shaping.</p>
+<hr>
+<h2 id="4-Data-engine-and-annotation-design">4) Data engine and annotation design</h2>
+<p>A common beginner confusion: “Is RLHF mostly algorithm or mostly data?”</p>
+<p>For InstructGPT, <strong>data operations are as important as optimizer math</strong>.</p>
+<h3 id="4-1-Prompt-distribution">4.1 Prompt distribution</h3>
+<p>The paper uses real customer prompts (with filtering and privacy handling) plus synthetic prompts. This matters because the model learns assistant behavior on realistic user demand, not just benchmark-style tasks.</p>
+<h3 id="4-2-Labeler-screening-and-consistency">4.2 Labeler screening and consistency</h3>
+<p>The labelers are trained and screened. Even then, preference judgments are noisy and have inter-rater variation. The paper openly treats human preference as imperfect signal.</p>
+<h3 id="4-3-Ranking-format">4.3 Ranking format</h3>
+<p>Ranking K completions per prompt gives richer signal than single binary labels. It improves reward model sample efficiency by extracting more pairwise constraints.</p>
+<h3 id="4-4-Safety-data-slices">4.4 Safety data slices</h3>
+<p>There are dedicated evaluations for truthfulness/toxicity/helpfulness. Importantly, the model can improve in user preference while still having unresolved safety boundary issues.</p>
+<hr>
+<h2 id="5-Experimental-setup-and-what-to-pay-attention-to">5) Experimental setup and what to pay attention to</h2>
+<p>The paper compares several models:</p>
+<ul>
+<li>Base GPT-3 (pretrained)</li>
+<li>SFT only</li>
+<li>PPO from SFT (with and without ptx variants)</li>
+</ul>
+<p>And across scales (roughly 1.3B to 175B families).</p>
+<h3 id="Main-evaluation-axis">Main evaluation axis</h3>
+<p><strong>Human preference win-rate</strong> on held-out prompts. This is the headline metric because instruction-following quality is hard to fully capture via perplexity.</p>
+<h3 id="Secondary-axes">Secondary axes</h3>
+<ul>
+<li>Truthfulness-oriented benchmarks</li>
+<li>Toxicity tendencies</li>
+<li>Robustness of behavior under open-ended prompts</li>
+</ul>
+<h3 id="Why-this-evaluation-strategy-is-reasonable">Why this evaluation strategy is reasonable</h3>
+<p>If target behavior is “what users prefer in assistant responses,” human comparative evaluation is closer to product reality than standard LM losses.</p>
+<hr>
+<h2 id="6-Results-deep-dive-what-changed-after-RLHF">6) Results deep dive: what changed after RLHF?</h2>
+<h3 id="6-1-Preference-gains">6.1 Preference gains</h3>
+<p>The strongest claim: smaller InstructGPT can be preferred over much larger base GPT-3. This is a structural point: post-training objective quality can outweigh raw parameter count for assistant UX.</p>
+<h3 id="6-2-Better-instruction-following">6.2 Better instruction following</h3>
+<p>Outputs generally become more direct, format-compliant, and less likely to ignore user constraints.</p>
+<h3 id="6-3-Reduction-in-obvious-harmful-off-topic-behavior">6.3 Reduction in obvious harmful/off-topic behavior</h3>
+<p>Not perfect safety, but measurable movement in desired direction. This is consistent with reward shaping pushing away from clearly undesired responses.</p>
+<h3 id="6-4-Trade-offs">6.4 Trade-offs</h3>
+<p>There is always risk of:</p>
+<ul>
+<li>Over-refusal patterns</li>
+<li>Verbosity inflation (rewarded style over substance)</li>
+<li>Distribution shift failure (outside annotation coverage)</li>
+</ul>
+<p>The paper is honest that this is an iterative alignment pipeline, not a solved endpoint.</p>
+<hr>
+<h2 id="7-Figure-table-evidence-commentary-explicit">7) Figure/table evidence commentary (explicit)</h2>
+<p>Even if you do not memorize exact values, these are the key evidence patterns to extract from the tables and plots:</p>
+<ol>
+<li><strong>Human preference table:</strong> RLHF variants dominate base model baselines on API-like prompts.</li>
+<li><strong>Model-size comparison table:</strong> parameter count alone does not determine assistant quality.</li>
+<li><strong>Safety/truthfulness slices:</strong> gains are uneven; some dimensions improve more than others.</li>
+<li><strong>Ablation trend lines:</strong> removing KL control or reward quality safeguards hurts stability.</li>
+</ol>
+<p>My recommendation for readers: do not only read the best-number row. Read the <em>ablation rows</em>; they reveal why the recipe works.</p>
+<hr>
+<h2 id="8-Why-PPO-KL-was-a-practical-choice-historical-lens">8) Why PPO + KL was a practical choice (historical lens)</h2>
+<p>Today people discuss DPO/IPO/ORPO/GRPO and newer direct methods. But historically, PPO+KL had three big advantages:</p>
+<ul>
+<li>Mature tooling from RL community.</li>
+<li>Natural way to constrain update size.</li>
+<li>Easy scalar reward integration from reward model.</li>
+</ul>
+<p>So InstructGPT is partly an algorithm paper, partly an <strong>engineering timing paper</strong>: it chose methods that were operationally ready.</p>
+<hr>
+<h2 id="9-Limitations-and-boundary-conditions">9) Limitations and boundary conditions</h2>
+<p>I want to be explicit here, because many teams over-trust RLHF.</p>
+<h3 id="9-1-Reward-model-misspecification">9.1 Reward model misspecification</h3>
+<p>If reward model learns superficial cues (“sounds polite”) instead of true utility, policy will exploit this.</p>
+<h3 id="9-2-Labeler-distribution-bias">9.2 Labeler distribution bias</h3>
+<p>Preferences reflect labeler demographics/training; they are not universal human values.</p>
+<h3 id="9-3-Coverage-gap">9.3 Coverage gap</h3>
+<p>Long-tail domains (specialized legal/medical/scientific contexts) are weak unless represented in annotation/evaluation loops.</p>
+<h3 id="9-4-Cost-and-throughput">9.4 Cost and throughput</h3>
+<p>Human feedback pipelines are expensive: data ops, QA, preference platform infra, retraining cycles.</p>
+<h3 id="9-5-Safety-is-not-guaranteed">9.5 Safety is not guaranteed</h3>
+<p>RLHF can reduce bad behavior frequency but does not prove worst-case safety guarantees.</p>
+<hr>
+<h2 id="10-Reproducibility-guide-if-you-want-to-implement-this-today">10) Reproducibility guide (if you want to implement this today)</h2>
+<p>I would implement a practical “v1 RLHF stack” in phases.</p>
+<h3 id="Phase-1-Build-SFT-baseline">Phase 1: Build SFT baseline</h3>
+<ul>
+<li>Curate 30k–200k instruction-response pairs (domain dependent).</li>
+<li>Include formatting and refusal policy examples.</li>
+<li>Track response length, instruction coverage, factuality flags.</li>
+</ul>
+<h3 id="Phase-2-Build-preference-pipeline">Phase 2: Build preference pipeline</h3>
+<ul>
+<li>For each prompt, sample 4–8 candidates.</li>
+<li>Ask raters to rank all candidates.</li>
+<li>Convert to pairwise dataset.</li>
+<li>Train reward model; validate with held-out agreement metrics.</li>
+</ul>
+<h3 id="Phase-3-PPO-loop-with-safeguards">Phase 3: PPO loop with safeguards</h3>
+<ul>
+<li>Start with small KL coefficient sweep.</li>
+<li>Monitor reward gain vs KL drift.</li>
+<li>Add lexical diversity and factual checks.</li>
+<li>Keep periodic “frozen benchmark” evaluations.</li>
+</ul>
+<h3 id="Phase-4-Anti-gaming-audits">Phase 4: Anti-gaming audits</h3>
+<ul>
+<li>Prompt sets explicitly designed to expose reward hacking.</li>
+<li>Red-team prompts for hallucination, refusal imbalance, policy overfit.</li>
+<li>Manual review of top-reward outputs.</li>
+</ul>
+<h3 id="Minimal-metrics-dashboard-must-have">Minimal metrics dashboard (must-have)</h3>
+<ul>
+<li>Human preference win-rate</li>
+<li>KL divergence from SFT reference</li>
+<li>Average response length</li>
+<li>Toxicity proxy score</li>
+<li>Truthfulness proxy score</li>
+<li>Refusal rate by prompt category</li>
+<li>Reward model calibration error</li>
+</ul>
+<hr>
+<h2 id="11-Deployment-playbook-for-production-teams">11) Deployment playbook for production teams</h2>
+<p>If I were shipping an assistant in 2026, I would borrow this pattern:</p>
+<ol>
+<li>Launch with SFT+light preference tuning.</li>
+<li>Instrument user dissatisfaction events.</li>
+<li>Sample difficult prompts into weekly annotation queues.</li>
+<li>Periodic RM refresh and controlled RL refresh.</li>
+<li>Keep a fallback model for safety rollbacks.</li>
+</ol>
+<h3 id="Rollout-strategy">Rollout strategy</h3>
+<ul>
+<li>Canary: 1–5% traffic</li>
+<li>Gate by hard safety rules + uncertainty triggers</li>
+<li>Compare against prior model on identical prompt replay</li>
+<li>Promote only if win-rate and safety checks both pass</li>
+</ul>
+<hr>
+<h2 id="12-Connections-to-later-work-DPO-GRPO-RLAIF">12) Connections to later work (DPO, GRPO, RLAIF)</h2>
+<p>InstructGPT established the <em>problem decomposition</em> that many later methods keep:</p>
+<ul>
+<li>collect preference data,</li>
+<li>define an optimization target aligned with preference,</li>
+<li>constrain policy drift,</li>
+<li>evaluate with human-centric metrics.</li>
+</ul>
+<p>DPO simplifies optimization by avoiding explicit on-policy PPO rollouts in some settings; GRPO changes credit assignment structure in group comparisons; RLAIF replaces/augments human labels with AI feedback. But the conceptual skeleton starts here.</p>
+<hr>
+<h2 id="13-My-final-verdict">13) My final verdict</h2>
+<p>I think InstructGPT is one of the highest-impact “post-training systems” papers in modern ML. The novelty is not a single new theorem; it is a workable, scalable recipe that transformed product quality.</p>
+<p>If you are learning RLHF, this is still required reading because it teaches:</p>
+<ul>
+<li>how to frame objective mismatch,</li>
+<li>how to operationalize preference learning,</li>
+<li>how to combine optimization with safeguards,</li>
+<li>and how to evaluate in product-relevant terms.</li>
+</ul>
+<p><strong>Bottom line:</strong> pretraining gives language competence; InstructGPT-style post-training gives assistant behavior.</p>
+<hr>
+<h2 id="Appendix-A-Beginner-analogy-set">Appendix A: Beginner analogy set</h2>
+<ul>
+<li><strong>Pretraining</strong> is like reading the whole library.</li>
+<li><strong>SFT</strong> is like apprenticeship with a good tutor.</li>
+<li><strong>Reward model</strong> is like a quality critic trained on pairwise judging.</li>
+<li><strong>PPO+KL</strong> is like practicing with a coach while preventing bad habit drift.</li>
+</ul>
+<p>This analogy is oversimplified but useful for first-time readers.</p>
+<h2 id="Appendix-B-Practical-checklist-before-claiming-“RLHF-works”">Appendix B: Practical checklist before claiming “RLHF works”</h2>
+<ul>
+<li>Did human win-rate improve on <em>new</em> prompts?</li>
+<li>Did safety regress on long-tail prompts?</li>
+<li>Is reward model still calibrated after policy update?</li>
+<li>Did verbosity inflate while informativeness dropped?</li>
+<li>Are failures clustered by domain or language?</li>
+</ul>
+<p>If these are unanswered, your RLHF report is incomplete.</p>
+<h2 id="Appendix-C-Worked-mini-case-—-why-KL-tuning-changes-behavior">Appendix C: Worked mini-case — why KL tuning changes behavior</h2>
+<p>Consider a simple prompt bucket: “Explain a technical idea to a beginner in 6 bullets.”</p>
+<ul>
+<li>With <strong>very low KL penalty</strong>, PPO may push responses toward whatever phrasing reward model likes most. You may get repetitive safety disclaimers and style inflation.</li>
+<li>With <strong>very high KL penalty</strong>, policy stays too close to SFT and gains become small.</li>
+<li>With <strong>mid KL</strong>, you usually see better balance: cleaner structure, improved compliance, no catastrophic drift.</li>
+</ul>
+<p>In production I would run a KL sweep at fixed prompt sets and track:</p>
+<ol>
+<li>Preference win-rate</li>
+<li>Refusal rate</li>
+<li>Response length</li>
+<li>Hallucination flags</li>
+<li>Stylistic redundancy</li>
+</ol>
+<p>The point is operational: KL is not a decorative term in the equation; it is a behavior dial.</p>
+<h2 id="Appendix-D-Expanded-experiment-reading-checklist-table-by-table">Appendix D: Expanded experiment-reading checklist (table by table)</h2>
+<p>When reading RLHF papers, I use this strict checklist.</p>
+<h3 id="D-1-Data-table-checklist">D.1 Data table checklist</h3>
+<ul>
+<li>What proportion of prompts are from real users vs synthetic?</li>
+<li>Are high-risk domains represented?</li>
+<li>Is multilingual distribution balanced?</li>
+<li>Is prompt deduplication described?</li>
+</ul>
+<h3 id="D-2-Annotation-table-checklist">D.2 Annotation table checklist</h3>
+<ul>
+<li>How were labelers screened?</li>
+<li>Is inter-annotator agreement reported?</li>
+<li>Are ranking instructions public/reproducible?</li>
+<li>Any adjudication process for hard disagreements?</li>
+</ul>
+<h3 id="D-3-Reward-model-table-checklist">D.3 Reward-model table checklist</h3>
+<ul>
+<li>Held-out preference prediction accuracy?</li>
+<li>Calibration quality across prompt buckets?</li>
+<li>Failure cases where RM is confidently wrong?</li>
+</ul>
+<h3 id="D-4-PPO-table-checklist">D.4 PPO table checklist</h3>
+<ul>
+<li>KL target and control scheme?</li>
+<li>Update horizon and batch size?</li>
+<li>Reward clipping or normalization details?</li>
+<li>Stability diagnostics over training steps?</li>
+</ul>
+<h3 id="D-5-Product-readiness-checklist">D.5 Product-readiness checklist</h3>
+<ul>
+<li>Does the model improve user preference under real prompts?</li>
+<li>Are there regression analyses on safety?</li>
+<li>Is there rollback strategy in deployment?</li>
+</ul>
+<h2 id="Appendix-E-Failure-taxonomy-for-RLHF-systems">Appendix E: Failure taxonomy for RLHF systems</h2>
+<p>I classify failures into six bins:</p>
+<ol>
+<li><strong>Instruction miss</strong> — ignored user format/constraints.</li>
+<li><strong>Reward polish trap</strong> — answer sounds nice but lacks substance.</li>
+<li><strong>Refusal overreach</strong> — blocks benign requests.</li>
+<li><strong>Hallucinated certainty</strong> — confident but false claims.</li>
+<li><strong>Length inflation</strong> — unnecessarily long output to look thorough.</li>
+<li><strong>Policy inconsistency</strong> — different safety behavior for near-identical prompts.</li>
+</ol>
+<p>Each bin should have dedicated test prompts and owner metrics.</p>
+<h2 id="Appendix-F-Suggested-reproducibility-package-contents">Appendix F: Suggested reproducibility package contents</h2>
+<p>To make a paper-cycle reproducible for teammates, I would attach:</p>
+<ul>
+<li>Prompt dataset schema and sampling scripts</li>
+<li>Annotation guideline PDF (versioned)</li>
+<li>RM training config and checkpoints</li>
+<li>PPO config and KL schedule</li>
+<li>Evaluation harness with exact prompt splits</li>
+<li>Human eval protocol and adjudication notes</li>
+<li>Release note summarizing observed regressions</li>
+</ul>
+<p>Without this package, “we got better” is hard to verify externally.</p>
+<h2 id="Appendix-G-Practical-extension-path-beyond-InstructGPT">Appendix G: Practical extension path beyond InstructGPT</h2>
+<p>A realistic roadmap after reproducing this paper:</p>
+<ul>
+<li><strong>Step 1:</strong> swap pairwise RM with listwise preference modeling.</li>
+<li><strong>Step 2:</strong> compare PPO-ptx vs direct preference optimization (DPO).</li>
+<li><strong>Step 3:</strong> add tool-use traces and evaluate decision quality, not just prose quality.</li>
+<li><strong>Step 4:</strong> integrate retrieval grounding and measure factual calibration shifts.</li>
+<li><strong>Step 5:</strong> add policy-layer refusal calibration per domain risk.</li>
+</ul>
+<p>This keeps the original InstructGPT skeleton while upgrading each module.</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/RLHF/" rel="tag"># RLHF</a>
+              <a href="/tags/PPO/" rel="tag"># PPO</a>
+              <a href="/tags/Alignment/" rel="tag"># Alignment</a>
+              <a href="/tags/LLM/" rel="tag"># LLM</a>
+              <a href="/tags/Instruction-Following/" rel="tag"># Instruction Following</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/03/09/2026-03-09-AutoGen-technical-review-en/" rel="prev" title="AutoGen: Microsoft's Framework for Building Multi-Agent Conversations That Actually Work">
+      <i class="fa fa-chevron-left"></i> AutoGen: Microsoft's Framework for Building Multi-Agent Conversations That Actually Work
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/03/11/2026-03-11-SpeculativeDecoding-technical-review-en/" rel="next" title="Speculative Decoding: Making LLM Inference 2-3× Faster Without Losing a Single Token">
+      Speculative Decoding: Making LLM Inference 2-3× Faster Without Losing a Single Token <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#InstructGPT-2203-02155-—-Technical-Review"><span class="nav-number">1.</span> <span class="nav-text">InstructGPT (2203.02155) — Technical Review</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-What-problem-is-this-paper-solving-exactly"><span class="nav-number">1.1.</span> <span class="nav-text">1) What problem is this paper solving, exactly?</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Why-this-was-a-big-deal"><span class="nav-number">1.1.1.</span> <span class="nav-text">Why this was a big deal</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Prerequisites"><span class="nav-number">1.2.</span> <span class="nav-text">2) Prerequisites</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-Language-model-pretraining"><span class="nav-number">1.2.1.</span> <span class="nav-text">2.1 Language model pretraining</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-Supervised-fine-tuning-SFT"><span class="nav-number">1.2.2.</span> <span class="nav-text">2.2 Supervised fine-tuning (SFT)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-Preference-data-and-reward-models"><span class="nav-number">1.2.3.</span> <span class="nav-text">2.3 Preference data and reward models</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-PPO-Proximal-Policy-Optimization"><span class="nav-number">1.2.4.</span> <span class="nav-text">2.4 PPO (Proximal Policy Optimization)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-KL-regularization"><span class="nav-number">1.2.5.</span> <span class="nav-text">2.5 KL regularization</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Method-details-the-three-stage-InstructGPT-pipeline"><span class="nav-number">1.3.</span> <span class="nav-text">3) Method details: the three-stage InstructGPT pipeline</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Stage-A-Supervised-Fine-Tuning-SFT"><span class="nav-number">1.4.</span> <span class="nav-text">Stage A: Supervised Fine-Tuning (SFT)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Stage-B-Reward-Model-RM"><span class="nav-number">1.5.</span> <span class="nav-text">Stage B: Reward Model (RM)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Stage-C-PPO-with-KL-control-PPO-ptx"><span class="nav-number">1.6.</span> <span class="nav-text">Stage C: PPO with KL control (PPO-ptx)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Figure-level-interpretation-conceptual"><span class="nav-number">1.6.1.</span> <span class="nav-text">Figure-level interpretation (conceptual)</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Data-engine-and-annotation-design"><span class="nav-number">1.7.</span> <span class="nav-text">4) Data engine and annotation design</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-Prompt-distribution"><span class="nav-number">1.7.1.</span> <span class="nav-text">4.1 Prompt distribution</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-Labeler-screening-and-consistency"><span class="nav-number">1.7.2.</span> <span class="nav-text">4.2 Labeler screening and consistency</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-Ranking-format"><span class="nav-number">1.7.3.</span> <span class="nav-text">4.3 Ranking format</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-4-Safety-data-slices"><span class="nav-number">1.7.4.</span> <span class="nav-text">4.4 Safety data slices</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Experimental-setup-and-what-to-pay-attention-to"><span class="nav-number">1.8.</span> <span class="nav-text">5) Experimental setup and what to pay attention to</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Main-evaluation-axis"><span class="nav-number">1.8.1.</span> <span class="nav-text">Main evaluation axis</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Secondary-axes"><span class="nav-number">1.8.2.</span> <span class="nav-text">Secondary axes</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Why-this-evaluation-strategy-is-reasonable"><span class="nav-number">1.8.3.</span> <span class="nav-text">Why this evaluation strategy is reasonable</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Results-deep-dive-what-changed-after-RLHF"><span class="nav-number">1.9.</span> <span class="nav-text">6) Results deep dive: what changed after RLHF?</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Preference-gains"><span class="nav-number">1.9.1.</span> <span class="nav-text">6.1 Preference gains</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Better-instruction-following"><span class="nav-number">1.9.2.</span> <span class="nav-text">6.2 Better instruction following</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-Reduction-in-obvious-harmful-off-topic-behavior"><span class="nav-number">1.9.3.</span> <span class="nav-text">6.3 Reduction in obvious harmful&#x2F;off-topic behavior</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-Trade-offs"><span class="nav-number">1.9.4.</span> <span class="nav-text">6.4 Trade-offs</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Figure-table-evidence-commentary-explicit"><span class="nav-number">1.10.</span> <span class="nav-text">7) Figure&#x2F;table evidence commentary (explicit)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Why-PPO-KL-was-a-practical-choice-historical-lens"><span class="nav-number">1.11.</span> <span class="nav-text">8) Why PPO + KL was a practical choice (historical lens)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-Limitations-and-boundary-conditions"><span class="nav-number">1.12.</span> <span class="nav-text">9) Limitations and boundary conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-Reward-model-misspecification"><span class="nav-number">1.12.1.</span> <span class="nav-text">9.1 Reward model misspecification</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-Labeler-distribution-bias"><span class="nav-number">1.12.2.</span> <span class="nav-text">9.2 Labeler distribution bias</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-Coverage-gap"><span class="nav-number">1.12.3.</span> <span class="nav-text">9.3 Coverage gap</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-Cost-and-throughput"><span class="nav-number">1.12.4.</span> <span class="nav-text">9.4 Cost and throughput</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-5-Safety-is-not-guaranteed"><span class="nav-number">1.12.5.</span> <span class="nav-text">9.5 Safety is not guaranteed</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-Reproducibility-guide-if-you-want-to-implement-this-today"><span class="nav-number">1.13.</span> <span class="nav-text">10) Reproducibility guide (if you want to implement this today)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Phase-1-Build-SFT-baseline"><span class="nav-number">1.13.1.</span> <span class="nav-text">Phase 1: Build SFT baseline</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Phase-2-Build-preference-pipeline"><span class="nav-number">1.13.2.</span> <span class="nav-text">Phase 2: Build preference pipeline</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Phase-3-PPO-loop-with-safeguards"><span class="nav-number">1.13.3.</span> <span class="nav-text">Phase 3: PPO loop with safeguards</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Phase-4-Anti-gaming-audits"><span class="nav-number">1.13.4.</span> <span class="nav-text">Phase 4: Anti-gaming audits</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Minimal-metrics-dashboard-must-have"><span class="nav-number">1.13.5.</span> <span class="nav-text">Minimal metrics dashboard (must-have)</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-Deployment-playbook-for-production-teams"><span class="nav-number">1.14.</span> <span class="nav-text">11) Deployment playbook for production teams</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Rollout-strategy"><span class="nav-number">1.14.1.</span> <span class="nav-text">Rollout strategy</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-Connections-to-later-work-DPO-GRPO-RLAIF"><span class="nav-number">1.15.</span> <span class="nav-text">12) Connections to later work (DPO, GRPO, RLAIF)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-My-final-verdict"><span class="nav-number">1.16.</span> <span class="nav-text">13) My final verdict</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-A-Beginner-analogy-set"><span class="nav-number">1.17.</span> <span class="nav-text">Appendix A: Beginner analogy set</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-B-Practical-checklist-before-claiming-“RLHF-works”"><span class="nav-number">1.18.</span> <span class="nav-text">Appendix B: Practical checklist before claiming “RLHF works”</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-C-Worked-mini-case-—-why-KL-tuning-changes-behavior"><span class="nav-number">1.19.</span> <span class="nav-text">Appendix C: Worked mini-case — why KL tuning changes behavior</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-D-Expanded-experiment-reading-checklist-table-by-table"><span class="nav-number">1.20.</span> <span class="nav-text">Appendix D: Expanded experiment-reading checklist (table by table)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#D-1-Data-table-checklist"><span class="nav-number">1.20.1.</span> <span class="nav-text">D.1 Data table checklist</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#D-2-Annotation-table-checklist"><span class="nav-number">1.20.2.</span> <span class="nav-text">D.2 Annotation table checklist</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#D-3-Reward-model-table-checklist"><span class="nav-number">1.20.3.</span> <span class="nav-text">D.3 Reward-model table checklist</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#D-4-PPO-table-checklist"><span class="nav-number">1.20.4.</span> <span class="nav-text">D.4 PPO table checklist</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#D-5-Product-readiness-checklist"><span class="nav-number">1.20.5.</span> <span class="nav-text">D.5 Product-readiness checklist</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-E-Failure-taxonomy-for-RLHF-systems"><span class="nav-number">1.21.</span> <span class="nav-text">Appendix E: Failure taxonomy for RLHF systems</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-F-Suggested-reproducibility-package-contents"><span class="nav-number">1.22.</span> <span class="nav-text">Appendix F: Suggested reproducibility package contents</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-G-Practical-extension-path-beyond-InstructGPT"><span class="nav-number">1.23.</span> <span class="nav-text">Appendix G: Practical extension path beyond InstructGPT</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

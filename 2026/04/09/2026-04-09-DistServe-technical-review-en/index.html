@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. Why This Paper Matters If I explain this paper in one sentence:  DistServe improves LLM serving under latency SLOs by separating prefill and decoding onto different GPU pools, then jointly optimizi">
+<meta property="og:type" content="article">
+<meta property="og:title" content="DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving — Deep Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/09/2026-04-09-DistServe-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. Why This Paper Matters If I explain this paper in one sentence:  DistServe improves LLM serving under latency SLOs by separating prefill and decoding onto different GPU pools, then jointly optimizi">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-09T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-16T12:57:27.407Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="LLM Serving">
+<meta property="article:tag" content="DistServe">
+<meta property="article:tag" content="ML Systems">
+<meta property="article:tag" content="Disaggregated Serving">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/09/2026-04-09-DistServe-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving — Deep Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/09/2026-04-09-DistServe-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving — Deep Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-09 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-09T00:00:00+00:00">2026-04-09</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-16 12:57:27" itemprop="dateModified" datetime="2026-04-16T12:57:27+00:00">2026-04-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/ML-Systems/" itemprop="url" rel="index"><span itemprop="name">ML Systems</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-Why-This-Paper-Matters">1. Why This Paper Matters</h2>
+<p>If I explain this paper in one sentence:</p>
+<blockquote>
+<p><strong>DistServe improves LLM serving under latency SLOs by separating prefill and decoding onto different GPU pools, then jointly optimizing their resources and placement to maximize goodput per GPU.</strong></p>
+</blockquote>
+<p>This sounds simple, but it addresses one of the deepest frustrations in real-world LLM systems engineering:</p>
+<ul>
+<li>product wants both fast first response and smooth generation,</li>
+<li>infrastructure wants high utilization and low cost,</li>
+<li>and existing colocated serving designs often force a painful compromise.</li>
+</ul>
+<p>The paper makes this problem concrete, quantifies why the compromise happens, proposes a practical architecture, and validates it with strong end-to-end gains:</p>
+<ul>
+<li>up to <strong>7.4× higher request rate</strong> at target SLO attainment,</li>
+<li>or <strong>12.6× tighter SLOs</strong> at fixed rate,</li>
+<li>while keeping latency constraints satisfied for <strong>&gt;90%</strong> of requests.</li>
+</ul>
+<p>That combination (clear diagnosis + design + measurable gains + deployment details) is why this is a serious ML systems paper.</p>
+<hr>
+<a id="more"></a>
+<h2 id="2-Prerequisites-What-you-need-to-know-first">2. Prerequisites: What you need to know first</h2>
+<p>I will treat this section as if the reader is very new to LLM serving.</p>
+<h3 id="2-1-What-is-LLM-serving">2.1 What is LLM serving?</h3>
+<p>An LLM service is a system where users send prompts and receive generated text. Under the hood, a serving system must:</p>
+<ol>
+<li>receive requests,</li>
+<li>schedule and batch them,</li>
+<li>run model inference on GPUs,</li>
+<li>stream outputs back,</li>
+<li>do all this cheaply and reliably.</li>
+</ol>
+<p>So this is not just &quot;run model.forward().&quot; It is queueing + scheduling + GPU memory management + networking + latency control.</p>
+<h3 id="2-2-Prefill-vs-decoding-in-plain-language">2.2 Prefill vs decoding, in plain language</h3>
+<p>Autoregressive generation has two phases:</p>
+<ol>
+<li><strong>Prefill</strong>: process the full prompt and produce the first output token.</li>
+<li><strong>Decoding</strong>: generate the remaining output tokens one by one.</li>
+</ol>
+<p>A kitchen analogy:</p>
+<ul>
+<li>prefill = all prep work before first dish appears,</li>
+<li>decoding = serving dishes one by one after that.</li>
+</ul>
+<p>They are related but have very different computational characteristics.</p>
+<h3 id="2-3-TTFT-TPOT-SLO-and-SLO-attainment">2.3 TTFT, TPOT, SLO, and SLO attainment</h3>
+<p>DistServe centers on two latency metrics:</p>
+<ul>
+<li><strong>TTFT (Time To First Token)</strong>: user waits this long before seeing the first generated token.</li>
+<li><strong>TPOT (Time Per Output Token)</strong>: average time per subsequent token.</li>
+</ul>
+<p>Different apps care differently:</p>
+<ul>
+<li>chatbot: TTFT is critical for responsiveness,</li>
+<li>long summarization: TPOT matters more once generation starts.</li>
+</ul>
+<p>An <strong>SLO</strong> is a target limit, e.g. TTFT ≤ 0.25s and TPOT ≤ 0.1s.</p>
+<p><strong>SLO attainment</strong> is the percentage of requests that satisfy these limits.</p>
+<p>The paper often uses a 90% attainment target: &quot;at least 90% of requests meet both TTFT and TPOT requirements.&quot;</p>
+<h3 id="2-4-Throughput-vs-goodput-and-why-they-are-not-the-same">2.4 Throughput vs goodput (and why they are not the same)</h3>
+<ul>
+<li><strong>Throughput</strong>: total tokens or requests processed per second.</li>
+<li><strong>Goodput</strong> (in this paper): max request rate per provisioned GPU while meeting SLO attainment target.</li>
+</ul>
+<p>You can have high throughput but bad user experience if many requests violate latency SLOs.</p>
+<p>DistServe optimizes <strong>goodput</strong>, not raw throughput.</p>
+<p>This distinction is essential. In production, users care about latency compliance, not just aggregate token count.</p>
+<h3 id="2-5-Compute-bound-vs-memory-bound-on-GPUs">2.5 Compute-bound vs memory-bound on GPUs</h3>
+<p>A GPU kernel can be bottlenecked by:</p>
+<ul>
+<li>compute (ALU/Tensor Core arithmetic), or</li>
+<li>memory bandwidth (moving data).</li>
+</ul>
+<p>In LLM inference:</p>
+<ul>
+<li>prefill on long inputs often becomes compute-heavy,</li>
+<li>decoding one token at a time often becomes memory-bandwidth-heavy because weights/KV accesses dominate.</li>
+</ul>
+<p>This mismatch is a central reason prefill and decoding interfere when colocated.</p>
+<h3 id="2-6-Batching-queues-and-why-waiting-time-explodes">2.6 Batching, queues, and why waiting time explodes</h3>
+<p>Serving systems batch requests to raise utilization.</p>
+<p>But when short and long jobs share resources, queueing delay can explode for latency-sensitive jobs.</p>
+<p>DistServe uses queueing-theoretic framing (M/D/1-style analysis for simplified cases) to reason about latency behavior and parallelism tradeoffs.</p>
+<p>Even if average execution is okay, tail latency (P90/P99) can fail SLOs quickly when interference and queueing interact.</p>
+<h3 id="2-7-Intra-op-vs-inter-op-parallelism">2.7 Intra-op vs inter-op parallelism</h3>
+<p>The paper uses two classic model-parallel dimensions:</p>
+<ul>
+<li><strong>Intra-operator parallelism (tensor parallel style)</strong>: split heavy operations across GPUs. Good for reducing single-step execution time, but adds communication overhead.</li>
+<li><strong>Inter-operator parallelism (pipeline style)</strong>: split layers into stages across GPUs. Good for throughput scaling, but introduces pipeline coordination and potential bubbles.</li>
+</ul>
+<p>DistServe’s key point: prefill and decoding should be allowed to choose different parallelism strategies.</p>
+<h3 id="2-8-Why-network-topology-changes-system-design">2.8 Why network topology changes system design</h3>
+<p>Disaggregation requires transmitting intermediate state (primarily KV cache) from prefill to decoding workers.</p>
+<p>So network bandwidth matters:</p>
+<ul>
+<li>inside node (NVLINK): very high,</li>
+<li>across nodes (e.g., 25 Gbps in their cluster): much lower.</li>
+</ul>
+<p>DistServe includes placement logic that adapts to this reality, especially in the low node-affinity case.</p>
+<hr>
+<h2 id="3-The-Real-Systems-Problem-DistServe-Solves">3. The Real Systems Problem DistServe Solves</h2>
+<p>Existing systems like vLLM and DeepSpeed-MII largely colocate prefill and decoding on the same GPU pool.</p>
+<p>The paper identifies two root problems:</p>
+<ol>
+<li><strong>Prefill-decoding interference</strong>
+<ul>
+<li>Long prefill work delays decoding, increasing TPOT.</li>
+<li>Decoding work also adds overhead for prefill, increasing TTFT.</li>
+</ul>
+</li>
+<li><strong>Resource/parallelism coupling</strong>
+<ul>
+<li>If colocated, both phases are forced into shared resource and parallelism plans.</li>
+<li>But prefill and decoding have different needs.</li>
+</ul>
+</li>
+</ol>
+<p>Figure 1 gives an intuitive comparison on 13B model with synthetic workload:</p>
+<ul>
+<li>existing systems under SLO attainment 90% can do around <strong>1.6 rps</strong> per GPU,</li>
+<li>prefill-only path could do <strong>5.6 rps</strong> equivalent,</li>
+<li>decode-only path could do <strong>10 rps</strong> equivalent,</li>
+<li>ideal disaggregated provisioning (2 prefill GPUs + 1 decode GPU) implies much higher per-GPU efficiency than colocation.</li>
+</ul>
+<p>The paper uses this not as final proof, but as a motivating systems observation.</p>
+<hr>
+<h2 id="4-Core-Insight-Prefill-and-Decoding-Should-Not-Be-Forced-to-Live-Together">4. Core Insight: Prefill and Decoding Should Not Be Forced to Live Together</h2>
+<p>DistServe’s core design choice is straightforward:</p>
+<blockquote>
+<p><strong>Disaggregate prefill and decoding onto different GPU instances.</strong></p>
+</blockquote>
+<p>Then optimize each phase independently for its own latency objective:</p>
+<ul>
+<li>prefill side focuses on TTFT,</li>
+<li>decoding side focuses on TPOT.</li>
+</ul>
+<p>This yields two immediate wins:</p>
+<ol>
+<li>eliminate direct prefill-decoding interference,</li>
+<li>uncouple resource allocation and parallelism choices.</li>
+</ol>
+<p>The concern is communication overhead from KV transfer.</p>
+<p>The paper argues (and later validates) that with appropriate placement (especially stage-aware and node-aware), overhead is small relative to latency gains.</p>
+<hr>
+<h2 id="5-DistServe-Architecture-and-End-to-End-Workflow">5. DistServe Architecture and End-to-End Workflow</h2>
+<p>From the paper’s runtime architecture (Figure 6):</p>
+<ol>
+<li>requests enter a centralized controller,</li>
+<li>controller dispatches to prefill instances (shortest queue),</li>
+<li>prefill computes first token + KV cache,</li>
+<li>decoding instances fetch KV cache and continue autoregressive generation,</li>
+<li>results stream back.</li>
+</ol>
+<p>Notable design details:</p>
+<ul>
+<li>DistServe is an orchestration layer over an inference engine.</li>
+<li>It supports model parallel execution engines and distributed KV management.</li>
+<li>It uses a <strong>pull-based</strong> KV transfer strategy to handle burstiness and avoid decode-side memory overload.</li>
+</ul>
+<p>This is important: DistServe is not just an offline planner; it includes runtime control policies.</p>
+<hr>
+<h2 id="6-Tradeoff-Analysis-in-the-Paper">6. Tradeoff Analysis in the Paper</h2>
+<h3 id="6-1-Prefill-instance-analysis">6.1 Prefill instance analysis</h3>
+<h4 id="6-1-1-Batching-behavior">6.1.1 Batching behavior</h4>
+<p>Figure 3(a) shows that for sufficiently long prompts, prefill can already saturate GPU compute with very small batch sizes.</p>
+<p>So blindly increasing batch size no longer improves efficiency, and may only increase per-request latency.</p>
+<p>The paper defines a practical threshold length (L_m):</p>
+<ul>
+<li>above (L_m), prefill is compute-bound enough that additional batching can hurt TTFT.</li>
+</ul>
+<p>This gives a concrete scheduling guideline for prefill.</p>
+<h4 id="6-1-2-Parallelism-and-queueing-equations">6.1.2 Parallelism and queueing equations</h4>
+<p>For a simplified uniform case, they model prefill with queueing equations.</p>
+<p>Baseline single-device average TTFT (M/D/1 style):</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>Avg_TTFT</mtext><mo>=</mo><mi>D</mi><mo>+</mo><mfrac><mrow><mi>R</mi><msup><mi>D</mi><mn>2</mn></msup></mrow><mrow><mn>2</mn><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><mi>R</mi><mi>D</mi><mo stretchy="false">)</mo></mrow></mfrac></mrow><annotation encoding="application/x-tex">\text{Avg\_TTFT} = D + \frac{R D^2}{2(1-RD)}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9933em;vertical-align:-0.31em;"></span><span class="mord text"><span class="mord">Avg_TTFT</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">D</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.4271em;vertical-align:-0.936em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.4911em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">2</span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal" style="margin-right:0.00773em;">R</span><span class="mord mathnormal" style="margin-right:0.02778em;">D</span><span class="mclose">)</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.00773em;">R</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02778em;">D</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>where:</p>
+<ul>
+<li>(D): per-request deterministic execution time,</li>
+<li>(R): request arrival rate.</li>
+</ul>
+<p>Then they compare inter-op and intra-op two-way settings (Eq. 2 / Eq. 3 in paper), showing a practical pattern:</p>
+<ul>
+<li>at low arrival rate, intra-op can win (better execution-time reduction),</li>
+<li>at higher rate, inter-op can win (better queueing behavior and capacity scaling).</li>
+</ul>
+<p>Figure 4 visualizes this crossover on 66B experiments.</p>
+<p>The speedup coefficient (K) for intra-op communication overhead is explicitly considered; lower (K) weakens intra-op benefit.</p>
+<p>This analysis is valuable because it explains why there is no single globally best parallelism setting.</p>
+<h3 id="6-2-Decoding-instance-analysis">6.2 Decoding instance analysis</h3>
+<p>Decoding is different:</p>
+<ul>
+<li>single-step decode is bandwidth-bound,</li>
+<li>batching is critical for utilization.</li>
+</ul>
+<p>Figure 3(b) and Figure 5 show:</p>
+<ul>
+<li>larger decode batches improve throughput,</li>
+<li>intra-op reduces latency but with diminishing returns,</li>
+<li>inter-op can scale throughput close to linearly in suitable regimes.</li>
+</ul>
+<p>So for strict TPOT constraints, intra-op may be needed first; beyond that, inter-op/replication improve capacity.</p>
+<p>The paper also notes memory pressure from KV cache residency for many active decode requests.</p>
+<h3 id="6-3-Practical-deployment-concerns">6.3 Practical deployment concerns</h3>
+<h4 id="Variable-input-lengths-and-pipeline-bubbles">Variable input lengths and pipeline bubbles</h4>
+<p>Real workloads are not uniform; mixed prompt lengths create stage imbalance and bubbles under pipeline parallelism.</p>
+<p>DistServe addresses this with workload-aware scheduling heuristics in runtime.</p>
+<h4 id="Communication-overhead-estimate">Communication overhead estimate</h4>
+<p>Paper gives a concrete example:</p>
+<ul>
+<li>OPT-66B, 512-token request KV cache ≈ <strong>1.13 GB</strong>,</li>
+<li>at 10 rps, transfer demand ≈ <strong>11.3 GB/s</strong> (about 90 Gbps).</li>
+</ul>
+<p>This motivates placement awareness; blindly crossing low-bandwidth links could hurt.</p>
+<h4 id="Cluster-topology-constraint">Cluster topology constraint</h4>
+<p>Their testbed has only 25 Gbps cross-node bandwidth, so low node-affinity placement strategy becomes critical.</p>
+<hr>
+<h2 id="7-Optimization-Method-Placement-Algorithms">7. Optimization Method: Placement Algorithms</h2>
+<p>DistServe’s planning objective:</p>
+<blockquote>
+<p>maximize per-GPU goodput while meeting TTFT/TPOT SLO constraints and SLO attainment target.</p>
+</blockquote>
+<h3 id="7-1-High-node-affinity-algorithm-Algorithm-1">7.1 High node-affinity algorithm (Algorithm 1)</h3>
+<p>Assumption: cross-node transfer is fast enough (e.g., strong InfiniBand), so placement is less constrained.</p>
+<p>Method outline:</p>
+<ol>
+<li>enumerate feasible prefill parallel configs,</li>
+<li>simulate and binary-search maximum rate meeting SLO target,</li>
+<li>do same for decoding configs,</li>
+<li>replicate prefill/decoding instances to satisfy target traffic.</li>
+</ol>
+<p>Complexity discussed as manageable ((O(NM^2)), with typical (M=8) GPUs per node).</p>
+<h3 id="7-2-Low-node-affinity-algorithm-Algorithm-2">7.2 Low node-affinity algorithm (Algorithm 2)</h3>
+<p>Assumption: cross-node link is relatively weak.</p>
+<p>Key idea:</p>
+<ul>
+<li>use inter-op stage segmentation,</li>
+<li>colocate corresponding prefill/decode stages within node,</li>
+<li>force most KV transfer through NVLINK.</li>
+</ul>
+<p>This adds constraints but preserves communication efficiency.</p>
+<p>The algorithm enumerates intra-node configurations per inter-op degree, simulates goodput under constraints, and chooses best plan.</p>
+<h3 id="7-3-Simulator-design-and-why-it-is-needed">7.3 Simulator design and why it is needed</h3>
+<p>Brute-force profiling all placements on real hardware is too expensive.</p>
+<p>So DistServe builds an analytical simulator using latency modeling:</p>
+<ul>
+<li>prefill and decode latency terms separated,</li>
+<li>FLOPs and memory-access-inspired modeling,</li>
+<li>coefficients fitted by profiling.</li>
+</ul>
+<p>Appendix A provides formulas; for example prefill and decode latency expressions decompose major GEMM and attention costs.</p>
+<p>Simulator accuracy is later validated (Table 2): error is within ~2% versus real system in tested settings.</p>
+<h3 id="7-4-Online-scheduling-and-runtime-controls">7.4 Online scheduling and runtime controls</h3>
+<p>DistServe runtime includes practical policies:</p>
+<ul>
+<li>FCFS baseline dispatch,</li>
+<li>batching by token-budget heuristics to reduce bubbles,</li>
+<li>pull-based KV transmission to absorb bursts,</li>
+<li>periodic replanning when workload distribution shifts,</li>
+<li>discussion of future preemption/fault-tolerance integration.</li>
+</ul>
+<p>I appreciate this section because it acknowledges real operations rather than only static offline optimization.</p>
+<hr>
+<h2 id="8-Implementation-Details">8. Implementation Details</h2>
+<p>Implementation scale from the paper:</p>
+<ul>
+<li>placement + API + orchestration: about <strong>6.5K lines Python</strong>,</li>
+<li>parallel execution engine: about <strong>8.1K lines C++/CUDA</strong>.</li>
+</ul>
+<p>The system integrates practical components:</p>
+<ul>
+<li>OpenAI-compatible REST API,</li>
+<li>NCCL for communication,</li>
+<li>async intra-node CudaMemcpy,</li>
+<li>Ray actors as distributed workers,</li>
+<li>optimizations like continuous batching, FlashAttention, PagedAttention.</li>
+</ul>
+<p>This is not toy pseudo-code; it is a system prototype with significant engineering depth.</p>
+<hr>
+<h2 id="9-Evaluation-Setup">9. Evaluation Setup</h2>
+<h3 id="9-1-Hardware-and-cluster">9.1 Hardware and cluster</h3>
+<ul>
+<li>4 nodes, 32 GPUs total.</li>
+<li>Each node: 8× NVIDIA A100 80GB (NVLINK intra-node).</li>
+<li>Cross-node bandwidth: 25 Gbps.</li>
+</ul>
+<h3 id="9-2-Models">9.2 Models</h3>
+<p>OPT family (FP16):</p>
+<ul>
+<li>OPT-13B,</li>
+<li>OPT-66B,</li>
+<li>OPT-175B.</li>
+</ul>
+<p>The authors intentionally pick classic MHA-based OPT to stress KV-transfer overhead more than newer GQA/MQA models.</p>
+<h3 id="9-3-Workloads-and-applications-Table-1">9.3 Workloads and applications (Table 1)</h3>
+<ol>
+<li><strong>Chatbot</strong> (ShareGPT):
+<ul>
+<li>13B SLO: TTFT 0.25s, TPOT 0.1s.</li>
+<li>66B SLO: TTFT 2.5s, TPOT 0.15s.</li>
+<li>175B SLO: TTFT 4.0s, TPOT 0.2s.</li>
+</ul>
+</li>
+<li><strong>Code completion</strong> (HumanEval):
+<ul>
+<li>TTFT 0.125s, TPOT 0.2s.</li>
+</ul>
+</li>
+<li><strong>Summarization</strong> (LongBench):
+<ul>
+<li>TTFT 15s, TPOT 0.15s.</li>
+</ul>
+</li>
+</ol>
+<h3 id="9-4-Baselines">9.4 Baselines</h3>
+<ul>
+<li><strong>vLLM</strong>: strong practical baseline with continuous batching + paged attention.</li>
+<li><strong>DeepSpeed-MII</strong>: includes chunked-prefill variant.</li>
+</ul>
+<p>Primary metric: SLO attainment curves vs per-GPU rate / SLO scaling, usually focusing on 90% attainment target.</p>
+<hr>
+<h2 id="10-Results-and-What-They-Mean">10. Results and What They Mean</h2>
+<h3 id="10-1-Chatbot-workloads">10.1 Chatbot workloads</h3>
+<p>From Figure 8 and discussion:</p>
+<ul>
+<li>DistServe sustains <strong>2.0×–4.6×</strong> higher per-GPU request rate than vLLM.</li>
+<li>DistServe sustains <strong>1.6×–7.4×</strong> higher rate than DeepSpeed-MII.</li>
+<li>DistServe tolerates <strong>1.8×–3.2× tighter SLO</strong> than vLLM.</li>
+</ul>
+<p>Why?</p>
+<ul>
+<li>TPOT in colocated systems suffers from long-prefill interference.</li>
+<li>DistServe isolates phases and picks phase-specific parallelism.</li>
+<li>For OPT-175B chatbot case, selected prefill and decode parallelisms differ non-trivially; this is hard to tune manually and validates the search algorithm.</li>
+</ul>
+<h3 id="10-2-Code-completion">10.2 Code completion</h3>
+<p>Figure 9(a):</p>
+<ul>
+<li>DistServe: <strong>5.7×</strong> higher request rate than vLLM.</li>
+<li>DistServe: <strong>1.6×</strong> higher rate than DeepSpeed-MII.</li>
+<li>DistServe: about <strong>1.4× tighter SLO</strong> than both baselines.</li>
+</ul>
+<p>Interpretation:</p>
+<ul>
+<li>code completion has strict TTFT,</li>
+<li>DistServe’s prefill optimization (including better parallelism and no decode interference) gives large gains.</li>
+</ul>
+<h3 id="10-3-Summarization">10.3 Summarization</h3>
+<p>Figure 9(b):</p>
+<ul>
+<li>DistServe: <strong>4.3×</strong> higher rate than vLLM.</li>
+<li>DistServe: <strong>1.8×</strong> higher rate than DeepSpeed-MII.</li>
+<li>DistServe: up to <strong>12.6× tighter SLO</strong> than vLLM, <strong>2.6× tighter</strong> than DeepSpeed-MII.</li>
+</ul>
+<p>This is notable because summarization has long inputs and strong TPOT importance.</p>
+<p>Chunked-prefill may reduce some interference but cannot eliminate coupling and can incur additional overhead.</p>
+<h3 id="10-4-Latency-breakdown-and-KV-transfer-overhead">10.4 Latency breakdown and KV transfer overhead</h3>
+<p>Figure 10 shows for OPT-175B ShareGPT:</p>
+<ul>
+<li>transmission accounts for <strong>&lt;0.1%</strong> of total latency,</li>
+<li>
+<blockquote>
+<p>95% requests have transmission delay under ~30ms.</p>
+</blockquote>
+</li>
+</ul>
+<p>Given their 25 Gbps cross-node link, this is strong evidence that placement-aware design made disaggregation practical in their environment.</p>
+<h3 id="10-5-Ablation-and-simulator-accuracy">10.5 Ablation and simulator accuracy</h3>
+<p>Table 2:</p>
+<ul>
+<li>simulator vs real SLO attainment error is within about <strong>2%</strong>.</li>
+</ul>
+<p>Figure 11:</p>
+<ul>
+<li>vLLM++ (better parallelism search but still colocated) shows limited gain,</li>
+<li>DistServe variants significantly outperform, proving disaggregation is the main lever,</li>
+<li>high-node-affinity case can further improve over low-node-affinity constrained case.</li>
+</ul>
+<h3 id="10-6-Runtime-cost-of-planning-algorithm">10.6 Runtime cost of planning algorithm</h3>
+<p>Figure 12:</p>
+<ul>
+<li>planning runtime scales with GPU search space,</li>
+<li>still in practical &quot;seconds to low minutes&quot; range,</li>
+<li>acceptable for periodic replanning/redeployment cycles.</li>
+</ul>
+<p>The paper reports largest setting under around 1.3 minutes for key search routine.</p>
+<hr>
+<h2 id="11-Why-DistServe-Is-Strong-My-Technical-Judgment">11. Why DistServe Is Strong (My Technical Judgment)</h2>
+<p>I think DistServe is strong for five reasons.</p>
+<h3 id="11-1-It-optimizes-the-right-objective">11.1 It optimizes the right objective</h3>
+<p>Many systems papers optimize throughput and then hand-wave latency. DistServe directly optimizes goodput under SLO attainment constraints, which matches real service cost/quality goals.</p>
+<h3 id="11-2-It-identifies-and-isolates-a-real-architectural-conflict">11.2 It identifies and isolates a real architectural conflict</h3>
+<p>Prefill and decoding are computationally asymmetric. Forcing them into one colocated scheduling space creates avoidable contention and policy coupling.</p>
+<p>DistServe removes the coupling instead of trying to endlessly patch scheduling symptoms.</p>
+<h3 id="11-3-It-combines-analytical-reasoning-and-empirical-validation">11.3 It combines analytical reasoning and empirical validation</h3>
+<p>The queueing analysis is not just decorative; it informs algorithmic design choices and aligns with measured crossovers.</p>
+<h3 id="11-4-It-is-deployment-aware">11.4 It is deployment-aware</h3>
+<p>Network topology, stage co-placement, pull-based KV transfer, replanning, and algorithm runtime are all considered.</p>
+<h3 id="11-5-It-reports-gains-across-multiple-applications-and-model-sizes">11.5 It reports gains across multiple applications and model sizes</h3>
+<p>Not just one cherry-picked setting.</p>
+<hr>
+<h2 id="12-Limitations-and-Boundary-Conditions">12. Limitations and Boundary Conditions</h2>
+<p>No systems architecture is universal. DistServe itself discusses where it may be less ideal.</p>
+<h3 id="12-1-Throughput-first-latency-insensitive-scenarios">12.1 Throughput-first, latency-insensitive scenarios</h3>
+<p>If users do not care much about TTFT/TPOT tails, then maximizing raw throughput in colocated systems may be simpler and sufficient.</p>
+<h3 id="12-2-Small-resource-constrained-deployments">12.2 Small resource-constrained deployments</h3>
+<p>With only 1–2 GPUs, design space for disaggregation is tiny; orchestration complexity may dominate gains.</p>
+<h3 id="12-3-Dependence-on-workload-predictability">12.3 Dependence on workload predictability</h3>
+<p>Placement decisions use workload distributions estimated from traces. Sudden distribution shifts can reduce optimality until replanning catches up.</p>
+<h3 id="12-4-Runtime-policy-simplicity">12.4 Runtime policy simplicity</h3>
+<p>Current FCFS can still show convoy effects in some regimes. Preemption/fault-tolerance integration is future work.</p>
+<h3 id="12-5-Communication-assumptions-are-environment-dependent">12.5 Communication assumptions are environment-dependent</h3>
+<p>Their low-node-affinity algorithm mitigates weak cross-node links, but extremely poor or unstable network fabrics can still constrain disaggregation benefits.</p>
+<hr>
+<h2 id="13-Reproducibility-and-Practical-Deployment-Checklist">13. Reproducibility and Practical Deployment Checklist</h2>
+<p>If I had to implement DistServe-style serving in production, I would follow this checklist.</p>
+<h3 id="13-1-Measurement-and-profiling">13.1 Measurement and profiling</h3>
+<ol>
+<li>Profile TTFT/TPOT under existing colocated stack.</li>
+<li>Measure phase-level utilization and queueing delay.</li>
+<li>Measure KV transfer size distribution and network bandwidth headroom.</li>
+</ol>
+<h3 id="13-2-Modeling-and-planning">13.2 Modeling and planning</h3>
+<ol>
+<li>Fit a latency simulator for your model family/hardware.</li>
+<li>Validate simulator error against real runs.</li>
+<li>Search parallelism + placement for prefill/decode independently.</li>
+<li>Solve for required replication to hit traffic target.</li>
+</ol>
+<h3 id="13-3-Runtime-policies">13.3 Runtime policies</h3>
+<ol>
+<li>Implement robust request routing.</li>
+<li>Use pull-based KV transfer in bursty traffic.</li>
+<li>Add periodic replanning triggers on workload shift.</li>
+<li>Monitor SLO attainment continuously, not just average latency.</li>
+</ol>
+<h3 id="13-4-Safety-guardrails">13.4 Safety guardrails</h3>
+<ol>
+<li>Capacity buffer for sudden bursts.</li>
+<li>Backpressure and queue protection.</li>
+<li>Fallback path for prefill/decode instance faults.</li>
+<li>Canary rollout for new placement plans.</li>
+</ol>
+<h3 id="13-5-Reporting-metrics-that-actually-matter">13.5 Reporting metrics that actually matter</h3>
+<p>I recommend tracking all of these per model and application:</p>
+<ul>
+<li>P50/P90/P99 TTFT,</li>
+<li>P50/P90/P99 TPOT,</li>
+<li>SLO attainment (%),</li>
+<li>per-GPU goodput,</li>
+<li>queue lengths and wait times by phase,</li>
+<li>KV transfer latency and drop/retry events.</li>
+</ul>
+<hr>
+<h2 id="14-If-You-Are-Building-an-LLM-Serving-Stack-Tomorrow">14. If You Are Building an LLM Serving Stack Tomorrow</h2>
+<p>Here is my practical guidance for engineers.</p>
+<h3 id="14-1-When-to-strongly-consider-DistServe-like-disaggregation">14.1 When to strongly consider DistServe-like disaggregation</h3>
+<ul>
+<li>your product has explicit TTFT and TPOT SLOs,</li>
+<li>you observe prefill/decode contention in traces,</li>
+<li>your GPU spend is high and you need better per-GPU efficiency,</li>
+<li>your network topology supports at least good intra-node bandwidth.</li>
+</ul>
+<h3 id="14-2-When-not-to-start-with-DistServe">14.2 When not to start with DistServe</h3>
+<ul>
+<li>tiny deployment with very few GPUs,</li>
+<li>purely offline or latency-insensitive workloads,</li>
+<li>rapidly changing workload where planning can’t stabilize.</li>
+</ul>
+<h3 id="14-3-A-phased-adoption-path">14.3 A phased adoption path</h3>
+<ol>
+<li>Measure interference in current colocated stack.</li>
+<li>Prototype partial disaggregation for one high-value model.</li>
+<li>Add placement search and simulator incrementally.</li>
+<li>Expand to full multi-application policy once gains are proven.</li>
+</ol>
+<hr>
+<h2 id="15-Conclusion">15. Conclusion</h2>
+<p>DistServe is a convincing systems contribution because it connects first principles to deployment reality.</p>
+<p>Its central claim is simple but powerful:</p>
+<blockquote>
+<p><strong>For latency-SLO-constrained LLM services, prefill-decoding disaggregation plus phase-specific optimization can materially improve goodput and cost-efficiency.</strong></p>
+</blockquote>
+<p>The paper supports this with:</p>
+<ul>
+<li>clear diagnosis of prefill-decoding interference,</li>
+<li>principled analysis for phase-specific parallelism,</li>
+<li>concrete placement algorithms for different cluster topologies,</li>
+<li>implementation details beyond toy architecture,</li>
+<li>strong end-to-end results across applications and model sizes.</li>
+</ul>
+<p>My final take:</p>
+<p><em>DistServe should be considered a baseline architecture whenever a production LLM service is constrained by both TTFT and TPOT SLOs and cares about per-GPU economics.</em></p>
+<hr>
+<h2 id="16-References">16. References</h2>
+<ol>
+<li>Yinmin Zhong, Shengyu Liu, Junda Chen, Jianbo Hu, Yibo Zhu, Xuanzhe Liu, Xin Jin, Hao Zhang. <strong>DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving</strong>. OSDI 2024. arXiv:2401.09670.</li>
+<li>Woosuk Kwon et al. <strong>Efficient Memory Management for Large Language Model Serving with PagedAttention (vLLM)</strong>. SOSP 2023.</li>
+<li>Amey Agrawal et al. <strong>Sarathi: Efficient LLM Inference by Piggybacking Decodes with Chunked Prefills</strong>. arXiv 2023.</li>
+<li>Bingyang Wu et al. <strong>Fast Distributed Inference Serving for Large Language Models (FastServe)</strong>. arXiv 2023.</li>
+<li>Zhuohan Li et al. <strong>AlpaServe: Statistical Multiplexing with Model Parallelism for Deep Learning Serving</strong>. arXiv 2023.</li>
+<li>Pratyush Patel et al. <strong>Splitwise: Efficient Generative LLM Inference using Phase Splitting</strong>. arXiv 2023.</li>
+</ol>
+<hr>
+<p><em>Review written on 2026-04-09.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/LLM-Serving/" rel="tag"># LLM Serving</a>
+              <a href="/tags/DistServe/" rel="tag"># DistServe</a>
+              <a href="/tags/ML-Systems/" rel="tag"># ML Systems</a>
+              <a href="/tags/Disaggregated-Serving/" rel="tag"># Disaggregated Serving</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/08/2026-04-08-SmoothQuant-technical-review-en/" rel="prev" title="SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models — In-Depth Technical Review">
+      <i class="fa fa-chevron-left"></i> SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models — In-Depth Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/09/2026-04-09-DistServe-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="next" title="DistServe：通过 Prefill/Decoding 解耦实现面向 Goodput 的大模型服务优化 — 深度技术评审">
+      DistServe：通过 Prefill/Decoding 解耦实现面向 Goodput 的大模型服务优化 — 深度技术评审 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Why-This-Paper-Matters"><span class="nav-number">1.</span> <span class="nav-text">1. Why This Paper Matters</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Prerequisites-What-you-need-to-know-first"><span class="nav-number">2.</span> <span class="nav-text">2. Prerequisites: What you need to know first</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-What-is-LLM-serving"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 What is LLM serving?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-Prefill-vs-decoding-in-plain-language"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 Prefill vs decoding, in plain language</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-TTFT-TPOT-SLO-and-SLO-attainment"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 TTFT, TPOT, SLO, and SLO attainment</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-Throughput-vs-goodput-and-why-they-are-not-the-same"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 Throughput vs goodput (and why they are not the same)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-Compute-bound-vs-memory-bound-on-GPUs"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 Compute-bound vs memory-bound on GPUs</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-Batching-queues-and-why-waiting-time-explodes"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 Batching, queues, and why waiting time explodes</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-7-Intra-op-vs-inter-op-parallelism"><span class="nav-number">2.7.</span> <span class="nav-text">2.7 Intra-op vs inter-op parallelism</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-8-Why-network-topology-changes-system-design"><span class="nav-number">2.8.</span> <span class="nav-text">2.8 Why network topology changes system design</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-The-Real-Systems-Problem-DistServe-Solves"><span class="nav-number">3.</span> <span class="nav-text">3. The Real Systems Problem DistServe Solves</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Core-Insight-Prefill-and-Decoding-Should-Not-Be-Forced-to-Live-Together"><span class="nav-number">4.</span> <span class="nav-text">4. Core Insight: Prefill and Decoding Should Not Be Forced to Live Together</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-DistServe-Architecture-and-End-to-End-Workflow"><span class="nav-number">5.</span> <span class="nav-text">5. DistServe Architecture and End-to-End Workflow</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Tradeoff-Analysis-in-the-Paper"><span class="nav-number">6.</span> <span class="nav-text">6. Tradeoff Analysis in the Paper</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Prefill-instance-analysis"><span class="nav-number">6.1.</span> <span class="nav-text">6.1 Prefill instance analysis</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#6-1-1-Batching-behavior"><span class="nav-number">6.1.1.</span> <span class="nav-text">6.1.1 Batching behavior</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#6-1-2-Parallelism-and-queueing-equations"><span class="nav-number">6.1.2.</span> <span class="nav-text">6.1.2 Parallelism and queueing equations</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Decoding-instance-analysis"><span class="nav-number">6.2.</span> <span class="nav-text">6.2 Decoding instance analysis</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-Practical-deployment-concerns"><span class="nav-number">6.3.</span> <span class="nav-text">6.3 Practical deployment concerns</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Variable-input-lengths-and-pipeline-bubbles"><span class="nav-number">6.3.1.</span> <span class="nav-text">Variable input lengths and pipeline bubbles</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Communication-overhead-estimate"><span class="nav-number">6.3.2.</span> <span class="nav-text">Communication overhead estimate</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Cluster-topology-constraint"><span class="nav-number">6.3.3.</span> <span class="nav-text">Cluster topology constraint</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Optimization-Method-Placement-Algorithms"><span class="nav-number">7.</span> <span class="nav-text">7. Optimization Method: Placement Algorithms</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-High-node-affinity-algorithm-Algorithm-1"><span class="nav-number">7.1.</span> <span class="nav-text">7.1 High node-affinity algorithm (Algorithm 1)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-Low-node-affinity-algorithm-Algorithm-2"><span class="nav-number">7.2.</span> <span class="nav-text">7.2 Low node-affinity algorithm (Algorithm 2)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-Simulator-design-and-why-it-is-needed"><span class="nav-number">7.3.</span> <span class="nav-text">7.3 Simulator design and why it is needed</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-Online-scheduling-and-runtime-controls"><span class="nav-number">7.4.</span> <span class="nav-text">7.4 Online scheduling and runtime controls</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Implementation-Details"><span class="nav-number">8.</span> <span class="nav-text">8. Implementation Details</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-Evaluation-Setup"><span class="nav-number">9.</span> <span class="nav-text">9. Evaluation Setup</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-Hardware-and-cluster"><span class="nav-number">9.1.</span> <span class="nav-text">9.1 Hardware and cluster</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-Models"><span class="nav-number">9.2.</span> <span class="nav-text">9.2 Models</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-Workloads-and-applications-Table-1"><span class="nav-number">9.3.</span> <span class="nav-text">9.3 Workloads and applications (Table 1)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-Baselines"><span class="nav-number">9.4.</span> <span class="nav-text">9.4 Baselines</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-Results-and-What-They-Mean"><span class="nav-number">10.</span> <span class="nav-text">10. Results and What They Mean</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-Chatbot-workloads"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 Chatbot workloads</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-Code-completion"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 Code completion</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-Summarization"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 Summarization</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-4-Latency-breakdown-and-KV-transfer-overhead"><span class="nav-number">10.4.</span> <span class="nav-text">10.4 Latency breakdown and KV transfer overhead</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-5-Ablation-and-simulator-accuracy"><span class="nav-number">10.5.</span> <span class="nav-text">10.5 Ablation and simulator accuracy</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-6-Runtime-cost-of-planning-algorithm"><span class="nav-number">10.6.</span> <span class="nav-text">10.6 Runtime cost of planning algorithm</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-Why-DistServe-Is-Strong-My-Technical-Judgment"><span class="nav-number">11.</span> <span class="nav-text">11. Why DistServe Is Strong (My Technical Judgment)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#11-1-It-optimizes-the-right-objective"><span class="nav-number">11.1.</span> <span class="nav-text">11.1 It optimizes the right objective</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-2-It-identifies-and-isolates-a-real-architectural-conflict"><span class="nav-number">11.2.</span> <span class="nav-text">11.2 It identifies and isolates a real architectural conflict</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-3-It-combines-analytical-reasoning-and-empirical-validation"><span class="nav-number">11.3.</span> <span class="nav-text">11.3 It combines analytical reasoning and empirical validation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-4-It-is-deployment-aware"><span class="nav-number">11.4.</span> <span class="nav-text">11.4 It is deployment-aware</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-5-It-reports-gains-across-multiple-applications-and-model-sizes"><span class="nav-number">11.5.</span> <span class="nav-text">11.5 It reports gains across multiple applications and model sizes</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-Limitations-and-Boundary-Conditions"><span class="nav-number">12.</span> <span class="nav-text">12. Limitations and Boundary Conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#12-1-Throughput-first-latency-insensitive-scenarios"><span class="nav-number">12.1.</span> <span class="nav-text">12.1 Throughput-first, latency-insensitive scenarios</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-2-Small-resource-constrained-deployments"><span class="nav-number">12.2.</span> <span class="nav-text">12.2 Small resource-constrained deployments</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-3-Dependence-on-workload-predictability"><span class="nav-number">12.3.</span> <span class="nav-text">12.3 Dependence on workload predictability</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-4-Runtime-policy-simplicity"><span class="nav-number">12.4.</span> <span class="nav-text">12.4 Runtime policy simplicity</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-5-Communication-assumptions-are-environment-dependent"><span class="nav-number">12.5.</span> <span class="nav-text">12.5 Communication assumptions are environment-dependent</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-Reproducibility-and-Practical-Deployment-Checklist"><span class="nav-number">13.</span> <span class="nav-text">13. Reproducibility and Practical Deployment Checklist</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#13-1-Measurement-and-profiling"><span class="nav-number">13.1.</span> <span class="nav-text">13.1 Measurement and profiling</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-2-Modeling-and-planning"><span class="nav-number">13.2.</span> <span class="nav-text">13.2 Modeling and planning</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-3-Runtime-policies"><span class="nav-number">13.3.</span> <span class="nav-text">13.3 Runtime policies</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-4-Safety-guardrails"><span class="nav-number">13.4.</span> <span class="nav-text">13.4 Safety guardrails</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-5-Reporting-metrics-that-actually-matter"><span class="nav-number">13.5.</span> <span class="nav-text">13.5 Reporting metrics that actually matter</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#14-If-You-Are-Building-an-LLM-Serving-Stack-Tomorrow"><span class="nav-number">14.</span> <span class="nav-text">14. If You Are Building an LLM Serving Stack Tomorrow</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#14-1-When-to-strongly-consider-DistServe-like-disaggregation"><span class="nav-number">14.1.</span> <span class="nav-text">14.1 When to strongly consider DistServe-like disaggregation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-2-When-not-to-start-with-DistServe"><span class="nav-number">14.2.</span> <span class="nav-text">14.2 When not to start with DistServe</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-3-A-phased-adoption-path"><span class="nav-number">14.3.</span> <span class="nav-text">14.3 A phased adoption path</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#15-Conclusion"><span class="nav-number">15.</span> <span class="nav-text">15. Conclusion</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#16-References"><span class="nav-number">16.</span> <span class="nav-text">16. References</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="A technical review of Self-Refine, analyzing how iterative self-feedback loops enable LLMs to progressively improve their own outputs without external training or human supervision.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Self-Refine: Teaching LLMs to Critique and Improve Their Own Output — No Extra Training Needed">
+<meta property="og:url" content="https://zzz0906.github.io/2026/02/23/2026-02-23-SelfRefine-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="A technical review of Self-Refine, analyzing how iterative self-feedback loops enable LLMs to progressively improve their own outputs without external training or human supervision.">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-02-23T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-16T07:58:03.749Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/02/23/2026-02-23-SelfRefine-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>Self-Refine: Teaching LLMs to Critique and Improve Their Own Output — No Extra Training Needed | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/02/23/2026-02-23-SelfRefine-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Self-Refine: Teaching LLMs to Critique and Improve Their Own Output — No Extra Training Needed
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-02-23 00:00:00" itemprop="dateCreated datePublished" datetime="2026-02-23T00:00:00+00:00">2026-02-23</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-16 07:58:03" itemprop="dateModified" datetime="2026-04-16T07:58:03+00:00">2026-04-16</time>
+              </span>
+
+          
+            <div class="post-description">A technical review of Self-Refine, analyzing how iterative self-feedback loops enable LLMs to progressively improve their own outputs without external training or human supervision.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="Self-Refine-arXiv-2303-17651-—-Technical-Review">Self-Refine (arXiv:2303.17651) — Technical Review</h1>
+<p><strong>TL;DR</strong>: Self-Refine turns one-shot prompting into a simple <em>generate → critique → revise</em> loop that runs with a single LLM and no extra training. Across seven tasks (sentiment reversal, review rewriting, dialogue response, code optimization, etc.), iterative self-feedback substantially improves quality while staying easy to deploy.</p>
+<p><strong>Estimated reading time</strong>: 30–40 minutes</p>
+<hr>
+<h2 id="0-Why-this-paper-matters">0. Why this paper matters</h2>
+<p>Imagine writing an essay in one pass and submitting immediately. Most people do better if they:</p>
+<ol>
+<li>write a draft,</li>
+<li>review their own draft with a checklist,</li>
+<li>revise,</li>
+<li>repeat once or twice.</li>
+</ol>
+<p>Self-Refine applies this exact human workflow to LLM inference. Instead of forcing the model to be perfect in one shot, we let it “think in rounds.” The same model plays three roles:</p>
+<a id="more"></a>
+<ul>
+<li><strong>Generator</strong>: produce an initial answer.</li>
+<li><strong>Feedback provider</strong>: critique that answer.</li>
+<li><strong>Refiner</strong>: rewrite the answer based on critique.</li>
+</ul>
+<p>No RLHF retraining, no separate critic model, no task-specific labels are required at deployment time.</p>
+<hr>
+<h2 id="1-Problem-setup">1. Problem setup</h2>
+<h3 id="1-1-One-shot-prompting-is-brittle">1.1 One-shot prompting is brittle</h3>
+<p>Traditional prompting asks for a single output and stops. Failure modes:</p>
+<ul>
+<li>misses constraints,</li>
+<li>includes hallucinations,</li>
+<li>style is inconsistent,</li>
+<li>quality depends heavily on one prompt wording.</li>
+</ul>
+<h3 id="1-2-Existing-alternatives-can-be-expensive">1.2 Existing alternatives can be expensive</h3>
+<p>Common quality-improvement methods include:</p>
+<ul>
+<li>supervised fine-tuning,</li>
+<li>reinforcement learning from human feedback,</li>
+<li>multi-agent systems with specialized critics,</li>
+<li>external tools/search/retrievers.</li>
+</ul>
+<p>These often require additional training data, extra models, and engineering overhead.</p>
+<h3 id="1-3-Goal-of-Self-Refine">1.3 Goal of Self-Refine</h3>
+<p>Design a test-time method that is:</p>
+<ul>
+<li>model-agnostic,</li>
+<li>training-free,</li>
+<li>easy to wrap around existing prompts,</li>
+<li>effective on diverse task types.</li>
+</ul>
+<hr>
+<h2 id="2-Core-method">2. Core method</h2>
+<p>Self-Refine can be summarized as:</p>
+<ol>
+<li><strong>Generate</strong> initial answer <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>y</mi><mn>0</mn></msub></mrow><annotation encoding="application/x-tex">y_0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">0</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> from input <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span>.</li>
+<li>For iteration <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi><mo>=</mo><mn>0</mn><mo separator="true">,</mo><mn>1</mn><mo separator="true">,</mo><mn>2</mn><mo separator="true">,</mo><mi mathvariant="normal">.</mi><mi mathvariant="normal">.</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">t = 0,1,2,...</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6151em;"></span><span class="mord mathnormal">t</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8389em;vertical-align:-0.1944em;"></span><span class="mord">0</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">2</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">...</span></span></span></span>:
+<ul>
+<li><strong>Feedback</strong>: produce natural-language critique <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>f</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">f_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.1076em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> about <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>y</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">y_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>.</li>
+<li><strong>Refine</strong>: produce revised answer <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>y</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow><annotation encoding="application/x-tex">y_{t+1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6389em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span></span></span></span> conditioned on <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo separator="true">,</mo><msub><mi>y</mi><mi>t</mi></msub><mo separator="true">,</mo><msub><mi>f</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">x, y_t, f_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">x</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.1076em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>.</li>
+</ul>
+</li>
+<li>Stop after fixed rounds or when quality gain saturates.</li>
+</ol>
+<h3 id="2-1-The-key-design-decision-textual-feedback">2.1 The key design decision: textual feedback</h3>
+<p>Instead of scalar reward signals, Self-Refine uses free-form textual feedback. This is powerful because language feedback can encode:</p>
+<ul>
+<li>what is wrong,</li>
+<li>why it is wrong,</li>
+<li>what to change,</li>
+<li>what to preserve.</li>
+</ul>
+<h3 id="2-2-Prompting-roles">2.2 Prompting roles</h3>
+<p>The paper typically uses separate prompts for the roles:</p>
+<ul>
+<li><strong>Task prompt</strong> for generation,</li>
+<li><strong>Critique prompt</strong> for feedback,</li>
+<li><strong>Revision prompt</strong> for refinement.</li>
+</ul>
+<p>Even though roles are separated in prompt format, all roles can be handled by the same underlying LLM checkpoint.</p>
+<h3 id="2-3-Why-this-can-work">2.3 Why this can work</h3>
+<p>LLMs are usually better at <em>recognizing</em> flaws than avoiding all flaws in first pass. By externalizing criticism as text and feeding it back into the next generation step, the model can self-correct.</p>
+<hr>
+<h2 id="3-Intuitive-analogy">3. Intuitive analogy</h2>
+<p>Think of baking a cake:</p>
+<ul>
+<li>First try: cake is edible but too sweet.</li>
+<li>You taste and write notes: “reduce sugar, bake 3 minutes longer, keep texture.”</li>
+<li>Second try follows notes and improves.</li>
+</ul>
+<p>Self-Refine is this tasting-and-adjusting loop, where the chef and the reviewer are the same person, but in different stages.</p>
+<hr>
+<h2 id="4-Tasks-evaluated-in-the-paper">4. Tasks evaluated in the paper</h2>
+<p>The study evaluates multiple categories to demonstrate broad utility:</p>
+<ol>
+<li><strong>Style transfer / rewriting</strong> (e.g., sentiment reversal, review rewriting).</li>
+<li><strong>Dialog generation</strong>.</li>
+<li><strong>Code-related tasks</strong> (e.g., optimization/refinement).</li>
+<li><strong>Constrained generation tasks</strong>.</li>
+</ol>
+<p>The key message is not a single benchmark SOTA claim, but cross-task consistency: iterative self-feedback often beats one-shot outputs from the same model.</p>
+<hr>
+<h2 id="5-Experimental-findings-high-level">5. Experimental findings (high level)</h2>
+<h3 id="5-1-Quality-improves-with-iterations">5.1 Quality improves with iterations</h3>
+<p>Across tasks, moving from iteration 0 to later iterations generally increases automatic scores and/or human preference.</p>
+<h3 id="5-2-Gains-often-saturate-after-a-few-rounds">5.2 Gains often saturate after a few rounds</h3>
+<p>Many improvements happen in early rounds. Beyond that, returns diminish. This suggests practical deployments can cap rounds at a small number (e.g., 2–4) for cost-quality balance.</p>
+<h3 id="5-3-Better-instruction-following-and-constraint-satisfaction">5.3 Better instruction-following and constraint satisfaction</h3>
+<p>Feedback explicitly calls out missing constraints, leading to cleaner compliance in revised outputs.</p>
+<h3 id="5-4-Human-evaluation-alignment">5.4 Human evaluation alignment</h3>
+<p>The paper reports that iterative outputs are commonly preferred by human raters over one-shot baselines, indicating improvements are not merely metric artifacts.</p>
+<hr>
+<h2 id="6-Reproducibility-notes">6. Reproducibility notes</h2>
+<h3 id="6-1-What-is-easy-to-reproduce">6.1 What is easy to reproduce</h3>
+<ul>
+<li>The algorithmic loop is straightforward.</li>
+<li>Prompt templates can be adapted quickly.</li>
+<li>Works as an inference wrapper around existing APIs.</li>
+</ul>
+<h3 id="6-2-What-needs-careful-tuning">6.2 What needs careful tuning</h3>
+<ul>
+<li>Feedback prompt quality strongly affects outcomes.</li>
+<li>Overly generic feedback (“be better”) provides weak signal.</li>
+<li>Revision prompt must preserve good parts while fixing flaws.</li>
+</ul>
+<h3 id="6-3-Practical-defaults">6.3 Practical defaults</h3>
+<p>A production-friendly baseline:</p>
+<ul>
+<li>1 initial generation + 2 refinement rounds,</li>
+<li>task-specific critique checklist,</li>
+<li>stop early if feedback says “no major issues.”</li>
+</ul>
+<hr>
+<h2 id="7-Cost-latency-trade-offs">7. Cost/latency trade-offs</h2>
+<p>Self-Refine increases token and latency cost due to multi-round inference. Roughly:</p>
+<ul>
+<li>One-shot: 1x generation call.</li>
+<li>Self-Refine (2 rounds): 1 generation + 2 feedback + 2 refine calls.</li>
+</ul>
+<p>So cost may be ~3–5x depending on prompt/output lengths. Whether this is acceptable depends on product tier and quality target.</p>
+<h3 id="7-1-Where-it-is-worth-it">7.1 Where it is worth it</h3>
+<ul>
+<li>high-value outputs (reports, analysis, legal/medical draft assistance with human review),</li>
+<li>offline batch generation,</li>
+<li>premium quality mode.</li>
+</ul>
+<h3 id="7-2-Where-it-may-not-fit">7.2 Where it may not fit</h3>
+<ul>
+<li>strict low-latency chat,</li>
+<li>extremely cost-sensitive high-QPS workloads.</li>
+</ul>
+<hr>
+<h2 id="8-Relationship-to-nearby-methods">8. Relationship to nearby methods</h2>
+<h3 id="8-1-Chain-of-thought-vs-Self-Refine">8.1 Chain-of-thought vs Self-Refine</h3>
+<ul>
+<li>CoT: internal step-by-step reasoning before answer.</li>
+<li>Self-Refine: external multi-round revision after an answer exists.</li>
+</ul>
+<p>They can be combined.</p>
+<h3 id="8-2-Reflexion-style-loops">8.2 Reflexion-style loops</h3>
+<p>Reflexion often introduces memory and reflection to guide future attempts. Self-Refine is simpler: direct critique-rewrite within the same sample instance.</p>
+<h3 id="8-3-Multi-agent-critique-systems">8.3 Multi-agent critique systems</h3>
+<p>Multi-agent setups can improve criticism diversity but increase orchestration complexity. Self-Refine keeps complexity low by reusing one model.</p>
+<hr>
+<h2 id="9-Failure-modes-and-limitations">9. Failure modes and limitations</h2>
+<ol>
+<li><strong>Self-confirmation bias</strong>: model may fail to detect subtle factual errors it originally introduced.</li>
+<li><strong>Feedback drift</strong>: critique may over-focus style and ignore correctness.</li>
+<li><strong>Over-editing</strong>: revision can accidentally remove correct content.</li>
+<li><strong>Task mismatch</strong>: some tasks need external verifiers (e.g., factual QA, theorem proofs).</li>
+</ol>
+<h3 id="9-1-Guardrails-that-help">9.1 Guardrails that help</h3>
+<ul>
+<li>include explicit factuality checks in feedback prompt,</li>
+<li>ask critic to cite exact problematic spans,</li>
+<li>keep “must preserve” constraints in revision prompt,</li>
+<li>combine with tool verification for code/math/facts.</li>
+</ul>
+<hr>
+<h2 id="10-Systems-perspective-important-for-ML-systems-readers">10. Systems perspective (important for ML systems readers)</h2>
+<h3 id="10-1-Inference-orchestration">10.1 Inference orchestration</h3>
+<p>Self-Refine is a small control-flow graph over LLM calls. This maps naturally to orchestrators and workflow engines.</p>
+<h3 id="10-2-Caching-opportunities">10.2 Caching opportunities</h3>
+<ul>
+<li>cache static instructions,</li>
+<li>cache partial critiques for repetitive task templates,</li>
+<li>use adaptive stopping to avoid unnecessary rounds.</li>
+</ul>
+<h3 id="10-3-Productization-pattern">10.3 Productization pattern</h3>
+<p>A practical API design:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">&#x2F;refine</span><br><span class="line">  input: task, user_text, max_rounds, quality_mode</span><br><span class="line">  output: final_text, iteration_trace, critiques</span><br></pre></td></tr></table></figure>
+<p>Returning iteration traces improves debugging and trust.</p>
+<hr>
+<h2 id="11-Suggested-implementation-blueprint">11. Suggested implementation blueprint</h2>
+<ol>
+<li>Start with one task (e.g., long-form summarization).</li>
+<li>Create a concrete feedback rubric (accuracy, completeness, structure, style).</li>
+<li>Run A/B test: one-shot vs Self-Refine(2 rounds).</li>
+<li>Measure:
+<ul>
+<li>human preference,</li>
+<li>factual consistency,</li>
+<li>latency/cost.</li>
+</ul>
+</li>
+<li>Add adaptive stopping.</li>
+<li>Expand to more tasks.</li>
+</ol>
+<hr>
+<h2 id="12-What-to-do-next-for-practitioners">12. What to do next (for practitioners)</h2>
+<ul>
+<li>If quality matters and latency budget allows, deploy Self-Refine as default in “high-quality mode.”</li>
+<li>If speed matters, use one-shot first and trigger refinement only when confidence is low.</li>
+<li>For code and math tasks, attach external checkers to avoid self-reinforced mistakes.</li>
+</ul>
+<hr>
+<h2 id="13-Final-verdict">13. Final verdict</h2>
+<p>Self-Refine is not flashy, but it is highly practical:</p>
+<ul>
+<li>minimal engineering overhead,</li>
+<li>no retraining,</li>
+<li>broad task applicability,</li>
+<li>clear quality gains in many scenarios.</li>
+</ul>
+<p>For teams shipping LLM products, this paper is a strong reminder: <em>inference-time control loops can produce large quality wins with very small architecture changes.</em></p>
+<hr>
+<h2 id="14-Extended-walkthrough-of-one-concrete-refinement-cycle">14. Extended walkthrough of one concrete refinement cycle</h2>
+<p>To make the method intuitive, consider an input task:</p>
+<blockquote>
+<p>“Write a balanced review of a machine learning paper for beginners, include method, experiments, and limitations, avoid jargon where possible.”</p>
+</blockquote>
+<h3 id="Iteration-0-initial-draft">Iteration 0 (initial draft)</h3>
+<p>Typical issues in first draft:</p>
+<ul>
+<li>too much jargon in first paragraph,</li>
+<li>experiments section missing baseline context,</li>
+<li>limitations section too short,</li>
+<li>no clear recommendation for practitioners.</li>
+</ul>
+<h3 id="Feedback-prompt-output-example">Feedback prompt output (example)</h3>
+<p>A useful feedback answer should look like this:</p>
+<ol>
+<li><strong>Clarity issue</strong>: Terms like “autoregressive decoding” and “credit assignment” are used before explanation.</li>
+<li><strong>Completeness issue</strong>: Experiment section mentions improvements but does not explain compared baselines or dataset types.</li>
+<li><strong>Structure issue</strong>: Limitations are mixed into conclusion; create a dedicated limitations section.</li>
+<li><strong>Actionable revision</strong>:
+<ul>
+<li>add a 5-sentence beginner primer before technical details,</li>
+<li>add one paragraph per experimental axis,</li>
+<li>add explicit “When this method may fail” subsection,</li>
+<li>finish with a deployment checklist.</li>
+</ul>
+</li>
+</ol>
+<h3 id="Iteration-1-revised-draft">Iteration 1 (revised draft)</h3>
+<p>After applying feedback, quality usually improves:</p>
+<ul>
+<li>better accessibility for beginners,</li>
+<li>stronger evidence presentation,</li>
+<li>clearer sectioning,</li>
+<li>more trustworthy recommendations.</li>
+</ul>
+<p>This concrete pattern appears repeatedly in practice and explains why textual feedback is an effective control signal.</p>
+<hr>
+<h2 id="15-Prompt-templates-you-can-reuse">15. Prompt templates you can reuse</h2>
+<h3 id="15-1-Generator-template">15.1 Generator template</h3>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">You are a technical writer. Produce a complete answer for the user task.</span><br><span class="line">Requirements:</span><br><span class="line">- be accurate</span><br><span class="line">- be complete</span><br><span class="line">- keep structure explicit</span><br><span class="line">- explain terms for beginners</span><br><span class="line">Task: &#123;TASK&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="15-2-Feedback-template">15.2 Feedback template</h3>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">You are a strict reviewer.</span><br><span class="line">Given TASK and DRAFT, provide actionable feedback in 5 buckets:</span><br><span class="line">1) Accuracy</span><br><span class="line">2) Completeness</span><br><span class="line">3) Structure</span><br><span class="line">4) Readability for beginners</span><br><span class="line">5) Risk&#x2F;Hallucination</span><br><span class="line">For each bucket: list concrete issues + exact fixes.</span><br><span class="line">TASK: &#123;TASK&#125;</span><br><span class="line">DRAFT: &#123;DRAFT&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="15-3-Refiner-template">15.3 Refiner template</h3>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">Revise DRAFT using FEEDBACK.</span><br><span class="line">Rules:</span><br><span class="line">- preserve correct content</span><br><span class="line">- fix all high-priority issues</span><br><span class="line">- keep claims calibrated</span><br><span class="line">- maintain explicit section headers</span><br><span class="line">Output only revised answer.</span><br><span class="line">TASK: &#123;TASK&#125;</span><br><span class="line">DRAFT: &#123;DRAFT&#125;</span><br><span class="line">FEEDBACK: &#123;FEEDBACK&#125;</span><br></pre></td></tr></table></figure>
+<p>These templates are intentionally plain and are often enough to bootstrap production trials.</p>
+<hr>
+<h2 id="16-Evaluation-protocol-recommendation">16. Evaluation protocol recommendation</h2>
+<p>When deploying Self-Refine in a real product, do not rely on a single score. Use a matrix:</p>
+<ul>
+<li><strong>Human preference</strong>: pairwise one-shot vs refined.</li>
+<li><strong>Task completion</strong>: checklist-based rubric.</li>
+<li><strong>Factuality</strong>: spot-check with citations/tools.</li>
+<li><strong>Latency</strong>: p50/p95 end-to-end.</li>
+<li><strong>Cost</strong>: tokens/request and cost/request.</li>
+</ul>
+<p>A recommended decision policy:</p>
+<ul>
+<li>If preference gain &gt; threshold and cost increase acceptable, keep default rounds.</li>
+<li>If latency too high, enable adaptive stopping.</li>
+<li>If factuality remains weak, add retrieval/verification, not more blind self-refinement.</li>
+</ul>
+<hr>
+<h2 id="17-Broader-implications">17. Broader implications</h2>
+<p>Self-Refine reflects a larger design principle in ML systems:</p>
+<blockquote>
+<p>Better behavior can emerge from better <em>control flow</em>, even without changing model weights.</p>
+</blockquote>
+<p>This matters because control-flow innovations are cheaper to test and roll back than retraining large models.</p>
+<p>Potential future extensions:</p>
+<ul>
+<li>uncertainty-aware refinement triggers,</li>
+<li>verifier-guided critique generation,</li>
+<li>task-specific critique libraries,</li>
+<li>multi-objective refinement (quality + safety + style).</li>
+</ul>
+<hr>
+<h2 id="18-Final-practical-checklist">18. Final practical checklist</h2>
+<p>Before enabling Self-Refine in production, confirm:</p>
+<ul>
+<li>[ ] Round budget configured (e.g., max 2–3)</li>
+<li>[ ] Feedback rubric defined per task</li>
+<li>[ ] Revision prompt preserves correct spans</li>
+<li>[ ] Stop criteria implemented</li>
+<li>[ ] Logging captures iteration traces</li>
+<li>[ ] Human evaluation pipeline ready</li>
+<li>[ ] Cost guardrails in place</li>
+</ul>
+<p>If all boxes are checked, Self-Refine is one of the most straightforward quality upgrades available today.</p>
+<hr>
+<h2 id="Appendix-A-Example-scoring-rubric-for-reviewers">Appendix A: Example scoring rubric for reviewers</h2>
+<p>Use a 1–5 score for each dimension:</p>
+<ul>
+<li>Accuracy</li>
+<li>Coverage</li>
+<li>Logical coherence</li>
+<li>Beginner readability</li>
+<li>Actionability</li>
+<li>Safety/risk calibration</li>
+</ul>
+<p>And require one sentence of evidence per score to reduce evaluator noise.</p>
+<h2 id="Appendix-B-Typical-error-taxonomy-observed-in-first-drafts">Appendix B: Typical error taxonomy observed in first drafts</h2>
+<ol>
+<li>Missing constraints</li>
+<li>Unsupported claims</li>
+<li>Ambiguous pronouns/references</li>
+<li>Inconsistent terminology</li>
+<li>Shallow limitation analysis</li>
+<li>Missing practical recommendations</li>
+</ol>
+<p>Mapping this taxonomy to feedback prompts substantially improves iteration quality.</p>
+<h2 id="Appendix-C-Minimal-pseudo-code">Appendix C: Minimal pseudo-code</h2>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">self_refine</span><span class="params">(task, model, rounds=<span class="number">2</span>)</span>:</span></span><br><span class="line">    y = model.generate(task)</span><br><span class="line">    trace = []</span><br><span class="line">    <span class="keyword">for</span> t <span class="keyword">in</span> range(rounds):</span><br><span class="line">        f = model.feedback(task=task, draft=y)</span><br><span class="line">        y2 = model.refine(task=task, draft=y, feedback=f)</span><br><span class="line">        trace.append(&#123;<span class="string">"round"</span>: t+<span class="number">1</span>, <span class="string">"feedback"</span>: f, <span class="string">"output"</span>: y2&#125;)</span><br><span class="line">        y = y2</span><br><span class="line">    <span class="keyword">return</span> y, trace</span><br></pre></td></tr></table></figure>
+<hr>
+<h2 id="Citation">Citation</h2>
+<p>Madaan et al., <strong>Self-Refine: Iterative Refinement with Self-Feedback</strong>, arXiv:2303.17651 (2023).</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/02/20/2026-02-20-DeepSeekMath-technical-review-en/" rel="prev" title="DeepSeekMath: How 120B Tokens of Math Data and GRPO Rival GPT-4 on Competition Problems">
+      <i class="fa fa-chevron-left"></i> DeepSeekMath: How 120B Tokens of Math Data and GRPO Rival GPT-4 on Competition Problems
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/03/06/2026-03-06-SWEagent-technical-review-en/" rel="next" title="SWE-agent: Turning LLMs Into Autonomous Software Engineers That Fix Real GitHub Issues">
+      SWE-agent: Turning LLMs Into Autonomous Software Engineers That Fix Real GitHub Issues <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Self-Refine-arXiv-2303-17651-—-Technical-Review"><span class="nav-number">1.</span> <span class="nav-text">Self-Refine (arXiv:2303.17651) — Technical Review</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#0-Why-this-paper-matters"><span class="nav-number">1.1.</span> <span class="nav-text">0. Why this paper matters</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Problem-setup"><span class="nav-number">1.2.</span> <span class="nav-text">1. Problem setup</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-One-shot-prompting-is-brittle"><span class="nav-number">1.2.1.</span> <span class="nav-text">1.1 One-shot prompting is brittle</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-Existing-alternatives-can-be-expensive"><span class="nav-number">1.2.2.</span> <span class="nav-text">1.2 Existing alternatives can be expensive</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-Goal-of-Self-Refine"><span class="nav-number">1.2.3.</span> <span class="nav-text">1.3 Goal of Self-Refine</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Core-method"><span class="nav-number">1.3.</span> <span class="nav-text">2. Core method</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-The-key-design-decision-textual-feedback"><span class="nav-number">1.3.1.</span> <span class="nav-text">2.1 The key design decision: textual feedback</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-Prompting-roles"><span class="nav-number">1.3.2.</span> <span class="nav-text">2.2 Prompting roles</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-Why-this-can-work"><span class="nav-number">1.3.3.</span> <span class="nav-text">2.3 Why this can work</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Intuitive-analogy"><span class="nav-number">1.4.</span> <span class="nav-text">3. Intuitive analogy</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Tasks-evaluated-in-the-paper"><span class="nav-number">1.5.</span> <span class="nav-text">4. Tasks evaluated in the paper</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Experimental-findings-high-level"><span class="nav-number">1.6.</span> <span class="nav-text">5. Experimental findings (high level)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-Quality-improves-with-iterations"><span class="nav-number">1.6.1.</span> <span class="nav-text">5.1 Quality improves with iterations</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Gains-often-saturate-after-a-few-rounds"><span class="nav-number">1.6.2.</span> <span class="nav-text">5.2 Gains often saturate after a few rounds</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-Better-instruction-following-and-constraint-satisfaction"><span class="nav-number">1.6.3.</span> <span class="nav-text">5.3 Better instruction-following and constraint satisfaction</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-Human-evaluation-alignment"><span class="nav-number">1.6.4.</span> <span class="nav-text">5.4 Human evaluation alignment</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Reproducibility-notes"><span class="nav-number">1.7.</span> <span class="nav-text">6. Reproducibility notes</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-What-is-easy-to-reproduce"><span class="nav-number">1.7.1.</span> <span class="nav-text">6.1 What is easy to reproduce</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-What-needs-careful-tuning"><span class="nav-number">1.7.2.</span> <span class="nav-text">6.2 What needs careful tuning</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-Practical-defaults"><span class="nav-number">1.7.3.</span> <span class="nav-text">6.3 Practical defaults</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Cost-latency-trade-offs"><span class="nav-number">1.8.</span> <span class="nav-text">7. Cost&#x2F;latency trade-offs</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-Where-it-is-worth-it"><span class="nav-number">1.8.1.</span> <span class="nav-text">7.1 Where it is worth it</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-Where-it-may-not-fit"><span class="nav-number">1.8.2.</span> <span class="nav-text">7.2 Where it may not fit</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Relationship-to-nearby-methods"><span class="nav-number">1.9.</span> <span class="nav-text">8. Relationship to nearby methods</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-Chain-of-thought-vs-Self-Refine"><span class="nav-number">1.9.1.</span> <span class="nav-text">8.1 Chain-of-thought vs Self-Refine</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-Reflexion-style-loops"><span class="nav-number">1.9.2.</span> <span class="nav-text">8.2 Reflexion-style loops</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-Multi-agent-critique-systems"><span class="nav-number">1.9.3.</span> <span class="nav-text">8.3 Multi-agent critique systems</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-Failure-modes-and-limitations"><span class="nav-number">1.10.</span> <span class="nav-text">9. Failure modes and limitations</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-Guardrails-that-help"><span class="nav-number">1.10.1.</span> <span class="nav-text">9.1 Guardrails that help</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-Systems-perspective-important-for-ML-systems-readers"><span class="nav-number">1.11.</span> <span class="nav-text">10. Systems perspective (important for ML systems readers)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-Inference-orchestration"><span class="nav-number">1.11.1.</span> <span class="nav-text">10.1 Inference orchestration</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-Caching-opportunities"><span class="nav-number">1.11.2.</span> <span class="nav-text">10.2 Caching opportunities</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-Productization-pattern"><span class="nav-number">1.11.3.</span> <span class="nav-text">10.3 Productization pattern</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-Suggested-implementation-blueprint"><span class="nav-number">1.12.</span> <span class="nav-text">11. Suggested implementation blueprint</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-What-to-do-next-for-practitioners"><span class="nav-number">1.13.</span> <span class="nav-text">12. What to do next (for practitioners)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-Final-verdict"><span class="nav-number">1.14.</span> <span class="nav-text">13. Final verdict</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#14-Extended-walkthrough-of-one-concrete-refinement-cycle"><span class="nav-number">1.15.</span> <span class="nav-text">14. Extended walkthrough of one concrete refinement cycle</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Iteration-0-initial-draft"><span class="nav-number">1.15.1.</span> <span class="nav-text">Iteration 0 (initial draft)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Feedback-prompt-output-example"><span class="nav-number">1.15.2.</span> <span class="nav-text">Feedback prompt output (example)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Iteration-1-revised-draft"><span class="nav-number">1.15.3.</span> <span class="nav-text">Iteration 1 (revised draft)</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#15-Prompt-templates-you-can-reuse"><span class="nav-number">1.16.</span> <span class="nav-text">15. Prompt templates you can reuse</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#15-1-Generator-template"><span class="nav-number">1.16.1.</span> <span class="nav-text">15.1 Generator template</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-2-Feedback-template"><span class="nav-number">1.16.2.</span> <span class="nav-text">15.2 Feedback template</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-3-Refiner-template"><span class="nav-number">1.16.3.</span> <span class="nav-text">15.3 Refiner template</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#16-Evaluation-protocol-recommendation"><span class="nav-number">1.17.</span> <span class="nav-text">16. Evaluation protocol recommendation</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#17-Broader-implications"><span class="nav-number">1.18.</span> <span class="nav-text">17. Broader implications</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#18-Final-practical-checklist"><span class="nav-number">1.19.</span> <span class="nav-text">18. Final practical checklist</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-A-Example-scoring-rubric-for-reviewers"><span class="nav-number">1.20.</span> <span class="nav-text">Appendix A: Example scoring rubric for reviewers</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-B-Typical-error-taxonomy-observed-in-first-drafts"><span class="nav-number">1.21.</span> <span class="nav-text">Appendix B: Typical error taxonomy observed in first drafts</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-C-Minimal-pseudo-code"><span class="nav-number">1.22.</span> <span class="nav-text">Appendix C: Minimal pseudo-code</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Citation"><span class="nav-number">1.23.</span> <span class="nav-text">Citation</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

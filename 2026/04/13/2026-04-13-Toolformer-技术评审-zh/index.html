@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. 这篇论文在今天（2026）为什么仍然重要 先给一句最朴素总结：  Toolformer 的核心，不是“给模型外挂工具”，而是“让模型自己学会：什么时候该调用哪个工具、怎么把工具结果用回生成过程”。  这点很关键。 早期大模型给人的感觉是“什么都会”，但真正做系统时很快会遇到几类典型问题：  算术不稳定，特别是多步计算； 日期&#x2F;时间推理容易错； 对新近事实可能过时； 事实性问答会出现幻觉。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Toolformer：让语言模型自己学会“什么时候调用工具”——深度技术评审">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/13/2026-04-13-Toolformer-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. 这篇论文在今天（2026）为什么仍然重要 先给一句最朴素总结：  Toolformer 的核心，不是“给模型外挂工具”，而是“让模型自己学会：什么时候该调用哪个工具、怎么把工具结果用回生成过程”。  这点很关键。 早期大模型给人的感觉是“什么都会”，但真正做系统时很快会遇到几类典型问题：  算术不稳定，特别是多步计算； 日期&#x2F;时间推理容易错； 对新近事实可能过时； 事实性问答会出现幻觉。">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-13T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-16T12:57:27.471Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="LLM Agent">
+<meta property="article:tag" content="Reasoning">
+<meta property="article:tag" content="Toolformer">
+<meta property="article:tag" content="Tool Use">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/13/2026-04-13-Toolformer-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>Toolformer：让语言模型自己学会“什么时候调用工具”——深度技术评审 | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/13/2026-04-13-Toolformer-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Toolformer：让语言模型自己学会“什么时候调用工具”——深度技术评审
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-13 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-13T00:00:00+00:00">2026-04-13</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-16 12:57:27" itemprop="dateModified" datetime="2026-04-16T12:57:27+00:00">2026-04-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-这篇论文在今天（2026）为什么仍然重要">1. 这篇论文在今天（2026）为什么仍然重要</h2>
+<p>先给一句最朴素总结：</p>
+<blockquote>
+<p>Toolformer 的核心，不是“给模型外挂工具”，而是“让模型自己学会：什么时候该调用哪个工具、怎么把工具结果用回生成过程”。</p>
+</blockquote>
+<p>这点很关键。</p>
+<p>早期大模型给人的感觉是“什么都会”，但真正做系统时很快会遇到几类典型问题：</p>
+<ul>
+<li>算术不稳定，特别是多步计算；</li>
+<li>日期/时间推理容易错；</li>
+<li>对新近事实可能过时；</li>
+<li>事实性问答会出现幻觉。</li>
+</ul>
+<p>以前常见做法是人工写流程：</p>
+<ul>
+<li>这个任务先调用 calculator；</li>
+<li>那个任务必须先 retrieval；</li>
+<li>再拼一个固定 prompt 模板。</li>
+</ul>
+<p>这样能工作，但很“手工流水线化”，迁移性差。</p>
+<p>Toolformer 的价值在于它提出了一个更自动化的问题：</p>
+<p><em>能不能在几乎没有大规模人工标注的情况下，让模型通过自监督信号学会工具使用策略？</em></p>
+<p>到 2026 年，这个问题仍然是工业界 Agent 系统的核心问题之一，所以这篇论文依旧有学习价值。</p>
+<hr>
+<a id="more"></a>
+<h2 id="2-前置知识：理解这篇论文前需要知道什么">2. 前置知识：理解这篇论文前需要知道什么</h2>
+<h3 id="2-1-语言模型本质上在做什么">2.1 语言模型本质上在做什么</h3>
+<p>语言模型的底层任务其实是“预测下一个 token”。</p>
+<p>它每一步都在做：</p>
+<ol>
+<li>读上下文，</li>
+<li>估计下一 token 概率，</li>
+<li>选一个 token，</li>
+<li>继续下一步。</li>
+</ol>
+<p>所以它擅长“看起来很自然的文字续写”，但这并不等于它天然具备精确计算器、日历、实时检索器。</p>
+<h3 id="2-2-为什么大模型会在简单算术和时间问题上翻车">2.2 为什么大模型会在简单算术和时间问题上翻车</h3>
+<p>因为“流畅生成”与“精确符号计算”是两件事。</p>
+<p>模型可能对表达很强，但在以下场景仍会失误：</p>
+<ul>
+<li>复杂算术表达式，</li>
+<li>需要严格精度的比率，</li>
+<li>依赖当前日期的问题，</li>
+<li>需要最新事实的查询。</li>
+</ul>
+<p>这不是“模型太笨”，而是任务类型和训练目标有错位。</p>
+<h3 id="2-3-什么叫“外部工具-API”">2.3 什么叫“外部工具/API”</h3>
+<p>API 可以简单理解为“可调用服务接口”：</p>
+<ul>
+<li>你给它输入文本，</li>
+<li>它返回文本结果。</li>
+</ul>
+<p>比如：</p>
+<ul>
+<li>Calculator：<code>27 + 4 * 2 -&gt; 35</code></li>
+<li>Calendar：返回“今天是几月几号星期几”</li>
+<li>WikiSearch：返回检索片段</li>
+<li>QA：返回短事实答案</li>
+</ul>
+<p>工具的作用是补齐模型的短板能力。</p>
+<h3 id="2-4-什么是-zero-shot">2.4 什么是 zero-shot</h3>
+<p>zero-shot 的意思是：</p>
+<ul>
+<li>测试时不给这类任务的示例，</li>
+<li>只给自然语言指令，让模型直接做。</li>
+</ul>
+<p>这比 few-shot 更难，但更能看出模型是否“真的学会”了工具使用，而不是死记提示模板。</p>
+<h3 id="2-5-什么是-perplexity，为什么要看它">2.5 什么是 perplexity，为什么要看它</h3>
+<p>perplexity（困惑度）是语言模型常用指标。</p>
+<ul>
+<li>数值更低，通常表示语言建模能力更好。</li>
+</ul>
+<p>如果一个方法让 benchmark 分数提高，但基础语言能力变差，那代价很大。Toolformer 专门做了这项检查（Table 8）。</p>
+<h3 id="2-6-什么是自监督学习">2.6 什么是自监督学习</h3>
+<p>本文的“自监督”指：</p>
+<ul>
+<li>不依赖大量人工标注“何时调用工具”；</li>
+<li>让模型自己提出候选调用；</li>
+<li>只保留那些确实能降低后续 token 预测损失的调用；</li>
+<li>再用这些“有用调用”训练。</li>
+</ul>
+<p>也就是说，监督信号来自模型自身的损失变化。</p>
+<hr>
+<h2 id="3-Toolformer-要解决的精确定义问题">3. Toolformer 要解决的精确定义问题</h2>
+<p>这篇论文真正想做的，不是“演示可以调用工具”，而是：</p>
+<blockquote>
+<p>给定一个预训练语言模型和若干文本接口工具，如何让模型学会在通用场景下自主决定：何时调用、调用哪个工具、传什么参数，并且不破坏原有语言建模能力。</p>
+</blockquote>
+<p>它有三个明确目标：</p>
+<ol>
+<li>降低人工标注依赖；</li>
+<li>保持模型通用性，而不是只适配某个 benchmark；</li>
+<li>让工具调用的加入有可量化收益（以 loss 改善为准）。</li>
+</ol>
+<p>这个目标在工程上非常实际。</p>
+<hr>
+<h2 id="4-方法总览：Figure-2-到底在说什么">4. 方法总览：Figure 2 到底在说什么</h2>
+<p>Figure 2 是全文主骨架，可以读成 6 步：</p>
+<ol>
+<li>从普通文本 <code>x</code> 出发；</li>
+<li>在若干位置采样候选 API 调用；</li>
+<li>执行这些调用，得到返回值；</li>
+<li>用损失下降规则过滤无效调用；</li>
+<li>把保留调用插回文本，构造增强语料 <code>C*</code>；</li>
+<li>用 <code>C*</code> 微调模型。</li>
+</ol>
+<p>一句话就是：</p>
+<blockquote>
+<p>先提出候选，再执行，再按“是否真有帮助”筛选，最后训练。</p>
+</blockquote>
+<p>这比“无脑把工具结果都塞进训练集”要严谨很多。</p>
+<hr>
+<h2 id="5-方法细节拆解">5. 方法细节拆解</h2>
+<h3 id="5-1-API-调用的文本表示">5.1 API 调用的文本表示</h3>
+<p>Toolformer 把调用写成文本片段：</p>
+<ul>
+<li>不带结果：<code>&lt;API&gt; a(i) &lt;/API&gt;</code></li>
+<li>带结果：<code>&lt;API&gt; a(i) -&gt; r &lt;/API&gt;</code></li>
+</ul>
+<p>好处：</p>
+<ul>
+<li>不用改模型词表；</li>
+<li>工具调用可被当作普通序列模式学习。</li>
+</ul>
+<h3 id="5-2-步骤-A：采样候选调用">5.2 步骤 A：采样候选调用</h3>
+<p>对每个位置 <code>i</code>，估计“在这里开始 API 调用”的概率。</p>
+<p>若概率高于阈值 <code>tau_s</code>，则保留该位置作为候选。</p>
+<p>再从该位置采样若干候选调用。</p>
+<p>直觉上这是在回答：</p>
+<p><em>“这个地方看起来需要外部信息吗？”</em></p>
+<h3 id="5-3-步骤-B：执行调用">5.3 步骤 B：执行调用</h3>
+<p>把候选调用发给对应工具后端，拿到文本结果 <code>r_i</code>。</p>
+<p>后端可能是：</p>
+<ul>
+<li>QA 模型（Atlas），</li>
+<li>BM25 检索器，</li>
+<li>计算器脚本，</li>
+<li>日历函数，</li>
+<li>机器翻译模型。</li>
+</ul>
+<h3 id="5-4-步骤-C：按损失下降过滤">5.4 步骤 C：按损失下降过滤</h3>
+<p>这是关键中的关键。</p>
+<p>论文定义两类损失对比：</p>
+<ul>
+<li><code>L_i+</code>：给模型“调用+结果”时的未来 token 加权损失；</li>
+<li><code>L_i-</code>：不给调用，或只给调用不带结果时的最小损失。</li>
+</ul>
+<p>过滤条件：</p>
+<p><code>L_i- - L_i+ &gt;= tau_f</code></p>
+<p>含义很直白：</p>
+<p><em>只有当工具结果确实让后续预测更容易，才保留。</em></p>
+<h3 id="5-5-步骤-D：在增强语料上继续训练">5.5 步骤 D：在增强语料上继续训练</h3>
+<p>把各工具保留下来的调用合并后得到 <code>C*</code>，再做标准 LM 微调。</p>
+<p>重点是：</p>
+<ul>
+<li>语料主体仍是原始文本，</li>
+<li>只是插入了“被验证有用”的工具调用轨迹。</li>
+</ul>
+<p>这有助于保持基础语言能力不被破坏。</p>
+<hr>
+<h2 id="6-这篇论文最核心的技术点：过滤目标函数">6. 这篇论文最核心的技术点：过滤目标函数</h2>
+<p>很多人读完只记住“模型会调用工具”，但真正有技术含量的地方是“如何筛数据”。</p>
+<p>如果不过滤，训练集会混入大量无意义调用，模型反而学坏。</p>
+<p>Table 10 的案例说明了这一点：</p>
+<ul>
+<li>高分（<code>L_i- - L_i+</code> 大）调用，多数是直觉上有帮助的；</li>
+<li>低分甚至负分调用，常常是噪声或无关片段。</li>
+</ul>
+<p>因此 Toolformer 的核心贡献之一是：</p>
+<blockquote>
+<p>用统一的 LM 损失收益作为工具调用质量判据。</p>
+</blockquote>
+<p>这比纯人工规则更通用。</p>
+<hr>
+<h2 id="7-五类工具设计（Table-1）">7. 五类工具设计（Table 1）</h2>
+<p>论文使用了 5 个工具，分别对应 5 类短板：</p>
+<ol>
+<li>
+<p><strong>Question Answering（QA）</strong>
+<em>后端 Atlas</em>，用于事实问答。</p>
+</li>
+<li>
+<p><strong>Wikipedia Search</strong>
+<em>后端 BM25 + KILT Wikipedia</em>，用于检索片段。</p>
+</li>
+<li>
+<p><strong>Calculator</strong>
+用于基础算术。</p>
+</li>
+<li>
+<p><strong>Calendar</strong>
+返回当前日期信息。</p>
+</li>
+<li>
+<p><strong>Machine Translation（MT）</strong>
+<em>后端 NLLB 600M</em>，把多语言问题翻译成英文。</p>
+</li>
+</ol>
+<p>工具选型思路很实用：</p>
+<ul>
+<li>都是 text-in / text-out；</li>
+<li>都直接对应 LLM 常见薄弱点。</li>
+</ul>
+<hr>
+<h2 id="8-数据构建与工程设置（Table-2）">8. 数据构建与工程设置（Table 2）</h2>
+<p>实验主干：</p>
+<ul>
+<li>基础模型 GPT-J（6.7B）</li>
+<li>基础语料 CCNet 子集</li>
+</ul>
+<p>因为全量语料标注太贵，作者为不同工具设置启发式筛选（例如 calculator 只看数字密集文本）。</p>
+<p>Table 2 中，当 <code>tau_f = 1.0</code> 时，保留下来的调用样本数：</p>
+<ul>
+<li>QA：18,526</li>
+<li>WikiSearch：60,974</li>
+<li>Calculator：994</li>
+<li>Calendar：20,587</li>
+<li>MT：1,034</li>
+</ul>
+<p>这组数字透露了一个工程事实：</p>
+<p><em>真正“有收益”的计算器调用样本并不多，稀疏性很明显。</em></p>
+<hr>
+<h2 id="9-实验任务与指标设置">9. 实验任务与指标设置</h2>
+<p>任务覆盖很广：</p>
+<ul>
+<li>事实补全（LAMA 子集）</li>
+<li>数学推理（ASDiv / SVAMP / MAWPS）</li>
+<li>问答（WebQS / NQ / TriviaQA）</li>
+<li>多语言问答（MLQA）</li>
+<li>时间问题（TEMP LAMA / DATESET）</li>
+</ul>
+<p>评估上，作者在若干任务里采用了“包含正确答案即可”的宽松判定，而不是严格 exact match。</p>
+<p>原因是：</p>
+<ul>
+<li>生成式模型 tokenization 差异较大；</li>
+<li>zero-shot 设置下 strict EM 可能过严。</li>
+</ul>
+<p>这个选择是合理的，但也提醒我们：横向比较必须基于相同协议。</p>
+<hr>
+<h2 id="10-关键结果逐项解读">10. 关键结果逐项解读</h2>
+<h3 id="10-1-事实补全（LAMA，Table-3）">10.1 事实补全（LAMA，Table 3）</h3>
+<p>Table 3 关键数字：</p>
+<ul>
+<li>GPT-J：17.8 / 4.9 / 31.9</li>
+<li>Toolformer（disabled）：22.1 / 6.3 / 34.9</li>
+<li><strong>Toolformer：33.8 / 11.5 / 53.5</strong></li>
+<li>GPT-3（175B）：26.8 / 7.0 / 39.8</li>
+</ul>
+<p>结论：</p>
+<ul>
+<li>Toolformer 对同规模基线是大幅领先；</li>
+<li>在这组任务上甚至超过 GPT-3 175B；</li>
+<li>论文报告 QA 工具调用率约 98.1%。</li>
+</ul>
+<p>这说明“事实补全 + 外部问答工具”匹配得非常好。</p>
+<h3 id="10-2-数学推理（Table-4）">10.2 数学推理（Table 4）</h3>
+<p>Table 4 关键数字：</p>
+<ul>
+<li>GPT-J：7.5 / 5.2 / 9.9</li>
+<li>Toolformer（disabled）：14.8 / 6.3 / 15.0</li>
+<li><strong>Toolformer：40.4 / 29.4 / 44.0</strong></li>
+<li>GPT-3（175B）：14.0 / 10.0 / 19.8</li>
+</ul>
+<p>这组结果非常亮眼。</p>
+<p>尤其值得注意：</p>
+<ul>
+<li>即使禁用 API，Toolformer（disabled）也比 GPT-J+CC 强，说明“看过工具调用与结果”的训练过程本身对能力有正迁移。</li>
+<li>但真正大幅提升来自运行时调用 calculator。</li>
+</ul>
+<h3 id="10-3-问答任务（Table-5）">10.3 问答任务（Table 5）</h3>
+<p>Table 5：</p>
+<ul>
+<li>GPT-J：18.5 / 12.8 / 43.9</li>
+<li>Toolformer：26.3 / 17.7 / 48.8</li>
+<li>GPT-3（175B）：29.0 / 22.6 / 65.9</li>
+</ul>
+<p>解读：</p>
+<ul>
+<li>Toolformer 明显提升了 GPT-J 家族表现；</li>
+<li>但仍落后 GPT-3。</li>
+</ul>
+<p>论文给出的原因很实际：</p>
+<ol>
+<li>BM25 检索质量有限；</li>
+<li>Toolformer 缺少交互式搜索（不能多轮改 query 或翻更多结果）。</li>
+</ol>
+<h3 id="10-4-多语言问答（Table-6）">10.4 多语言问答（Table 6）</h3>
+<p>MLQA 结果显示：</p>
+<ul>
+<li>相比 disabled，Toolformer 在每种语言上都从 MT 工具获益；</li>
+<li>但并不总能稳定超过 vanilla GPT-J。</li>
+</ul>
+<p>这说明工具带来收益不一定是“单调上升”的，分布偏移与继续预训练数据选择会影响最终表现。</p>
+<h3 id="10-5-时间相关任务（Table-7）">10.5 时间相关任务（Table 7）</h3>
+<p>Table 7：</p>
+<ul>
+<li>TEMP LAMA：Toolformer 16.3（最好）</li>
+<li>DATESET：Toolformer 27.3（显著领先）</li>
+</ul>
+<p>细节很重要：</p>
+<ul>
+<li>TEMP LAMA 中 calendar 调用比例极低（约 0.2%），提升主要来自其他工具；</li>
+<li>DATESET 中 calendar 调用比例高（约 54.8%），calendar 是主要增益来源。</li>
+</ul>
+<p>说明工具价值与任务结构高度相关。</p>
+<h3 id="10-6-语言模型能力是否被破坏（Table-8）">10.6 语言模型能力是否被破坏（Table 8）</h3>
+<p>Table 8 perplexity：</p>
+<ul>
+<li>GPT-J + CC：10.3 / 10.5</li>
+<li>Toolformer（disabled）：10.3 / 10.5</li>
+</ul>
+<p>即：</p>
+<ul>
+<li>引入工具调用增强训练后，并没有明显损害基础 LM 困惑度。</li>
+</ul>
+<p>这对工程落地很关键。</p>
+<hr>
+<h2 id="11-规模效应与解码策略（Figure-4-Table-9）">11. 规模效应与解码策略（Figure 4 + Table 9）</h2>
+<h3 id="Figure-4：工具使用能力存在“规模阈值”">Figure 4：工具使用能力存在“规模阈值”</h3>
+<p>作者在 GPT-2 不同尺寸与 GPT-J 上做比较，发现：</p>
+<ul>
+<li>小模型（124M/355M）几乎吃不到工具红利；</li>
+<li>约在 775M 附近开始明显学会有效调用。</li>
+</ul>
+<p>这意味着：</p>
+<p><em>“会不会调用工具”本身也是一种能力，需要模型规模支撑。</em></p>
+<h3 id="Table-9：推理时-k-的设置很关键">Table 9：推理时 <code>k</code> 的设置很关键</h3>
+<p>作者并非只在 <code>&lt;API&gt;</code> 是 top-1 token 时才触发调用，而是允许“进入 top-k 就触发”。</p>
+<p>例如 T-REx：</p>
+<ul>
+<li><code>k=0</code>：34.9</li>
+<li><code>k=1</code>：47.8</li>
+<li><code>k=3</code>：52.9</li>
+<li><code>k=10</code>：53.5</li>
+</ul>
+<p>WebQS：</p>
+<ul>
+<li><code>k=0</code>：18.9</li>
+<li><code>k=1</code>：19.3</li>
+<li><code>k=3</code>：26.3</li>
+<li><code>k=10</code>：26.3</li>
+</ul>
+<p>结论：</p>
+<ul>
+<li>工具调用倾向是可调的；</li>
+<li>纯 greedy 会低估工具调用，导致性能损失。</li>
+</ul>
+<hr>
+<h2 id="12-数据质量可解释性（Table-10）">12. 数据质量可解释性（Table 10）</h2>
+<p>Table 10 给了很多真实调用样例，并按过滤分数排序。</p>
+<p>可见规律：</p>
+<ul>
+<li>高分样例通常语义上确实有帮助；</li>
+<li>低分样例常出现不相关调用或噪声返回。</li>
+</ul>
+<p>这证明了损失过滤并非拍脑袋，确实有判别能力。</p>
+<p>但它也不是完美过滤器，仍会留下一些边界噪声。</p>
+<p>论文还提出一个有趣观点：</p>
+<p><em>少量噪声反而可以避免模型“盲信工具输出”。</em></p>
+<p>这是一个值得进一步研究的现象。</p>
+<hr>
+<h2 id="13-我认为最有说服力的亮点">13. 我认为最有说服力的亮点</h2>
+<h3 id="亮点-1：目标统一">亮点 1：目标统一</h3>
+<p>工具调用保留标准直接绑定“未来 token 预测收益”，理论与工程口径一致。</p>
+<h3 id="亮点-2：低人工标注成本">亮点 2：低人工标注成本</h3>
+<p>不需要大规模人工标注“哪里该调用”，只需少量演示样本。</p>
+<h3 id="亮点-3：结果覆盖面广">亮点 3：结果覆盖面广</h3>
+<p>不是单一任务炫技，而是跨事实、数学、问答、多语、时间和 scaling 的完整证据链。</p>
+<h3 id="亮点-4：工程可落地">亮点 4：工程可落地</h3>
+<p>文本接口、无需改词表、流程清晰，可复用到实际系统。</p>
+<h3 id="亮点-5：对失败诚实">亮点 5：对失败诚实</h3>
+<p>对链式调用、交互检索、成本意识不足等问题都明确承认。</p>
+<hr>
+<h2 id="14-局限性、边界条件与风险">14. 局限性、边界条件与风险</h2>
+<p>这部分必须讲透：</p>
+<ol>
+<li>
+<p><strong>不支持链式工具调用</strong><br>
+训练数据中各工具调用是独立采样，难以形成“工具A输出喂给工具B”的习惯。</p>
+</li>
+<li>
+<p><strong>不支持交互式检索</strong><br>
+对搜索类工具尤其吃亏，无法自动改 query、多轮浏览。</p>
+</li>
+<li>
+<p><strong>对输入措辞敏感</strong><br>
+是否调用工具受 prompt wording 影响较大。</p>
+</li>
+<li>
+<p><strong>样本效率问题</strong><br>
+某些工具（如 calculator）有效样本非常稀疏。</p>
+</li>
+<li>
+<p><strong>缺少调用成本建模</strong><br>
+当前决策标准不显式考虑 API latency / price。</p>
+</li>
+<li>
+<p><strong>后端工具能力上限会卡住整体上限</strong><br>
+若检索器质量一般，再好的调用策略也有限。</p>
+</li>
+<li>
+<p><strong>仍可能受到分布偏移影响</strong><br>
+多语言结果已体现这一点。</p>
+</li>
+</ol>
+<hr>
+<h2 id="15-可复现性与我会如何在今天重做">15. 可复现性与我会如何在今天重做</h2>
+<h3 id="15-1-复现实操清单">15.1 复现实操清单</h3>
+<ol>
+<li>固定基础语料采样策略；</li>
+<li>实现 API 包装层并严格日志化；</li>
+<li>复刻 <code>tau_s</code> / <code>tau_f</code> 与加权损失窗口；</li>
+<li>对每个调用记录来源位置、过滤得分、是否保留；</li>
+<li>生成 <code>C*</code> 后再做统一微调；</li>
+<li>统一 zero-shot prompt 协议和 <code>k</code> 扫描；</li>
+<li>报告 perplexity 与下游分数双指标。</li>
+</ol>
+<h3 id="15-2-我会额外补的工程项">15.2 我会额外补的工程项</h3>
+<ul>
+<li>API 成本与时延统计；</li>
+<li>超时/空返回/异常结果处理；</li>
+<li>更强检索后端（rerank + multi-hop）；</li>
+<li>人工审核面板（分析高风险调用）。</li>
+</ul>
+<h3 id="15-3-一个现实警告">15.3 一个现实警告</h3>
+<p>Toolformer 对“数据构建细节”非常敏感。过滤阈值、调用解析格式、启发式筛选策略稍有变化，最终训练分布就会改变很多。</p>
+<hr>
+<h2 id="16-对现代-Agent-架构的实际启发">16. 对现代 Agent 架构的实际启发</h2>
+<p>我认为这篇论文给了 6 条长期有效的工程启发：</p>
+<ol>
+<li><strong>工具调用策略应学习化，而非纯手工规则化。</strong></li>
+<li><strong>训练数据质量筛选是 Agent 能力上限的关键变量。</strong></li>
+<li><strong>推理阶段的调用阈值（如 top-k）是高杠杆参数。</strong></li>
+<li><strong>工具后端质量决定“可达天花板”。</strong></li>
+<li><strong>必须显式治理错误调用与无谓调用成本。</strong></li>
+<li><strong>单次调用约束提升稳定性，但限制了复杂推理能力。</strong></li>
+</ol>
+<p>换句话说，Toolformer 更像是“单步工具策略学习基线”的里程碑，而不是“全能 Agent 终局方案”。</p>
+<hr>
+<h2 id="17-最终结论">17. 最终结论</h2>
+<p>我的总体评价是：<strong>强烈正面，但边界清晰</strong>。</p>
+<h3 id="它确实证明了什么">它确实证明了什么</h3>
+<ul>
+<li>6.7B 规模模型通过自监督工具学习可以大幅提升 zero-shot 表现；</li>
+<li>在部分任务上可超过更大参数模型；</li>
+<li>且并未明显牺牲基础语言建模能力。</li>
+</ul>
+<h3 id="它尚未解决什么">它尚未解决什么</h3>
+<ul>
+<li>链式工具调用，</li>
+<li>交互检索闭环，</li>
+<li>成本感知调用策略，</li>
+<li>对输入措辞扰动的鲁棒性。</li>
+</ul>
+<p>因此最准确的定位应该是：</p>
+<blockquote>
+<p>Toolformer 是“让工具使用从手工规则走向可学习行为”的基础性论文。</p>
+</blockquote>
+<p>对今天做 Agent 系统的人，它仍然非常值得细读和复现。</p>
+<hr>
+<h2 id="18-参考文献">18. 参考文献</h2>
+<ol>
+<li>Timo Schick et al. <strong>Toolformer: Language Models Can Teach Themselves to Use Tools.</strong> arXiv:2302.04761, 2023.</li>
+<li>Tom Brown et al. <strong>Language Models are Few-Shot Learners.</strong> NeurIPS 2020.</li>
+<li>Gautier Izacard et al. <strong>Atlas: Few-shot Learning with Retrieval Augmented Language Models.</strong> 2022.</li>
+<li>Patrick Lewis et al. <strong>MLQA: Evaluating Cross-lingual Extractive QA.</strong> 2019.</li>
+<li>Aakanksha Chowdhery et al. <strong>PaLM: Scaling Language Modeling with Pathways.</strong> 2022.</li>
+</ol>
+<hr>
+<h3 id="附录-A：给非技术读者的-5-个快速问答">附录 A：给非技术读者的 5 个快速问答</h3>
+<p><strong>Q1：为什么不直接把模型做得更大？</strong><br>
+更大模型会更强，但并不能替代“精确工具”。计算器和检索器在某些任务上仍然更稳定、更便宜。</p>
+<p><strong>Q2：调用工具会不会让模型失去语言能力？</strong><br>
+从 Table 8 看，在该设置下并没有明显恶化 perplexity。</p>
+<p><strong>Q3：Toolformer 是不是等于“自动上网搜索”？</strong><br>
+不是。它是受限 API 调用，不是无约束浏览器代理。</p>
+<p><strong>Q4：这套方法最难复现的点是什么？</strong><br>
+不是模型训练本身，而是“高质量调用样本构建与过滤细节”。</p>
+<p><strong>Q5：如果只记一个启发，记什么？</strong><br>
+用“是否能降低未来预测损失”来筛选工具调用数据，这个思想很有迁移价值。</p>
+<hr>
+<h3 id="附录-B：本评审涉及的图表证据清单">附录 B：本评审涉及的图表证据清单</h3>
+<ul>
+<li>Figure 1：Toolformer 预测示例</li>
+<li>Figure 2：方法主流程</li>
+<li>Figure 3：QA 工具提示词模板</li>
+<li>Figure 4：规模效应</li>
+<li>Table 1：工具接口</li>
+<li>Table 2：增强样本数量</li>
+<li>Table 3~7：主任务结果</li>
+<li>Table 8：perplexity 对比</li>
+<li>Table 9：解码 top-k 调用策略</li>
+<li>Table 10：调用质量案例</li>
+</ul>
+<p>本评审遵循“先前置知识，再技术细节，再证据解读，再边界分析”的结构，帮助读者更顺畅地跟上。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/LLM-Agent/" rel="tag"># LLM Agent</a>
+              <a href="/tags/Reasoning/" rel="tag"># Reasoning</a>
+              <a href="/tags/Toolformer/" rel="tag"># Toolformer</a>
+              <a href="/tags/Tool-Use/" rel="tag"># Tool Use</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/12/2026-04-12-Voyager-technical-review-en/" rel="prev" title="Voyager: An Open-Ended Embodied Agent with Large Language Models — Deep Technical Review">
+      <i class="fa fa-chevron-left"></i> Voyager: An Open-Ended Embodied Agent with Large Language Models — Deep Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/13/2026-04-13-Toolformer-technical-review-en/" rel="next" title="Toolformer: Language Models Can Teach Themselves to Use Tools — Deep Technical Review">
+      Toolformer: Language Models Can Teach Themselves to Use Tools — Deep Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-这篇论文在今天（2026）为什么仍然重要"><span class="nav-number">1.</span> <span class="nav-text">1. 这篇论文在今天（2026）为什么仍然重要</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-前置知识：理解这篇论文前需要知道什么"><span class="nav-number">2.</span> <span class="nav-text">2. 前置知识：理解这篇论文前需要知道什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-语言模型本质上在做什么"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 语言模型本质上在做什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-为什么大模型会在简单算术和时间问题上翻车"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 为什么大模型会在简单算术和时间问题上翻车</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-什么叫“外部工具-API”"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 什么叫“外部工具&#x2F;API”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-什么是-zero-shot"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 什么是 zero-shot</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-什么是-perplexity，为什么要看它"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 什么是 perplexity，为什么要看它</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-什么是自监督学习"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 什么是自监督学习</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Toolformer-要解决的精确定义问题"><span class="nav-number">3.</span> <span class="nav-text">3. Toolformer 要解决的精确定义问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-方法总览：Figure-2-到底在说什么"><span class="nav-number">4.</span> <span class="nav-text">4. 方法总览：Figure 2 到底在说什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-方法细节拆解"><span class="nav-number">5.</span> <span class="nav-text">5. 方法细节拆解</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-API-调用的文本表示"><span class="nav-number">5.1.</span> <span class="nav-text">5.1 API 调用的文本表示</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-步骤-A：采样候选调用"><span class="nav-number">5.2.</span> <span class="nav-text">5.2 步骤 A：采样候选调用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-步骤-B：执行调用"><span class="nav-number">5.3.</span> <span class="nav-text">5.3 步骤 B：执行调用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-步骤-C：按损失下降过滤"><span class="nav-number">5.4.</span> <span class="nav-text">5.4 步骤 C：按损失下降过滤</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-5-步骤-D：在增强语料上继续训练"><span class="nav-number">5.5.</span> <span class="nav-text">5.5 步骤 D：在增强语料上继续训练</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-这篇论文最核心的技术点：过滤目标函数"><span class="nav-number">6.</span> <span class="nav-text">6. 这篇论文最核心的技术点：过滤目标函数</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-五类工具设计（Table-1）"><span class="nav-number">7.</span> <span class="nav-text">7. 五类工具设计（Table 1）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-数据构建与工程设置（Table-2）"><span class="nav-number">8.</span> <span class="nav-text">8. 数据构建与工程设置（Table 2）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-实验任务与指标设置"><span class="nav-number">9.</span> <span class="nav-text">9. 实验任务与指标设置</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-关键结果逐项解读"><span class="nav-number">10.</span> <span class="nav-text">10. 关键结果逐项解读</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-事实补全（LAMA，Table-3）"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 事实补全（LAMA，Table 3）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-数学推理（Table-4）"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 数学推理（Table 4）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-问答任务（Table-5）"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 问答任务（Table 5）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-4-多语言问答（Table-6）"><span class="nav-number">10.4.</span> <span class="nav-text">10.4 多语言问答（Table 6）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-5-时间相关任务（Table-7）"><span class="nav-number">10.5.</span> <span class="nav-text">10.5 时间相关任务（Table 7）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-6-语言模型能力是否被破坏（Table-8）"><span class="nav-number">10.6.</span> <span class="nav-text">10.6 语言模型能力是否被破坏（Table 8）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-规模效应与解码策略（Figure-4-Table-9）"><span class="nav-number">11.</span> <span class="nav-text">11. 规模效应与解码策略（Figure 4 + Table 9）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Figure-4：工具使用能力存在“规模阈值”"><span class="nav-number">11.1.</span> <span class="nav-text">Figure 4：工具使用能力存在“规模阈值”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Table-9：推理时-k-的设置很关键"><span class="nav-number">11.2.</span> <span class="nav-text">Table 9：推理时 k 的设置很关键</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-数据质量可解释性（Table-10）"><span class="nav-number">12.</span> <span class="nav-text">12. 数据质量可解释性（Table 10）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-我认为最有说服力的亮点"><span class="nav-number">13.</span> <span class="nav-text">13. 我认为最有说服力的亮点</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#亮点-1：目标统一"><span class="nav-number">13.1.</span> <span class="nav-text">亮点 1：目标统一</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#亮点-2：低人工标注成本"><span class="nav-number">13.2.</span> <span class="nav-text">亮点 2：低人工标注成本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#亮点-3：结果覆盖面广"><span class="nav-number">13.3.</span> <span class="nav-text">亮点 3：结果覆盖面广</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#亮点-4：工程可落地"><span class="nav-number">13.4.</span> <span class="nav-text">亮点 4：工程可落地</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#亮点-5：对失败诚实"><span class="nav-number">13.5.</span> <span class="nav-text">亮点 5：对失败诚实</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#14-局限性、边界条件与风险"><span class="nav-number">14.</span> <span class="nav-text">14. 局限性、边界条件与风险</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#15-可复现性与我会如何在今天重做"><span class="nav-number">15.</span> <span class="nav-text">15. 可复现性与我会如何在今天重做</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#15-1-复现实操清单"><span class="nav-number">15.1.</span> <span class="nav-text">15.1 复现实操清单</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-2-我会额外补的工程项"><span class="nav-number">15.2.</span> <span class="nav-text">15.2 我会额外补的工程项</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-3-一个现实警告"><span class="nav-number">15.3.</span> <span class="nav-text">15.3 一个现实警告</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#16-对现代-Agent-架构的实际启发"><span class="nav-number">16.</span> <span class="nav-text">16. 对现代 Agent 架构的实际启发</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#17-最终结论"><span class="nav-number">17.</span> <span class="nav-text">17. 最终结论</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#它确实证明了什么"><span class="nav-number">17.1.</span> <span class="nav-text">它确实证明了什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#它尚未解决什么"><span class="nav-number">17.2.</span> <span class="nav-text">它尚未解决什么</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#18-参考文献"><span class="nav-number">18.</span> <span class="nav-text">18. 参考文献</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#附录-A：给非技术读者的-5-个快速问答"><span class="nav-number">18.1.</span> <span class="nav-text">附录 A：给非技术读者的 5 个快速问答</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#附录-B：本评审涉及的图表证据清单"><span class="nav-number">18.2.</span> <span class="nav-text">附录 B：本评审涉及的图表证据清单</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

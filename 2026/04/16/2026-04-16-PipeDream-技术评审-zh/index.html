@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. 为什么这篇论文到 2026 年仍然值得读 如果让我用一句话概括这篇论文，我会说：  PipeDream 的价值，不只是“把模型切成几段在不同 GPU 上跑”，而是把 pipeline parallelism 真正做成了一个完整训练系统：先 profile，后 partition，再 schedule，同时处理参数版本一致性问题，最后用 time-to-accuracy 来衡量系统价值。  今">
+<meta property="og:type" content="article">
+<meta property="og:title" content="PipeDream：把 Pipeline Parallelism 做成真正可训练系统——深度技术评审">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/16/2026-04-16-PipeDream-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. 为什么这篇论文到 2026 年仍然值得读 如果让我用一句话概括这篇论文，我会说：  PipeDream 的价值，不只是“把模型切成几段在不同 GPU 上跑”，而是把 pipeline parallelism 真正做成了一个完整训练系统：先 profile，后 partition，再 schedule，同时处理参数版本一致性问题，最后用 time-to-accuracy 来衡量系统价值。  今">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-16T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-16T12:57:27.479Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Distributed Training">
+<meta property="article:tag" content="Pipeline Parallelism">
+<meta property="article:tag" content="ML Systems">
+<meta property="article:tag" content="PipeDream">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/16/2026-04-16-PipeDream-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>PipeDream：把 Pipeline Parallelism 做成真正可训练系统——深度技术评审 | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/16/2026-04-16-PipeDream-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          PipeDream：把 Pipeline Parallelism 做成真正可训练系统——深度技术评审
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2026-04-16 00:00:00 / Modified: 12:57:27" itemprop="dateCreated datePublished" datetime="2026-04-16T00:00:00+00:00">2026-04-16</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/ML-Systems/" itemprop="url" rel="index"><span itemprop="name">ML Systems</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-为什么这篇论文到-2026-年仍然值得读">1. 为什么这篇论文到 2026 年仍然值得读</h2>
+<p>如果让我用一句话概括这篇论文，我会说：</p>
+<blockquote>
+<p>PipeDream 的价值，不只是“把模型切成几段在不同 GPU 上跑”，而是把 pipeline parallelism 真正做成了一个完整训练系统：先 profile，后 partition，再 schedule，同时处理参数版本一致性问题，最后用 time-to-accuracy 来衡量系统价值。</p>
+</blockquote>
+<p>今天大家谈大模型训练，已经很习惯使用 pipeline、tensor parallel、ZeRO、FSDP、activation checkpointing 这些术语，所以回头看 PipeDream，好像会觉得它只是早期工作之一。</p>
+<p>但如果放回 2018 年的语境，这篇论文做了几件非常关键的事：</p>
+<ul>
+<li>它明确说明了：<strong>数据并行不是永远正确的默认解</strong>。</li>
+<li>它把 pipeline parallelism 从“概念图”推进到了<strong>可实现、可验证、可比较的系统设计</strong>。</li>
+<li>它抓住了一个非常本质的问题：<strong>同一个 minibatch 的 forward 和 backward 如果看到的不是同一版参数，会不会把训练语义搞坏？</strong></li>
+<li>它让后来很多大模型训练系统里的概念变得更容易表达，比如 stage 划分、1F1B 调度、weight version、stage replication 等等。</li>
+</ul>
+<p>我觉得它到今天仍然值得认真读，原因不是“它还能直接拿来训练最新 LLM”，而是它教会了我们一个很重要的系统思路：</p>
+<ol>
+<li>先找真正的瓶颈；</li>
+<li>再决定用哪一种并行方式；</li>
+<li>再追问这种并行方式会不会破坏训练语义；</li>
+<li>最后才是运行时与实现层面的工程落地。</li>
+</ol>
+<p>这个思路今天一点都不过时。</p>
+<hr>
+<a id="more"></a>
+<h2 id="2-前置知识：我希望读者先建立的背景">2. 前置知识：我希望读者先建立的背景</h2>
+<p>为了让后面的内容更顺，我想先把几个必要背景讲清楚。</p>
+<h3 id="2-1-为什么需要分布式训练">2.1 为什么需要分布式训练</h3>
+<p>单卡训练会遇到三类限制：</p>
+<ul>
+<li><strong>显存不够</strong>：模型太大，放不下；</li>
+<li><strong>算力不够</strong>：一轮训练时间太长；</li>
+<li><strong>总时间不够</strong>：项目、实验、产品都等不起。</li>
+</ul>
+<p>所以大家会把训练放到多卡、多机上做。分布式训练最核心的问题，其实就是一句话：</p>
+<blockquote>
+<p>怎么把原来一张卡上的计算与状态，合理分摊到多张卡上？</p>
+</blockquote>
+<p>通常有几种分法：</p>
+<ul>
+<li>按数据切——数据并行；</li>
+<li>按模型切——模型并行；</li>
+<li>按张量维度切——张量并行；</li>
+<li>或者几种方式一起用。</li>
+</ul>
+<p>PipeDream 这篇论文，重点讨论的是前两种：数据并行和模型并行，以及它们的组合。</p>
+<h3 id="2-2-什么是数据并行，为什么通信会变成大问题">2.2 什么是数据并行，为什么通信会变成大问题</h3>
+<p>数据并行很直观：</p>
+<ul>
+<li>每个 worker 都有一份完整模型；</li>
+<li>每个 worker 吃不同的 minibatch；</li>
+<li>算出梯度后做同步；</li>
+<li>大家一起更新参数。</li>
+</ul>
+<p>它的优点是简单、通用、与普通 SGD 语义接近。</p>
+<p>但它的代价也很明确：<strong>通信量跟模型参数规模强相关</strong>。</p>
+<p>也就是说，只要模型大、机器多、同步频繁，通信就会变成巨大的成本。</p>
+<p>这篇论文里的 <strong>Figure 1</strong> 就是在证明这个直觉，而且它证明得很漂亮。作者比较了不同模型、不同机器数、不同 GPU 代际下的通信开销占比。结论很直接：</p>
+<ul>
+<li>worker 越多，通信越重；</li>
+<li>GPU 越快，通信相对越显眼；</li>
+<li>不同模型的“通信痛感”差别很大。</li>
+</ul>
+<p>这就是为什么“更快的 GPU”不一定能拯救一个通信设计很差的训练系统。</p>
+<h3 id="2-3-什么是模型并行，为什么“直接切层”会浪费硬件">2.3 什么是模型并行，为什么“直接切层”会浪费硬件</h3>
+<p>模型并行就是把模型不同部分放到不同机器上。</p>
+<p>例如：</p>
+<ul>
+<li>前几层在 GPU1；</li>
+<li>中间几层在 GPU2；</li>
+<li>后几层在 GPU3；</li>
+<li>输出层在 GPU4。</li>
+</ul>
+<p>它解决了一个重要问题：模型太大时，一张卡未必放得下。</p>
+<p>但如果只是“切开然后顺序跑”，会出现另一个问题：<strong>大量 GPU 在大部分时间里是闲着的</strong>。</p>
+<p>因为一个 minibatch 先经过 stage1，再到 stage2，再到 stage3。若同一时间只有一个 minibatch 在流动，那么任意时刻通常只有一个 stage 在做事，其他 stage 在等。</p>
+<p>所以，普通模型并行虽然解决了“放不下”的问题，却不一定解决“跑得快”的问题。</p>
+<h3 id="2-4-为什么训练比推理更复杂：前向-反向">2.4 为什么训练比推理更复杂：前向 + 反向</h3>
+<p>推理是单向的：输入一路往后走，产生输出。</p>
+<p>训练不是。训练包含：</p>
+<ol>
+<li>前向传播；</li>
+<li>计算损失；</li>
+<li>反向传播；</li>
+<li>更新参数。</li>
+</ol>
+<p>这意味着对于 pipeline 系统来说，问题不只是“怎么把前向灌满管道”，还包括：</p>
+<ul>
+<li>什么时候做 forward；</li>
+<li>什么时候做 backward；</li>
+<li>backward 应该回到哪个 replica；</li>
+<li>forward/backward 用的是不是同一版参数。</li>
+</ul>
+<p>PipeDream 之所以重要，就是因为它把这些问题都正面回答了。</p>
+<h3 id="2-5-硬件效率与统计效率">2.5 硬件效率与统计效率</h3>
+<p>论文里一个特别值得记住的概念是：</p>
+<ul>
+<li><strong>硬件效率（hardware efficiency）</strong>：一轮 epoch 跑得有多快；</li>
+<li><strong>统计效率（statistical efficiency）</strong>：达到目标精度需要多少轮/多少步。</li>
+</ul>
+<p>系统论文很容易犯一个错误：只看吞吐，不看训练质量。</p>
+<p>例如，一个方法可能让 GPU 非常忙，看起来吞吐很高；但如果它把优化语义破坏得太厉害，模型需要更多 epoch 才能收敛，那总训练时间并不会更好。</p>
+<p>PipeDream 用 <strong>time to target accuracy</strong> 作为主要指标，我认为这是非常正确的。</p>
+<h3 id="2-6-什么叫-pipeline-bubble">2.6 什么叫 pipeline bubble</h3>
+<p>所谓 pipeline bubble，就是流水线没有被填满，或者没有持续保持满载时产生的空档。</p>
+<p>直白一点说，就是：</p>
+<ul>
+<li>某些 stage 没事做，</li>
+<li>只能干等上游或下游，</li>
+<li>结果总吞吐被白白浪费。</li>
+</ul>
+<p>一个好的 pipeline 系统，本质上是在尽量减少 bubble。</p>
+<hr>
+<h2 id="3-PipeDream-要解决的核心问题">3. PipeDream 要解决的核心问题</h2>
+<p>我会把这篇论文的核心问题总结成下面这句话：</p>
+<blockquote>
+<p>当数据并行因为同步开销太大而扩展性变差时，能不能把模型切成多个 stage，在多机上流水化执行，并且适当地对某些 stage 做数据并行复制，从而真正降低达到目标精度所需的总训练时间？</p>
+</blockquote>
+<p>这句话里其实包含了三个难点。</p>
+<h3 id="难点-A：怎么切模型">难点 A：怎么切模型</h3>
+<p>模型切分不是随便一刀一刀下去就行。</p>
+<p>切得不好会有两种坏结果：</p>
+<ul>
+<li>某个 stage 非常慢，成为全系统瓶颈；</li>
+<li>某个切口两边传的 activation 太大，通信又被拖爆。</li>
+</ul>
+<h3 id="难点-B：怎么调度-forward-backward">难点 B：怎么调度 forward / backward</h3>
+<p>训练不是只做 forward。每个 stage 都得在某些时刻做 forward，在另一些时刻做 backward。</p>
+<p>如果策略不对：</p>
+<ul>
+<li>要么 forward 一路塞太多，backward 跟不上；</li>
+<li>要么 backward 优先过头，前面没有新 minibatch 进来；</li>
+<li>要么 pipeline bubble 很严重。</li>
+</ul>
+<h3 id="难点-C：参数版本一致性怎么办">难点 C：参数版本一致性怎么办</h3>
+<p>如果一个 minibatch 的 forward 看的是旧参数，而 backward 已经用上了更新后的新参数，那么算出来的梯度就不是同一个函数点上的梯度。</p>
+<p>这件事不处理，训练可能会很不稳定。</p>
+<p>PipeDream 的结构性贡献就在于：它不是只回答“怎么快”，而是同时回答“怎么切、怎么排、怎么不把训练搞坏”。</p>
+<hr>
+<h2 id="4-一段话看懂-PipeDream">4. 一段话看懂 PipeDream</h2>
+<p>PipeDream 的核心思路是：把 DNN 切成多个连续 stage，分配到不同 GPU；让多个 minibatch 同时在这些 stage 之间流动，从而形成流水线；如果某个 stage 太慢，就给它做 replica，用局部数据并行来平衡负载；再通过 1F1B 调度维持流水线稳态；最后用 weight stashing 保证每个 stage 内，一个 minibatch 的 forward 和 backward 至少看到同一版参数。简而言之，它不是单一技巧，而是一整套“可训练的 pipeline parallel system”。</p>
+<hr>
+<h2 id="5-Figure-1-讲透：为什么通信会吃掉训练时间">5. Figure 1 讲透：为什么通信会吃掉训练时间</h2>
+<p>我觉得 <strong>Figure 1</strong> 是整篇论文最重要的动机图。</p>
+<p>图里画的是：不同模型、不同机器数、不同 GPU 代际下，通信开销占总训练时间的比例。</p>
+<p>这张图最想让读者明白三件事。</p>
+<h3 id="第一，通信瓶颈不是抽象担忧，而是实测存在">第一，通信瓶颈不是抽象担忧，而是实测存在</h3>
+<p>对某些模型，通信开销非常高，甚至占了训练的大头。特别是模型大、worker 多的时候，数据并行里参数同步的代价会非常明显。</p>
+<h3 id="第二，GPU-越快，不一定越能掩盖通信问题">第二，GPU 越快，不一定越能掩盖通信问题</h3>
+<p>很多人容易直觉地认为：GPU 更快了，系统总会更快。</p>
+<p>但 Figure 1 告诉我们：如果网络没跟着一起变快，那么更快的 GPU 反而会让“通信部分”在总时间中的占比变大。因为计算越来越便宜，通信那部分就更刺眼。</p>
+<h3 id="第三，不同模型对并行方式的敏感性不同">第三，不同模型对并行方式的敏感性不同</h3>
+<p>像 VGG16、AlexNet、S2VT 这种模型，数据并行下的通信痛感很明显；而 Inception-v3 在某些配置下，数据并行还挺能打。</p>
+<p>这意味着一个成熟系统不应该执着于某一种并行方式，而应该根据模型特征自动选择。</p>
+<p>我很喜欢这个动机，因为它没有粗暴地说“数据并行不好”，而是更准确地说：</p>
+<blockquote>
+<p>数据并行在某些通信/计算比下很有效，但在另一些 regime 下会明显失速。</p>
+</blockquote>
+<hr>
+<h2 id="6-Figure-4-讲透：pipeline-parallel-训练在时间线上到底长什么样">6. Figure 4 讲透：pipeline-parallel 训练在时间线上到底长什么样</h2>
+<p>如果 Figure 1 解释了“为什么需要别的方法”，那么 <strong>Figure 4</strong> 解释的是“这个方法具体是怎么工作的”。</p>
+<p>在图里，模型被切成多个 stage，每个 stage 放在不同机器上。多个 minibatch 一个接一个地进入 pipeline。</p>
+<p>于是系统会出现这种时间重叠：</p>
+<ul>
+<li>某个 stage 正在做 minibatch A 的 forward；</li>
+<li>另一个 stage 同时在做 minibatch B 的 backward；</li>
+<li>邻近 stage 之间还在异步传 activation 或 gradient。</li>
+</ul>
+<p>这就是 pipeline parallelism 真正有价值的地方：</p>
+<ol>
+<li>它不再像数据并行那样频繁同步整模型参数；</li>
+<li>它把跨 stage 通信变成了边界 activation / gradient 的传输；</li>
+<li>它让通信可以与其他 minibatch 的计算部分重叠。</li>
+</ol>
+<p>论文里的 <strong>Figure 5</strong> 又进一步解释了为什么这个思路在很多模型上会省很多通信：</p>
+<ul>
+<li>整模型参数很大；</li>
+<li>但某个切口上的 activation 不一定大；</li>
+<li>因此 stage 之间传 activation，可能比同步整个模型便宜得多。</li>
+</ul>
+<p>也正因如此，论文在多个配置里能做到 <strong>90% 到 95% 的通信减少</strong>。</p>
+<hr>
+<h2 id="7-核心架构思想：模型并行、流水化、局部数据并行三者结合">7. 核心架构思想：模型并行、流水化、局部数据并行三者结合</h2>
+<p>我认为这篇论文真正成熟的地方，是它没有把“模型并行”和“数据并行”当成非黑即白的两派。</p>
+<p>它在 <strong>Figure 6</strong> 里展示的是一种组合式设计：</p>
+<ul>
+<li>用模型并行切 stage；</li>
+<li>用 pipelining 让多个 minibatch 同时在不同 stage 流动；</li>
+<li>对特别慢的 stage 再做数据并行复制，以平衡整个流水线。</li>
+</ul>
+<p>这个思路非常工程化，也非常现实。</p>
+<p>因为在真正的 pipeline 里，吞吐取决于最慢的 stage。如果有一个 stage 特别重，它就会拖住全系统。这个时候，最有效的操作往往不是“重新切得更碎”，而是直接给这个 stage 增加 replica，让它的等效吞吐提升。</p>
+<p>所以 PipeDream 的本质不是“发明了 pipeline”，而是把它变成了一个可以做负载均衡的训练系统。</p>
+<hr>
+<h2 id="8-分层切分与分配算法详解">8. 分层切分与分配算法详解</h2>
+<h3 id="8-1-PipeDream-先-profile-什么">8.1 PipeDream 先 profile 什么</h3>
+<p>论文里说，PipeDream 会先对每一层记录三类信息：</p>
+<ul>
+<li><code>T_l</code>：这一层 forward + backward 的总计算时间；</li>
+<li><code>a_l</code>：这一层输出 activation 的大小；</li>
+<li><code>w_l</code>：这一层参数量大小。</li>
+</ul>
+<p>有了这三个量，系统就能大致估计：</p>
+<ul>
+<li>某段层如果变成一个 stage，会有多重；</li>
+<li>如果在某层切开，跨 stage 通信会有多大；</li>
+<li>如果一个 stage 做 replica，本地数据并行同步要付出多少代价。</li>
+</ul>
+<p>我很喜欢这种设计，因为它抓的是最关键的主导项，没有把 cost model 做得过于繁琐。</p>
+<h3 id="8-2-它到底在优化什么目标">8.2 它到底在优化什么目标</h3>
+<p>论文的优化目标很明确：</p>
+<blockquote>
+<p>尽量缩短整个训练系统的总时间。</p>
+</blockquote>
+<p>而在稳态 pipeline 里，这个目标近似等价于：</p>
+<blockquote>
+<p>让最慢 stage 尽可能快。</p>
+</blockquote>
+<p>这背后的道理很简单：流水线吞吐由 bottleneck stage 决定。</p>
+<h3 id="8-3-Dynamic-Programming-是怎么写出来的">8.3 Dynamic Programming 是怎么写出来的</h3>
+<p>论文把第 <code>i</code> 层到第 <code>j</code> 层组成一个 stage，并在 <code>m</code> 台机器上复制时的代价写成：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>T</mi><mo stretchy="false">(</mo><mi>i</mi><mo>→</mo><mi>j</mi><mo separator="true">,</mo><mi>m</mi><mo stretchy="false">)</mo><mo>=</mo><mi>max</mi><mo>⁡</mo><mrow><mo fence="true">(</mo><mfrac><mn>1</mn><mi>m</mi></mfrac><munderover><mo>∑</mo><mrow><mi>l</mi><mo>=</mo><mi>i</mi></mrow><mi>j</mi></munderover><msub><mi>T</mi><mi>l</mi></msub><mo separator="true">,</mo><munderover><mo>∑</mo><mrow><mi>l</mi><mo>=</mo><mi>i</mi></mrow><mi>j</mi></munderover><msubsup><mi>W</mi><mi>l</mi><mi>m</mi></msubsup><mo fence="true">)</mo></mrow></mrow><annotation encoding="application/x-tex">T(i \rightarrow j, m) = \max\left(\frac{1}{m}\sum_{l=i}^{j} T_l, \sum_{l=i}^{j} W_l^m \right)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="mopen">(</span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">→</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.05724em;">j</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">m</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3.1609em;vertical-align:-1.3021em;"></span><span class="mop">max</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size4">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">m</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8588em;"><span style="top:-1.8479em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span><span class="mrel mtight">=</span><span class="mord mathnormal mtight">i</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3471em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.3021em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8588em;"><span style="top:-1.8479em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span><span class="mrel mtight">=</span><span class="mord mathnormal mtight">i</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3471em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.3021em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7144em;"><span style="top:-2.453em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">m</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size4">)</span></span></span></span></span></span></span></p>
+<p>这个式子很好理解：</p>
+<ul>
+<li>左边那项可以看成 stage 内的计算时间；</li>
+<li>右边那项可以看成这段 stage 如果用了数据并行复制时的同步时间；</li>
+<li>真正的 stage 时间由更慢的那一项决定。</li>
+</ul>
+<p>然后系统定义 <code>A(j,m)</code> 为：使用 <code>m</code> 台机器覆盖 1 到 <code>j</code> 层时，最优切分方案里最慢 stage 的时间。</p>
+<p>接下来就可以做 DP：</p>
+<ul>
+<li>要么把前 <code>j</code> 层作为一个整体 stage；</li>
+<li>要么把前面切成一个最优子问题，后面再接一个 stage；</li>
+<li>在所有切法和机器分配里，找最优方案。</li>
+</ul>
+<p>我觉得这里最值得记住的不是公式本身，而是一个很重要的建模思想：</p>
+<blockquote>
+<p>一旦你把 per-layer compute / communication 成本 profile 出来，整个 stage 切分问题就变成了一维序列上的优化问题。</p>
+</blockquote>
+<p>这就是为什么 dynamic programming 在这里天然合适。</p>
+<h3 id="8-4-为什么-stage-replication-很关键">8.4 为什么 stage replication 很关键</h3>
+<p>如果没有 replication，系统只能通过“换切口”来平衡 stage。</p>
+<p>但现实里，某些层段天然就更重，仅靠切口未必能平衡得漂亮。这个时候，复制 stage 往往是更直接有效的方法。</p>
+<p>这也是 PipeDream 相比“直管道”更强的地方：</p>
+<ul>
+<li>它不是只会切；</li>
+<li>它还会给重的 stage 增加副本；</li>
+<li>再用调度把不同 minibatch 分发到这些副本上。</li>
+</ul>
+<p>这让它跳出了“纯模型并行”与“纯数据并行”的二元对立。</p>
+<hr>
+<h2 id="9-调度策略详解">9. 调度策略详解</h2>
+<h3 id="9-1-NOAM：应该让多少个-minibatch-同时在流水线里">9.1 NOAM：应该让多少个 minibatch 同时在流水线里</h3>
+<p>PipeDream 定义了一个很实用的量：<strong>NOAM</strong>，即 number of optimal active minibatches。</p>
+<p>公式写成：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mo fence="true">⌈</mo><mfrac><mrow><mi mathvariant="normal">#</mi><mtext>machines</mtext></mrow><mrow><mi mathvariant="normal">#</mi><mtext>machines in input stage</mtext></mrow></mfrac><mo fence="true">⌉</mo></mrow><annotation encoding="application/x-tex">\left\lceil \frac{\#\text{machines} }{\#\text{machines in input stage} } \right\rceil
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">⌈</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3714em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">#</span><span class="mord text"><span class="mord">machines in input stage</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">#</span><span class="mord text"><span class="mord">machines</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.8804em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">⌉</span></span></span></span></span></span></span></p>
+<p>它表达的是：为了让流水线进入稳定满载状态，理论上最好维持多少个 minibatch 处于 in-flight 状态。</p>
+<p>这个量非常有系统味道，因为它不是抽象概念，而是一个可以直接影响实现与显存占用的 operational knob。</p>
+<h3 id="9-2-1F1B-调度">9.2 1F1B 调度</h3>
+<p>在 startup 阶段把 pipeline 填满之后，PipeDream 使用 <strong>one-forward-one-backward（1F1B）</strong> 调度。</p>
+<p>也就是说，在稳态下，每个 stage 大致交替执行：</p>
+<ul>
+<li>一个 minibatch 的 forward；</li>
+<li>另一个 minibatch 的 backward。</li>
+</ul>
+<p>论文里的 <strong>Figure 8</strong> 是理解这个机制最重要的图。图中展示了四段流水线从启动到稳定的过程：</p>
+<ul>
+<li>一开始，输入 stage 先把若干 minibatch 注入系统；</li>
+<li>当最末端 stage 终于完成第一个 minibatch 的 forward 之后，就立刻开始它的 backward；</li>
+<li>之后各个 stage 逐步进入 forward/backward 交替的稳态。</li>
+</ul>
+<p>为什么 1F1B 好？</p>
+<p>因为它同时避免了两种极端：</p>
+<ul>
+<li>如果只顾着做 forward，会把 pipeline 塞得很满，但训练更新跟不上；</li>
+<li>如果只顾着做 backward，又会让前面的 stage 很快无事可做。</li>
+</ul>
+<p>1F1B 本质上是在“流水线满载”和“学习持续推进”之间找了一个非常有效的平衡点。</p>
+<h3 id="9-3-为什么-deterministic-round-robin-很重要">9.3 为什么 deterministic round-robin 很重要</h3>
+<p>当某个 stage 被复制成多个 replica 时，一个 minibatch 的 backward 必须回到当初处理它 forward 的那个 replica。</p>
+<p>原因很简单：</p>
+<ul>
+<li>这个 replica 手里有它对应的 activation/intermediate state；</li>
+<li>也有对应版本的 stashed weights；</li>
+<li>换 replica 会让状态对不上。</li>
+</ul>
+<p>所以 PipeDream 使用基于 minibatch ID 的 deterministic round-robin。</p>
+<p>这看起来像个小细节，但它实际上是系统 correctness 的关键部分。</p>
+<hr>
+<h2 id="10-异步流水训练中的“学习正确性”问题">10. 异步流水训练中的“学习正确性”问题</h2>
+<p>我认为这是整篇论文最有思想价值的一部分。</p>
+<h3 id="10-1-为什么-naive-pipelining-会破坏-SGD-语义">10.1 为什么 naive pipelining 会破坏 SGD 语义</h3>
+<p>设想这样一个场景：</p>
+<ul>
+<li>minibatch 5 在某个 stage 做 forward 时，用的是参数版本 <code>w_t</code>；</li>
+<li>等它过一会儿回来做 backward 时，这个 stage 已经处理过别的 minibatch，并更新到了 <code>w_{t+4}</code>。</li>
+</ul>
+<p>那么这个 backward 不是在对 forward 时那个函数点评估梯度。换句话说，前后看到的参数不是一套。</p>
+<p>这不是一个小误差，而是优化语义层面的改变。</p>
+<p>更麻烦的是，这种“陈旧程度”在不同 stage 上还不一样。靠前的 stage 可能更 stale，靠后的 stage 则更接近最新参数。也就是说，问题不是均匀分布的。</p>
+<h3 id="10-2-Weight-Stashing">10.2 Weight Stashing</h3>
+<p>PipeDream 的主要解决方案是 <strong>weight stashing</strong>。</p>
+<p>它的做法是：</p>
+<ul>
+<li>一个 minibatch 在某个 stage 做 forward 时，用到哪版权重，就把这版权重记下来；</li>
+<li>等该 minibatch 的 backward 回到这个 stage 时，仍然使用同一版权重来算梯度。</li>
+</ul>
+<p>这样就恢复了一个关键性质：</p>
+<blockquote>
+<p>在同一个 stage 内，同一个 minibatch 的 forward 和 backward 至少使用的是同一版参数。</p>
+</blockquote>
+<p>这虽然还不是全局完美同步，但已经比 naive pipelining 可靠得多。</p>
+<h3 id="10-3-Vertical-Sync">10.3 Vertical Sync</h3>
+<p>论文还提出了一个更强的机制：<strong>vertical sync</strong>。</p>
+<p>它想解决的是跨 stage 的参数版本不一致问题，也就是让同一个 minibatch 在所有 stage 上都尽量使用同一逻辑版本的参数。</p>
+<p>从语义上看，这显然更“干净”；但论文说它的收益不明显，反而要维护更多 metadata，所以默认没有开启。</p>
+<h3 id="10-4-为什么论文默认保留-Weight-Stashing，而不默认启用-Vertical-Sync">10.4 为什么论文默认保留 Weight Stashing，而不默认启用 Vertical Sync</h3>
+<p>我非常认同作者这里的取舍。</p>
+<p>因为论文的实证结果说明：</p>
+<ul>
+<li>没有 weight stashing，训练语义问题会非常严重；</li>
+<li>有了 weight stashing，已经能把最关键的问题修住；</li>
+<li>再加 vertical sync，理论上更漂亮，但工程开销上去了，收益却不大。</li>
+</ul>
+<p>这是很典型也很成熟的系统判断：</p>
+<blockquote>
+<p>先修掉真正致命的问题，而不是为了追求最“纯”的语义把系统复杂度推高很多。</p>
+</blockquote>
+<hr>
+<h2 id="11-运行时与显存管理设计">11. 运行时与显存管理设计</h2>
+<p>很多论文在“系统实现”这一节会突然变得很空，但 PipeDream 这一节其实相当扎实。</p>
+<p><strong>Figure 9</strong> 展示了运行时的大致架构。我觉得里面有几个实现决策很重要。</p>
+<h3 id="静态显存分配">静态显存分配</h3>
+<p>PipeDream 会在训练开始时，预先分配好：</p>
+<ul>
+<li>activation 缓冲区；</li>
+<li>gradient 缓冲区；</li>
+<li>parameter 存储；</li>
+<li>intermediate state；</li>
+<li>多个 in-flight minibatch 需要的 stashed versions。</li>
+</ul>
+<p>这很重要，因为动态分配 GPU 内存本身就可能带来显著开销和碎片化问题。</p>
+<h3 id="参数版本生命周期管理">参数版本生命周期管理</h3>
+<p>因为有 weight stashing，旧参数版本不能立刻删。要等依赖它的 backward 全部完成后，才能安全回收。</p>
+<p>这说明 PipeDream 不只是一个“调度器”，还是一个严格管理版本生命周期的 runtime。</p>
+<h3 id="中间状态生命周期管理">中间状态生命周期管理</h3>
+<p>forward 产生的中间状态需要一直保存到对应 backward 用完为止；
+而 backward 过程中的某些临时状态则可以更快释放。</p>
+<p>这本质上是一个数据生命周期管理问题，也是 pipeline 系统里特别容易低估的复杂度来源。</p>
+<h3 id="与现有框架的接口方式">与现有框架的接口方式</h3>
+<p>论文实现里用的是 Caffe，但它强调这个方案并不依赖于某个框架思想，可以迁移到 TensorFlow、MXNet、CNTK 等。</p>
+<p>这说明作者的贡献主要在系统层，而不是某个框架私有技巧。</p>
+<hr>
+<h2 id="12-实验设置">12. 实验设置</h2>
+<p>论文用了两个集群。</p>
+<h3 id="Cluster-A">Cluster-A</h3>
+<ul>
+<li>NVIDIA Titan X</li>
+<li>12 GB 显存</li>
+<li>25 Gbps 以太网</li>
+</ul>
+<h3 id="Cluster-B">Cluster-B</h3>
+<ul>
+<li>AWS p3.2xlarge，V100 GPU</li>
+<li>16 GB 显存</li>
+<li>10 Gbps 以太网</li>
+</ul>
+<p>这种搭配很有意思，因为 Cluster-B 的 GPU 更快，但网络更慢，所以通信瓶颈会被放大。</p>
+<p>实验模型包括：</p>
+<ul>
+<li><strong>VGG16</strong>（550 MB）</li>
+<li><strong>Inception-v3</strong>（157 MB）</li>
+<li><strong>S2VT</strong>（349 MB，视频到文本的 seq2seq 模型）</li>
+</ul>
+<p>数据集包括：</p>
+<ul>
+<li>ImageNet / ILSVRC12</li>
+<li>MSVD</li>
+</ul>
+<p>评价指标不是单纯 throughput，而是达到目标精度所需的时间，例如：</p>
+<ul>
+<li>VGG16 达到 68% top-1；</li>
+<li>Inception-v3 达到 67% top-1；</li>
+<li>S2VT 达到 METEOR 0.294。</li>
+</ul>
+<p>我很认可这一点，因为它让系统评价更接近真实训练目标。</p>
+<hr>
+<h2 id="13-结果与我的解读">13. 结果与我的解读</h2>
+<h3 id="13-1-Table-1：整篇论文最重要的结果表">13.1 Table 1：整篇论文最重要的结果表</h3>
+<p><strong>Table 1</strong> 集中了整篇论文最核心的数字。</p>
+<p>最值得记的几组结果如下。</p>
+<p>对于 <strong>VGG16</strong>：</p>
+<ul>
+<li>Cluster-A 上 8 台机器：BSP 相比单机是 <strong>2.35x</strong>，PipeDream 是 <strong>7.04x</strong>，也就是 <strong>相对 BSP 提升 2.99x</strong>，同时 <strong>通信减少 95%</strong>。</li>
+<li>Cluster-B 上 8 台机器：BSP 只有 <strong>1.36x</strong>，PipeDream 却有 <strong>6.98x</strong>，也就是 <strong>相对 BSP 提升 5.12x</strong>，通信同样减少 <strong>95%</strong>。</li>
+</ul>
+<p>对于 <strong>Inception-v3</strong>：</p>
+<ul>
+<li>Cluster-A 上 8 台机器：PipeDream 直接选择了纯数据并行，性能和 BSP 一样，都是 <strong>7.66x</strong>。</li>
+<li>Cluster-B 上 8 台机器：PipeDream 是 <strong>6.88x</strong>，相对 BSP 提升 <strong>1.45x</strong>，通信减少 <strong>47%</strong>。</li>
+</ul>
+<p>对于 <strong>S2VT</strong>：</p>
+<ul>
+<li>Cluster-A 上 4 台机器：BSP 只有 <strong>1.10x</strong>，PipeDream 则达到 <strong>3.34x</strong>，即 <strong>相对 BSP 提升 3.01x</strong>，通信减少 <strong>95%</strong>。</li>
+</ul>
+<p>我对这些结果的理解是：</p>
+<ol>
+<li>PipeDream 不是因为“pipeline 很酷”所以总是更好；</li>
+<li>它主要在数据并行同步代价很重的时候优势最大；</li>
+<li>如果数据并行本来就接近理想，PipeDream 的优化器也愿意老实选择它。</li>
+</ol>
+<p>这一点反而让我更相信这篇论文。</p>
+<h3 id="13-2-Figure-10：Cluster-A-上的-VGG16-和-Inception-v3">13.2 Figure 10：Cluster-A 上的 VGG16 和 Inception-v3</h3>
+<p><strong>Figure 10</strong> 画的是 Cluster-A 上，8 台机器训练 VGG16 和 Inception-v3 的 accuracy-vs-time 曲线。</p>
+<p>这里最关键的观察是：</p>
+<ul>
+<li>对 VGG16，BSP 虽然比单机快，但远没快到“8 台机器该有的样子”；PipeDream 明显更快地达到目标精度。</li>
+<li>对 Inception-v3，这个配置下 BSP 已经很接近理想扩展，所以 PipeDream 直接退回数据并行配置。</li>
+</ul>
+<p>这说明 PipeDream 的优势并不是“强行 everywhere win”，而是“在该赢的地方赢得很明显”。</p>
+<h3 id="13-3-Figure-11：为什么更快的-GPU-反而会让通信瓶颈更明显">13.3 Figure 11：为什么更快的 GPU 反而会让通信瓶颈更明显</h3>
+<p><strong>Figure 11</strong> 我非常喜欢，因为它揭示了一个反直觉但很真实的系统规律：</p>
+<blockquote>
+<p>计算越快，通信设计越糟时，瓶颈反而越明显。</p>
+</blockquote>
+<p>在 Cluster-B 上，GPU 更快、网络更慢，所以整体 compute-to-communication ratio 更差。</p>
+<p>结果就是：</p>
+<ul>
+<li>BSP 变得更难扩展；</li>
+<li>PipeDream 虽然也受影响，但受得少得多；</li>
+<li>因此相对优势反而扩大。</li>
+</ul>
+<p>VGG16 的相对提升从 Cluster-A 上的 <strong>2.99x</strong> 变成了 Cluster-B 上的 <strong>5.12x</strong>，这就是最直观的证据。</p>
+<h3 id="13-4-Figure-12：扩机器后的-scaling-与-ASP-对比">13.4 Figure 12：扩机器后的 scaling 与 ASP 对比</h3>
+<p><strong>Figure 12</strong> 展示了 VGG16 在更多机器下的表现，以及与 ASP 的对比。</p>
+<p>论文给出的数字很有说服力：</p>
+<ul>
+<li>BSP 用 4、8、16 台机器，相对单机只有 <strong>1.47x、2.35x、3.28x</strong>；</li>
+<li>PipeDream 则能达到 <strong>3.14x、7.04x、9.86x</strong>。</li>
+</ul>
+<p>这说明 PipeDream 的扩展性明显更好。</p>
+<p>另外，它还比较了 <strong>ASP（asynchronous parallel）</strong>。ASP 减少了同步等待，但统计效率很差。论文指出，在 Cluster-A 上，PipeDream 达到 48% 精度的速度比 4 机 ASP 快 <strong>7.4x</strong>。</p>
+<p>这再次说明：</p>
+<ul>
+<li>“GPU 一直有活干”不等于训练系统真的更好；</li>
+<li>如果优化语义变差太多，总训练时间还是会输。</li>
+</ul>
+<h3 id="13-5-Figure-13：为什么“直管道”还不够">13.5 Figure 13：为什么“直管道”还不够</h3>
+<p><strong>Figure 13</strong> 是很关键的 ablation，它比较了三种方案：</p>
+<ul>
+<li>只有模型并行；</li>
+<li>模型并行 + 直 pipeline；</li>
+<li>完整 PipeDream（pipeline + replication + 调度）。</li>
+</ul>
+<p>这个图证明了一个重要事实：</p>
+<blockquote>
+<p>真正带来最好结果的，不是“有 pipeline 就行”，而是 pipeline、stage replication、调度和版本管理这些机制一起工作。</p>
+</blockquote>
+<p>也就是说，论文的贡献不是一个简单技巧，而是一套组合设计。</p>
+<h3 id="13-6-S2VT：为什么循环模型收益也很大">13.6 S2VT：为什么循环模型收益也很大</h3>
+<p>S2VT 的结果也很有价值，尽管今天大家更关注 Transformer。</p>
+<p>对这个序列到序列模型：</p>
+<ul>
+<li>BSP 在 4 台机器上几乎没怎么提速，只到 <strong>1.1x</strong>；</li>
+<li>PipeDream 则做到 <strong>3.34x</strong>，相对 BSP 提升 <strong>3.01x</strong>。</li>
+</ul>
+<p>这说明 PipeDream 的收益并不局限于某一种网络结构，而是与模型的通信/计算结构密切相关。</p>
+<hr>
+<h2 id="14-我认为这篇论文真正强的地方">14. 我认为这篇论文真正强的地方</h2>
+<h3 id="优点-1：评价指标选得对">优点 1：评价指标选得对</h3>
+<p>它关注的是 <strong>time to target accuracy</strong>，而不是只看吞吐，这让系统结果更有说服力。</p>
+<h3 id="优点-2：不迷信单一并行范式">优点 2：不迷信单一并行范式</h3>
+<p>如果数据并行就是最优解，它也会选数据并行；如果 pipeline 更好，它才用 pipeline。这让优化器显得非常可信。</p>
+<h3 id="优点-3：它认真处理了训练语义问题">优点 3：它认真处理了训练语义问题</h3>
+<p>很多系统论文会默认“训练应该没问题”，但 PipeDream 专门分析了 forward/backward 参数版本不一致的问题，并给出了 weight stashing 作为主要修复机制。</p>
+<h3 id="优点-4：设计层次非常清楚">优点 4：设计层次非常清楚</h3>
+<p>整个系统叙事是顺的：</p>
+<ol>
+<li>先说明数据并行为什么会被通信拖住；</li>
+<li>再提出 pipeline parallel；</li>
+<li>再解决 partition；</li>
+<li>再解决 schedule；</li>
+<li>再解决 version consistency；</li>
+<li>最后用 time-to-accuracy 验证。</li>
+</ol>
+<p>这让论文不仅结果好看，而且很好教、很好复用。</p>
+<h3 id="优点-5：证据链完整">优点 5：证据链完整</h3>
+<p>这篇论文不是只拿一个大表说“我们快很多”。它有：</p>
+<ul>
+<li>动机图（Figure 1）；</li>
+<li>时间线图（Figure 4、Figure 8）；</li>
+<li>运行时架构图（Figure 9）；</li>
+<li>汇总表（Table 1）；</li>
+<li>scaling / hardware sensitivity / ablation 图（Figure 10-13）。</li>
+</ul>
+<p>证据组织得非常系统。</p>
+<hr>
+<h2 id="15-局限性与边界条件">15. 局限性与边界条件</h2>
+<h3 id="局限-1：cost-model-比较理想化">局限 1：cost model 比较理想化</h3>
+<p>论文的 partitioner 建立在 per-layer profiling 之上。这在论文设定里很合理，但现代训练系统里常见的很多因素会让 cost model 更复杂：</p>
+<ul>
+<li>kernel fusion；</li>
+<li>activation checkpointing；</li>
+<li>mixed precision；</li>
+<li>optimizer sharding；</li>
+<li>长序列带来的动态形状；</li>
+<li>异构互联。</li>
+</ul>
+<p>这些因素会让 stage 的真实代价更难静态估计。</p>
+<h3 id="局限-2：weight-stashing-不是彻底消除-stale-问题">局限 2：weight stashing 不是彻底消除 stale 问题</h3>
+<p>它解决的是 stage 内 forward/backward 不一致，但默认没有完全保证跨 stage 的全局一致性。</p>
+<p>所以从优化语义上讲，PipeDream 仍然不是严格等价于同步 SGD。</p>
+<h3 id="局限-3：实验对象还是-pre-transformer-时代的模型">局限 3：实验对象还是 pre-transformer 时代的模型</h3>
+<p>论文的实验是 CNN 与一个 RNN/seq2seq 模型，并不是今天的大规模 Transformer。</p>
+<p>现代 LLM 训练还要处理很多新问题：</p>
+<ul>
+<li>tensor parallel；</li>
+<li>sequence parallel；</li>
+<li>ZeRO/FSDP；</li>
+<li>activation recompute；</li>
+<li>interleaved pipeline stages；</li>
+<li>attention 特有的内存与算力结构。</li>
+</ul>
+<p>所以 PipeDream 更像“祖先型方法”，不是现代大模型训练系统的完整答案。</p>
+<h3 id="局限-4：复现门槛仍然不低">局限 4：复现门槛仍然不低</h3>
+<p>论文里实现基于 Caffe、ZeroMQ 和分布式参数服务器，但没有提供今天意义上那种一键可跑、社区维护良好的开源实现入口。对现代读者来说，复现仍然需要相当多的工程工作。</p>
+<h3 id="局限-5：对动态变化场景讨论不够多">局限 5：对动态变化场景讨论不够多</h3>
+<p>比如：</p>
+<ul>
+<li>profile 不准怎么办；</li>
+<li>某些 stage 波动变大怎么办；</li>
+<li>数据形状变化后最优切分会不会变化；</li>
+<li>网络抖动时调度是否稳健。</li>
+</ul>
+<p>这些问题在论文里没有深入展开。</p>
+<hr>
+<h2 id="16-可复现性与工程实践建议">16. 可复现性与工程实践建议</h2>
+<p>如果今天让我复现这篇论文，我会给出一个判断：</p>
+<blockquote>
+<p>原理可复现，但工程落地并不轻松。</p>
+</blockquote>
+<h3 id="哪些部分是清楚可复现的">哪些部分是清楚可复现的</h3>
+<p>论文已经足够清楚地说明了：</p>
+<ul>
+<li>如何做 per-layer profile；</li>
+<li>如何构造 DP 切分目标；</li>
+<li>1F1B 调度怎么工作；</li>
+<li>weight stashing 的作用是什么；</li>
+<li>运行时大致要管理哪些状态。</li>
+</ul>
+<h3 id="哪些部分仍然需要大量工程决策">哪些部分仍然需要大量工程决策</h3>
+<p>现代重写时你仍然要自己决定：</p>
+<ul>
+<li>与哪个框架集成；</li>
+<li>buffer pool 怎么设计；</li>
+<li>checkpoint 语义怎么做；</li>
+<li>stage 内 optimizer state 怎么摆；</li>
+<li>通信后端选什么；</li>
+<li>调试参数版本错配的可观测性怎么做。</li>
+</ul>
+<h3 id="我的工程建议">我的工程建议</h3>
+<p>如果我要重新做一个现代版，我会：</p>
+<ol>
+<li>先写一个 stage-level simulator，先把 bubble 和吞吐问题看清楚；</li>
+<li>把调度器和框架绑定层分开；</li>
+<li>把 parameter version 作为一等公民来追踪；</li>
+<li>从一开始就做显存 accounting；</li>
+<li>先拿故意不平衡的小模型做压力测试。</li>
+</ol>
+<p>很多 pipeline 系统真正难的地方，不在公式，而在状态管理和调试。</p>
+<hr>
+<h2 id="17-如果放到今天的大模型训练系统里，该怎么理解-PipeDream">17. 如果放到今天的大模型训练系统里，该怎么理解 PipeDream</h2>
+<p>到 2026 年，我不会把 PipeDream 当成“直接照抄的 recipe”，而会把它看成现代 pipeline 训练栈的一个重要源头。</p>
+<h3 id="今天仍然完全成立的思想">今天仍然完全成立的思想</h3>
+<ul>
+<li>stage 划分必须考虑代价，而不是随便切；</li>
+<li>吞吐取决于最慢 stage；</li>
+<li>pipeline schedule 不能只看算力利用率，还要看训练推进；</li>
+<li>参数版本语义必须被明确定义；</li>
+<li>系统评价要和模型质量挂钩。</li>
+</ul>
+<h3 id="现代系统在它之上又加了什么">现代系统在它之上又加了什么</h3>
+<p>今天的大模型系统通常还会再叠加：</p>
+<ul>
+<li>tensor parallel；</li>
+<li>ZeRO / FSDP 风格的状态切分；</li>
+<li>activation checkpointing；</li>
+<li>virtual/interleaved pipeline stages；</li>
+<li>更复杂的拓扑感知通信优化；</li>
+<li>长序列 attention 相关的专用内存优化。</li>
+</ul>
+<h3 id="历史位置怎么评价">历史位置怎么评价</h3>
+<p>GPipe、Megatron-LM、DeepSpeed pipeline engine、后续 PipeDream 变体，本质上都活在它帮助打开的设计空间里。</p>
+<p>所以我会说：</p>
+<blockquote>
+<p>PipeDream 不一定是今天最实用的实现，但它是理解现代 pipeline-parallel 训练历史演化时绕不过去的一篇论文。</p>
+</blockquote>
+<hr>
+<h2 id="18-总结评价">18. 总结评价</h2>
+<p>我对这篇论文的总体评价很高。</p>
+<p>它真正厉害的地方，不只是做出了几个漂亮的 speedup 数字，而是把 pipeline parallel 这件事拆成了几个非常系统、非常耐用的问题：</p>
+<ul>
+<li>怎么 profile；</li>
+<li>怎么 partition；</li>
+<li>怎么 schedule；</li>
+<li>怎么处理 weight version；</li>
+<li>怎么用 time-to-accuracy 验证整个系统。</li>
+</ul>
+<p>这些拆法到今天看仍然非常合理。</p>
+<p>如果要我给一个简洁结论，我会这样写：</p>
+<blockquote>
+<p>PipeDream 是一篇奠基型 ML Systems 论文。它最持久的贡献，不是某个具体 benchmark 数字，而是把 pipeline-parallel training 的系统分解方式讲清楚了：profile、partition、schedule、version、measure-by-accuracy。</p>
+</blockquote>
+<p>这套分解今天依然成立。</p>
+<hr>
+<h2 id="19-参考文献">19. 参考文献</h2>
+<ol>
+<li>Aaron Harlap, Deepak Narayanan, Amar Phanishayee, Vivek Seshadri, Nikhil Devanur, Greg Ganger, Phil Gibbons. <em>PipeDream: Fast and Efficient Pipeline Parallel DNN Training</em>. arXiv:1806.03377.</li>
+<li>Yanping Huang 等. <em>GPipe: Efficient Training of Giant Neural Networks using Pipeline Parallelism</em>.</li>
+<li>Deepak Narayanan 等. <em>Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM</em>.</li>
+<li>Samyam Rajbhandari 等. <em>ZeRO: Memory Optimizations Toward Training Trillion Parameter Models</em>.</li>
+<li>Deepak Narayanan 等. <em>PipeDream-2BW: Balanced Pipeline Parallelism for DNN Training</em>.</li>
+</ol>
+<hr>
+<h2 id="20-附录-A：常见问题">20. 附录 A：常见问题</h2>
+<h3 id="Q1-PipeDream-和-GPipe-是一回事吗？">Q1. PipeDream 和 GPipe 是一回事吗？</h3>
+<p>不是。两者都属于 pipeline parallel 训练系统，但调度方式、同步语义和版本处理策略并不相同。PipeDream 更强调带有 weight stashing 的异步流水执行。</p>
+<h3 id="Q2-为什么论文不只看吞吐，而要看达到目标精度的时间？">Q2. 为什么论文不只看吞吐，而要看达到目标精度的时间？</h3>
+<p>因为一个系统就算让 GPU 更忙，如果它让训练语义变差、模型更难收敛，总训练时间仍然可能更差。</p>
+<h3 id="Q3-为什么-Inception-v3-上的收益没-VGG16-那么夸张？">Q3. 为什么 Inception-v3 上的收益没 VGG16 那么夸张？</h3>
+<p>因为在某些配置下，Inception-v3 的数据并行通信开销并没有那么重，BSP 已经接近理想扩展，所以 PipeDream 不会显著胜出。</p>
+<h3 id="Q4-这篇论文里最关键的系统思想是什么？">Q4. 这篇论文里最关键的系统思想是什么？</h3>
+<p>我个人会选两个：<strong>1F1B 调度</strong> 和 <strong>weight stashing</strong>。前者解决流水线忙不忙，后者解决训练会不会被参数版本错配搞坏。</p>
+<h3 id="Q5-今天还值得读吗？">Q5. 今天还值得读吗？</h3>
+<p>值得。尤其是当你想真正理解现代大模型 pipeline training 是怎么一步步长出来的时候。</p>
+<hr>
+<h2 id="21-附录-B：证据清单">21. 附录 B：证据清单</h2>
+<ul>
+<li>使用 Figure 1 解释数据并行通信瓶颈与 GPU/网络比值变化。</li>
+<li>使用 Figure 4 解释 pipeline 中计算与通信的时间重叠。</li>
+<li>使用 Figure 5 解释为什么边界 activation 传输常常比整模型同步便宜得多。</li>
+<li>使用 Figure 6 解释为什么要把 pipelining 与 stage replication 结合。</li>
+<li>使用 Figure 8 解释 1F1B 和稳态流水线。</li>
+<li>使用 Figure 9 解释运行时、buffer 管理与参数版本管理。</li>
+<li>使用 Table 1 解释端到端 speedup 与通信减少幅度。</li>
+<li>使用 Figure 10-13 解释 scaling、硬件敏感性、ASP 对比与 ablation。</li>
+</ul>
+<hr>
+<p><em>评审写于 2026-04-16。</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Distributed-Training/" rel="tag"># Distributed Training</a>
+              <a href="/tags/Pipeline-Parallelism/" rel="tag"># Pipeline Parallelism</a>
+              <a href="/tags/ML-Systems/" rel="tag"># ML Systems</a>
+              <a href="/tags/PipeDream/" rel="tag"># PipeDream</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/15/2026-04-15-LayerSkip-technical-review-en/" rel="prev" title="LayerSkip: Enabling Early Exit Inference and Self-Speculative Decoding — Deep Technical Review">
+      <i class="fa fa-chevron-left"></i> LayerSkip: Enabling Early Exit Inference and Self-Speculative Decoding — Deep Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/16/2026-04-16-PipeDream-technical-review-en/" rel="next" title="PipeDream: Turning Pipeline Parallelism into a Practical Training System — Deep Technical Review">
+      PipeDream: Turning Pipeline Parallelism into a Practical Training System — Deep Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-为什么这篇论文到-2026-年仍然值得读"><span class="nav-number">1.</span> <span class="nav-text">1. 为什么这篇论文到 2026 年仍然值得读</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-前置知识：我希望读者先建立的背景"><span class="nav-number">2.</span> <span class="nav-text">2. 前置知识：我希望读者先建立的背景</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-为什么需要分布式训练"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 为什么需要分布式训练</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-什么是数据并行，为什么通信会变成大问题"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 什么是数据并行，为什么通信会变成大问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-什么是模型并行，为什么“直接切层”会浪费硬件"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 什么是模型并行，为什么“直接切层”会浪费硬件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-为什么训练比推理更复杂：前向-反向"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 为什么训练比推理更复杂：前向 + 反向</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-硬件效率与统计效率"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 硬件效率与统计效率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-什么叫-pipeline-bubble"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 什么叫 pipeline bubble</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-PipeDream-要解决的核心问题"><span class="nav-number">3.</span> <span class="nav-text">3. PipeDream 要解决的核心问题</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#难点-A：怎么切模型"><span class="nav-number">3.1.</span> <span class="nav-text">难点 A：怎么切模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#难点-B：怎么调度-forward-backward"><span class="nav-number">3.2.</span> <span class="nav-text">难点 B：怎么调度 forward &#x2F; backward</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#难点-C：参数版本一致性怎么办"><span class="nav-number">3.3.</span> <span class="nav-text">难点 C：参数版本一致性怎么办</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-一段话看懂-PipeDream"><span class="nav-number">4.</span> <span class="nav-text">4. 一段话看懂 PipeDream</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Figure-1-讲透：为什么通信会吃掉训练时间"><span class="nav-number">5.</span> <span class="nav-text">5. Figure 1 讲透：为什么通信会吃掉训练时间</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#第一，通信瓶颈不是抽象担忧，而是实测存在"><span class="nav-number">5.1.</span> <span class="nav-text">第一，通信瓶颈不是抽象担忧，而是实测存在</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#第二，GPU-越快，不一定越能掩盖通信问题"><span class="nav-number">5.2.</span> <span class="nav-text">第二，GPU 越快，不一定越能掩盖通信问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#第三，不同模型对并行方式的敏感性不同"><span class="nav-number">5.3.</span> <span class="nav-text">第三，不同模型对并行方式的敏感性不同</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Figure-4-讲透：pipeline-parallel-训练在时间线上到底长什么样"><span class="nav-number">6.</span> <span class="nav-text">6. Figure 4 讲透：pipeline-parallel 训练在时间线上到底长什么样</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-核心架构思想：模型并行、流水化、局部数据并行三者结合"><span class="nav-number">7.</span> <span class="nav-text">7. 核心架构思想：模型并行、流水化、局部数据并行三者结合</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-分层切分与分配算法详解"><span class="nav-number">8.</span> <span class="nav-text">8. 分层切分与分配算法详解</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-PipeDream-先-profile-什么"><span class="nav-number">8.1.</span> <span class="nav-text">8.1 PipeDream 先 profile 什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-它到底在优化什么目标"><span class="nav-number">8.2.</span> <span class="nav-text">8.2 它到底在优化什么目标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-Dynamic-Programming-是怎么写出来的"><span class="nav-number">8.3.</span> <span class="nav-text">8.3 Dynamic Programming 是怎么写出来的</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-4-为什么-stage-replication-很关键"><span class="nav-number">8.4.</span> <span class="nav-text">8.4 为什么 stage replication 很关键</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-调度策略详解"><span class="nav-number">9.</span> <span class="nav-text">9. 调度策略详解</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-NOAM：应该让多少个-minibatch-同时在流水线里"><span class="nav-number">9.1.</span> <span class="nav-text">9.1 NOAM：应该让多少个 minibatch 同时在流水线里</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-1F1B-调度"><span class="nav-number">9.2.</span> <span class="nav-text">9.2 1F1B 调度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-为什么-deterministic-round-robin-很重要"><span class="nav-number">9.3.</span> <span class="nav-text">9.3 为什么 deterministic round-robin 很重要</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-异步流水训练中的“学习正确性”问题"><span class="nav-number">10.</span> <span class="nav-text">10. 异步流水训练中的“学习正确性”问题</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-为什么-naive-pipelining-会破坏-SGD-语义"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 为什么 naive pipelining 会破坏 SGD 语义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-Weight-Stashing"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 Weight Stashing</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-Vertical-Sync"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 Vertical Sync</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-4-为什么论文默认保留-Weight-Stashing，而不默认启用-Vertical-Sync"><span class="nav-number">10.4.</span> <span class="nav-text">10.4 为什么论文默认保留 Weight Stashing，而不默认启用 Vertical Sync</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-运行时与显存管理设计"><span class="nav-number">11.</span> <span class="nav-text">11. 运行时与显存管理设计</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#静态显存分配"><span class="nav-number">11.1.</span> <span class="nav-text">静态显存分配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#参数版本生命周期管理"><span class="nav-number">11.2.</span> <span class="nav-text">参数版本生命周期管理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#中间状态生命周期管理"><span class="nav-number">11.3.</span> <span class="nav-text">中间状态生命周期管理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#与现有框架的接口方式"><span class="nav-number">11.4.</span> <span class="nav-text">与现有框架的接口方式</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-实验设置"><span class="nav-number">12.</span> <span class="nav-text">12. 实验设置</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Cluster-A"><span class="nav-number">12.1.</span> <span class="nav-text">Cluster-A</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Cluster-B"><span class="nav-number">12.2.</span> <span class="nav-text">Cluster-B</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-结果与我的解读"><span class="nav-number">13.</span> <span class="nav-text">13. 结果与我的解读</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#13-1-Table-1：整篇论文最重要的结果表"><span class="nav-number">13.1.</span> <span class="nav-text">13.1 Table 1：整篇论文最重要的结果表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-2-Figure-10：Cluster-A-上的-VGG16-和-Inception-v3"><span class="nav-number">13.2.</span> <span class="nav-text">13.2 Figure 10：Cluster-A 上的 VGG16 和 Inception-v3</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-3-Figure-11：为什么更快的-GPU-反而会让通信瓶颈更明显"><span class="nav-number">13.3.</span> <span class="nav-text">13.3 Figure 11：为什么更快的 GPU 反而会让通信瓶颈更明显</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-4-Figure-12：扩机器后的-scaling-与-ASP-对比"><span class="nav-number">13.4.</span> <span class="nav-text">13.4 Figure 12：扩机器后的 scaling 与 ASP 对比</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-5-Figure-13：为什么“直管道”还不够"><span class="nav-number">13.5.</span> <span class="nav-text">13.5 Figure 13：为什么“直管道”还不够</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-6-S2VT：为什么循环模型收益也很大"><span class="nav-number">13.6.</span> <span class="nav-text">13.6 S2VT：为什么循环模型收益也很大</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#14-我认为这篇论文真正强的地方"><span class="nav-number">14.</span> <span class="nav-text">14. 我认为这篇论文真正强的地方</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#优点-1：评价指标选得对"><span class="nav-number">14.1.</span> <span class="nav-text">优点 1：评价指标选得对</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#优点-2：不迷信单一并行范式"><span class="nav-number">14.2.</span> <span class="nav-text">优点 2：不迷信单一并行范式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#优点-3：它认真处理了训练语义问题"><span class="nav-number">14.3.</span> <span class="nav-text">优点 3：它认真处理了训练语义问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#优点-4：设计层次非常清楚"><span class="nav-number">14.4.</span> <span class="nav-text">优点 4：设计层次非常清楚</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#优点-5：证据链完整"><span class="nav-number">14.5.</span> <span class="nav-text">优点 5：证据链完整</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#15-局限性与边界条件"><span class="nav-number">15.</span> <span class="nav-text">15. 局限性与边界条件</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#局限-1：cost-model-比较理想化"><span class="nav-number">15.1.</span> <span class="nav-text">局限 1：cost model 比较理想化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#局限-2：weight-stashing-不是彻底消除-stale-问题"><span class="nav-number">15.2.</span> <span class="nav-text">局限 2：weight stashing 不是彻底消除 stale 问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#局限-3：实验对象还是-pre-transformer-时代的模型"><span class="nav-number">15.3.</span> <span class="nav-text">局限 3：实验对象还是 pre-transformer 时代的模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#局限-4：复现门槛仍然不低"><span class="nav-number">15.4.</span> <span class="nav-text">局限 4：复现门槛仍然不低</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#局限-5：对动态变化场景讨论不够多"><span class="nav-number">15.5.</span> <span class="nav-text">局限 5：对动态变化场景讨论不够多</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#16-可复现性与工程实践建议"><span class="nav-number">16.</span> <span class="nav-text">16. 可复现性与工程实践建议</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#哪些部分是清楚可复现的"><span class="nav-number">16.1.</span> <span class="nav-text">哪些部分是清楚可复现的</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#哪些部分仍然需要大量工程决策"><span class="nav-number">16.2.</span> <span class="nav-text">哪些部分仍然需要大量工程决策</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#我的工程建议"><span class="nav-number">16.3.</span> <span class="nav-text">我的工程建议</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#17-如果放到今天的大模型训练系统里，该怎么理解-PipeDream"><span class="nav-number">17.</span> <span class="nav-text">17. 如果放到今天的大模型训练系统里，该怎么理解 PipeDream</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#今天仍然完全成立的思想"><span class="nav-number">17.1.</span> <span class="nav-text">今天仍然完全成立的思想</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#现代系统在它之上又加了什么"><span class="nav-number">17.2.</span> <span class="nav-text">现代系统在它之上又加了什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#历史位置怎么评价"><span class="nav-number">17.3.</span> <span class="nav-text">历史位置怎么评价</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#18-总结评价"><span class="nav-number">18.</span> <span class="nav-text">18. 总结评价</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#19-参考文献"><span class="nav-number">19.</span> <span class="nav-text">19. 参考文献</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#20-附录-A：常见问题"><span class="nav-number">20.</span> <span class="nav-text">20. 附录 A：常见问题</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Q1-PipeDream-和-GPipe-是一回事吗？"><span class="nav-number">20.1.</span> <span class="nav-text">Q1. PipeDream 和 GPipe 是一回事吗？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Q2-为什么论文不只看吞吐，而要看达到目标精度的时间？"><span class="nav-number">20.2.</span> <span class="nav-text">Q2. 为什么论文不只看吞吐，而要看达到目标精度的时间？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Q3-为什么-Inception-v3-上的收益没-VGG16-那么夸张？"><span class="nav-number">20.3.</span> <span class="nav-text">Q3. 为什么 Inception-v3 上的收益没 VGG16 那么夸张？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Q4-这篇论文里最关键的系统思想是什么？"><span class="nav-number">20.4.</span> <span class="nav-text">Q4. 这篇论文里最关键的系统思想是什么？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Q5-今天还值得读吗？"><span class="nav-number">20.5.</span> <span class="nav-text">Q5. 今天还值得读吗？</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#21-附录-B：证据清单"><span class="nav-number">21.</span> <span class="nav-text">21. 附录 B：证据清单</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

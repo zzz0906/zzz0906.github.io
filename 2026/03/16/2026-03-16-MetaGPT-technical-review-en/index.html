@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="A technical review of MetaGPT, analyzing how encoding human software development workflows (SOP) into multi-agent systems with structured communication reduces errors in automated code generation.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="MetaGPT: When LLM Agents Form a Software Company — Multi-Agent Collaboration Done Right">
+<meta property="og:url" content="https://zzz0906.github.io/2026/03/16/2026-03-16-MetaGPT-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="A technical review of MetaGPT, analyzing how encoding human software development workflows (SOP) into multi-agent systems with structured communication reduces errors in automated code generation.">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-03-16T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-03T01:05:33.801Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/03/16/2026-03-16-MetaGPT-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>MetaGPT: When LLM Agents Form a Software Company — Multi-Agent Collaboration Done Right | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/03/16/2026-03-16-MetaGPT-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          MetaGPT: When LLM Agents Form a Software Company — Multi-Agent Collaboration Done Right
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-03-16 00:00:00" itemprop="dateCreated datePublished" datetime="2026-03-16T00:00:00+00:00">2026-03-16</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-03 01:05:33" itemprop="dateModified" datetime="2026-04-03T01:05:33+00:00">2026-04-03</time>
+              </span>
+
+          
+            <div class="post-description">A technical review of MetaGPT, analyzing how encoding human software development workflows (SOP) into multi-agent systems with structured communication reduces errors in automated code generation.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="MetaGPT-—-In-Depth-Technical-Review-English">MetaGPT — In-Depth Technical Review (English)</h1>
+<p><strong>Author: Zhongzhu Zhou</strong><br>
+Paper: <em>Meta Programming for a Multi-Agent Collaborative Framework</em> (arXiv 2023/2024)<br>
+ArXiv: <a href="https://arxiv.org/abs/2308.00352" target="_blank" rel="noopener">https://arxiv.org/abs/2308.00352</a></p>
+<hr>
+<h2 id="Abstract">Abstract</h2>
+<p>MetaGPT is an early but still very influential paper in the modern “LLM agents building software” story. Its central claim is that simply letting several language-model agents chat with each other is not enough for reliable complex work, because unconstrained dialogue amplifies ambiguity, hallucination, and wasted tokens. The paper proposes a more disciplined alternative: organize LLM agents like a software company, give them specialized roles, force them to exchange structured artifacts instead of casual conversation, and run the workflow through Standard Operating Procedures (SOPs). On code-generation benchmarks such as HumanEval and MBPP, and on a custom SoftwareDev benchmark, MetaGPT reports stronger results than prior multi-agent systems and argues that the gain comes from workflow engineering as much as from model capability. I think the paper matters because it reframed multi-agent prompting from “more agents means more intelligence” into “the right interfaces, handoff documents, and execution discipline matter at least as much as the number of agents.”</p>
+<a id="more"></a>
+<h2 id="1-Prerequisites-What-to-Know-Before-Reading-This-Paper">1. Prerequisites: What to Know Before Reading This Paper</h2>
+<p>This review is written for a reader who may know what ChatGPT is, but may not already live inside the agent-systems literature. So I will first build the necessary background slowly.</p>
+<h3 id="1-1-What-people-mean-by-an-“LLM-agent”">1.1 What people mean by an “LLM agent”</h3>
+<p>A large language model on its own is a next-token predictor. In plain language, it takes text in and produces more text. An <strong>LLM agent</strong> is a system built around the model that lets it do more than answer one isolated prompt. Usually that means the system gives the model some combination of:</p>
+<ul>
+<li>a role or identity,</li>
+<li>memory of previous steps,</li>
+<li>tools such as code execution or web search,</li>
+<li>an action loop such as “think → act → observe → revise”,</li>
+<li>and some notion of a task objective.</li>
+</ul>
+<p>The important point is that an agent is not just the model weights. It is the model plus the surrounding control structure. This paper sits exactly in that control-structure layer.</p>
+<h3 id="1-2-Why-multi-agent-systems-became-interesting">1.2 Why multi-agent systems became interesting</h3>
+<p>Once people saw that one LLM could write code, summarize requirements, and answer questions, the next idea was obvious: maybe multiple LLM instances with different roles could collaborate like a team. For example:</p>
+<ul>
+<li>one agent could gather requirements,</li>
+<li>another could design architecture,</li>
+<li>another could write code,</li>
+<li>another could test,</li>
+<li>another could critique the result.</li>
+</ul>
+<p>This sounds very human-like, and it is intuitively attractive. But the paper points out a practical problem: if you simply let agents chat freely in natural language, the system often drifts. Messages become vague. Assumptions change without being tracked. One hallucination can propagate downstream. The result is a kind of “collective confusion,” not true collaboration.</p>
+<h3 id="1-3-What-Standard-Operating-Procedures-SOPs-are">1.3 What Standard Operating Procedures (SOPs) are</h3>
+<p>An SOP is just a repeatable, explicit workflow that says:</p>
+<ul>
+<li>who does what,</li>
+<li>in what order,</li>
+<li>using what intermediate outputs,</li>
+<li>under what quality constraints.</li>
+</ul>
+<p>In a real software company, work is rarely “everyone talks randomly until something good happens.” Instead, a product manager writes a requirements document, an architect converts that into a design, engineers implement against the design, and QA checks the result. The paper’s core intuition is that if human teams need process discipline, LLM teams probably need even more.</p>
+<h3 id="1-4-Why-structured-artifacts-matter-more-than-chatty-dialogue">1.4 Why structured artifacts matter more than chatty dialogue</h3>
+<p>Suppose one agent tells another: “Build the system we discussed earlier, make it scalable, and keep the UX clean.” That sounds reasonable, but it is full of ambiguity. What counts as scalable? Which features are essential? What files should exist? What interfaces are expected?</p>
+<p>Now compare that to a structured handoff:</p>
+<ul>
+<li>a Product Requirements Document (PRD),</li>
+<li>a file list,</li>
+<li>interface definitions,</li>
+<li>a task breakdown,</li>
+<li>and test expectations.</li>
+</ul>
+<p>The second form is not as natural or conversational, but it is much more reliable. The paper argues that multi-agent systems need exactly this kind of artifact-driven communication. In my view, this is one of the deepest lessons in the paper: <strong>good collaboration is often less about eloquence and more about the quality of the interface between collaborators</strong>.</p>
+<h3 id="1-5-Evaluation-basics-what-Pass-1-means">1.5 Evaluation basics: what Pass@1 means</h3>
+<p>The paper reports results on HumanEval and MBPP, which are code-generation benchmarks with hidden or reference tests. A common metric is <strong>Pass@1</strong>: if the system gets only one chance to generate code for a problem, how often does that code pass the tests?</p>
+<p>If Pass@1 goes up, that means the first answer is more likely to be correct. This matters in practice because users often do not want to sample ten programs and pick one manually. They want the first usable answer to be strong.</p>
+<h2 id="2-What-This-Paper-Does-The-Core-Idea">2. What This Paper Does (The Core Idea)</h2>
+<p>The paper asks a simple but important question:</p>
+<blockquote>
+<p>If one LLM agent is unreliable on complex software tasks, does adding more agents help automatically?</p>
+</blockquote>
+<p>MetaGPT’s answer is: <strong>only if the collaboration is structured properly</strong>.</p>
+<p>The framework models a software company made of specialized roles. Instead of letting agents hold long free-form conversations, it makes them follow a software-development SOP. In the canonical workflow shown in Figure 1 and Figure 3 of the paper, the sequence is roughly:</p>
+<ol>
+<li>The <strong>Product Manager</strong> reads the user request and writes a PRD.</li>
+<li>The <strong>Architect</strong> converts the PRD into technical design artifacts such as interfaces, file lists, and flow descriptions.</li>
+<li>The <strong>Project Manager</strong> turns the design into a task plan.</li>
+<li>The <strong>Engineer</strong> writes code according to the structured plan and design.</li>
+<li>The <strong>QA Engineer</strong> prepares tests and checks quality.</li>
+<li>The system loops with executable feedback if the code fails.</li>
+</ol>
+<p>That may sound almost boringly procedural. But that is precisely the point. The paper argues that software creation is not improved by making agents “more social”; it is improved by making handoffs cleaner, dependencies clearer, and corrections grounded in executable evidence.</p>
+<p>The authors combine three design choices:</p>
+<ul>
+<li><strong>role specialization</strong>,</li>
+<li><strong>structured communication</strong>,</li>
+<li><strong>iterative executable feedback</strong>.</li>
+</ul>
+<p>Taken together, these create a system that is more like an assembly line than a brainstorming chat room. I think that framing is why the paper had such influence. It moved the field from theatrical role-play toward operational process design.</p>
+<h2 id="3-Method-Details">3. Method Details</h2>
+<h3 id="3-1-Role-specialization-simulating-a-software-company">3.1 Role specialization: simulating a software company</h3>
+<p>MetaGPT defines several explicit roles: Product Manager, Architect, Project Manager, Engineer, and QA Engineer. Each role is given:</p>
+<ul>
+<li>a profile,</li>
+<li>a goal,</li>
+<li>constraints,</li>
+<li>relevant skills,</li>
+<li>and access to appropriate context.</li>
+</ul>
+<p>The Product Manager is supposed to think about user needs and competitive or functional requirements. The Architect is supposed to think about modules, interfaces, and system structure. The Engineer is responsible for implementation. The QA role focuses on validation.</p>
+<p>This sounds obvious, but it solves an important failure mode in vanilla prompting. A single agent asked to “analyze the product, design the architecture, implement the code, test it, and fix bugs” is forced to keep too many incompatible objectives in its immediate context. By splitting the work, MetaGPT narrows each step’s objective and expected output.</p>
+<p>My reading is that this is not merely a prompt trick. It is a way of reducing cognitive interference. Each role has a smaller local optimization problem.</p>
+<h3 id="3-2-SOP-driven-workflow-the-order-of-work-is-part-of-the-method">3.2 SOP-driven workflow: the order of work is part of the method</h3>
+<p>Figure 3 in the paper highlights that MetaGPT is organized around a sequential workflow. This is crucial. The framework does not just define roles; it defines <strong>dependencies</strong> between their outputs.</p>
+<p>For example:</p>
+<ul>
+<li>the Architect should not begin before the PRD exists,</li>
+<li>the Engineer should not write code before the design artifacts exist,</li>
+<li>the QA stage should not be completely detached from the intended requirements.</li>
+</ul>
+<p>This dependency structure matters because downstream agents can ground themselves in upstream documents instead of in fuzzy memory. The paper repeatedly emphasizes that the intermediate documents are not decorative. They are the stabilizers of the entire pipeline.</p>
+<p>In practical terms, MetaGPT turns one large under-specified task into a chain of smaller tasks with typed outputs. That typed-output view is a very software-engineering way of thinking, and I believe it is one of the paper’s strongest ideas.</p>
+<h3 id="3-3-Structured-communication-interfaces-documents-instead-of-chatter">3.3 Structured communication interfaces: documents instead of chatter</h3>
+<p>A major contribution is the claim that unconstrained natural-language exchanges are too fragile for serious multi-agent work. The paper contrasts MetaGPT with systems that rely mostly on dialogue. In MetaGPT, agents exchange structured deliverables such as:</p>
+<ul>
+<li>PRDs,</li>
+<li>system interface design,</li>
+<li>sequence flow diagrams,</li>
+<li>file lists,</li>
+<li>task assignments,</li>
+<li>test artifacts.</li>
+</ul>
+<p>This has several benefits.</p>
+<p>First, structured outputs reduce ambiguity. A file list is more concrete than “the system should probably have some modules for data processing.”</p>
+<p>Second, structured outputs make omissions visible. If an interface spec is missing, that absence is explicit.</p>
+<p>Third, they give downstream roles stable reference points. The Engineer can align implementation with the design artifact, rather than with a conversational summary that may have already drifted.</p>
+<p>The paper uses Figure 2 and Figure 3 to emphasize this communication style. I think the deeper message is that agent systems need data contracts. Humans call them documents. Distributed systems call them schemas. The idea is the same.</p>
+<h3 id="3-4-Shared-message-pool-and-publish-subscribe-mechanism">3.4 Shared message pool and publish-subscribe mechanism</h3>
+<p>MetaGPT also introduces a shared message pool. Rather than making every role exchange information in pairwise conversations, agents publish outputs into a common environment and subscribe to the categories of information they care about.</p>
+<p>This design is important for at least three reasons.</p>
+<ul>
+<li><strong>Reduced topology complexity</strong>: not every message needs one-to-one routing.</li>
+<li><strong>Better reuse of shared artifacts</strong>: multiple roles can consult the same PRD or design spec.</li>
+<li><strong>More disciplined triggering</strong>: a role can wait until its prerequisites exist before acting.</li>
+</ul>
+<p>The publish-subscribe style is common in software architecture because it decouples producers from consumers. MetaGPT imports that software-systems idea into an LLM-agent environment. That is a clever move. It suggests the authors were not only thinking in terms of prompts, but also in terms of systems architecture.</p>
+<h3 id="3-5-Executable-feedback-using-runtime-errors-as-supervision">3.5 Executable feedback: using runtime errors as supervision</h3>
+<p>The paper argues that role specialization and structured artifacts alone are not sufficient. Code still fails. So MetaGPT adds an <strong>executable feedback</strong> mechanism.</p>
+<p>The Engineer writes code, runs it or runs tests, observes failures, and then revises the implementation. The system can iterate up to a bounded number of retries. Figure 2 (right) describes this loop.</p>
+<p>This design matters because runtime feedback is much more trustworthy than purely verbal self-critique. If the code throws an import error, that is a grounded signal. If a unit test fails, that is a grounded signal. If an LLM merely says “I think this code might be okay now,” that is much weaker.</p>
+<p>The paper reports that adding executable feedback improves Pass@1 and reduces human revision cost. That is believable, because software correctness is one of the rare domains where the environment can answer back with hard evidence.</p>
+<h3 id="3-6-ReAct-style-behavior-but-with-process-discipline">3.6 ReAct-style behavior, but with process discipline</h3>
+<p>The paper notes that all agents follow ReAct-style behavior, meaning they reason about what to do and then perform actions. But the important distinction is that this reasoning is embedded inside a stricter workflow. In other words, MetaGPT is not replacing action loops; it is constraining them.</p>
+<p>This is a pattern I think later agent systems kept rediscovering: free-form reasoning is useful, but without strong task structure it often degenerates into verbose wandering. MetaGPT’s contribution is to make the workflow itself part of the control policy.</p>
+<h3 id="3-7-Why-the-framework-is-called-“meta-programming”">3.7 Why the framework is called “meta-programming”</h3>
+<p>The authors use “meta-programming” in the sense of “programming to program.” The idea is that the framework does not just emit code. It creates a process that creates code. It organizes the roles, prompts, handoffs, and execution checks that together produce the software artifact.</p>
+<p>I would phrase this more bluntly: MetaGPT is not just trying to solve a coding task; it is trying to automate the rough skeleton of a software organization.</p>
+<h2 id="4-Experiment-Setup">4. Experiment Setup</h2>
+<h3 id="4-1-Benchmarks-used">4.1 Benchmarks used</h3>
+<p>The paper evaluates on three kinds of tasks.</p>
+<h4 id="HumanEval">HumanEval</h4>
+<p>HumanEval contains 164 handwritten programming tasks. Each task includes a prompt and tests. This is a classic benchmark for code synthesis from natural-language specification.</p>
+<h4 id="MBPP">MBPP</h4>
+<p>MBPP contains 427 Python programming problems. Compared with HumanEval, it also tests practical coding competence on concise tasks involving core Python concepts and standard-library usage.</p>
+<h4 id="SoftwareDev">SoftwareDev</h4>
+<p>The most interesting benchmark in the paper is the custom <strong>SoftwareDev</strong> benchmark. The authors describe it as 70 representative software-development tasks, spanning things like mini-games, image processing algorithms, and visualization applications. For comparison studies, they sample seven representative tasks.</p>
+<p>This benchmark is important because HumanEval and MBPP are mostly function-level code-generation tests, while MetaGPT claims to help with multi-file, more realistic software generation. So the custom benchmark is meant to better match the framework’s ambition.</p>
+<h3 id="4-2-Evaluation-metrics">4.2 Evaluation metrics</h3>
+<p>For HumanEval and MBPP, the paper uses unbiased Pass@k metrics, especially Pass@1.</p>
+<p>For SoftwareDev, the authors add a richer set of criteria:</p>
+<ul>
+<li><strong>Executability</strong>: a 1-to-4 score from non-functional to flawless.</li>
+<li><strong>Cost</strong>: runtime, token usage, and expense.</li>
+<li><strong>Code statistics</strong>: number of files, lines per file, total lines.</li>
+<li><strong>Productivity</strong>: tokens consumed per line of code.</li>
+<li><strong>Human revision cost</strong>: how many manual corrections were needed.</li>
+</ul>
+<p>I like this broader evaluation, because software systems are not only about unit-test pass rates. A multi-agent builder can generate something large but messy, or smaller but more coherent. The paper at least tries to measure those tradeoffs.</p>
+<h3 id="4-3-Baselines">4.3 Baselines</h3>
+<p>The authors compare against both code-generation models and agent frameworks. The paper mentions baselines such as AlphaCode, InCoder, CodeGeeX, CodeGen, Codex, CodeT, PaLM, GPT-4, and software-agent frameworks such as AutoGPT, LangChain with tools, AgentVerse, and ChatDev.</p>
+<p>This makes the evaluation slightly heterogeneous, because some baselines are models while others are orchestration frameworks. But that reflects MetaGPT’s nature: it is a systems layer built on top of models.</p>
+<h2 id="5-Results-Analysis">5. Results &amp; Analysis</h2>
+<h3 id="5-1-HumanEval-and-MBPP-strong-Pass-1-numbers">5.1 HumanEval and MBPP: strong Pass@1 numbers</h3>
+<p>Figure 4 reports the main benchmark story. MetaGPT achieves strong single-attempt pass rates, including 85.9% and 87.7% on the two public code benchmarks when combined with GPT-4. The exact benchmark-to-number mapping in the text is HumanEval and MBPP respectively.</p>
+<p>At a high level, the message is clear: a disciplined multi-agent workflow can outperform plain direct generation or weaker multi-agent baselines.</p>
+<p>The most important thing to notice is not just “the number is high.” It is <strong>why</strong> the authors think it is high. Their argument is that improvements come from:</p>
+<ul>
+<li>better decomposition,</li>
+<li>cleaner intermediate artifacts,</li>
+<li>reduced cascading hallucination,</li>
+<li>and executable debugging loops.</li>
+</ul>
+<p>That is, the claimed gain is organizational, not only model-intrinsic.</p>
+<h3 id="5-2-SoftwareDev-stronger-executability-and-lower-revision-cost">5.2 SoftwareDev: stronger executability and lower revision cost</h3>
+<p>Table 1 is one of the most informative parts of the paper. Compared with ChatDev, MetaGPT reports:</p>
+<ul>
+<li>higher executability score: <strong>3.75</strong> vs <strong>2.25</strong>,</li>
+<li>lower runtime than ChatDev in the reported setup,</li>
+<li>many more total code lines and files,</li>
+<li>much lower human revision cost: <strong>0.83</strong> vs <strong>2.5</strong>,</li>
+<li>better productivity measured as tokens per line of code.</li>
+</ul>
+<p>This is worth unpacking carefully.</p>
+<p>A naive reader might see “MetaGPT uses more tokens than ChatDev” and think that is automatically worse. But the paper’s point is that the extra tokens buy better organization and more usable code. If the codebase is larger, more executable, and needs fewer manual fixes, then the token budget may be justified.</p>
+<p>In other words, the framework trades raw verbosity for artifact quality and downstream usefulness. For software engineering, that can be a very sensible trade.</p>
+<h3 id="5-3-Capability-comparison-why-the-paper-cares-about-intermediate-artifacts">5.3 Capability comparison: why the paper cares about intermediate artifacts</h3>
+<p>Table 2 compares capabilities across frameworks. MetaGPT is marked as supporting:</p>
+<ul>
+<li>PRD generation,</li>
+<li>technical design generation,</li>
+<li>API/interface generation,</li>
+<li>code generation,</li>
+<li>pre-compilation execution,</li>
+<li>role-based task management,</li>
+<li>code review.</li>
+</ul>
+<p>Most competing frameworks in the table lack several of these capabilities.</p>
+<p>This table should not be read as an absolute truth table for all systems in all settings. But it does communicate the authors’ thesis: software generation is not just “write code.” It also includes requirement formalization, design, checking, and execution. MetaGPT’s architecture is built to include those stages explicitly.</p>
+<h3 id="5-4-Ablation-on-roles-more-roles-help-within-reason">5.4 Ablation on roles: more roles help, within reason</h3>
+<p>Table 3 studies the effect of roles. Starting from just an Engineer role and progressively adding Product Manager, Architect, and Project Manager improves executability and reduces revision burden, although it also increases cost somewhat.</p>
+<p>This is a very important result. It suggests the gains are not merely due to “one more prompt.” They are associated with structured division of labor.</p>
+<p>My interpretation is that the ablation supports a practical lesson: if you want an agent system to do complex work, do not only scale model size or sample count. Also design the organization of the work.</p>
+<h3 id="5-5-Ablation-on-executable-feedback-grounded-correction-matters">5.5 Ablation on executable feedback: grounded correction matters</h3>
+<p>The paper reports that executable feedback improves Pass@1 by <strong>4.2%</strong> on HumanEval and <strong>5.4%</strong> on MBPP. It also improves feasibility and reduces the need for human revision.</p>
+<p>This is one of the most believable results in the paper. When the environment can expose objective errors, the system gets something stronger than self-reflection: it gets evidence. In software, evidence is unusually valuable because so many failures are directly testable.</p>
+<h3 id="5-6-What-Figure-1-Figure-2-Figure-3-Figure-4-and-Figure-5-collectively-show">5.6 What Figure 1, Figure 2, Figure 3, Figure 4, and Figure 5 collectively show</h3>
+<p>The paper’s figures form a coherent story:</p>
+<ul>
+<li><strong>Figure 1</strong>: connects MetaGPT’s roles to the SOPs of a real software company.</li>
+<li><strong>Figure 2</strong>: shows both the message-pool communication protocol and the executable-feedback loop.</li>
+<li><strong>Figure 3</strong>: gives the end-to-end workflow graph and emphasizes dependencies between roles.</li>
+<li><strong>Figure 4</strong>: shows that the process design translates into improved code-benchmark outcomes.</li>
+<li><strong>Figure 5</strong>: gives visual examples of generated software artifacts, meant to suggest broader practical utility.</li>
+</ul>
+<p>I appreciate this figure chain because it ties architecture to mechanism, and mechanism to results. That said, one should still be cautious: visual demos are persuasive, but not a substitute for rigorous large-scale product evaluation.</p>
+<h2 id="6-Limitations-Boundary-Conditions">6. Limitations &amp; Boundary Conditions</h2>
+<h3 id="6-1-The-paper-is-strongest-on-software-tasks-not-all-agent-tasks">6.1 The paper is strongest on software tasks, not all agent tasks</h3>
+<p>MetaGPT is designed around a software-company metaphor. That maps naturally to code generation, technical design, and test-driven correction. It may not transfer as cleanly to domains where outputs are less structured or correctness is harder to verify.</p>
+<p>For example, for open-ended research ideation, political negotiation, or creative writing, a rigid SOP may help less, or may even constrain useful exploration.</p>
+<h3 id="6-2-Custom-benchmarks-can-overfit-the-paper’s-design-philosophy">6.2 Custom benchmarks can overfit the paper’s design philosophy</h3>
+<p>The SoftwareDev benchmark is intuitively relevant, but it is also created by the same authors proposing the framework. That does not invalidate it, but it does mean we should be cautious. A benchmark can unintentionally favor the workflow assumptions of the system it was designed to evaluate.</p>
+<p>I would trust the public-benchmark gains more strongly than the custom-benchmark narrative, even though the custom benchmark is the one that best matches the claimed real-world use case.</p>
+<h3 id="6-3-Structured-artifacts-reduce-ambiguity-but-do-not-eliminate-hallucination">6.3 Structured artifacts reduce ambiguity, but do not eliminate hallucination</h3>
+<p>MetaGPT is partly motivated by cascading hallucination. Structured handoffs certainly help, but they do not make the model truthful. A PRD can still contain invented constraints. An architecture doc can still reflect a false assumption. A test suite can still be incomplete.</p>
+<p>So the system reduces one class of error: conversational drift. It does not solve all classes of error: factual mistakes, hidden requirement mismatches, or unsound implementation decisions.</p>
+<h3 id="6-4-Sequential-workflows-can-become-slow-or-brittle">6.4 Sequential workflows can become slow or brittle</h3>
+<p>An SOP-heavy pipeline increases order and traceability, but it can also increase latency. If every stage must wait for the previous stage to produce a formal artifact, the system may become slower and less flexible.</p>
+<p>There is also a brittleness risk. If the early PRD is wrong, that error may become deeply embedded in every downstream artifact. Strong process can sometimes make wrong assumptions more legible, but also more entrenched.</p>
+<h3 id="6-5-Economic-efficiency-depends-on-model-cost-curves">6.5 Economic efficiency depends on model cost curves</h3>
+<p>The paper reports positive productivity numbers, but the economics of a multi-agent system depend heavily on the cost and quality of the underlying model. A workflow that looks worthwhile with one model-price regime may become less compelling with another. As models got cheaper and stronger, some of MetaGPT’s relative advantage might shrink; on the other hand, stronger models can also make the structured pipeline even more capable.</p>
+<h3 id="6-6-It-is-an-orchestration-contribution-more-than-a-fundamental-learning-contribution">6.6 It is an orchestration contribution more than a fundamental learning contribution</h3>
+<p>This is not a criticism, but it is important to state clearly. MetaGPT does not claim to improve model weights. Its main contribution is a control framework. That means its results are partly contingent on implementation details, prompting quality, and task setup. Reproducing them requires reproducing the system design carefully, not just calling the same base model.</p>
+<h2 id="7-Reproducibility-Practical-Notes">7. Reproducibility &amp; Practical Notes</h2>
+<h3 id="7-1-Code-availability-and-practical-reproducibility">7.1 Code availability and practical reproducibility</h3>
+<p>The paper links to a public GitHub repository for MetaGPT. That is a big plus. A framework paper without code would be much weaker. Still, real reproducibility here means more than cloning a repo. One needs:</p>
+<ul>
+<li>access to suitable LLM APIs or local models,</li>
+<li>the exact role prompts or close equivalents,</li>
+<li>the communication protocol,</li>
+<li>test/execution tooling,</li>
+<li>benchmark harnesses,</li>
+<li>and enough budget to run multi-step agent loops.</li>
+</ul>
+<p>So the framework is reproducible in principle, but not trivial in the way a small supervised-learning baseline might be.</p>
+<h3 id="7-2-What-practitioners-should-take-away">7.2 What practitioners should take away</h3>
+<p>If I were advising a practitioner building an agent system today, I would say the most reusable lessons from MetaGPT are not the exact role names. The reusable lessons are:</p>
+<ul>
+<li>define typed intermediate artifacts,</li>
+<li>make dependencies explicit,</li>
+<li>prefer grounded checks over verbal reassurance,</li>
+<li>route information through shared state instead of uncontrolled chatter,</li>
+<li>and separate responsibility by role.</li>
+</ul>
+<p>Even if you never literally implement “Product Manager” or “Project Manager,” those principles remain valuable.</p>
+<h3 id="7-3-Where-this-paper-sits-historically">7.3 Where this paper sits historically</h3>
+<p>Historically, MetaGPT was part of the first big wave of agent-framework papers after people realized GPT-4-level models could support longer workflows. Many later systems, even when they did not explicitly copy MetaGPT, ended up reusing similar ideas:</p>
+<ul>
+<li>planner/executor separation,</li>
+<li>artifact-centric workflows,</li>
+<li>environment-grounded feedback,</li>
+<li>explicit state machines,</li>
+<li>and tool-aware role specialization.</li>
+</ul>
+<p>So I view the paper as important less because every detail remains state of the art, and more because it crystallized a design vocabulary the field kept using.</p>
+<h3 id="7-4-My-final-judgment">7.4 My final judgment</h3>
+<p>My overall view is that MetaGPT is an important systems paper, not because it proves multi-agent software engineering is solved, but because it identifies the right unit of improvement: workflow design. The strongest lesson is that reliable agent collaboration is not mainly a social problem. It is an interface, artifact, and verification problem.</p>
+<p>If you are a beginner, the simplest way to remember the paper is this:</p>
+<blockquote>
+<p>MetaGPT says that if you want LLM agents to work like a team, do not only give them personalities. Give them documents, responsibilities, handoff rules, and executable reality checks.</p>
+</blockquote>
+<p>That lesson has aged surprisingly well.</p>
+<h2 id="References">References</h2>
+<ol>
+<li>Hong et al. <em>Meta Programming for a Multi-Agent Collaborative Framework</em>. arXiv:2308.00352.</li>
+<li>Qian et al. <em>ChatDev: Communicative Agents for Software Development</em>.</li>
+<li>Yao et al. <em>ReAct: Synergizing Reasoning and Acting in Language Models</em>.</li>
+<li>Shinn et al. <em>Reflexion: Language Agents with Verbal Reinforcement Learning</em>.</li>
+<li>Chen et al. <em>Evaluating Large Language Models Trained on Code</em> (HumanEval).</li>
+</ol>
+<hr>
+<p><em>Review written on 2026-03-16.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/03/14/2026-03-14-FlashAttention-technical-review-en/" rel="prev" title="FlashAttention: The IO-Aware Algorithm That Made Transformers Actually Fast">
+      <i class="fa fa-chevron-left"></i> FlashAttention: The IO-Aware Algorithm That Made Transformers Actually Fast
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/03/19/2026-03-19-ZeRO-technical-review-en/" rel="next" title="ZeRO: Shattering the Memory Wall — How DeepSpeed Trains Trillion-Parameter Models">
+      ZeRO: Shattering the Memory Wall — How DeepSpeed Trains Trillion-Parameter Models <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#MetaGPT-—-In-Depth-Technical-Review-English"><span class="nav-number">1.</span> <span class="nav-text">MetaGPT — In-Depth Technical Review (English)</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#Abstract"><span class="nav-number">1.1.</span> <span class="nav-text">Abstract</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Prerequisites-What-to-Know-Before-Reading-This-Paper"><span class="nav-number">1.2.</span> <span class="nav-text">1. Prerequisites: What to Know Before Reading This Paper</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-What-people-mean-by-an-“LLM-agent”"><span class="nav-number">1.2.1.</span> <span class="nav-text">1.1 What people mean by an “LLM agent”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-Why-multi-agent-systems-became-interesting"><span class="nav-number">1.2.2.</span> <span class="nav-text">1.2 Why multi-agent systems became interesting</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-What-Standard-Operating-Procedures-SOPs-are"><span class="nav-number">1.2.3.</span> <span class="nav-text">1.3 What Standard Operating Procedures (SOPs) are</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-4-Why-structured-artifacts-matter-more-than-chatty-dialogue"><span class="nav-number">1.2.4.</span> <span class="nav-text">1.4 Why structured artifacts matter more than chatty dialogue</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-5-Evaluation-basics-what-Pass-1-means"><span class="nav-number">1.2.5.</span> <span class="nav-text">1.5 Evaluation basics: what Pass@1 means</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-What-This-Paper-Does-The-Core-Idea"><span class="nav-number">1.3.</span> <span class="nav-text">2. What This Paper Does (The Core Idea)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Method-Details"><span class="nav-number">1.4.</span> <span class="nav-text">3. Method Details</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-Role-specialization-simulating-a-software-company"><span class="nav-number">1.4.1.</span> <span class="nav-text">3.1 Role specialization: simulating a software company</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-SOP-driven-workflow-the-order-of-work-is-part-of-the-method"><span class="nav-number">1.4.2.</span> <span class="nav-text">3.2 SOP-driven workflow: the order of work is part of the method</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-Structured-communication-interfaces-documents-instead-of-chatter"><span class="nav-number">1.4.3.</span> <span class="nav-text">3.3 Structured communication interfaces: documents instead of chatter</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-Shared-message-pool-and-publish-subscribe-mechanism"><span class="nav-number">1.4.4.</span> <span class="nav-text">3.4 Shared message pool and publish-subscribe mechanism</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-Executable-feedback-using-runtime-errors-as-supervision"><span class="nav-number">1.4.5.</span> <span class="nav-text">3.5 Executable feedback: using runtime errors as supervision</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-6-ReAct-style-behavior-but-with-process-discipline"><span class="nav-number">1.4.6.</span> <span class="nav-text">3.6 ReAct-style behavior, but with process discipline</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-7-Why-the-framework-is-called-“meta-programming”"><span class="nav-number">1.4.7.</span> <span class="nav-text">3.7 Why the framework is called “meta-programming”</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Experiment-Setup"><span class="nav-number">1.5.</span> <span class="nav-text">4. Experiment Setup</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-Benchmarks-used"><span class="nav-number">1.5.1.</span> <span class="nav-text">4.1 Benchmarks used</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#HumanEval"><span class="nav-number">1.5.1.1.</span> <span class="nav-text">HumanEval</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#MBPP"><span class="nav-number">1.5.1.2.</span> <span class="nav-text">MBPP</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#SoftwareDev"><span class="nav-number">1.5.1.3.</span> <span class="nav-text">SoftwareDev</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-Evaluation-metrics"><span class="nav-number">1.5.2.</span> <span class="nav-text">4.2 Evaluation metrics</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-Baselines"><span class="nav-number">1.5.3.</span> <span class="nav-text">4.3 Baselines</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Results-Analysis"><span class="nav-number">1.6.</span> <span class="nav-text">5. Results &amp; Analysis</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-HumanEval-and-MBPP-strong-Pass-1-numbers"><span class="nav-number">1.6.1.</span> <span class="nav-text">5.1 HumanEval and MBPP: strong Pass@1 numbers</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-SoftwareDev-stronger-executability-and-lower-revision-cost"><span class="nav-number">1.6.2.</span> <span class="nav-text">5.2 SoftwareDev: stronger executability and lower revision cost</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-Capability-comparison-why-the-paper-cares-about-intermediate-artifacts"><span class="nav-number">1.6.3.</span> <span class="nav-text">5.3 Capability comparison: why the paper cares about intermediate artifacts</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-Ablation-on-roles-more-roles-help-within-reason"><span class="nav-number">1.6.4.</span> <span class="nav-text">5.4 Ablation on roles: more roles help, within reason</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-5-Ablation-on-executable-feedback-grounded-correction-matters"><span class="nav-number">1.6.5.</span> <span class="nav-text">5.5 Ablation on executable feedback: grounded correction matters</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-6-What-Figure-1-Figure-2-Figure-3-Figure-4-and-Figure-5-collectively-show"><span class="nav-number">1.6.6.</span> <span class="nav-text">5.6 What Figure 1, Figure 2, Figure 3, Figure 4, and Figure 5 collectively show</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Limitations-Boundary-Conditions"><span class="nav-number">1.7.</span> <span class="nav-text">6. Limitations &amp; Boundary Conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-The-paper-is-strongest-on-software-tasks-not-all-agent-tasks"><span class="nav-number">1.7.1.</span> <span class="nav-text">6.1 The paper is strongest on software tasks, not all agent tasks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Custom-benchmarks-can-overfit-the-paper’s-design-philosophy"><span class="nav-number">1.7.2.</span> <span class="nav-text">6.2 Custom benchmarks can overfit the paper’s design philosophy</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-Structured-artifacts-reduce-ambiguity-but-do-not-eliminate-hallucination"><span class="nav-number">1.7.3.</span> <span class="nav-text">6.3 Structured artifacts reduce ambiguity, but do not eliminate hallucination</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-Sequential-workflows-can-become-slow-or-brittle"><span class="nav-number">1.7.4.</span> <span class="nav-text">6.4 Sequential workflows can become slow or brittle</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-5-Economic-efficiency-depends-on-model-cost-curves"><span class="nav-number">1.7.5.</span> <span class="nav-text">6.5 Economic efficiency depends on model cost curves</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-6-It-is-an-orchestration-contribution-more-than-a-fundamental-learning-contribution"><span class="nav-number">1.7.6.</span> <span class="nav-text">6.6 It is an orchestration contribution more than a fundamental learning contribution</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Reproducibility-Practical-Notes"><span class="nav-number">1.8.</span> <span class="nav-text">7. Reproducibility &amp; Practical Notes</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-Code-availability-and-practical-reproducibility"><span class="nav-number">1.8.1.</span> <span class="nav-text">7.1 Code availability and practical reproducibility</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-What-practitioners-should-take-away"><span class="nav-number">1.8.2.</span> <span class="nav-text">7.2 What practitioners should take away</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-Where-this-paper-sits-historically"><span class="nav-number">1.8.3.</span> <span class="nav-text">7.3 Where this paper sits historically</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-My-final-judgment"><span class="nav-number">1.8.4.</span> <span class="nav-text">7.4 My final judgment</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#References"><span class="nav-number">1.9.</span> <span class="nav-text">References</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

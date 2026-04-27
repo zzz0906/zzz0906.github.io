@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. Why this paper matters If I must explain this paper to a complete beginner in one sentence:  SVD-LLM makes low-rank compression for large language models much more reliable by fixing two core probl">
+<meta property="og:type" content="article">
+<meta property="og:title" content="SVD-LLM: Truncation-aware Singular Value Decomposition for Large Language Model Compression — Deep Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/10/2026-04-10-SVDLLM-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. Why this paper matters If I must explain this paper to a complete beginner in one sentence:  SVD-LLM makes low-rank compression for large language models much more reliable by fixing two core probl">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-10T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-16T12:57:27.407Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Efficient Inference">
+<meta property="article:tag" content="SVD">
+<meta property="article:tag" content="Model Compression">
+<meta property="article:tag" content="SVD-LLM">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/10/2026-04-10-SVDLLM-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>SVD-LLM: Truncation-aware Singular Value Decomposition for Large Language Model Compression — Deep Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/10/2026-04-10-SVDLLM-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          SVD-LLM: Truncation-aware Singular Value Decomposition for Large Language Model Compression — Deep Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-10 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-10T00:00:00+00:00">2026-04-10</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-16 12:57:27" itemprop="dateModified" datetime="2026-04-16T12:57:27+00:00">2026-04-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/Efficient-ML/" itemprop="url" rel="index"><span itemprop="name">Efficient ML</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-Why-this-paper-matters">1. Why this paper matters</h2>
+<p>If I must explain this paper to a complete beginner in one sentence:</p>
+<blockquote>
+<p><strong>SVD-LLM makes low-rank compression for large language models much more reliable by fixing two core problems in older SVD methods: wrong truncation guidance and no post-truncation recovery update.</strong></p>
+</blockquote>
+<p>This matters because today’s LLM deployment pain is not abstract:</p>
+<ul>
+<li>model weights are huge,</li>
+<li>memory budgets are real,</li>
+<li>latency and hardware costs are painful,</li>
+<li>and many “easy compression” methods collapse at high compression ratios.</li>
+</ul>
+<p>SVD-based compression has always looked attractive because it is hardware-friendly and can reduce both parameter memory and runtime footprint, but prior SVD compression pipelines (for LLMs) often become unstable or degrade sharply when compression ratio gets aggressive.</p>
+<p>SVD-LLM’s contribution is to make SVD truncation mathematically aligned with loss and then recover quality through a sequential low-rank parameter update. In experiments, that combination is exactly where the big gap appears.</p>
+<hr>
+<a id="more"></a>
+<h2 id="2-Beginner-prerequisites-for-readers-starting-from-zero">2. Beginner prerequisites (for readers starting from zero)</h2>
+<p>I will assume the reader is an older beginner with no strong linear algebra background. I’ll keep each prerequisite concrete.</p>
+<h3 id="2-1-What-a-matrix-means-in-an-LLM">2.1 What a matrix means in an LLM</h3>
+<p>Inside an LLM, many operations are just linear layers. A linear layer is basically:</p>
+<p>[
+Y = W X
+]</p>
+<p>where:</p>
+<ul>
+<li>(X): input features,</li>
+<li>(W): learned weight matrix,</li>
+<li>(Y): output features.</li>
+</ul>
+<p>So compressing an LLM often means compressing many big matrices (W) without changing behavior too much.</p>
+<h3 id="2-2-Why-LLM-compression-is-now-mandatory-not-optional">2.2 Why LLM compression is now mandatory, not optional</h3>
+<p>A 7B/13B/30B model is expensive in three ways:</p>
+<ol>
+<li><strong>Weight memory</strong> (model parameters),</li>
+<li><strong>Compute cost</strong> (matrix multiplications),</li>
+<li><strong>Inference serving cost</strong> (especially at scale).</li>
+</ol>
+<p>If we cannot compress, many deployments become financially or operationally infeasible.</p>
+<h3 id="2-3-What-SVD-is-with-simple-intuition">2.3 What SVD is (with simple intuition)</h3>
+<p>Singular Value Decomposition (SVD) splits a matrix into three pieces:</p>
+<p>[
+W = U \Sigma V^T
+]</p>
+<p>Think of it as:</p>
+<ul>
+<li>(V^T): rotate input directions,</li>
+<li>(\Sigma): scale each direction,</li>
+<li>(U): rotate to output space.</li>
+</ul>
+<p>The diagonal values in (\Sigma) are singular values. Bigger singular values usually carry stronger signal directions.</p>
+<h3 id="2-4-What-“low-rank-approximation”-actually-does">2.4 What “low-rank approximation” actually does</h3>
+<p>Instead of keeping all singular directions, we keep only top ones and truncate the rest:</p>
+<p>[
+W \approx U_r \Sigma_r V_r^T
+]</p>
+<p>This gives a smaller representation and faster/lighter inference, at the cost of approximation error.</p>
+<h3 id="2-5-What-post-training-compression-means">2.5 What post-training compression means</h3>
+<p>Post-training means:</p>
+<ul>
+<li>model is already trained,</li>
+<li>compression happens afterward,</li>
+<li>we do not retrain from scratch.</li>
+</ul>
+<p>This is attractive because full retraining is expensive.</p>
+<h3 id="2-6-Why-perplexity-accuracy-both-matter">2.6 Why perplexity/accuracy both matter</h3>
+<p>In this paper, evaluation uses:</p>
+<ul>
+<li><strong>Perplexity (↓)</strong> on language modeling sets (lower is better),</li>
+<li><strong>Accuracy/BLEU/EM (↑)</strong> on downstream tasks (higher is better).</li>
+</ul>
+<p>Perplexity measures language modeling fit; task metrics measure practical task behavior.</p>
+<h3 id="2-7-Why-pruning-quantization-are-not-always-enough">2.7 Why pruning/quantization are not always enough</h3>
+<p>Pruning and quantization are strong baselines, but each has tradeoffs:</p>
+<ul>
+<li>quantization may require hardware kernel support,</li>
+<li>extreme quantization can hurt quality badly,</li>
+<li>pruning patterns may not map to practical speedups easily,</li>
+<li>high compression ratios can become unstable.</li>
+</ul>
+<p>Low-rank methods provide a complementary path.</p>
+<h3 id="2-8-Why-activation-statistics-matter">2.8 Why activation statistics matter</h3>
+<p>Compression error depends not only on weights (W), but also on input activation distribution (X). If one channel dominates scale, naive truncation can remove “small” singular values that are actually important under real activation statistics.</p>
+<h3 id="2-9-What-whitening-means-and-why-Cholesky-appears">2.9 What whitening means and why Cholesky appears</h3>
+<p>Whitening transforms correlated features into an orthonormal form (roughly: independent, unit-scaled directions).</p>
+<p>If (XX^T) is covariance-like, and (S) is chosen so:</p>
+<p>[
+S S^T = XX^T
+]</p>
+<p>then transformed activation (S^{-1}X) can be made orthonormal. Cholesky is a standard efficient way to obtain such (S).</p>
+<h3 id="2-10-What-LoRA-style-updates-are">2.10 What LoRA-style updates are</h3>
+<p>LoRA introduces low-rank trainable adapters (small matrices) to update large matrices cheaply. SVD-LLM borrows this idea, but applies it carefully to the decomposed low-rank factors after truncation.</p>
+<h3 id="2-11-Why-KV-cache-matters-at-inference-time">2.11 Why KV cache matters at inference time</h3>
+<p>During autoregressive generation, models cache key/value tensors. This cache can dominate memory at long context. If compression can also reduce KV cache footprint, deployment benefit is much larger than “weight-only” savings.</p>
+<hr>
+<h2 id="3-The-core-problem-SVD-LLM-solves">3. The core problem SVD-LLM solves</h2>
+<p>The paper identifies two fundamental issues in prior SVD-based LLM compression (notably FWSVD and ASVD):</p>
+<ol>
+<li>
+<p><strong>Misalignment between singular-value truncation and true compression loss</strong>.<br>
+Small singular value does not always imply small impact on (|WX - W'X|_F).</p>
+</li>
+<li>
+<p><strong>No parameter update after truncation</strong>.<br>
+At higher compression ratios, truncation removes more information; without update/recovery, quality drops hard.</p>
+</li>
+</ol>
+<p>These two issues are exactly why prior methods often degrade sharply when ratio increases.</p>
+<hr>
+<h2 id="4-Method-overview-Figure-1-in-plain-language">4. Method overview (Figure 1) in plain language</h2>
+<p>Figure 1 in the paper shows a clean pipeline:</p>
+<ol>
+<li>Collect calibration data,</li>
+<li>Run truncation-aware data whitening,</li>
+<li>For each weight matrix (W):
+<ul>
+<li>compute SVD on (WS),</li>
+<li>truncate singular values,</li>
+<li>form two low-rank matrices (W'_u, W'_v),</li>
+</ul>
+</li>
+<li>Run sequential low-rank parameter update for quality recovery.</li>
+</ol>
+<p>The design is simple to state, but the key is the whitening math that makes truncation behavior theoretically grounded.</p>
+<hr>
+<h2 id="5-Technical-deep-dive-truncation-aware-data-whitening">5. Technical deep dive: truncation-aware data whitening</h2>
+<h3 id="5-1-Objective-function-and-compression-loss">5.1 Objective function and compression loss</h3>
+<p>The starting objective is standard in compression-aware formulations:</p>
+<p>[
+\min |WX - W'X|_F
+]</p>
+<p>where:</p>
+<ul>
+<li>(W): original weight matrix,</li>
+<li>(W'): compressed weight,</li>
+<li>(X): activation for that layer.</li>
+</ul>
+<p>The paper’s key point: we should choose preprocessing so truncation decisions in SVD directly reflect this loss.</p>
+<h3 id="5-2-Why-prior-SVD-methods-can-truncate-“small”-values-but-still-lose-more">5.2 Why prior SVD methods can truncate “small” values but still lose more</h3>
+<p>The paper explicitly demonstrates (Figure 2(a)) that in ASVD-like normalization, truncating a numerically smaller singular value can still produce larger compression loss than truncating a bigger one.</p>
+<p>That means “truncate smallest singular values” is no longer guaranteed optimal under that formulation.</p>
+<p>This is fatal for high-ratio compression, because truncation choice is the core operation.</p>
+<h3 id="5-3-The-whitening-construction">5.3 The whitening construction</h3>
+<p>SVD-LLM constructs (S) via Cholesky from (XX^T), enforcing transformed activation orthonormality:</p>
+<p>[
+(S^{-1}X)(S^{-1}X)^T = I
+]</p>
+<p>Then SVD is performed on (WS):</p>
+<p>[
+WS = U \Sigma V^T
+]</p>
+<p>After truncation on (\Sigma), two low-rank factors are formed:</p>
+<p>[
+W'_u = U ,[\text{Trunc}(\Sigma)]^{1/2}, \quad
+W'_v = [\text{Trunc}(\Sigma)]^{1/2}V^T S^{-1}
+]</p>
+<p>and compressed weight is:</p>
+<p>[
+W' = W'_u W'_v
+]</p>
+<h3 id="5-4-Theorem-and-corollary-direct-mapping-from-singular-values-to-loss">5.4 Theorem and corollary: direct mapping from singular values to loss</h3>
+<p>The paper gives a clean theoretical chain (Lemma 3.1, Theorem 3.2, Corollary 3.3):</p>
+<ul>
+<li>if (S) is Cholesky of (XX^T),</li>
+<li>truncating one singular value (\sigma_i) yields loss exactly (\sigma_i),</li>
+<li>truncating multiple gives squared loss equal to sum of squared truncated singular values.</li>
+</ul>
+<p>So:</p>
+<p>[
+L^2 = \sum_{i \in \text{truncated} } \sigma_i^2
+]</p>
+<p>Under this condition, truncating smallest singular values is mathematically aligned with minimum loss.</p>
+<p>This is the deepest contribution in the paper.</p>
+<hr>
+<h2 id="6-Technical-deep-dive-parameter-update-with-sequential-low-rank-approximation">6. Technical deep dive: parameter update with sequential low-rank approximation</h2>
+<p>Even with better truncation, high-ratio compression still needs recovery.</p>
+<p>SVD-LLM applies LoRA-style low-rank updates to both decomposed factors:</p>
+<p>[
+W'_u \leftarrow W'_u + B_u A_u, \quad
+W'_v \leftarrow W'_v + B_v A_v
+]</p>
+<p>But it does <strong>not</strong> update both simultaneously. It uses a sequential strategy:</p>
+<ol>
+<li>freeze (W'_v), tune (W'_u),</li>
+<li>freeze updated (W'_u), tune (W'_v).</li>
+</ol>
+<p>The paper’s reasoning is practical: simultaneous optimization has interdependent gradients and can interfere; sequential steps are more stable and reduce fine-tuning loss more reliably.</p>
+<hr>
+<h2 id="7-Complete-algorithm-pipeline-Algorithms-1-2-3">7. Complete algorithm pipeline (Algorithms 1/2/3)</h2>
+<p>The appendix pseudocode can be summarized as follows.</p>
+<h3 id="Algorithm-1-SVD-LLM-main-routine">Algorithm 1: SVD-LLM main routine</h3>
+<p>For each compressible weight matrix:</p>
+<ol>
+<li>fetch whitening matrix from precomputed set,</li>
+<li>run (U,\Sigma,V = SVD(WS)),</li>
+<li>truncate (\Sigma),</li>
+<li>construct (W'_u, W'_v),</li>
+<li>replace original weight with low-rank pair,</li>
+<li>after all layers, run sequential parameter update.</li>
+</ol>
+<h3 id="Algorithm-2-truncation-aware-data-whitening">Algorithm 2: truncation-aware data whitening</h3>
+<p>For each target weight matrix:</p>
+<ol>
+<li>obtain activation (X) from calibration data,</li>
+<li>compute (S = \text{Cholesky}(XX^T)),</li>
+<li>store (S) for this layer.</li>
+</ol>
+<h3 id="Algorithm-3-sequential-parameter-update">Algorithm 3: sequential parameter update</h3>
+<ol>
+<li>run LoRA update for all (W'_u) with (W'_v) frozen,</li>
+<li>run LoRA update for all (W'_v) with updated (W'_u) frozen.</li>
+</ol>
+<p>This is architecturally straightforward and easy to reason about.</p>
+<hr>
+<h2 id="8-Inference-efficiency-analysis">8. Inference efficiency analysis</h2>
+<p>The paper includes both theoretical and hardware-level evidence.</p>
+<h3 id="8-1-Compute-complexity">8.1 Compute complexity</h3>
+<p>Let original weight be (W \in \mathbb{R}^{d\times n}), decomposed into (W'_u \in \mathbb{R}^{d\times r}), (W'_v \in \mathbb{R}^{r\times n}), with compression ratio:</p>
+<p>[
+R_w = 1 - \frac{(d+n)r}{dn}
+]</p>
+<p>Computing via two smaller multiplications reduces complexity proportionally to compression ratio (paper gives derivation and 50% compression example).</p>
+<h3 id="8-2-Weight-memory-and-KV-cache-memory">8.2 Weight memory and KV-cache memory</h3>
+<p>Weight memory scales with low-rank factors (roughly (1-R_w) of original under their derivation).</p>
+<p>Additionally, SVD-LLM proposes a KV-cache-friendly strategy by storing intermediate low-rank states and reconstructing when needed, reducing runtime cache footprint while preserving output quality.</p>
+<p>This “weight + KV” dual benefit is practically important for long-context serving.</p>
+<hr>
+<h2 id="9-Experimental-setup">9. Experimental setup</h2>
+<p>The evaluation is broad for an SVD compression paper.</p>
+<h3 id="9-1-Models">9.1 Models</h3>
+<p>Seven models across three LLM families and scales:</p>
+<ul>
+<li>LLaMA-7B / 13B / 30B,</li>
+<li>LLaMA2-7B,</li>
+<li>OPT-6.7B,</li>
+<li>Vicuna-7B,</li>
+<li>Mistral-7B.</li>
+</ul>
+<h3 id="9-2-Datasets">9.2 Datasets</h3>
+<p>10 datasets total:</p>
+<ul>
+<li>Language modeling: WikiText-2, C4,</li>
+<li>Classification/reasoning: OpenBookQA, ARC-e, WinoGrande, HellaSwag, PIQA, MathQA,</li>
+<li>Generation: TruthfulQA, GSM8K.</li>
+</ul>
+<h3 id="9-3-Calibration-and-update-data">9.3 Calibration and update data</h3>
+<ul>
+<li>calibration: 256 random samples from WikiText-2 (following ASVD setting),</li>
+<li>parameter update: Alpaca 50K samples (following LLM-Pruner style config).</li>
+</ul>
+<h3 id="9-4-Baselines">9.4 Baselines</h3>
+<ul>
+<li>Vanilla SVD,</li>
+<li>FWSVD,</li>
+<li>ASVD,</li>
+<li>plus structured pruning and quantization baselines later.</li>
+</ul>
+<hr>
+<h2 id="10-Main-results-and-evidence-from-figures-tables">10. Main results and evidence from figures/tables</h2>
+<h2 id="10-1-Performance-across-compression-ratios-Table-1">10.1 Performance across compression ratios (Table 1)</h2>
+<p>This is the core table.</p>
+<p>For LLaMA-7B original:</p>
+<ul>
+<li>WikiText-2 PPL: 5.68,</li>
+<li>C4 PPL: 7.34,</li>
+<li>Average downstream score: 0.57.</li>
+</ul>
+<p>At <strong>20% compression</strong>:</p>
+<ul>
+<li>ASVD WikiText-2: 11.14,</li>
+<li>SVD-LLM (W): 7.94,</li>
+<li>SVD-LLM: <strong>7.73</strong>.</li>
+</ul>
+<p>At <strong>40% compression</strong>:</p>
+<ul>
+<li>ASVD WikiText-2: 1407,</li>
+<li>SVD-LLM (W): 13.73,</li>
+<li>SVD-LLM: <strong>9.27</strong>.</li>
+</ul>
+<p>At <strong>60% compression</strong>:</p>
+<ul>
+<li>ASVD WikiText-2: 57057,</li>
+<li>SVD-LLM: <strong>15.00</strong>.</li>
+</ul>
+<p>At <strong>80% compression</strong>:</p>
+<ul>
+<li>baselines mostly collapse,</li>
+<li>SVD-LLM still has finite PPL (31.79) and nonzero downstream behavior.</li>
+</ul>
+<p>The generation tasks are the most dramatic signal:</p>
+<ul>
+<li>at 60%/80%, baseline generation metrics go to near zero,</li>
+<li>SVD-LLM keeps meaningful nonzero outputs.</li>
+</ul>
+<p>That is exactly where practical usefulness is decided.</p>
+<h2 id="10-2-Generalization-to-different-LLM-families-Table-2">10.2 Generalization to different LLM families (Table 2)</h2>
+<p>Under 20% compression:</p>
+<ul>
+<li>OPT-6.7B: SVD-LLM 14.47 PPL, 0.49 accuracy,</li>
+<li>LLaMA2-7B: 7.73 PPL, 0.54 accuracy,</li>
+<li>Mistral-7B: 7.47 PPL, 0.55 accuracy,</li>
+<li>Vicuna-7B: 7.43 PPL, 0.54 accuracy.</li>
+</ul>
+<p>Across all four models, SVD-LLM and SVD-LLM(W) outperform SVD/FWSVD/ASVD baselines.</p>
+<p>This cross-family consistency is a major strength.</p>
+<h2 id="10-3-Behavior-on-larger-scales-Table-3">10.3 Behavior on larger scales (Table 3)</h2>
+<p>For larger models at 20% compression:</p>
+<ul>
+<li>LLaMA-13B: SVD-LLM 6.43 PPL (better than ASVD 6.74),</li>
+<li>LLaMA-30B: SVD-LLM 5.14 PPL vs ASVD 22.71 (very large margin).</li>
+</ul>
+<p>So the method does not break when scale increases.</p>
+<h2 id="10-4-Throughput-and-memory-effects-Figures-3-and-4">10.4 Throughput and memory effects (Figures 3 and 4)</h2>
+<p>Figure 3 trends (GPU and CPU):</p>
+<ul>
+<li>speedup increases with compression ratio,</li>
+<li>larger batch and shorter sequence improve relative speedup,</li>
+<li>trend holds on both A100 GPU and EPYC CPU.</li>
+</ul>
+<p>Figure 4 memory trend:</p>
+<ul>
+<li>weight compression memory drop is near linear with ratio,</li>
+<li>KV-cache-aware mode adds further memory reduction.</li>
+</ul>
+<h2 id="10-5-Ablation-and-robustness-Tables-4-5-6">10.5 Ablation and robustness (Tables 4/5/6)</h2>
+<h3 id="Table-4-component-contributions">Table 4: component contributions</h3>
+<p>Compared with ASVD:</p>
+<ul>
+<li>SVD-LLM(W) much better,</li>
+<li>SVD-LLM(U) also better,</li>
+<li>full SVD-LLM best.</li>
+</ul>
+<p>At 60% compression (WikiText-2):</p>
+<ul>
+<li>ASVD: 57057,</li>
+<li>SVD-LLM(W): 42.30,</li>
+<li>SVD-LLM(U): 49.88,</li>
+<li>SVD-LLM: <strong>15.00</strong>.</li>
+</ul>
+<p>This shows both components matter, and whitening contributes more than update-only.</p>
+<h3 id="Table-5-update-order">Table 5: update order</h3>
+<p>Updating (W'_u) first vs (W'_v) first shows only small differences. So sequential strategy is robust to order.</p>
+<h3 id="Table-6-calibration-sensitivity">Table 6: calibration sensitivity</h3>
+<p>Changing calibration size/seed/source causes only small variation (paper reports within ~3%), so the method is not hypersensitive.</p>
+<h2 id="10-6-Comparison-with-structured-pruning-Table-7">10.6 Comparison with structured pruning (Table 7)</h2>
+<p>Under equal memory budgets on LLaMA-7B:</p>
+<ul>
+<li>10GB: best baseline 8.78 (SliceGPT), SVD-LLM <strong>7.92</strong>,</li>
+<li>9GB: baseline ~12+, SVD-LLM <strong>8.18</strong>,</li>
+<li>8GB: baseline 16.39–19.78, SVD-LLM <strong>8.33</strong>,</li>
+<li>7GB: baseline 21.68–43.05, SVD-LLM <strong>9.63</strong>.</li>
+</ul>
+<p>At tighter memory budgets, margin is very large.</p>
+<h2 id="10-7-Comparison-with-quantization-and-hybrid-path-Table-8">10.7 Comparison with quantization and hybrid path (Table 8)</h2>
+<p>On LLaMA-7B:</p>
+<ul>
+<li>PB-LLM (post-training, 1.9GB): 104.83 PPL,</li>
+<li>BiLLM (post-training, 1.5GB): 47.67,</li>
+<li>SVD-LLM (post-training, 1.5GB): <strong>47.21</strong>,</li>
+<li>OneBit (training-required, 1.3GB): 10.20,</li>
+<li>SVD-LLM + 2-bit QuIP# hybrid (post-training, 1.3GB): <strong>9.83</strong>.</li>
+</ul>
+<p>Important practical message:</p>
+<blockquote>
+<p>A post-training hybrid path (SVD + 2-bit quantization) can exceed a training-required 1-bit method in this setup.</p>
+</blockquote>
+<hr>
+<h2 id="11-Important-appendix-evidence-often-skipped-by-readers">11. Important appendix evidence often skipped by readers</h2>
+<h3 id="11-1-Spectrum-analysis-Appendix-A-4-Figure-6">11.1 Spectrum analysis (Appendix A.4, Figure 6)</h3>
+<p>The paper checks singular value distributions for whitened matrices and finds strong decay patterns, supporting SVD applicability under their transformed formulation.</p>
+<h3 id="11-2-DRONE-comparison-Appendix-A-5">11.2 DRONE comparison (Appendix A.5)</h3>
+<p>They argue same theoretical optimal loss class, but better practicality.</p>
+<p>Key memory example (LLaMA-7B, 5000 calibration samples):</p>
+<ul>
+<li>DRONE activation caching can reach ~419GB for a single matrix scenario,</li>
+<li>SVD-LLM requires ~3.6GB for (XX^T)-style accumulation.</li>
+</ul>
+<p>The appendix also reports large empirical advantages in compression speed and numerical stability over DRONE-like path.</p>
+<h3 id="11-3-FLAP-and-small-model-from-scratch-comparisons-Appendix-A-6-A-7">11.3 FLAP and small-model-from-scratch comparisons (Appendix A.6/A.7)</h3>
+<p>Under high compression ratios, SVD-LLM consistently beats FLAP on WikiText-2.</p>
+<p>They also show compressed LLaMA-3B (from 7B) can outperform an original small model (StableLM-3B) on several metrics while keeping better throughput/memory characteristics in their setting.</p>
+<h3 id="11-4-Compression-time-Appendix-A-8">11.4 Compression time (Appendix A.8)</h3>
+<p>Paper states SVD-LLM compresses LLaMA-7B in ~3.5h vs ASVD ~5.5h (~36% faster), mainly by avoiding expensive per-layer ratio search.</p>
+<hr>
+<h2 id="12-Strengths-limitations-and-boundary-conditions">12. Strengths, limitations, and boundary conditions</h2>
+<h2 id="12-1-Strengths">12.1 Strengths</h2>
+<ol>
+<li><strong>Strong mathematical core</strong> (loss-aligned truncation),</li>
+<li><strong>High-ratio robustness</strong> where many baselines collapse,</li>
+<li><strong>Cross-family and cross-scale consistency</strong>,</li>
+<li><strong>Hardware-relevant efficiency discussion</strong> (compute/memory/KV),</li>
+<li><strong>Practical post-training pathway</strong> with no full retraining.</li>
+</ol>
+<h2 id="12-2-Limitations">12.2 Limitations</h2>
+<ol>
+<li>Sequential update still adds tuning/training overhead,</li>
+<li>Dependence on activation statistics quality from calibration,</li>
+<li>Reported gains are strong on studied tasks, but production-specific workloads may vary,</li>
+<li>Large improvements are clearest at high compression; moderate compression competition is tighter.</li>
+</ol>
+<h2 id="12-3-Boundary-conditions">12.3 Boundary conditions</h2>
+<p>SVD-LLM is most attractive when:</p>
+<ul>
+<li>memory budget is hard,</li>
+<li>high compression ratios are needed,</li>
+<li>full retraining is not acceptable,</li>
+<li>deployment wants hardware-friendly compressed factors.</li>
+</ul>
+<p>If extremely low-latency kernels for a specific quantization path already exist and quality is acceptable, another method may be simpler.</p>
+<hr>
+<h2 id="13-Reproducibility-checklist">13. Reproducibility checklist</h2>
+<p>If I reproduce this paper seriously, I will lock:</p>
+<ol>
+<li>exact model checkpoints and tokenizer,</li>
+<li>calibration sample selection protocol,</li>
+<li>update dataset and LoRA hyperparameters,</li>
+<li>truncation ratios and matrix selection policy,</li>
+<li>evaluation harness and prompt format,</li>
+<li>hardware/precision setup.</li>
+</ol>
+<p>I would also separately report:</p>
+<ul>
+<li>weight-memory reduction,</li>
+<li>KV-cache reduction,</li>
+<li>throughput under multiple batch/sequence regimes,</li>
+<li>generation-quality sanity examples (not just perplexity).</li>
+</ul>
+<hr>
+<h2 id="14-Practical-engineering-playbook">14. Practical engineering playbook</h2>
+<p>A practical adoption sequence:</p>
+<ol>
+<li>Start with 20% compression on one production model,</li>
+<li>Validate no-regression metrics,</li>
+<li>Move to 40% and 60% while tracking generation quality,</li>
+<li>Enable sequential low-rank update for recovery,</li>
+<li>Optionally combine with lightweight quantization (e.g., 2-bit) for extra memory savings,</li>
+<li>Run latency + memory profiling with realistic traffic mixes.</li>
+</ol>
+<p>What I would watch closely:</p>
+<ul>
+<li>failure on long-form generation,</li>
+<li>edge-case reasoning tasks,</li>
+<li>calibration-data drift,</li>
+<li>kernel/runtime compatibility on target hardware.</li>
+</ul>
+<hr>
+<h2 id="15-Final-verdict">15. Final verdict</h2>
+<p>My final judgment is direct:</p>
+<blockquote>
+<p><strong>SVD-LLM is one of the strongest post-training low-rank compression papers for LLMs because it fixes the truncation-loss mismatch mathematically and pairs it with a practical recovery update that actually works at high compression ratios.</strong></p>
+</blockquote>
+<p>For practitioners, this is not just “another SVD variant.” It is a reliable blueprint for getting aggressive compression without the typical catastrophic collapse.</p>
+<p>If your deployment problem is “we need much smaller models now, and we cannot afford full retraining,” SVD-LLM should be near the top of your shortlist.</p>
+<hr>
+<h2 id="16-References">16. References</h2>
+<ol>
+<li>Xin Wang, Yu Zheng, Zhongwei Wan, Mi Zhang. <strong>SVD-LLM: Truncation-aware Singular Value Decomposition for Large Language Model Compression</strong>. ICLR 2025. arXiv:2403.07378.</li>
+<li>Yen-Chang Hsu et al. <strong>Language Model Compression with Weighted Low-rank Factorization (FWSVD)</strong>. ICLR 2022.</li>
+<li>Zhihang Yuan et al. <strong>ASVD: Activation-aware Singular Value Decomposition for Compressing Large Language Models</strong>. arXiv 2023.</li>
+<li>Patrick H. Chen et al. <strong>DRONE: Data-aware Low-rank Compression for Large NLP Models</strong>. NeurIPS 2021.</li>
+<li>Xinyin Ma et al. <strong>LLM-Pruner</strong>. NeurIPS 2023.</li>
+<li>Saleh Ashkboos et al. <strong>SliceGPT</strong>. ICLR 2024.</li>
+<li>Longguang Zhong et al. <strong>BlockPruner</strong>. arXiv 2024.</li>
+<li>Wei Huang et al. <strong>BiLLM</strong>. ICML 2024.</li>
+<li>Zhihang Yuan et al. <strong>PB-LLM</strong>. ICLR 2024.</li>
+<li>Yuzhuang Xu et al. <strong>OneBit</strong>. NeurIPS 2024.</li>
+</ol>
+<hr>
+<p><em>Review written on 2026-04-10.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Efficient-Inference/" rel="tag"># Efficient Inference</a>
+              <a href="/tags/SVD/" rel="tag"># SVD</a>
+              <a href="/tags/Model-Compression/" rel="tag"># Model Compression</a>
+              <a href="/tags/SVD-LLM/" rel="tag"># SVD-LLM</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/09/2026-04-09-DistServe-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="prev" title="DistServe：通过 Prefill/Decoding 解耦实现面向 Goodput 的大模型服务优化 — 深度技术评审">
+      <i class="fa fa-chevron-left"></i> DistServe：通过 Prefill/Decoding 解耦实现面向 Goodput 的大模型服务优化 — 深度技术评审
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/10/2026-04-10-SVDLLM-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="next" title="SVD-LLM：面向大语言模型压缩的“截断感知”奇异值分解方法 — 深度技术评审">
+      SVD-LLM：面向大语言模型压缩的“截断感知”奇异值分解方法 — 深度技术评审 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Why-this-paper-matters"><span class="nav-number">1.</span> <span class="nav-text">1. Why this paper matters</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Beginner-prerequisites-for-readers-starting-from-zero"><span class="nav-number">2.</span> <span class="nav-text">2. Beginner prerequisites (for readers starting from zero)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-What-a-matrix-means-in-an-LLM"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 What a matrix means in an LLM</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-Why-LLM-compression-is-now-mandatory-not-optional"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 Why LLM compression is now mandatory, not optional</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-What-SVD-is-with-simple-intuition"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 What SVD is (with simple intuition)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-What-“low-rank-approximation”-actually-does"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 What “low-rank approximation” actually does</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-What-post-training-compression-means"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 What post-training compression means</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-Why-perplexity-accuracy-both-matter"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 Why perplexity&#x2F;accuracy both matter</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-7-Why-pruning-quantization-are-not-always-enough"><span class="nav-number">2.7.</span> <span class="nav-text">2.7 Why pruning&#x2F;quantization are not always enough</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-8-Why-activation-statistics-matter"><span class="nav-number">2.8.</span> <span class="nav-text">2.8 Why activation statistics matter</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-9-What-whitening-means-and-why-Cholesky-appears"><span class="nav-number">2.9.</span> <span class="nav-text">2.9 What whitening means and why Cholesky appears</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-10-What-LoRA-style-updates-are"><span class="nav-number">2.10.</span> <span class="nav-text">2.10 What LoRA-style updates are</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-11-Why-KV-cache-matters-at-inference-time"><span class="nav-number">2.11.</span> <span class="nav-text">2.11 Why KV cache matters at inference time</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-The-core-problem-SVD-LLM-solves"><span class="nav-number">3.</span> <span class="nav-text">3. The core problem SVD-LLM solves</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Method-overview-Figure-1-in-plain-language"><span class="nav-number">4.</span> <span class="nav-text">4. Method overview (Figure 1) in plain language</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Technical-deep-dive-truncation-aware-data-whitening"><span class="nav-number">5.</span> <span class="nav-text">5. Technical deep dive: truncation-aware data whitening</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-Objective-function-and-compression-loss"><span class="nav-number">5.1.</span> <span class="nav-text">5.1 Objective function and compression loss</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Why-prior-SVD-methods-can-truncate-“small”-values-but-still-lose-more"><span class="nav-number">5.2.</span> <span class="nav-text">5.2 Why prior SVD methods can truncate “small” values but still lose more</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-The-whitening-construction"><span class="nav-number">5.3.</span> <span class="nav-text">5.3 The whitening construction</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-Theorem-and-corollary-direct-mapping-from-singular-values-to-loss"><span class="nav-number">5.4.</span> <span class="nav-text">5.4 Theorem and corollary: direct mapping from singular values to loss</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Technical-deep-dive-parameter-update-with-sequential-low-rank-approximation"><span class="nav-number">6.</span> <span class="nav-text">6. Technical deep dive: parameter update with sequential low-rank approximation</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Complete-algorithm-pipeline-Algorithms-1-2-3"><span class="nav-number">7.</span> <span class="nav-text">7. Complete algorithm pipeline (Algorithms 1&#x2F;2&#x2F;3)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Algorithm-1-SVD-LLM-main-routine"><span class="nav-number">7.1.</span> <span class="nav-text">Algorithm 1: SVD-LLM main routine</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Algorithm-2-truncation-aware-data-whitening"><span class="nav-number">7.2.</span> <span class="nav-text">Algorithm 2: truncation-aware data whitening</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Algorithm-3-sequential-parameter-update"><span class="nav-number">7.3.</span> <span class="nav-text">Algorithm 3: sequential parameter update</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Inference-efficiency-analysis"><span class="nav-number">8.</span> <span class="nav-text">8. Inference efficiency analysis</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-Compute-complexity"><span class="nav-number">8.1.</span> <span class="nav-text">8.1 Compute complexity</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-Weight-memory-and-KV-cache-memory"><span class="nav-number">8.2.</span> <span class="nav-text">8.2 Weight memory and KV-cache memory</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-Experimental-setup"><span class="nav-number">9.</span> <span class="nav-text">9. Experimental setup</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-Models"><span class="nav-number">9.1.</span> <span class="nav-text">9.1 Models</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-Datasets"><span class="nav-number">9.2.</span> <span class="nav-text">9.2 Datasets</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-Calibration-and-update-data"><span class="nav-number">9.3.</span> <span class="nav-text">9.3 Calibration and update data</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-Baselines"><span class="nav-number">9.4.</span> <span class="nav-text">9.4 Baselines</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-Main-results-and-evidence-from-figures-tables"><span class="nav-number">10.</span> <span class="nav-text">10. Main results and evidence from figures&#x2F;tables</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-1-Performance-across-compression-ratios-Table-1"><span class="nav-number">11.</span> <span class="nav-text">10.1 Performance across compression ratios (Table 1)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-2-Generalization-to-different-LLM-families-Table-2"><span class="nav-number">12.</span> <span class="nav-text">10.2 Generalization to different LLM families (Table 2)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-3-Behavior-on-larger-scales-Table-3"><span class="nav-number">13.</span> <span class="nav-text">10.3 Behavior on larger scales (Table 3)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-4-Throughput-and-memory-effects-Figures-3-and-4"><span class="nav-number">14.</span> <span class="nav-text">10.4 Throughput and memory effects (Figures 3 and 4)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-5-Ablation-and-robustness-Tables-4-5-6"><span class="nav-number">15.</span> <span class="nav-text">10.5 Ablation and robustness (Tables 4&#x2F;5&#x2F;6)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Table-4-component-contributions"><span class="nav-number">15.1.</span> <span class="nav-text">Table 4: component contributions</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Table-5-update-order"><span class="nav-number">15.2.</span> <span class="nav-text">Table 5: update order</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Table-6-calibration-sensitivity"><span class="nav-number">15.3.</span> <span class="nav-text">Table 6: calibration sensitivity</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-6-Comparison-with-structured-pruning-Table-7"><span class="nav-number">16.</span> <span class="nav-text">10.6 Comparison with structured pruning (Table 7)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-7-Comparison-with-quantization-and-hybrid-path-Table-8"><span class="nav-number">17.</span> <span class="nav-text">10.7 Comparison with quantization and hybrid path (Table 8)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-Important-appendix-evidence-often-skipped-by-readers"><span class="nav-number">18.</span> <span class="nav-text">11. Important appendix evidence often skipped by readers</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#11-1-Spectrum-analysis-Appendix-A-4-Figure-6"><span class="nav-number">18.1.</span> <span class="nav-text">11.1 Spectrum analysis (Appendix A.4, Figure 6)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-2-DRONE-comparison-Appendix-A-5"><span class="nav-number">18.2.</span> <span class="nav-text">11.2 DRONE comparison (Appendix A.5)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-3-FLAP-and-small-model-from-scratch-comparisons-Appendix-A-6-A-7"><span class="nav-number">18.3.</span> <span class="nav-text">11.3 FLAP and small-model-from-scratch comparisons (Appendix A.6&#x2F;A.7)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-4-Compression-time-Appendix-A-8"><span class="nav-number">18.4.</span> <span class="nav-text">11.4 Compression time (Appendix A.8)</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-Strengths-limitations-and-boundary-conditions"><span class="nav-number">19.</span> <span class="nav-text">12. Strengths, limitations, and boundary conditions</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-1-Strengths"><span class="nav-number">20.</span> <span class="nav-text">12.1 Strengths</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-2-Limitations"><span class="nav-number">21.</span> <span class="nav-text">12.2 Limitations</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-3-Boundary-conditions"><span class="nav-number">22.</span> <span class="nav-text">12.3 Boundary conditions</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-Reproducibility-checklist"><span class="nav-number">23.</span> <span class="nav-text">13. Reproducibility checklist</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#14-Practical-engineering-playbook"><span class="nav-number">24.</span> <span class="nav-text">14. Practical engineering playbook</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#15-Final-verdict"><span class="nav-number">25.</span> <span class="nav-text">15. Final verdict</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#16-References"><span class="nav-number">26.</span> <span class="nav-text">16. References</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

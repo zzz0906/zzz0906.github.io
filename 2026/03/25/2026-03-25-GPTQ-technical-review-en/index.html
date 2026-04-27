@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="GPTQ enables efficient post-training quantization of large language models to 3-4 bits with minimal accuracy loss. Covers the layer-wise quantization algorithm, Hessian-based error correction, and pra">
+<meta property="og:type" content="article">
+<meta property="og:title" content="GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers — In-Depth Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/03/25/2026-03-25-GPTQ-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="GPTQ enables efficient post-training quantization of large language models to 3-4 bits with minimal accuracy loss. Covers the layer-wise quantization algorithm, Hessian-based error correction, and pra">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-03-25T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-02T16:17:18.962Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Efficient Inference">
+<meta property="article:tag" content="Quantization">
+<meta property="article:tag" content="Model Compression">
+<meta property="article:tag" content="Deep Learning">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/03/25/2026-03-25-GPTQ-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers — In-Depth Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/03/25/2026-03-25-GPTQ-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers — In-Depth Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-03-25 00:00:00" itemprop="dateCreated datePublished" datetime="2026-03-25T00:00:00+00:00">2026-03-25</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-02 16:17:18" itemprop="dateModified" datetime="2026-04-02T16:17:18+00:00">2026-04-02</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">GPTQ enables efficient post-training quantization of large language models to 3-4 bits with minimal accuracy loss. Covers the layer-wise quantization algorithm, Hessian-based error correction, and practical deployment.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="Table-of-Contents">Table of Contents</h2>
+<ol>
+<li><a href="#introduction">Introduction: Why Model Quantization Matters</a></li>
+<li><a href="#prerequisites">Prerequisites: Background Knowledge You Need</a></li>
+<li><a href="#method">The GPTQ Method: Three Key Insights</a></li>
+<li><a href="#algorithm">The Full Algorithm</a></li>
+<li><a href="#experiments">Experimental Results and Analysis</a></li>
+<li><a href="#speedups">Practical Speedups and Deployment</a></li>
+<li><a href="#extreme">Extreme Quantization and Grouping</a></li>
+<li><a href="#limitations">Limitations and Discussion</a></li>
+<li><a href="#conclusion">Conclusion and Impact</a></li>
+</ol>
+<hr>
+<h2 id="1-Introduction-Why-Model-Quantization-Matters">1. Introduction: Why Model Quantization Matters</h2>
+<p>Consider the practical challenge of deploying a state-of-the-art large language model. GPT-3, with its 175 billion parameters, requires <strong>326 GB</strong> of memory when stored in the compact FP16 (16-bit floating point) format. This exceeds the capacity of even the most powerful single GPU available (NVIDIA A100 with 80 GB), meaning you need at least <strong>5 GPUs</strong> just for inference — not training, just running the model to generate text.</p>
+<a id="more"></a>
+<p>This is where <strong>model quantization</strong> enters the picture. Quantization reduces the precision of model parameters from high-bitwidth representations (FP16 at 16 bits per parameter) to low-bitwidth ones (e.g., INT4 at 4 bits per parameter). If we could compress a 175B model from 16 bits to 3-4 bits per weight, the memory footprint drops from 326 GB to roughly 63-84 GB — potentially fitting in <strong>a single GPU</strong>.</p>
+<p>The fundamental tension is between compression ratio and model accuracy. Prior to GPTQ, the state of affairs was:</p>
+<ul>
+<li><strong>Simple methods (RTN — Round-to-Nearest)</strong>: Work well at 8 bits but catastrophically fail at 4 bits or below. For example, RTN at 4 bits makes OPT-175B perform worse than the uncompressed 13B model.</li>
+<li><strong>Accurate methods (OBQ, BRECQ, AdaRound)</strong>: Produce good results but are computationally infeasible for billion-parameter models. OBQ's <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><msub><mi>d</mi><mrow><mi>r</mi><mi>o</mi><mi>w</mi></mrow></msub><mo>⋅</mo><msubsup><mi>d</mi><mrow><mi>c</mi><mi>o</mi><mi>l</mi></mrow><mn>3</mn></msubsup><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(d_{row} \cdot d_{col}^3)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span><span class="mord mathnormal mtight">o</span><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.0972em;vertical-align:-0.2831em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-2.4169em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">co</span><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">3</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2831em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span> complexity means it would take years on a 175B model.</li>
+<li><strong>Training-aware quantization (QAT)</strong>: Requires full retraining, which costs tens of thousands of GPU hours for these models — completely impractical.</li>
+</ul>
+<p><strong>GPTQ</strong> resolves this dilemma. Published at ICLR 2023, it is the first method capable of quantizing a 175 billion parameter model to 3-4 bits in approximately <strong>four GPU hours</strong>, with negligible accuracy degradation. The compressed OPT-175B model can run on a <strong>single A100 GPU</strong> for the first time, achieving 3.25× inference speedup.</p>
+<hr>
+<h2 id="2-Prerequisites-Background-Knowledge-You-Need">2. Prerequisites: Background Knowledge You Need</h2>
+<p>This section builds the conceptual foundation needed to understand GPTQ, even if you have no prior exposure to model compression.</p>
+<h3 id="2-1-Neural-Network-Weights-and-Matrix-Multiplication">2.1 Neural Network Weights and Matrix Multiplication</h3>
+<p>At its core, a neural network is a composition of mathematical operations. The most fundamental operation in Transformers is <strong>linear projection</strong> (matrix multiplication):</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>y</mi><mo>=</mo><mi>W</mi><mi>x</mi></mrow><annotation encoding="application/x-tex">y = Wx
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mord mathnormal">x</span></span></span></span></span></p>
+<p>Here, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi></mrow><annotation encoding="application/x-tex">W</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span> is a <strong>weight matrix</strong> (e.g., 12288 × 12288 for OPT-175B's feed-forward layers), <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span> is the input vector, and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi></mrow><annotation encoding="application/x-tex">y</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span></span></span></span> is the output. A large language model contains thousands of such weight matrices, and the sum of all their elements constitutes the model's &quot;parameters.&quot; GPT-3 has 175 billion such numerical values.</p>
+<h3 id="2-2-What-Is-Quantization">2.2 What Is Quantization?</h3>
+<p>In a trained model, each weight is typically stored as an <strong>FP16</strong> (16-bit floating point) or <strong>FP32</strong> (32-bit floating point) number. Quantization maps these high-precision values onto a <strong>finite discrete set</strong> (the quantization grid).</p>
+<p>For example, a 4-bit integer (INT4) can represent only <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mn>2</mn><mn>4</mn></msup><mo>=</mo><mn>16</mn></mrow><annotation encoding="application/x-tex">2^4 = 16</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord">2</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">4</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">16</span></span></span></span> distinct values. The quantization process requires:</p>
+<ol>
+<li><strong>Defining the grid</strong>: Determine a scale factor and zero point that map the floating-point range to integer range</li>
+<li><strong>Rounding</strong>: Map each weight to its nearest grid point</li>
+<li><strong>Dequantization</strong>: At inference time, convert integers back to approximate floating-point values</li>
+</ol>
+<p>The simplest quantization scheme is <strong>RTN (Round-to-Nearest)</strong>: directly round each weight to the nearest quantized value. This works acceptably for 8-bit quantization but causes severe accuracy degradation at 4 bits or lower.</p>
+<h3 id="2-3-Post-Training-vs-Training-Aware-Quantization">2.3 Post-Training vs Training-Aware Quantization</h3>
+<p>Model quantization methods fall into two broad categories:</p>
+<ul>
+<li><strong>Quantization-Aware Training (QAT)</strong>: Introduces quantization operations during training, allowing the model to learn to accommodate low precision. Effective but requires the full training pipeline — prohibitively expensive for 175B models (hundreds of thousands of GPU hours).</li>
+<li><strong>Post-Training Quantization (PTQ)</strong>: Compresses a pre-trained model using a small amount of data (typically a few thousand samples), without retraining. Much cheaper computationally, but the technical challenge lies in maintaining accuracy under aggressive compression.</li>
+</ul>
+<p>GPTQ is a post-training quantization method.</p>
+<h3 id="2-4-The-Layer-Wise-Quantization-Framework">2.4 The Layer-Wise Quantization Framework</h3>
+<p>Modern PTQ methods adopt a <strong>layer-wise</strong> strategy: instead of processing the entire model at once, they handle it one layer at a time. For each layer, the objective is to find quantized weights <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi>W</mi><mo>^</mo></mover></mrow><annotation encoding="application/x-tex">\hat{W}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9468em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9468em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.25em;"><span class="mord">^</span></span></span></span></span></span></span></span></span></span> that minimize the output error:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>arg</mi><mo>⁡</mo><munder><mrow><mi>min</mi><mo>⁡</mo></mrow><mover accent="true"><mi>W</mi><mo>^</mo></mover></munder><mi mathvariant="normal">∥</mi><mover accent="true"><mi>W</mi><mo>^</mo></mover><mi>X</mi><mo>−</mo><mi>W</mi><mi>X</mi><msubsup><mi mathvariant="normal">∥</mi><mn>2</mn><mn>2</mn></msubsup></mrow><annotation encoding="application/x-tex">\arg\min_{\hat{W}} \|\hat{W}X - WX\|_2^2
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.8755em;vertical-align:-0.9287em;"></span><span class="mop">ar<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6679em;"><span style="top:-2.1713em;margin-left:0em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord accent mtight"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9468em;"><span style="top:-2.7em;"><span class="pstrut" style="height:2.7em;"></span><span class="mord mathnormal mtight" style="margin-right:0.13889em;">W</span></span><span style="top:-2.9523em;"><span class="pstrut" style="height:2.7em;"></span><span class="accent-body" style="left:-0.25em;"><span class="mord mtight">^</span></span></span></span></span></span></span></span></span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span><span class="mop">min</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.9287em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">∥</span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9468em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.25em;"><span class="mord">^</span></span></span></span></span></span></span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.1141em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="mord"><span class="mord">∥</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi></mrow><annotation encoding="application/x-tex">W</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span> is the original weight matrix and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi></mrow><annotation encoding="application/x-tex">X</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span></span></span></span> is the layer input obtained from a small calibration dataset (typically 128 random sequences from C4). The essence of this optimization is: find the quantized weights that keep the layer's output as close to the original as possible.</p>
+<p>This layer-wise approach is tractable because it decomposes the global problem into many independent sub-problems, one per layer.</p>
+<h3 id="2-5-The-Hessian-Matrix-and-Second-Order-Information">2.5 The Hessian Matrix and Second-Order Information</h3>
+<p>A central concept in GPTQ is the <strong>Hessian matrix</strong>. In optimization, first-order information (gradients) tells you the rate of change of a function, while second-order information (the Hessian) tells you how the rate of change itself varies — capturing curvature.</p>
+<p>For the layer-wise quantization problem, the Hessian is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>H</mi><mi>F</mi></msub><mo>=</mo><mn>2</mn><msub><mi>X</mi><mi>F</mi></msub><msubsup><mi>X</mi><mi>F</mi><mi>T</mi></msubsup></mrow><annotation encoding="application/x-tex">H_F = 2X_F X_F^T
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1383em;vertical-align:-0.247em;"></span><span class="mord">2</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0785em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8913em;"><span style="top:-2.453em;margin-left:-0.0785em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi></mrow><annotation encoding="application/x-tex">F</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">F</span></span></span></span> is the set of not-yet-quantized weights and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>X</mi><mi>F</mi></msub></mrow><annotation encoding="application/x-tex">X_F</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0785em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is the corresponding input. The diagonal elements of the Hessian reflect how sensitive each weight is to the output: sensitive weights need careful quantization, while insensitive ones can tolerate coarser treatment.</p>
+<p>The <strong>inverse Hessian</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>H</mi><mi>F</mi><mrow><mo>−</mo><mn>1</mn></mrow></msubsup></mrow><annotation encoding="application/x-tex">H_F^{-1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.1478em;vertical-align:-0.2935em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8542em;"><span style="top:-2.4065em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span><span style="top:-3.1031em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2935em;"><span></span></span></span></span></span></span></span></span></span> provides the optimal compensation directions — it tells us exactly how to adjust the remaining weights to best absorb the error from quantizing a single weight.</p>
+<h3 id="2-6-Optimal-Brain-Quantization-OBQ-—-GPTQ-s-Foundation">2.6 Optimal Brain Quantization (OBQ) — GPTQ's Foundation</h3>
+<p>GPTQ builds directly on the <strong>Optimal Brain Quantization (OBQ)</strong> method (Frantar et al., 2022), which itself extends the classic Optimal Brain Surgeon (OBS) framework from pruning to quantization. OBQ's core process:</p>
+<ol>
+<li><strong>Select</strong> the weight whose quantization incurs the least additional error:</li>
+</ol>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>w</mi><mi>q</mi></msub><mo>=</mo><mi>arg</mi><mo>⁡</mo><munder><mrow><mi>min</mi><mo>⁡</mo></mrow><msub><mi>w</mi><mi>q</mi></msub></munder><mfrac><mrow><mo stretchy="false">(</mo><mtext>quant</mtext><mo stretchy="false">(</mo><msub><mi>w</mi><mi>q</mi></msub><mo stretchy="false">)</mo><mo>−</mo><msub><mi>w</mi><mi>q</mi></msub><msup><mo stretchy="false">)</mo><mn>2</mn></msup></mrow><mrow><mo stretchy="false">[</mo><msubsup><mi>H</mi><mi>F</mi><mrow><mo>−</mo><mn>1</mn></mrow></msubsup><msub><mo stretchy="false">]</mo><mrow><mi>q</mi><mi>q</mi></mrow></msub></mrow></mfrac></mrow><annotation encoding="application/x-tex">w_q = \arg\min_{w_q} \frac{(\text{quant}(w_q) - w_q)^2}{[H_F^{-1}]_{qq}}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.5289em;vertical-align:-1.0378em;"></span><span class="mop">ar<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6679em;"><span style="top:-2.4em;margin-left:0em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1645em;"><span style="top:-2.357em;margin-left:-0.0269em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2819em;"><span></span></span></span></span></span></span></span></span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span><span class="mop">min</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.8973em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.4911em;"><span style="top:-2.2558em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mopen">[</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8542em;"><span style="top:-2.4065em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span><span style="top:-3.1031em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2935em;"><span></span></span></span></span></span></span><span class="mclose"><span class="mclose">]</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mopen">(</span><span class="mord text"><span class="mord">quant</span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose"><span class="mclose">)</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.0378em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>The numerator is the squared quantization error; the denominator is the corresponding diagonal of the inverse Hessian (reflecting the weight's &quot;compensability&quot;).</p>
+<ol start="2">
+<li><strong>Compensate</strong> by updating all remaining weights:</li>
+</ol>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>δ</mi><mi>F</mi></msub><mo>=</mo><mo>−</mo><mfrac><mrow><msub><mi>w</mi><mi>q</mi></msub><mo>−</mo><mtext>quant</mtext><mo stretchy="false">(</mo><msub><mi>w</mi><mi>q</mi></msub><mo stretchy="false">)</mo></mrow><mrow><mo stretchy="false">[</mo><msubsup><mi>H</mi><mi>F</mi><mrow><mo>−</mo><mn>1</mn></mrow></msubsup><msub><mo stretchy="false">]</mo><mrow><mi>q</mi><mi>q</mi></mrow></msub></mrow></mfrac><mo>⋅</mo><mo stretchy="false">(</mo><msubsup><mi>H</mi><mi>F</mi><mrow><mo>−</mo><mn>1</mn></mrow></msubsup><msub><mo stretchy="false">)</mo><mrow><mo>:</mo><mo separator="true">,</mo><mi>q</mi></mrow></msub></mrow><annotation encoding="application/x-tex">\delta_F = -\frac{w_q - \text{quant}(w_q)}{[H_F^{-1}]_{qq}} \cdot (H_F^{-1})_{:,q}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03785em;">δ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0379em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.4648em;vertical-align:-1.0378em;"></span><span class="mord">−</span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.2558em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mopen">[</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8542em;"><span style="top:-2.4065em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span><span style="top:-3.1031em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2935em;"><span></span></span></span></span></span></span><span class="mclose"><span class="mclose">]</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord text"><span class="mord">quant</span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.0378em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.1502em;vertical-align:-0.2861em;"></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-2.4163em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2837em;"><span></span></span></span></span></span></span><span class="mclose"><span class="mclose">)</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mrel mtight">:</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<ol start="3">
+<li><strong>Update</strong> the inverse Hessian by removing the quantized weight's row and column:</li>
+</ol>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msubsup><mi>H</mi><mrow><mo>−</mo><mi>q</mi></mrow><mrow><mo>−</mo><mn>1</mn></mrow></msubsup><mo>=</mo><msup><mi>H</mi><mrow><mo>−</mo><mn>1</mn></mrow></msup><mo>−</mo><mfrac><mn>1</mn><mrow><mo stretchy="false">[</mo><msup><mi>H</mi><mrow><mo>−</mo><mn>1</mn></mrow></msup><msub><mo stretchy="false">]</mo><mrow><mi>q</mi><mi>q</mi></mrow></msub></mrow></mfrac><msubsup><mi>H</mi><mrow><mo>:</mo><mo separator="true">,</mo><mi>q</mi></mrow><mrow><mo>−</mo><mn>1</mn></mrow></msubsup><msubsup><mi>H</mi><mrow><mi>q</mi><mo separator="true">,</mo><mo>:</mo></mrow><mrow><mo>−</mo><mn>1</mn></mrow></msubsup></mrow><annotation encoding="application/x-tex">H_{-q}^{-1} = H^{-1} - \frac{1}{[H^{-1}]_{qq}} H_{:,q}^{-1} H_{q,:}^{-1}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.2472em;vertical-align:-0.3831em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-2.453em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span></span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3831em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9474em;vertical-align:-0.0833em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.2935em;vertical-align:-0.9721em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mopen">[</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7401em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mclose"><span class="mclose">]</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.9721em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-2.453em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mrel mtight">:</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span></span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3831em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-2.453em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span><span class="mpunct mtight">,</span><span class="mrel mtight">:</span></span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3831em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>OBQ's fatal flaw: <strong>computational complexity</strong>. For a <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mrow><mi>r</mi><mi>o</mi><mi>w</mi></mrow></msub><mo>×</mo><msub><mi>d</mi><mrow><mi>c</mi><mi>o</mi><mi>l</mi></mrow></msub></mrow><annotation encoding="application/x-tex">d_{row} \times d_{col}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span><span class="mord mathnormal mtight">o</span><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">co</span><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> weight matrix, the cost is <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><msub><mi>d</mi><mrow><mi>r</mi><mi>o</mi><mi>w</mi></mrow></msub><mo>⋅</mo><msubsup><mi>d</mi><mrow><mi>c</mi><mi>o</mi><mi>l</mi></mrow><mn>3</mn></msubsup><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(d_{row} \cdot d_{col}^3)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span><span class="mord mathnormal mtight">o</span><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.0972em;vertical-align:-0.2831em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-2.4169em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">co</span><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">3</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2831em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span>. For OPT-175B where layers can be 12288 × 12288, this would require years of computation. GPTQ reduces this by over <strong>three orders of magnitude</strong>.</p>
+<hr>
+<h2 id="3-The-GPTQ-Method-Three-Key-Insights">3. The GPTQ Method: Three Key Insights</h2>
+<p>GPTQ achieves its dramatic speedup through three algorithmic innovations, each addressing a different bottleneck.</p>
+<h3 id="3-1-Insight-1-Arbitrary-Order-Quantization">3.1 Insight 1: Arbitrary Order Quantization</h3>
+<p>OBQ uses a greedy strategy — always quantizing the weight with the smallest current error. GPTQ's first breakthrough: <strong>on large, heavily-parameterized layers, the quantization order barely matters</strong>.</p>
+<p><strong>Why?</strong> The greedy strategy reduces the number of weights with large individual errors, but these &quot;difficult&quot; weights get pushed to the end of the process, when very few unquantized weights remain for compensation. The two effects roughly cancel out.</p>
+<p><strong>The key consequence</strong>: If order doesn't matter, we can quantize all rows of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi></mrow><annotation encoding="application/x-tex">W</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span> in the <strong>same column order</strong>. Since the Hessian <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mi>F</mi></msub></mrow><annotation encoding="application/x-tex">H_F</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> depends only on the layer input <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>X</mi><mi>F</mi></msub></mrow><annotation encoding="application/x-tex">X_F</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0785em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> (identical for all rows), the inverse Hessian updates are shared across all rows.</p>
+<p><strong>Complexity improvement</strong>:</p>
+<ul>
+<li>OBQ: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mrow><mi>r</mi><mi>o</mi><mi>w</mi></mrow></msub><mo>⋅</mo><msub><mi>d</mi><mrow><mi>c</mi><mi>o</mi><mi>l</mi></mrow></msub></mrow><annotation encoding="application/x-tex">d_{row} \cdot d_{col}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span><span class="mord mathnormal mtight">o</span><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">co</span><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> Hessian updates → <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><msub><mi>d</mi><mrow><mi>r</mi><mi>o</mi><mi>w</mi></mrow></msub><mo>⋅</mo><msubsup><mi>d</mi><mrow><mi>c</mi><mi>o</mi><mi>l</mi></mrow><mn>3</mn></msubsup><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(d_{row} \cdot d_{col}^3)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span><span class="mord mathnormal mtight">o</span><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.0972em;vertical-align:-0.2831em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-2.4169em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">co</span><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">3</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2831em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span></li>
+<li>GPTQ: only <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mrow><mi>c</mi><mi>o</mi><mi>l</mi></mrow></msub></mrow><annotation encoding="application/x-tex">d_{col}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">co</span><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> Hessian updates → <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><mi>max</mi><mo>⁡</mo><mo stretchy="false">{</mo><msub><mi>d</mi><mrow><mi>r</mi><mi>o</mi><mi>w</mi></mrow></msub><mo>⋅</mo><msubsup><mi>d</mi><mrow><mi>c</mi><mi>o</mi><mi>l</mi></mrow><mn>2</mn></msubsup><mo separator="true">,</mo><msubsup><mi>d</mi><mrow><mi>c</mi><mi>o</mi><mi>l</mi></mrow><mn>3</mn></msubsup><mo stretchy="false">}</mo><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(\max\{d_{row} \cdot d_{col}^2, d_{col}^3\})</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mop">max</span><span class="mopen">{</span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span><span class="mord mathnormal mtight">o</span><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.0972em;vertical-align:-0.2831em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-2.4169em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">co</span><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2831em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-2.4169em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">co</span><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">3</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2831em;"><span></span></span></span></span></span></span><span class="mclose">})</span></span></span></span></li>
+</ul>
+<p>For large models where both dimensions are ~12,000, this is a <strong>10,000×</strong> speedup.</p>
+<h3 id="3-2-Insight-2-Lazy-Batch-Updates">3.2 Insight 2: Lazy Batch-Updates</h3>
+<p>Even with shared Hessian updates, a direct implementation is slow due to <strong>low compute-to-memory-access ratio</strong>. Updating the Hessian inverse (Equation 3) touches every element of a potentially huge matrix using only a few FLOPs per element. Modern GPUs have massive compute throughput but relatively limited memory bandwidth — such operations are memory-bound and severely underutilize the GPU.</p>
+<p><strong>GPTQ's solution — lazy batching</strong>:</p>
+<ol>
+<li>Divide columns into blocks of size <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>=</mo><mn>128</mn></mrow><annotation encoding="application/x-tex">B = 128</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">128</span></span></span></span></li>
+<li>Within a block, only update that block's weights and the corresponding <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>×</mo><mi>B</mi></mrow><annotation encoding="application/x-tex">B \times B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span> Hessian sub-block</li>
+<li>After completing a block, perform a single global update to the entire weight matrix and Hessian</li>
+</ol>
+<p><strong>Why this works</strong>: The quantization decision for column <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi></mrow><annotation encoding="application/x-tex">i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span></span></span></span> depends only on updates applied to column <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi></mrow><annotation encoding="application/x-tex">i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span></span></span></span> itself — updates to later columns are irrelevant at that point. So deferring those updates is mathematically exact.</p>
+<p>The multi-weight update formulas:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>δ</mi><mi>F</mi></msub><mo>=</mo><mo>−</mo><mo stretchy="false">(</mo><msub><mi>w</mi><mi>Q</mi></msub><mo>−</mo><mtext>quant</mtext><mo stretchy="false">(</mo><msub><mi>w</mi><mi>Q</mi></msub><mo stretchy="false">)</mo><mo stretchy="false">)</mo><mo stretchy="false">(</mo><mo stretchy="false">[</mo><msubsup><mi>H</mi><mi>F</mi><mrow><mo>−</mo><mn>1</mn></mrow></msubsup><msub><mo stretchy="false">]</mo><mrow><mi>Q</mi><mi>Q</mi></mrow></msub><msup><mo stretchy="false">)</mo><mrow><mo>−</mo><mn>1</mn></mrow></msup><mo stretchy="false">(</mo><msubsup><mi>H</mi><mi>F</mi><mrow><mo>−</mo><mn>1</mn></mrow></msubsup><msub><mo stretchy="false">)</mo><mrow><mo>:</mo><mo separator="true">,</mo><mi>Q</mi></mrow></msub></mrow><annotation encoding="application/x-tex">\delta_F = -(w_Q - \text{quant}(w_Q))([H_F^{-1}]_{QQ})^{-1} (H_F^{-1})_{:,Q}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03785em;">δ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0379em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord">−</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">Q</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.1502em;vertical-align:-0.2861em;"></span><span class="mord text"><span class="mord">quant</span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">Q</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose">))</span><span class="mopen">([</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-2.4163em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2837em;"><span></span></span></span></span></span></span><span class="mclose"><span class="mclose">]</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">QQ</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose"><span class="mclose">)</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-2.4163em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2837em;"><span></span></span></span></span></span></span><span class="mclose"><span class="mclose">)</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mrel mtight">:</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight">Q</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msubsup><mi>H</mi><mrow><mo>−</mo><mi>Q</mi></mrow><mrow><mo>−</mo><mn>1</mn></mrow></msubsup><mo>=</mo><msup><mi>H</mi><mrow><mo>−</mo><mn>1</mn></mrow></msup><mo>−</mo><msubsup><mi>H</mi><mrow><mo>:</mo><mo separator="true">,</mo><mi>Q</mi></mrow><mrow><mo>−</mo><mn>1</mn></mrow></msubsup><mo stretchy="false">(</mo><mo stretchy="false">[</mo><msup><mi>H</mi><mrow><mo>−</mo><mn>1</mn></mrow></msup><msub><mo stretchy="false">]</mo><mrow><mi>Q</mi><mi>Q</mi></mrow></msub><msup><mo stretchy="false">)</mo><mrow><mo>−</mo><mn>1</mn></mrow></msup><msubsup><mi>H</mi><mrow><mi>Q</mi><mo separator="true">,</mo><mo>:</mo></mrow><mrow><mo>−</mo><mn>1</mn></mrow></msubsup></mrow><annotation encoding="application/x-tex">H_{-Q}^{-1} = H^{-1} - H_{:,Q}^{-1}([H^{-1}]_{QQ})^{-1} H_{Q,:}^{-1}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.2839em;vertical-align:-0.4198em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-2.4163em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mathnormal mtight">Q</span></span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.4198em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9474em;vertical-align:-0.0833em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.2839em;vertical-align:-0.4198em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-2.4163em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mrel mtight">:</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight">Q</span></span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.4198em;"><span></span></span></span></span></span></span><span class="mopen">([</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mclose"><span class="mclose">]</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">QQ</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose"><span class="mclose">)</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-2.4163em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">Q</span><span class="mpunct mtight">,</span><span class="mrel mtight">:</span></span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.4198em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Q</mi></mrow><annotation encoding="application/x-tex">Q</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8778em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">Q</span></span></span></span> is the set of all column indices in the completed block.</p>
+<p>This doesn't reduce theoretical FLOPs but converts many small memory operations into fewer large ones, providing an <strong>order of magnitude</strong> practical speedup on large models.</p>
+<h3 id="3-3-Insight-3-Cholesky-Reformulation">3.3 Insight 3: Cholesky Reformulation</h3>
+<p>At the scale of 175B parameters, repeated application of the Hessian inverse update formula (especially combined with batch updates) causes <strong>catastrophic numerical instabilities</strong>. Specifically, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>H</mi><mi>F</mi><mrow><mo>−</mo><mn>1</mn></mrow></msubsup></mrow><annotation encoding="application/x-tex">H_F^{-1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.1478em;vertical-align:-0.2935em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8542em;"><span style="top:-2.4065em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span><span style="top:-3.1031em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2935em;"><span></span></span></span></span></span></span></span></span></span> can become indefinite, causing the algorithm to update remaining weights in wildly incorrect directions — producing arbitrarily bad quantizations.</p>
+<p>The authors observed this problem's probability <strong>increases with model size</strong>: for models larger than a few billion parameters, it almost certainly occurs in at least some layers.</p>
+<p><strong>GPTQ's solution</strong> rests on a key observation: when quantizing weight <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi></mrow><annotation encoding="application/x-tex">q</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">q</span></span></span></span>, the algorithm only needs row <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi></mrow><annotation encoding="application/x-tex">q</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">q</span></span></span></span> of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>H</mi><msub><mi>F</mi><mi>q</mi></msub><mrow><mo>−</mo><mn>1</mn></mrow></msubsup></mrow><annotation encoding="application/x-tex">H_{F_q}^{-1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.3451em;vertical-align:-0.4909em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8542em;"><span style="top:-2.4065em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1645em;"><span style="top:-2.357em;margin-left:-0.1389em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2819em;"><span></span></span></span></span></span></span></span></span></span><span style="top:-3.1031em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.4909em;"><span></span></span></span></span></span></span></span></span></span> (specifically, elements from the diagonal onward). The row-removal operation in Equation 3 is essentially equivalent to <strong>Cholesky decomposition</strong>, differing only by a normalization factor.</p>
+<p>Therefore, GPTQ can:</p>
+<ol>
+<li><strong>Precompute</strong> all needed information via a single, numerically-stable Cholesky decomposition at the start</li>
+<li><strong>Apply mild dampening</strong>: add <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>λ</mi><mo>=</mo><mn>0.01</mn><mo>×</mo><mtext>avg</mtext><mo stretchy="false">(</mo><mtext>diag</mtext><mo stretchy="false">(</mo><mi>H</mi><mo stretchy="false">)</mo><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\lambda = 0.01 \times \text{avg}(\text{diag}(H))</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">λ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">0.01</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">avg</span></span><span class="mopen">(</span><span class="mord text"><span class="mord">diag</span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="mclose">))</span></span></span></span> to the diagonal before decomposition</li>
+</ol>
+<p>This simultaneously:</p>
+<ul>
+<li>Eliminates numerical instability</li>
+<li>Provides additional speedup via optimized Cholesky kernels</li>
+<li>Makes the algorithm robust enough for any model size</li>
+</ul>
+<hr>
+<h2 id="4-The-Full-Algorithm">4. The Full Algorithm</h2>
+<p>Integrating all three insights, GPTQ's complete procedure is:</p>
+<p><strong>Input</strong>: Weight matrix <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi></mrow><annotation encoding="application/x-tex">W</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span> (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mrow><mi>r</mi><mi>o</mi><mi>w</mi></mrow></msub><mo>×</mo><msub><mi>d</mi><mrow><mi>c</mi><mi>o</mi><mi>l</mi></mrow></msub></mrow><annotation encoding="application/x-tex">d_{row} \times d_{col}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span><span class="mord mathnormal mtight">o</span><span class="mord mathnormal mtight" style="margin-right:0.02691em;">w</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">co</span><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>), inverse Hessian <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>H</mi><mrow><mo>−</mo><mn>1</mn></mrow></msup><mo>=</mo><mo stretchy="false">(</mo><mn>2</mn><mi>X</mi><msup><mi>X</mi><mi>T</mi></msup><mo>+</mo><mi>λ</mi><mi>I</mi><msup><mo stretchy="false">)</mo><mrow><mo>−</mo><mn>1</mn></mrow></msup></mrow><annotation encoding="application/x-tex">H^{-1} = (2XX^T + \lambda I)^{-1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0913em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">2</span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8413em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.0641em;vertical-align:-0.25em;"></span><span class="mord mathnormal">λ</span><span class="mord mathnormal" style="margin-right:0.07847em;">I</span><span class="mclose"><span class="mclose">)</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span></span></span></span>, block size <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span></p>
+<p><strong>Algorithm</strong>:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">Q ← 0 (d_row × d_col)            &#x2F;&#x2F; quantized output</span><br><span class="line">E ← 0 (d_row × B)                &#x2F;&#x2F; block quantization errors</span><br><span class="line">H⁻¹ ← Cholesky(H⁻¹)ᵀ           &#x2F;&#x2F; precompute via Cholesky</span><br><span class="line"></span><br><span class="line">for i &#x3D; 0, B, 2B, ... do          &#x2F;&#x2F; iterate over column blocks</span><br><span class="line">    for j &#x3D; i, ..., i+B-1 do      &#x2F;&#x2F; iterate within block</span><br><span class="line">        Q[:,j] ← quant(W[:,j])    &#x2F;&#x2F; quantize current column</span><br><span class="line">        E[:,j-i] ← (W[:,j] - Q[:,j]) &#x2F; H⁻¹[j,j]   &#x2F;&#x2F; scaled error</span><br><span class="line">        W[:,j:(i+B)] -&#x3D; E[:,j-i] · H⁻¹[j,j:(i+B)]  &#x2F;&#x2F; update block</span><br><span class="line">    end for</span><br><span class="line">    W[:,(i+B):] -&#x3D; E · H⁻¹[i:(i+B),(i+B):]          &#x2F;&#x2F; global update</span><br><span class="line">end for</span><br></pre></td></tr></table></figure>
+<p><strong>Intuitive understanding</strong>: Imagine the weight matrix as a large spreadsheet. We process it left-to-right in blocks of 128 columns. Within each block, we quantize columns one by one, immediately compensating within the block. After finishing a block, we do a single bulk update to all remaining columns. The Cholesky decomposition, computed once at the start, provides all the second-order information needed throughout.</p>
+<p><strong>Practical implementation details</strong>:</p>
+<ul>
+<li>GPTQ loads one Transformer block (typically 6 layers) at a time into GPU memory</li>
+<li>It accumulates the layer Hessians and performs quantization on each layer</li>
+<li>After quantizing a block, inputs are re-computed through the quantized block to produce inputs for the next block (this &quot;sequential quantization&quot; noticeably improves results)</li>
+<li>Calibration uses only <strong>128 random 2048-token segments</strong> from the C4 dataset</li>
+<li>Standard uniform per-row asymmetric quantization on the min-max grid</li>
+</ul>
+<hr>
+<h2 id="5-Experimental-Results-and-Analysis">5. Experimental Results and Analysis</h2>
+<h3 id="5-1-Validation-on-Small-Models">5.1 Validation on Small Models</h3>
+<p>First, GPTQ is validated against state-of-the-art PTQ methods on standard benchmarks (ResNet18 and ResNet50):</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>RN18 (69.76%) 4bit</th>
+<th>RN18 3bit</th>
+<th>RN50 (76.13%) 4bit</th>
+<th>RN50 3bit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AdaRound</td>
+<td>69.34</td>
+<td>68.37</td>
+<td>75.84</td>
+<td>75.14</td>
+</tr>
+<tr>
+<td>AdaQuant</td>
+<td>68.12</td>
+<td>59.21</td>
+<td>74.68</td>
+<td>64.98</td>
+</tr>
+<tr>
+<td>BRECQ</td>
+<td>69.37</td>
+<td>68.47</td>
+<td>75.88</td>
+<td>75.32</td>
+</tr>
+<tr>
+<td>OBQ</td>
+<td>69.56</td>
+<td>68.69</td>
+<td>75.72</td>
+<td>75.24</td>
+</tr>
+<tr>
+<td><strong>GPTQ</strong></td>
+<td><strong>69.37</strong></td>
+<td><strong>67.88</strong></td>
+<td><strong>75.71</strong></td>
+<td><strong>74.87</strong></td>
+</tr>
+</tbody>
+</table>
+<p>GPTQ matches the best methods at 4-bit and is slightly behind at 3-bit, while being <strong>60× faster</strong> (&lt; 1 minute vs ~1 hour). On language models (BERT-base, OPT-125M), GPTQ slightly outperforms OBQ at 3-bit, possibly because OBQ's heuristics (like early outlier rounding) may need tuning for non-vision models.</p>
+<h3 id="5-2-Quantization-Runtime">5.2 Quantization Runtime</h3>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>OPT-13B</th>
+<th>OPT-30B</th>
+<th>OPT-66B</th>
+<th>OPT-175B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Time</td>
+<td>20.9 min</td>
+<td>44.9 min</td>
+<td>1.6 hr</td>
+<td><strong>4.2 hr</strong></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>BLOOM-1.7B</th>
+<th>BLOOM-3B</th>
+<th>BLOOM-7.1B</th>
+<th>BLOOM-176B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Time</td>
+<td>2.9 min</td>
+<td>5.2 min</td>
+<td>10.0 min</td>
+<td><strong>3.8 hr</strong></td>
+</tr>
+</tbody>
+</table>
+<p>All on a single NVIDIA A100 GPU. For reference, ZeroQuant-LKD takes 3 hours for a 1.3B model, which would extrapolate to hundreds of hours for 175B. GPTQ achieves a <strong>100× improvement</strong> in quantization throughput per parameter.</p>
+<h3 id="5-3-Language-Generation-—-OPT-Model-Family">5.3 Language Generation — OPT Model Family</h3>
+<p>WikiText2 perplexity (lower is better):</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Bits</th>
+<th>125M</th>
+<th>350M</th>
+<th>1.3B</th>
+<th>2.7B</th>
+<th>6.7B</th>
+<th>13B</th>
+<th>30B</th>
+<th>66B</th>
+<th>175B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Full</td>
+<td>16</td>
+<td>27.65</td>
+<td>22.00</td>
+<td>14.63</td>
+<td>12.47</td>
+<td>10.86</td>
+<td>10.13</td>
+<td>9.56</td>
+<td>9.34</td>
+<td>8.34</td>
+</tr>
+<tr>
+<td>RTN</td>
+<td>4</td>
+<td>37.28</td>
+<td>25.94</td>
+<td>48.17</td>
+<td>16.92</td>
+<td>12.10</td>
+<td>11.32</td>
+<td>10.98</td>
+<td>110</td>
+<td>10.54</td>
+</tr>
+<tr>
+<td><strong>GPTQ</strong></td>
+<td><strong>4</strong></td>
+<td><strong>31.12</strong></td>
+<td><strong>24.24</strong></td>
+<td><strong>15.47</strong></td>
+<td><strong>12.87</strong></td>
+<td><strong>11.39</strong></td>
+<td><strong>10.31</strong></td>
+<td><strong>9.63</strong></td>
+<td><strong>9.55</strong></td>
+<td><strong>8.37</strong></td>
+</tr>
+<tr>
+<td>RTN</td>
+<td>3</td>
+<td>1.3e3</td>
+<td>64.57</td>
+<td>1.3e4</td>
+<td>1.6e4</td>
+<td>5.8e3</td>
+<td>3.4e3</td>
+<td>1.6e3</td>
+<td>6.1e3</td>
+<td>7.3e3</td>
+</tr>
+<tr>
+<td><strong>GPTQ</strong></td>
+<td><strong>3</strong></td>
+<td><strong>53.85</strong></td>
+<td><strong>33.79</strong></td>
+<td><strong>20.97</strong></td>
+<td><strong>16.88</strong></td>
+<td><strong>14.86</strong></td>
+<td><strong>11.61</strong></td>
+<td><strong>10.27</strong></td>
+<td><strong>14.16</strong></td>
+<td><strong>8.68</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key findings</strong>:</p>
+<ol>
+<li>
+<p><strong>4-bit quantization</strong>: GPTQ on OPT-175B loses only <strong>0.03 perplexity</strong> (8.34 → 8.37), while RTN loses 2.2 points (8.34 → 10.54). The RTN-quantized 175B model performs worse than the uncompressed 13B model!</p>
+</li>
+<li>
+<p><strong>3-bit quantization</strong>: RTN <strong>completely collapses</strong> (perplexity explodes to thousands), while GPTQ maintains reasonable accuracy. OPT-175B at 3-bit GPTQ achieves 8.68 perplexity — only 0.34 above the full-precision model, at over 5× compression.</p>
+</li>
+<li>
+<p><strong>Scaling trend</strong>: Larger models are generally <strong>easier to quantize</strong> (with the exception of OPT-66B, which has dead units in early layers). This is excellent news for practical applications, since larger models benefit most from compression.</p>
+</li>
+</ol>
+<h3 id="5-4-Language-Generation-—-BLOOM-Model-Family">5.4 Language Generation — BLOOM Model Family</h3>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Bits</th>
+<th>560M</th>
+<th>1.1B</th>
+<th>1.7B</th>
+<th>3B</th>
+<th>7.1B</th>
+<th>176B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Full</td>
+<td>16</td>
+<td>22.42</td>
+<td>17.69</td>
+<td>15.39</td>
+<td>13.48</td>
+<td>11.37</td>
+<td>8.11</td>
+</tr>
+<tr>
+<td>RTN</td>
+<td>4</td>
+<td>25.90</td>
+<td>22.00</td>
+<td>16.97</td>
+<td>14.76</td>
+<td>12.10</td>
+<td>8.37</td>
+</tr>
+<tr>
+<td><strong>GPTQ</strong></td>
+<td><strong>4</strong></td>
+<td><strong>24.03</strong></td>
+<td><strong>19.05</strong></td>
+<td><strong>16.48</strong></td>
+<td><strong>14.20</strong></td>
+<td><strong>11.73</strong></td>
+<td><strong>8.21</strong></td>
+</tr>
+<tr>
+<td>RTN</td>
+<td>3</td>
+<td>57.08</td>
+<td>50.19</td>
+<td>63.59</td>
+<td>39.36</td>
+<td>17.38</td>
+<td>571</td>
+</tr>
+<tr>
+<td><strong>GPTQ</strong></td>
+<td><strong>3</strong></td>
+<td><strong>32.31</strong></td>
+<td><strong>25.08</strong></td>
+<td><strong>21.11</strong></td>
+<td><strong>17.40</strong></td>
+<td><strong>13.47</strong></td>
+<td><strong>8.64</strong></td>
+</tr>
+</tbody>
+</table>
+<p>BLOOM shows similar patterns with generally smaller gaps between methods, suggesting this model family may be inherently easier to quantize.</p>
+<h3 id="5-5-Deep-Evaluation-on-175B-Models">5.5 Deep Evaluation on 175B Models</h3>
+<p>Comprehensive results across multiple benchmarks for the two largest models:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Bits</th>
+<th>OPT-175B Wiki2</th>
+<th>PTB</th>
+<th>C4</th>
+<th>BLOOM-176B Wiki2</th>
+<th>PTB</th>
+<th>C4</th>
+<th>LAMB.↑</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Baseline</td>
+<td>16</td>
+<td>8.34</td>
+<td>12.01</td>
+<td>10.13</td>
+<td>8.11</td>
+<td>14.59</td>
+<td>11.71</td>
+<td>67.40</td>
+</tr>
+<tr>
+<td>GPTQ</td>
+<td>4</td>
+<td>8.37</td>
+<td>12.26</td>
+<td>10.28</td>
+<td>8.21</td>
+<td>14.75</td>
+<td>11.81</td>
+<td>67.71</td>
+</tr>
+<tr>
+<td>GPTQ</td>
+<td>3</td>
+<td>8.68</td>
+<td>12.68</td>
+<td>10.67</td>
+<td>8.64</td>
+<td>15.57</td>
+<td>12.27</td>
+<td>65.10</td>
+</tr>
+<tr>
+<td>GPTQ</td>
+<td>3/g1024</td>
+<td>8.45</td>
+<td>10.47</td>
+<td>10.47</td>
+<td>8.35</td>
+<td>15.01</td>
+<td>11.98</td>
+<td>67.47</td>
+</tr>
+<tr>
+<td>GPTQ</td>
+<td>3/g128</td>
+<td>8.45</td>
+<td>10.36</td>
+<td>10.36</td>
+<td>8.26</td>
+<td>14.89</td>
+<td>11.85</td>
+<td>67.86</td>
+</tr>
+</tbody>
+</table>
+<p>With group-size 1024 (adding only ~0.02 extra bits), perplexity improves by about 0.2 on average. Group-size 128 (~0.15 extra bits) brings results within 0.1-0.3 of uncompressed accuracy.</p>
+<h3 id="5-6-Zero-Shot-Tasks">5.6 Zero-Shot Tasks</h3>
+<p>On LAMBADA, ARC (Easy and Challenge), and PIQA:</p>
+<ul>
+<li><strong>4-bit</strong>: Both RTN and GPTQ perform relatively well</li>
+<li><strong>3-bit</strong>: RTN collapses while GPTQ maintains strong accuracy</li>
+<li>The pattern is consistent with perplexity results, confirming that GPTQ's compression is not just numerically faithful but preserves actual task performance</li>
+</ul>
+<hr>
+<h2 id="6-Practical-Speedups-and-Deployment">6. Practical Speedups and Deployment</h2>
+<h3 id="6-1-Memory-Savings">6.1 Memory Savings</h3>
+<p>3-bit GPTQ OPT-175B:</p>
+<ul>
+<li>Model weights: ~63 GB (embeddings and output layer kept in FP16)</li>
+<li>KV cache (2048-token context): ~9 GB</li>
+<li><strong>Total: ~72 GB → fits in a single 80 GB A100 GPU!</strong></li>
+</ul>
+<p>Comparison:</p>
+<ul>
+<li>FP16: requires <strong>5× A100 80 GB</strong> GPUs</li>
+<li>LLM.int8() (8-bit): requires <strong>3× A100 80 GB</strong> GPUs</li>
+<li><strong>GPTQ 3-bit: requires only 1 A100</strong></li>
+</ul>
+<h3 id="6-2-Inference-Latency">6.2 Inference Latency</h3>
+<table>
+<thead>
+<tr>
+<th>GPU</th>
+<th>FP16 Latency</th>
+<th>3bit GPTQ</th>
+<th>Speedup</th>
+<th>GPU Reduction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A6000 48 GB</td>
+<td>589 ms/token</td>
+<td>130 ms/token</td>
+<td><strong>4.53×</strong></td>
+<td>8 → 2</td>
+</tr>
+<tr>
+<td>A100 80 GB</td>
+<td>230 ms/token</td>
+<td>71 ms/token</td>
+<td><strong>3.25×</strong></td>
+<td>5 → 1</td>
+</tr>
+</tbody>
+</table>
+<p>The authors developed custom GPU kernels that perform <strong>quantized-matrix full-precision-vector products</strong> — dynamically dequantizing weights during the matrix-vector multiply. Although dequantization adds compute, the 5× reduction in memory loads (3 bits vs 16 bits) more than compensates, since generative inference is <strong>memory-bandwidth-bound</strong> (batch size 1, autoregressive token-by-token generation).</p>
+<p>Crucially, this requires <strong>no activation quantization</strong> — only weights are compressed.</p>
+<h3 id="6-3-Deployment-Significance">6.3 Deployment Significance</h3>
+<p>Before GPTQ, running GPT-3-class models required expensive multi-GPU clusters. GPTQ brought the barrier down to:</p>
+<ul>
+<li>A single A100 for 175B models</li>
+<li>Two A6000s (significantly cheaper than A100s) as an alternative</li>
+<li>Faster inference than the multi-GPU FP16 baseline (eliminating inter-GPU communication overhead)</li>
+</ul>
+<hr>
+<h2 id="7-Extreme-Quantization-and-Grouping">7. Extreme Quantization and Grouping</h2>
+<h3 id="7-1-Grouping-Strategy">7.1 Grouping Strategy</h3>
+<p>GPTQ is fully compatible with <strong>grouped quantization</strong>: instead of using one set of quantization parameters (scale + zero point) per entire row, group consecutive <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi></mrow><annotation encoding="application/x-tex">g</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">g</span></span></span></span> weights and give each group independent parameters.</p>
+<table>
+<thead>
+<tr>
+<th>Group Size</th>
+<th>Avg Bits</th>
+<th>OPT-175B Wiki2 PPL</th>
+<th>BLOOM-176B Wiki2 PPL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>No grouping</td>
+<td>3.00</td>
+<td>8.68</td>
+<td>8.64</td>
+</tr>
+<tr>
+<td>g=1024</td>
+<td>~3.02</td>
+<td>8.45</td>
+<td>8.35</td>
+</tr>
+<tr>
+<td>g=128</td>
+<td>~3.15</td>
+<td>8.45</td>
+<td>8.26</td>
+</tr>
+<tr>
+<td>Full precision</td>
+<td>16.00</td>
+<td>8.34</td>
+<td>8.11</td>
+</tr>
+</tbody>
+</table>
+<p>The storage overhead of grouping is minimal (0.02-0.15 extra bits per weight), but the accuracy improvement is substantial. GPTQ naturally integrates grouping into its quantization process, using the most current updated weights when determining group parameters.</p>
+<h3 id="7-2-2-Bit-Quantization">7.2 2-Bit Quantization</h3>
+<p>GPTQ can push into the extreme 2-bit regime:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>FP16 PPL</th>
+<th>g=128 (~2.2 bit)</th>
+<th>g=64 (~2.4 bit)</th>
+<th>g=32 (~2.6 bit)</th>
+<th>3-bit vanilla</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OPT-175B</td>
+<td>8.34</td>
+<td>9.58</td>
+<td>9.18</td>
+<td>8.94</td>
+<td>8.68</td>
+</tr>
+<tr>
+<td>BLOOM-176B</td>
+<td>8.11</td>
+<td>9.55</td>
+<td>9.17</td>
+<td>8.83</td>
+<td>8.64</td>
+</tr>
+</tbody>
+</table>
+<p>At ~2.2 bits, perplexity increases by less than 1.5 points. At ~2.6 bits, the increase is only 0.6-0.7.</p>
+<p>Most remarkably, with group-size 8, GPTQ achieves <strong>ternary quantization</strong> (-1, 0, +1) on OPT-175B with only 9.20 WikiText2 perplexity — less than 1 point degradation from full precision. This pattern could be extremely efficient on custom hardware like FPGAs.</p>
+<hr>
+<h2 id="8-Limitations-and-Discussion">8. Limitations and Discussion</h2>
+<h3 id="8-1-Technical-Limitations">8.1 Technical Limitations</h3>
+<ol>
+<li>
+<p><strong>Memory-movement savings only, no compute reduction</strong>: GPTQ's speedup comes from reduced data loading, not reduced arithmetic. For compute-bound scenarios (large-batch inference), the speedup is limited. For large batches, the approach reduces to decompressing the matrix before computation (taking &lt; 1.5 ms on A100) with minimal overhead.</p>
+</li>
+<li>
+<p><strong>Weight-only quantization</strong>: GPTQ does not quantize activations. While the authors argue activations are not the bottleneck for generative inference (which is memory-bandwidth-bound), activation quantization could provide additional benefits for other workloads. This can be addressed using orthogonal techniques like those in ZeroQuant.</p>
+</li>
+<li>
+<p><strong>Hardware support gap</strong>: At the time of publication, mainstream GPUs lacked native support for mixed-precision operations (FP16 × INT4). GPTQ requires dynamic dequantization, adding overhead. This limitation is being addressed by newer hardware generations.</p>
+</li>
+</ol>
+<h3 id="8-2-The-OPT-66B-Anomaly">8.2 The OPT-66B Anomaly</h3>
+<p>OPT-66B is the sole exception to the &quot;larger models are easier to quantize&quot; trend. Investigation reveals this model has a significant fraction of <strong>dead units</strong> in early layers — a training artifact that makes compression more difficult. This highlights that model quality affects quantizability.</p>
+<h3 id="8-3-Calibration-Data">8.3 Calibration Data</h3>
+<p>GPTQ uses only 128 random 2048-token segments from C4 — generic web text with no task-specific data. This means:</p>
+<ul>
+<li>Results are genuinely &quot;zero-shot&quot; with respect to evaluation tasks</li>
+<li>The method is task-agnostic and broadly applicable</li>
+<li>But task-specific calibration data might yield even better results for specific applications</li>
+</ul>
+<h3 id="8-4-Bias-and-Safety-Considerations">8.4 Bias and Safety Considerations</h3>
+<p>The authors note that while GPTQ preserves standard accuracy metrics, the impact of compression on secondary measures — particularly <strong>bias effects</strong> — has not been thoroughly studied. Making large models more accessible is a double-edged sword: it democratizes AI capabilities but also lowers the barrier for misuse.</p>
+<hr>
+<h2 id="9-Conclusion-and-Impact">9. Conclusion and Impact</h2>
+<h3 id="9-1-Core-Contributions">9.1 Core Contributions</h3>
+<p>GPTQ represents a watershed moment in large language model compression:</p>
+<ol>
+<li><strong>First demonstration</strong>: 175B models quantized to 3-4 bits in ~4 GPU hours with negligible accuracy loss</li>
+<li><strong>Three algorithmic innovations</strong>: Arbitrary-order quantization (complexity reduction), lazy batch-updates (GPU utilization), Cholesky reformulation (numerical stability)</li>
+<li><strong>Practical deployment</strong>: GPT-3-class models running on a single GPU, with 3.25-4.5× inference speedup</li>
+<li><strong>Accuracy preservation</strong>: Only 0.03 perplexity loss at 4-bit on OPT-175B</li>
+</ol>
+<h3 id="9-2-Downstream-Impact">9.2 Downstream Impact</h3>
+<p>GPTQ's influence extends far beyond the paper itself:</p>
+<ul>
+<li><strong>AutoGPTQ</strong>: Became one of the most widely-used quantization tools in the open-source ecosystem</li>
+<li><strong>Spawned AWQ, SqueezeLLM, QuIP, and many successors</strong>: Catalyzed an entire ecosystem of quantization research</li>
+<li><strong>HuggingFace integration</strong>: Became a standard quantization option for open-source LLM deployment</li>
+<li><strong>Changed the deployment paradigm</strong>: From &quot;requires a cluster&quot; to &quot;runs on a single GPU&quot;</li>
+<li><strong>Enabled consumer-grade LLM inference</strong>: Models like LLaMA and Mistral are routinely quantized with GPTQ variants for local deployment</li>
+</ul>
+<h3 id="9-3-Key-Takeaways">9.3 Key Takeaways</h3>
+<ol>
+<li><strong>Clever algorithms beat brute force</strong>: A 10,000× speedup over OBQ through three simple-but-profound insights, not through more hardware</li>
+<li><strong>Second-order information is powerful</strong>: The Hessian-based compensation is what makes 3-4 bit quantization possible where naive rounding fails catastrophically</li>
+<li><strong>Systems optimization matters equally</strong>: Lazy batching and Cholesky reformulation are not algorithmic innovations per se, but engineering decisions critical to practical viability</li>
+<li><strong>The theory-practice bridge</strong>: Custom GPU kernels and inference harnesses are what transform a mathematical result into deployable technology</li>
+</ol>
+<h3 id="9-4-Reproducibility">9.4 Reproducibility</h3>
+<p>The authors provide complete code at <code>https://github.com/IST-DASLab/gptq</code> including: model compression scripts for all OPT and BLOOM variants, perplexity evaluation, 3-bit CUDA kernels, zero-shot evaluation, and benchmarking tools.</p>
+<hr>
+<h2 id="References">References</h2>
+<ol>
+<li>Frantar, E., Ashkboos, S., Hoefler, T., &amp; Alistarh, D. (2023). GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers. ICLR 2023.</li>
+<li>Frantar, E., Singh, S. P., &amp; Alistarh, D. (2022). Optimal Brain Compression: A Framework for Accurate Post-Training Quantization and Pruning. NeurIPS 2022.</li>
+<li>Hassibi, B., Stork, D. G., &amp; Wolff, G. J. (1993). Optimal Brain Surgeon and General Network Pruning. IEEE International Conference on Neural Networks.</li>
+<li>Dettmers, T., Lewis, M., Belkada, Y., &amp; Zettlemoyer, L. (2022). LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale.</li>
+<li>Yao, Z., et al. (2022). ZeroQuant: Efficient and Affordable Post-Training Quantization for Large-Scale Transformers.</li>
+<li>Nagel, M., et al. (2020). Up or Down? Adaptive Rounding for Post-Training Quantization. ICML 2020.</li>
+<li>Li, Y., et al. (2021). BRECQ: Pushing the Limit of Post-Training Quantization by Block Reconstruction. ICLR 2021.</li>
+<li>Brown, T., et al. (2020). Language Models are Few-Shot Learners. NeurIPS 2020.</li>
+<li>Zhang, S., et al. (2022). OPT: Open Pre-trained Transformer Language Models.</li>
+<li>Park, G., et al. (2022). nuQmm: Quantized MatMul for Efficient Inference of Large-Scale Generative Language Models.</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Efficient-Inference/" rel="tag"># Efficient Inference</a>
+              <a href="/tags/Quantization/" rel="tag"># Quantization</a>
+              <a href="/tags/Model-Compression/" rel="tag"># Model Compression</a>
+              <a href="/tags/Deep-Learning/" rel="tag"># Deep Learning</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/03/24/2026-03-24-PPO-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="prev" title="近端策略优化算法（PPO）— 深度技术评审">
+      <i class="fa fa-chevron-left"></i> 近端策略优化算法（PPO）— 深度技术评审
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/03/26/2026-03-26-Alpa-technical-review-en/" rel="next" title="Alpa: Automating Inter- and Intra-Operator Parallelism — In-Depth Technical Review">
+      Alpa: Automating Inter- and Intra-Operator Parallelism — In-Depth Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Table-of-Contents"><span class="nav-number">1.</span> <span class="nav-text">Table of Contents</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Introduction-Why-Model-Quantization-Matters"><span class="nav-number">2.</span> <span class="nav-text">1. Introduction: Why Model Quantization Matters</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Prerequisites-Background-Knowledge-You-Need"><span class="nav-number">3.</span> <span class="nav-text">2. Prerequisites: Background Knowledge You Need</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-Neural-Network-Weights-and-Matrix-Multiplication"><span class="nav-number">3.1.</span> <span class="nav-text">2.1 Neural Network Weights and Matrix Multiplication</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-What-Is-Quantization"><span class="nav-number">3.2.</span> <span class="nav-text">2.2 What Is Quantization?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-Post-Training-vs-Training-Aware-Quantization"><span class="nav-number">3.3.</span> <span class="nav-text">2.3 Post-Training vs Training-Aware Quantization</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-The-Layer-Wise-Quantization-Framework"><span class="nav-number">3.4.</span> <span class="nav-text">2.4 The Layer-Wise Quantization Framework</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-The-Hessian-Matrix-and-Second-Order-Information"><span class="nav-number">3.5.</span> <span class="nav-text">2.5 The Hessian Matrix and Second-Order Information</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-Optimal-Brain-Quantization-OBQ-—-GPTQ-s-Foundation"><span class="nav-number">3.6.</span> <span class="nav-text">2.6 Optimal Brain Quantization (OBQ) — GPTQ&#39;s Foundation</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-The-GPTQ-Method-Three-Key-Insights"><span class="nav-number">4.</span> <span class="nav-text">3. The GPTQ Method: Three Key Insights</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-Insight-1-Arbitrary-Order-Quantization"><span class="nav-number">4.1.</span> <span class="nav-text">3.1 Insight 1: Arbitrary Order Quantization</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-Insight-2-Lazy-Batch-Updates"><span class="nav-number">4.2.</span> <span class="nav-text">3.2 Insight 2: Lazy Batch-Updates</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-Insight-3-Cholesky-Reformulation"><span class="nav-number">4.3.</span> <span class="nav-text">3.3 Insight 3: Cholesky Reformulation</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-The-Full-Algorithm"><span class="nav-number">5.</span> <span class="nav-text">4. The Full Algorithm</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Experimental-Results-and-Analysis"><span class="nav-number">6.</span> <span class="nav-text">5. Experimental Results and Analysis</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-Validation-on-Small-Models"><span class="nav-number">6.1.</span> <span class="nav-text">5.1 Validation on Small Models</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Quantization-Runtime"><span class="nav-number">6.2.</span> <span class="nav-text">5.2 Quantization Runtime</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-Language-Generation-—-OPT-Model-Family"><span class="nav-number">6.3.</span> <span class="nav-text">5.3 Language Generation — OPT Model Family</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-Language-Generation-—-BLOOM-Model-Family"><span class="nav-number">6.4.</span> <span class="nav-text">5.4 Language Generation — BLOOM Model Family</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-5-Deep-Evaluation-on-175B-Models"><span class="nav-number">6.5.</span> <span class="nav-text">5.5 Deep Evaluation on 175B Models</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-6-Zero-Shot-Tasks"><span class="nav-number">6.6.</span> <span class="nav-text">5.6 Zero-Shot Tasks</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Practical-Speedups-and-Deployment"><span class="nav-number">7.</span> <span class="nav-text">6. Practical Speedups and Deployment</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Memory-Savings"><span class="nav-number">7.1.</span> <span class="nav-text">6.1 Memory Savings</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Inference-Latency"><span class="nav-number">7.2.</span> <span class="nav-text">6.2 Inference Latency</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-Deployment-Significance"><span class="nav-number">7.3.</span> <span class="nav-text">6.3 Deployment Significance</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Extreme-Quantization-and-Grouping"><span class="nav-number">8.</span> <span class="nav-text">7. Extreme Quantization and Grouping</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-Grouping-Strategy"><span class="nav-number">8.1.</span> <span class="nav-text">7.1 Grouping Strategy</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-2-Bit-Quantization"><span class="nav-number">8.2.</span> <span class="nav-text">7.2 2-Bit Quantization</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Limitations-and-Discussion"><span class="nav-number">9.</span> <span class="nav-text">8. Limitations and Discussion</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-Technical-Limitations"><span class="nav-number">9.1.</span> <span class="nav-text">8.1 Technical Limitations</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-The-OPT-66B-Anomaly"><span class="nav-number">9.2.</span> <span class="nav-text">8.2 The OPT-66B Anomaly</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-Calibration-Data"><span class="nav-number">9.3.</span> <span class="nav-text">8.3 Calibration Data</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-4-Bias-and-Safety-Considerations"><span class="nav-number">9.4.</span> <span class="nav-text">8.4 Bias and Safety Considerations</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-Conclusion-and-Impact"><span class="nav-number">10.</span> <span class="nav-text">9. Conclusion and Impact</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-Core-Contributions"><span class="nav-number">10.1.</span> <span class="nav-text">9.1 Core Contributions</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-Downstream-Impact"><span class="nav-number">10.2.</span> <span class="nav-text">9.2 Downstream Impact</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-Key-Takeaways"><span class="nav-number">10.3.</span> <span class="nav-text">9.3 Key Takeaways</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-Reproducibility"><span class="nav-number">10.4.</span> <span class="nav-text">9.4 Reproducibility</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#References"><span class="nav-number">11.</span> <span class="nav-text">References</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

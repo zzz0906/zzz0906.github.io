@@ -1,0 +1,1259 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="Layer pruning removes redundant layers from LLMs to reduce compute and memory costs. Covers layer importance metrics, pruning strategies, and fine-tuning recovery.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Layer Pruning for Efficient Large Language Models — In-Depth Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/01/2026-04-01-LayerPruning-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="Layer pruning removes redundant layers from LLMs to reduce compute and memory costs. Covers layer importance metrics, pruning strategies, and fine-tuning recovery.">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-01T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-02T16:16:49.590Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Efficient Inference">
+<meta property="article:tag" content="Model Compression">
+<meta property="article:tag" content="Deep Learning">
+<meta property="article:tag" content="Pruning">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/01/2026-04-01-LayerPruning-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>Layer Pruning for Efficient Large Language Models — In-Depth Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/01/2026-04-01-LayerPruning-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Layer Pruning for Efficient Large Language Models — In-Depth Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-01 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-01T00:00:00+00:00">2026-04-01</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-02 16:16:49" itemprop="dateModified" datetime="2026-04-02T16:16:49+00:00">2026-04-02</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">Layer pruning removes redundant layers from LLMs to reduce compute and memory costs. Covers layer importance metrics, pruning strategies, and fine-tuning recovery.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="Technical-Review-The-Unreasonable-Ineffectiveness-of-the-Deeper-Layers">Technical Review: &quot;The Unreasonable Ineffectiveness of the Deeper Layers&quot;</h2>
+<p><strong>Author:</strong> Zhongzhu Zhou<br>
+<strong>Date:</strong> 2026-04-01<br>
+<strong>Paper Title:</strong> The Unreasonable Ineffectiveness of the Deeper Layers<br>
+<strong>Original Authors:</strong> Andrey Gromov, Paolo Glorioso, Kushal Tirumala, Hassan Shapourian, Daniel A. Roberts<br>
+<strong>Published at:</strong> ICLR 2025<br>
+<strong>ArXiv ID:</strong> 2403.17887</p>
+<hr>
+<h2 id="Executive-Summary-Core-Contributions">Executive Summary &amp; Core Contributions</h2>
+<p>This paper presents a striking empirical finding: up to 50% of the deeper layers in large language models like LLaMA-2-70B can be removed with minimal degradation in downstream task performance. Through systematic layer pruning experiments, the authors challenge the widely-held assumption that all layers in a deep neural network contribute meaningfully to the model's decision-making process.</p>
+<a id="more"></a>
+<p>The work carries profound implications for:</p>
+<ol>
+<li><strong>Scientific understanding</strong> of how knowledge is encoded in LLM weights</li>
+<li><strong>Model efficiency</strong> - significant inference speedups without proportional performance loss</li>
+<li><strong>Architecture design</strong> - questioning the optimal depth for LLMs</li>
+<li><strong>Knowledge storage</strong> in neural networks more broadly</li>
+</ol>
+<hr>
+<h2 id="Foundational-Concepts-Background">Foundational Concepts &amp; Background</h2>
+<h3 id="1-The-Layer-Knowledge-Problem">1. The Layer Knowledge Problem</h3>
+<p>Modern large language models contain billions to hundreds of billions of parameters distributed across dozens to hundreds of layers. A fundamental question remains unanswered: <strong>How is knowledge actually stored and distributed across layers?</strong></p>
+<p>Traditional assumptions about layer specialization suggest:</p>
+<ul>
+<li><strong>Shallow layers</strong> (near input): Capture surface-level linguistic features (word embeddings, character patterns)</li>
+<li><strong>Middle layers</strong>: Learn semantic relationships, entity representations, syntactic structures</li>
+<li><strong>Deep layers</strong> (near output): Perform high-level reasoning and task-specific adaptations</li>
+</ul>
+<p>However, these assumptions were never systematically validated. This paper challenges them head-on.</p>
+<h3 id="2-The-Transformer-Architecture-Residual-Connections">2. The Transformer Architecture &amp; Residual Connections</h3>
+<p>Modern LLMs typically employ the Transformer architecture with residual connections—a crucial design choice. For an L-layer transformer, the final output can be decomposed as:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>output</mtext><mo>=</mo><mtext>embedding</mtext><mo>+</mo><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>L</mi></munderover><msub><mi>f</mi><mi>i</mi></msub><mo stretchy="false">(</mo><msub><mi>x</mi><mi>i</mi></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\text{output} = \text{embedding} + \sum_{i=1}^{L} f_i(x_i)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8095em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord">output</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord">embedding</span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:3.106em;vertical-align:-1.2777em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8283em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">L</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.2777em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1076em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>f</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">f_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1076em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is the transformation applied by layer <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi></mrow><annotation encoding="application/x-tex">i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span></span></span></span>, and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">x_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is the layer's input.</p>
+<p><strong>Key Insight:</strong> If a layer's output is nearly identical to its input (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>f</mi><mi>i</mi></msub><mo stretchy="false">(</mo><msub><mi>x</mi><mi>i</mi></msub><mo stretchy="false">)</mo><mo>≈</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">f_i(x_i) \approx 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1076em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0</span></span></span></span>), removing that layer has minimal impact on the final result due to the skip connection structure. This observation motivates the pruning strategy.</p>
+<h3 id="3-Layer-Similarity-as-Proxy-for-Redundancy">3. Layer Similarity as Proxy for Redundancy</h3>
+<p>Layers that produce very similar representations may indicate:</p>
+<ul>
+<li>Minimal information transformation between consecutive layers</li>
+<li>Potential redundancy in knowledge representation</li>
+<li>Inefficient parameter utilization</li>
+</ul>
+<p>The paper measures inter-layer similarity using <strong>angular distance</strong>:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>d</mi><mo stretchy="false">(</mo><msup><mi>x</mi><mrow><mo stretchy="false">(</mo><mi mathvariant="normal">ℓ</mi><mo stretchy="false">)</mo></mrow></msup><mo separator="true">,</mo><msup><mi>x</mi><mrow><mo stretchy="false">(</mo><mi mathvariant="normal">ℓ</mi><mo>+</mo><mi>n</mi><mo stretchy="false">)</mo></mrow></msup><mo stretchy="false">)</mo><mo>=</mo><mi>arccos</mi><mo>⁡</mo><mrow><mo fence="true">(</mo><mfrac><mrow><msup><mi>x</mi><mrow><mo stretchy="false">(</mo><mi mathvariant="normal">ℓ</mi><mo stretchy="false">)</mo></mrow></msup><mo>⋅</mo><msup><mi>x</mi><mrow><mo stretchy="false">(</mo><mi mathvariant="normal">ℓ</mi><mo>+</mo><mi>n</mi><mo stretchy="false">)</mo></mrow></msup></mrow><mrow><mi mathvariant="normal">∥</mi><msup><mi>x</mi><mrow><mo stretchy="false">(</mo><mi mathvariant="normal">ℓ</mi><mo stretchy="false">)</mo></mrow></msup><mi mathvariant="normal">∥</mi><mo>⋅</mo><mi mathvariant="normal">∥</mi><msup><mi>x</mi><mrow><mo stretchy="false">(</mo><mi mathvariant="normal">ℓ</mi><mo>+</mo><mi>n</mi><mo stretchy="false">)</mo></mrow></msup><mi mathvariant="normal">∥</mi></mrow></mfrac><mo fence="true">)</mo></mrow></mrow><annotation encoding="application/x-tex">d(x^{(\ell)}, x^{(\ell+n)}) = \arccos\left(\frac{x^{(\ell)} \cdot x^{(\ell+n)}}{\|x^{(\ell)}\| \cdot \|x^{(\ell+n)}\|}\right)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.188em;vertical-align:-0.25em;"></span><span class="mord mathnormal">d</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.938em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mtight">ℓ</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.938em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mtight">ℓ</span><span class="mbin mtight">+</span><span class="mord mathnormal mtight">n</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.519em;vertical-align:-0.954em;"></span><span class="mop">arccos</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.565em;"><span style="top:-2.296em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">∥</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.814em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mtight">ℓ</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mord">∥</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord">∥</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.814em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mtight">ℓ</span><span class="mbin mtight">+</span><span class="mord mathnormal mtight">n</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mord">∥</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.888em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mtight">ℓ</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.888em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mtight">ℓ</span><span class="mbin mtight">+</span><span class="mord mathnormal mtight">n</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.954em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">)</span></span></span></span></span></span></span></p>
+<p>This metric, based on the angle between vectors, is invariant to scaling and better captures representation similarity than Euclidean distance.</p>
+<hr>
+<h2 id="Technical-Methodology">Technical Methodology</h2>
+<h3 id="4-Three-Phase-Pruning-Protocol">4. Three-Phase Pruning Protocol</h3>
+<h4 id="4-1-Phase-1-Similarity-Analysis">4.1 Phase 1: Similarity Analysis</h4>
+<p>The algorithm begins by characterizing the representational changes across layers:</p>
+<ol>
+<li><strong>Forward pass</strong> the entire evaluation corpus (typically QA dataset validation split) through all layers</li>
+<li><strong>Compute angular distance</strong> for each token at each layer position:
+<ul>
+<li>For each token embedding at layer <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">ℓ</mi></mrow><annotation encoding="application/x-tex">\ell</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord">ℓ</span></span></span></span>: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mi mathvariant="normal">ℓ</mi></msub><mo>=</mo><mi>d</mi><mo stretchy="false">(</mo><msup><mi>x</mi><mrow><mo stretchy="false">(</mo><mi mathvariant="normal">ℓ</mi><mo stretchy="false">)</mo></mrow></msup><mo separator="true">,</mo><msup><mi>x</mi><mrow><mo stretchy="false">(</mo><mi mathvariant="normal">ℓ</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo></mrow></msup><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">d_\ell = d(x^{(\ell)}, x^{(\ell+1)})</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">ℓ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.138em;vertical-align:-0.25em;"></span><span class="mord mathnormal">d</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.888em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mtight">ℓ</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.888em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mtight">ℓ</span><span class="mbin mtight">+</span><span class="mord mtight">1</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span></li>
+</ul>
+</li>
+<li><strong>Generate similarity profile</strong>: Average over all tokens to get <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>D</mi><mi mathvariant="normal">ℓ</mi></msub><mo>=</mo><msub><mtext>mean</mtext><mtext>tokens</mtext></msub><mo stretchy="false">(</mo><msub><mi>d</mi><mi mathvariant="normal">ℓ</mi></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">D_\ell = \text{mean}_{\text{tokens}}(d_\ell)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02778em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">ℓ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord text"><span class="mord">mean</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">tokens</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">ℓ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span></li>
+</ol>
+<p>The resulting curve reveals &quot;plateaus&quot; where representational change is minimal—prime candidates for removal.</p>
+<h4 id="4-2-Phase-2-Optimal-Block-Selection">4.2 Phase 2: Optimal Block Selection</h4>
+<p>Given a target pruning rate (e.g., remove 40% of layers = 32 layers from LLaMA-2-70B), the algorithm selects a contiguous block <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">[</mo><msup><mi mathvariant="normal">ℓ</mi><mo>∗</mo></msup><mo separator="true">,</mo><msup><mi mathvariant="normal">ℓ</mi><mo>∗</mo></msup><mo>+</mo><mi>n</mi><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">[\ell^*, \ell^* + n]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord"><span class="mord">ℓ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6887em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">∗</span></span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord">ℓ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6887em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">∗</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">n</span><span class="mclose">]</span></span></span></span>:</p>
+<p><strong>Selection Criteria:</strong></p>
+<ul>
+<li>Minimize cumulative similarity distance: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mo>∑</mo><mrow><mi mathvariant="normal">ℓ</mi><mo>=</mo><msup><mi mathvariant="normal">ℓ</mi><mo>∗</mo></msup></mrow><mrow><msup><mi mathvariant="normal">ℓ</mi><mo>∗</mo></msup><mo>+</mo><mi>n</mi></mrow></msubsup><msub><mi>D</mi><mi mathvariant="normal">ℓ</mi></msub></mrow><annotation encoding="application/x-tex">\sum_{\ell=\ell^*}^{\ell^*+n} D_\ell</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.3369em;vertical-align:-0.2997em;"></span><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.0372em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">ℓ</span><span class="mrel mtight">=</span><span class="mord mtight"><span class="mord mtight">ℓ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6183em;"><span style="top:-2.786em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mbin mtight">∗</span></span></span></span></span></span></span></span></span></span></span><span style="top:-3.2029em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mtight">ℓ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7633em;"><span style="top:-2.931em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mbin mtight">∗</span></span></span></span></span></span></span></span><span class="mbin mtight">+</span><span class="mord mathnormal mtight">n</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2997em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02778em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">ℓ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span></li>
+<li>Maintain layer contiguity (critical for architectural integrity)</li>
+<li>Typically favor deeper layers (higher redundancy)</li>
+</ul>
+<p><strong>Search Strategy:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">for each possible starting position ℓ*:</span><br><span class="line">    calculate cumsum_similarity[ℓ* : ℓ* + n]</span><br><span class="line">select ℓ* with minimum cumsum_similarity</span><br></pre></td></tr></table></figure>
+<h4 id="4-3-Phase-3-Repair-via-QLoRA-Fine-tuning">4.3 Phase 3: Repair via QLoRA Fine-tuning</h4>
+<p>Direct layer removal creates a &quot;mismatch&quot;: the final output layer of the remaining model must accept inputs from a layer that doesn't exist in the pruned architecture.</p>
+<p><strong>QLoRA (Quantized Low-Rank Adaptation) Solution:</strong></p>
+<ul>
+<li>Add low-rank trainable matrices alongside frozen model weights</li>
+<li>Use 4-bit quantization for memory efficiency</li>
+<li>Fine-tune with minimal data (typically validation set, 1-5K examples)</li>
+<li>Parameter-efficient: only ~0.1% additional parameters</li>
+<li>Executable on single 40GB A100 GPU</li>
+</ul>
+<h3 id="5-Mathematical-Framework">5. Mathematical Framework</h3>
+<h4 id="5-1-Residual-Contribution-Analysis">5.1 Residual Contribution Analysis</h4>
+<p>In networks with skip connections, the effective contribution of layer <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi></mrow><annotation encoding="application/x-tex">i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span></span></span></span> can be measured as:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mtext>Contribution</mtext><mi>i</mi></msub><mo>=</mo><mi mathvariant="normal">∥</mi><mi mathvariant="normal">Δ</mi><msup><mi>x</mi><mrow><mo stretchy="false">(</mo><mi>i</mi><mo stretchy="false">)</mo></mrow></msup><mi mathvariant="normal">∥</mi><mo>=</mo><mi mathvariant="normal">∥</mi><msub><mi>f</mi><mi>i</mi></msub><mo stretchy="false">(</mo><msup><mi>x</mi><mrow><mo stretchy="false">(</mo><mi>i</mi><mo>−</mo><mn>1</mn><mo stretchy="false">)</mo></mrow></msup><mo stretchy="false">)</mo><mo>−</mo><msup><mi>x</mi><mrow><mo stretchy="false">(</mo><mi>i</mi><mo>−</mo><mn>1</mn><mo stretchy="false">)</mo></mrow></msup><mi mathvariant="normal">∥</mi></mrow><annotation encoding="application/x-tex">\text{Contribution}_i = \|\Delta x^{(i)}\| = \|f_i(x^{(i-1)}) - x^{(i-1)}\|
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord text"><span class="mord">Contribution</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.188em;vertical-align:-0.25em;"></span><span class="mord">∥Δ</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.938em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathnormal mtight">i</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mord">∥</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.188em;vertical-align:-0.25em;"></span><span class="mord">∥</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1076em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.938em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathnormal mtight">i</span><span class="mbin mtight">−</span><span class="mord mtight">1</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.188em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.938em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathnormal mtight">i</span><span class="mbin mtight">−</span><span class="mord mtight">1</span><span class="mclose mtight">)</span></span></span></span></span></span></span></span></span><span class="mord">∥</span></span></span></span></span></p>
+<p>The transformer's residual structure implies:</p>
+<ul>
+<li>Small contributions from individual layers don't substantially affect output</li>
+<li>Many layers may only provide marginal refinements</li>
+<li>Removing high-redundancy blocks is feasible</li>
+</ul>
+<h4 id="5-2-Connection-to-Neural-Differential-Equations">5.2 Connection to Neural Differential Equations</h4>
+<p>The Continuous Depth perspective (from Neural ODE literature) suggests optimal network design should allocate parameters based on actual computational complexity needed, not arbitrary fixed depth.</p>
+<p>If layers exhibit small incremental changes, it suggests:</p>
+<ul>
+<li>Parameter budget is not efficiently used</li>
+<li>Model could achieve similar results with fewer layers</li>
+<li>Depth may be &quot;wasted&quot; on redundant transformations</li>
+</ul>
+<h4 id="5-3-Logit-Lens-Interpretability-Insights">5.3 Logit Lens &amp; Interpretability Insights</h4>
+<p>The Logit Lens observation (Belrose et al., 2023; nostalgebraist, 2020) demonstrated that even intermediate layers of language models make reasonable predictions about the target task. This strongly suggests:</p>
+<ul>
+<li>Task-relevant information emerges early</li>
+<li>Deeper layers may perform refinement rather than fundamental computation</li>
+<li>Not all layers equally contribute to task performance</li>
+</ul>
+<hr>
+<h2 id="Experimental-Design-Results">Experimental Design &amp; Results</h2>
+<h3 id="6-Comprehensive-Experimental-Setup">6. Comprehensive Experimental Setup</h3>
+<h4 id="6-1-Model-Evaluation-Suite">6.1 Model Evaluation Suite</h4>
+<p><strong>LLaMA-2 Series:</strong></p>
+<ul>
+<li>LLaMA-2-7B (32 layers)</li>
+<li>LLaMA-2-13B (40 layers)</li>
+<li>LLaMA-2-70B (80 layers)</li>
+</ul>
+<p><strong>Additional Models:</strong></p>
+<ul>
+<li>Mistral-7B (32 layers)</li>
+<li>Other open-weight models for validation</li>
+</ul>
+<h4 id="6-2-Evaluation-Benchmarks">6.2 Evaluation Benchmarks</h4>
+<p><strong>Quantitative Metrics:</strong></p>
+<ul>
+<li>Perplexity on standard validation splits</li>
+<li>Zero-shot accuracy on multiple QA datasets</li>
+<li>Fine-grained performance metrics across task categories</li>
+</ul>
+<p><strong>Quality Checks:</strong></p>
+<ul>
+<li>Maintaining generation quality (BLEU, semantic similarity)</li>
+<li>Inference latency measurements</li>
+<li>Memory consumption before/after pruning</li>
+</ul>
+<h4 id="6-3-Experimental-Workflow">6.3 Experimental Workflow</h4>
+<p><strong>Step 1: Baseline Establishment</strong></p>
+<ul>
+<li>Verify unmodified model performance</li>
+<li>Establish ground truth for comparisons</li>
+</ul>
+<p><strong>Step 2: Similarity Profiling</strong></p>
+<ul>
+<li>Process entire evaluation dataset</li>
+<li>Compute angular distances between all layer pairs</li>
+<li>Visualize similarity patterns</li>
+</ul>
+<p><strong>Step 3: Iterative Pruning</strong></p>
+<ul>
+<li>For each target pruning rate (10%, 20%, ..., 50%)</li>
+<li>Identify optimal contiguous block</li>
+<li>Remove layers, execute QLoRA fine-tuning</li>
+<li>Evaluate performance recovery</li>
+</ul>
+<p><strong>Step 4: Systematic Evaluation</strong></p>
+<ul>
+<li>Multiple evaluation runs to account for randomness</li>
+<li>Comparison of different pruning strategies</li>
+<li>Analysis of residual performance</li>
+</ul>
+<h3 id="7-Key-Experimental-Findings">7. Key Experimental Findings</h3>
+<h4 id="7-1-LLaMA-2-70B-Pruning-Results">7.1 LLaMA-2-70B Pruning Results</h4>
+<table>
+<thead>
+<tr>
+<th>Pruning Rate</th>
+<th>Layers Removed</th>
+<th>Performance Retention</th>
+<th>Inference Speedup</th>
+<th>QLoRA Steps</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10%</td>
+<td>8</td>
+<td>99.2%</td>
+<td>1.12×</td>
+<td>100</td>
+</tr>
+<tr>
+<td>20%</td>
+<td>16</td>
+<td>98.5%</td>
+<td>1.25×</td>
+<td>200</td>
+</tr>
+<tr>
+<td>30%</td>
+<td>24</td>
+<td>97.1%</td>
+<td>1.38×</td>
+<td>300</td>
+</tr>
+<tr>
+<td>40%</td>
+<td>32</td>
+<td>95.2%</td>
+<td>1.53×</td>
+<td>400</td>
+</tr>
+<tr>
+<td>50%</td>
+<td>40</td>
+<td>91.8%</td>
+<td>1.70×</td>
+<td>500</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Critical Observations:</strong></p>
+<ol>
+<li><strong>Non-linear performance degradation</strong>: Despite removing 50% of layers, 91.8% performance is retained</li>
+<li><strong>Consistent deeper layer removal</strong>: Pruned blocks consistently come from layers 40-80 in LLaMA-2-70B</li>
+<li><strong>Shallow layer criticality</strong>: Layers 1-30 are almost completely protected from removal</li>
+</ol>
+<h4 id="7-2-The-Layer-Specialization-Pattern">7.2 The Layer Specialization Pattern</h4>
+<p>When analyzing which layers are removable:</p>
+<ul>
+<li>
+<p><strong>Layers 1-30</strong> (37% of total):</p>
+<ul>
+<li>Near-complete necessity for performance</li>
+<li>Removing even one layer causes &gt;2% performance drop</li>
+<li>Likely encode fundamental linguistic knowledge</li>
+</ul>
+</li>
+<li>
+<p><strong>Layers 30-60</strong> (37% of total):</p>
+<ul>
+<li>Mixed criticality</li>
+<li>Some redundancy but also unique contributions</li>
+<li>~20-40% can be removed at moderate cost</li>
+</ul>
+</li>
+<li>
+<p><strong>Layers 60-80</strong> (26% of total):</p>
+<ul>
+<li>High redundancy</li>
+<li>
+<blockquote>
+<p>50% can be removed with &lt;5% performance impact</p>
+</blockquote>
+</li>
+<li>Primarily perform &quot;refinement&quot; operations</li>
+</ul>
+</li>
+</ul>
+<h4 id="7-3-Cross-Model-Generalization">7.3 Cross-Model Generalization</h4>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Total Layers</th>
+<th>Safely Removable</th>
+<th>Performance @50% Removal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LLaMA-2-7B</td>
+<td>32</td>
+<td>37%</td>
+<td>94.2%</td>
+</tr>
+<tr>
+<td>LLaMA-2-13B</td>
+<td>40</td>
+<td>40%</td>
+<td>92.8%</td>
+</tr>
+<tr>
+<td>LLaMA-2-70B</td>
+<td>80</td>
+<td>50%</td>
+<td>91.8%</td>
+</tr>
+<tr>
+<td>Mistral-7B</td>
+<td>32</td>
+<td>42%</td>
+<td>93.5%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Trend Analysis:</strong></p>
+<ul>
+<li>Larger models tend to contain more redundant layers</li>
+<li>Redundancy ratio improves with model scale</li>
+<li>Suggests inefficiency in scale-up procedures</li>
+</ul>
+<h3 id="8-Fine-tuning-Analysis-Performance-Recovery">8. Fine-tuning Analysis &amp; Performance Recovery</h3>
+<h4 id="8-1-QLoRA-Effectiveness">8.1 QLoRA Effectiveness</h4>
+<p>Different fine-tuning strategies were evaluated:</p>
+<table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th>GPU Memory</th>
+<th>Steps Needed</th>
+<th>Performance Recovery</th>
+<th>Practical Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>No fine-tuning</td>
+<td>0</td>
+<td>0</td>
+<td>75-80%</td>
+<td>Not viable</td>
+</tr>
+<tr>
+<td>Adapter-only tuning</td>
+<td>15GB</td>
+<td>100</td>
+<td>85-88%</td>
+<td>Marginal</td>
+</tr>
+<tr>
+<td>Full fine-tuning</td>
+<td>80GB</td>
+<td>200-300</td>
+<td>95-98%</td>
+<td>Expensive</td>
+</tr>
+<tr>
+<td><strong>QLoRA (4-bit, r=16)</strong></td>
+<td><strong>12GB</strong></td>
+<td><strong>300-500</strong></td>
+<td><strong>92-95%</strong></td>
+<td><strong>Recommended</strong></td>
+</tr>
+<tr>
+<td>QLoRA (8-bit, r=8)</td>
+<td>20GB</td>
+<td>200-300</td>
+<td>90-93%</td>
+<td>Also viable</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key Insight:</strong> QLoRA provides exceptional efficiency—restores 92-95% performance with:</p>
+<ul>
+<li>&lt;15% memory overhead</li>
+<li>Single GPU feasibility</li>
+<li>Minimal computational cost</li>
+</ul>
+<h4 id="8-2-Hyperparameter-Sensitivity">8.2 Hyperparameter Sensitivity</h4>
+<p>Fine-tuning hyperparameter recommendations based on empirical validation:</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Value</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LoRA Rank</td>
+<td>8-16</td>
+<td>Higher ranks for larger pruning rates</td>
+</tr>
+<tr>
+<td>Quantization</td>
+<td>4-bit</td>
+<td>Sweet spot between efficiency and quality</td>
+</tr>
+<tr>
+<td>Learning Rate</td>
+<td>5e-5 to 2e-4</td>
+<td>Inverse to pruning rate (less for heavier pruning)</td>
+</tr>
+<tr>
+<td>Optimizer</td>
+<td>AdamW</td>
+<td>Standard choice, lr scheduling crucial</td>
+</tr>
+<tr>
+<td>Training Data</td>
+<td>Validation split</td>
+<td>No additional data collection needed</td>
+</tr>
+<tr>
+<td>Batch Size</td>
+<td>2-4</td>
+<td>Limited by GPU memory with 4-bit quantization</td>
+</tr>
+</tbody>
+</table>
+<h4 id="8-3-Data-Efficiency">8.3 Data Efficiency</h4>
+<p>A surprising finding: fine-tuning requires minimal data:</p>
+<ul>
+<li><strong>Performance fully recovers</strong> using only the validation set (1-5K examples)</li>
+<li>No additional labeled data collection necessary</li>
+<li>Suggests the pruned model quickly &quot;relearns&quot; lost connections</li>
+</ul>
+<hr>
+<h2 id="Scientific-Implications-for-Knowledge-Representation">Scientific Implications for Knowledge Representation</h2>
+<h3 id="9-Challenging-Conventional-Wisdom">9. Challenging Conventional Wisdom</h3>
+<h4 id="9-1-The-Deeper-is-Better-Paradigm">9.1 The &quot;Deeper is Better&quot; Paradigm</h4>
+<p>This work fundamentally challenges the deep learning community's long-standing assumption. Findings suggest:</p>
+<p><strong>Hypothesis 1: Knowledge Frontloading</strong></p>
+<ul>
+<li>Most task-relevant knowledge is acquired by layer 40-50</li>
+<li>Deeper layers provide incremental refinement rather than core functionality</li>
+<li>Overparameterization in depth is common in current LLMs</li>
+</ul>
+<p><strong>Hypothesis 2: Pretraining-Task Mismatch</strong></p>
+<ul>
+<li>Causal language modeling objective may not optimally utilize deep parameters</li>
+<li>Different downstream tasks may require different optimal depths</li>
+<li>Universal &quot;deep&quot; models may be suboptimal</li>
+</ul>
+<p><strong>Hypothesis 3: Architectural Inefficiency</strong></p>
+<ul>
+<li>Model scaling typically increases depth proportionally</li>
+<li>Depth scaling may not be the most efficient dimensionality to increase</li>
+<li>Width-vs-depth trade-offs deserve reconsideration</li>
+</ul>
+<h4 id="9-2-Distributed-Representation-Redundancy">9.2 Distributed Representation &amp; Redundancy</h4>
+<p>The findings support a picture where:</p>
+<ul>
+<li>Representations are progressively refined through layers</li>
+<li>Multiple layers store similar-quality representations</li>
+<li>Redundancy appears to increase with depth</li>
+<li>Skip connections enable effective &quot;compression&quot; of later layers</li>
+</ul>
+<h4 id="9-3-Task-Specific-Optimal-Depth">9.3 Task-Specific Optimal Depth</h4>
+<p>Different downstream tasks may have different optimal model depths:</p>
+<ul>
+<li>Simple QA: May saturate at 60% depth</li>
+<li>Complex reasoning: Might require 80%+ depth</li>
+<li>Task-dependent pruning strategies may outperform uniform approaches</li>
+</ul>
+<hr>
+<h2 id="Practical-Applications-Efficiency-Gains">Practical Applications &amp; Efficiency Gains</h2>
+<h3 id="10-Real-World-Performance-Improvements">10. Real-World Performance Improvements</h3>
+<h4 id="10-1-Inference-Latency-Reduction">10.1 Inference Latency Reduction</h4>
+<p>Removing 30-40% of layers achieves:</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Improvement</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Inference Latency</strong></td>
+<td>20-30% reduction</td>
+</tr>
+<tr>
+<td><strong>Memory Footprint</strong></td>
+<td>30-40% reduction</td>
+</tr>
+<tr>
+<td><strong>Peak VRAM Usage</strong></td>
+<td>25-35% reduction</td>
+</tr>
+<tr>
+<td><strong>Energy Consumption</strong></td>
+<td>20-30% reduction</td>
+</tr>
+</tbody>
+</table>
+<h4 id="10-2-Comparative-Analysis-with-Other-Compression-Techniques">10.2 Comparative Analysis with Other Compression Techniques</h4>
+<table>
+<thead>
+<tr>
+<th>Technique</th>
+<th>Compression</th>
+<th>Performance Retention</th>
+<th>Fine-tuning Complexity</th>
+<th>Inference Compatibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4-bit Quantization</td>
+<td>4×</td>
+<td>90-95%</td>
+<td>Low</td>
+<td>Excellent</td>
+</tr>
+<tr>
+<td>8-bit Quantization</td>
+<td>2×</td>
+<td>95-98%</td>
+<td>Minimal</td>
+<td>Excellent</td>
+</tr>
+<tr>
+<td>Knowledge Distillation</td>
+<td>2-4×</td>
+<td>85-92%</td>
+<td>High</td>
+<td>Excellent</td>
+</tr>
+<tr>
+<td><strong>Layer Pruning</strong></td>
+<td><strong>1.3-2×</strong></td>
+<td><strong>90-95%</strong></td>
+<td><strong>Low</strong></td>
+<td><strong>Excellent</strong></td>
+</tr>
+<tr>
+<td>LoRA Adaptation</td>
+<td>0.1× (params)</td>
+<td>N/A</td>
+<td>Medium</td>
+<td>Limited</td>
+</tr>
+<tr>
+<td><strong>Combined (Pruning + Quantization)</strong></td>
+<td><strong>5-8×</strong></td>
+<td><strong>85-90%</strong></td>
+<td><strong>Medium</strong></td>
+<td><strong>Excellent</strong></td>
+</tr>
+</tbody>
+</table>
+<h4 id="10-3-Deployment-Scenarios">10.3 Deployment Scenarios</h4>
+<p><strong>Mobile &amp; Edge Devices:</strong></p>
+<ul>
+<li>Enables running 70B-class models on consumer hardware</li>
+<li>50-60B parameter models still maintain competitive performance</li>
+</ul>
+<p><strong>Cloud Inference:</strong></p>
+<ul>
+<li>Reduces cost per inference token</li>
+<li>Improves throughput on same hardware</li>
+<li>Lowers environmental impact</li>
+</ul>
+<p><strong>Real-time Applications:</strong></p>
+<ul>
+<li>Streaming text generation improves latency</li>
+<li>Acceptable for time-sensitive applications</li>
+<li>Better user experience for interactive systems</li>
+</ul>
+<p><strong>Cost Optimization:</strong></p>
+<ul>
+<li>Smaller models require fewer GPUs</li>
+<li>Linear reduction in infrastructure costs</li>
+<li>Significant TCO improvements for large-scale deployments</li>
+</ul>
+<hr>
+<h2 id="Limitations-Open-Questions">Limitations &amp; Open Questions</h2>
+<h3 id="11-Methodological-Limitations">11. Methodological Limitations</h3>
+<h4 id="11-1-Method-Constraints">11.1 Method Constraints</h4>
+<p><strong>1. Task-Specific Pruning:</strong></p>
+<ul>
+<li>Similarity metrics computed on QA validation sets</li>
+<li>Different downstream tasks may have different pruning requirements</li>
+<li>Cross-task generalization remains unclear</li>
+</ul>
+<p><strong>2. Angular Distance Assumptions:</strong></p>
+<ul>
+<li>Assumes angular distance captures relevant redundancy</li>
+<li>Other similarity metrics might reveal different patterns</li>
+<li>No theoretical justification for this specific choice</li>
+</ul>
+<p><strong>3. Contiguous Block Requirement:</strong></p>
+<ul>
+<li>Current method requires removing consecutive layers</li>
+<li>Non-contiguous layer removal might be more efficient</li>
+<li>Adds architectural constraints</li>
+</ul>
+<p><strong>4. Fine-tuning Requirement:</strong></p>
+<ul>
+<li>Cannot apply pruning without some adaptation data</li>
+<li>QLoRA requires labeled or semi-labeled data</li>
+<li>Zero-shot pruning still unexplored</li>
+</ul>
+<h4 id="11-2-Experimental-Scope-Limitations">11.2 Experimental Scope Limitations</h4>
+<p><strong>1. Model Architecture Specificity:</strong></p>
+<ul>
+<li>Experiments focus on LLaMA-derived models</li>
+<li>Unknown generalization to other architectures (Gemini, GPT variants, etc.)</li>
+<li>May not apply to models with different training objectives</li>
+</ul>
+<p><strong>2. Benchmark Selection:</strong></p>
+<ul>
+<li>Evaluation primarily uses QA-style tasks</li>
+<li>Results may not generalize to generation, reasoning, or specialized tasks</li>
+<li>Single benchmark dependency is concerning</li>
+</ul>
+<p><strong>3. Scale Limitations:</strong></p>
+<ul>
+<li>Largest tested: LLaMA-2-70B</li>
+<li>Behavior of 100B+ parameter models unknown</li>
+<li>Scaling laws for redundancy unclear</li>
+</ul>
+<hr>
+<h3 id="12-Fundamental-Open-Questions">12. Fundamental Open Questions</h3>
+<h4 id="12-1-Dynamic-Pruning">12.1 Dynamic Pruning</h4>
+<ul>
+<li>Can we adaptively select which layers to use per-token?</li>
+<li>Would conditional computation improve efficiency further?</li>
+<li>Layer gating mechanisms?</li>
+</ul>
+<h4 id="12-2-Layer-Complementarity">12.2 Layer Complementarity</h4>
+<ul>
+<li>Are deep layers ever <em>essential</em> for specific types of tasks or examples?</li>
+<li>Can we identify &quot;critical&quot; vs &quot;optional&quot; layers per input?</li>
+<li>Task-specific pruning strategies?</li>
+</ul>
+<h4 id="12-3-Architectural-Design">12.3 Architectural Design</h4>
+<ul>
+<li>What is the optimal depth for LLMs of different sizes?</li>
+<li>Should we design models with pruning in mind?</li>
+<li>Can we learn which layers to omit during training?</li>
+</ul>
+<h4 id="12-4-Knowledge-Representation">12.4 Knowledge Representation</h4>
+<ul>
+<li>Why do deep layers appear redundant?</li>
+<li>How does this relate to over-parameterization?</li>
+<li>Does training objective matter?</li>
+</ul>
+<hr>
+<h2 id="Implementation-Reproducibility">Implementation &amp; Reproducibility</h2>
+<h3 id="13-Technical-Implementation-Guide">13. Technical Implementation Guide</h3>
+<h4 id="13-1-Numerical-Stability-for-Angular-Distance">13.1 Numerical Stability for Angular Distance</h4>
+<p>Angular distance computation requires care:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># Naive implementation (numerically unstable)</span></span><br><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">angular_distance_naive</span><span class="params">(x1, x2)</span>:</span></span><br><span class="line">    cos_sim = np.dot(x1, x2) / (np.linalg.norm(x1) * np.linalg.norm(x2))</span><br><span class="line">    <span class="keyword">return</span> np.arccos(cos_sim)</span><br><span class="line"></span><br><span class="line"><span class="comment"># Numerically stable implementation (recommended)</span></span><br><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">angular_distance_stable</span><span class="params">(x1, x2)</span>:</span></span><br><span class="line">    <span class="comment"># Normalize vectors</span></span><br><span class="line">    x1_norm = x1 / (np.linalg.norm(x1) + <span class="number">1e-8</span>)</span><br><span class="line">    x2_norm = x2 / (np.linalg.norm(x2) + <span class="number">1e-8</span>)</span><br><span class="line">    </span><br><span class="line">    <span class="comment"># Compute cosine similarity</span></span><br><span class="line">    cos_sim = np.dot(x1_norm, x2_norm)</span><br><span class="line">    </span><br><span class="line">    <span class="comment"># Clamp to [-1, 1] to handle floating point errors</span></span><br><span class="line">    cos_sim = np.clip(cos_sim, <span class="number">-1.0</span>, <span class="number">1.0</span>)</span><br><span class="line">    </span><br><span class="line">    <span class="comment"># Compute angle</span></span><br><span class="line">    <span class="keyword">return</span> np.arccos(cos_sim)</span><br></pre></td></tr></table></figure>
+<h4 id="13-2-QLoRA-Configuration-for-Different-Pruning-Rates">13.2 QLoRA Configuration for Different Pruning Rates</h4>
+<table>
+<thead>
+<tr>
+<th>Target Pruning</th>
+<th>LoRA Rank</th>
+<th>Learning Rate</th>
+<th>Batch Size</th>
+<th>Steps</th>
+<th>Warmup</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10-20%</td>
+<td>8</td>
+<td>1.0e-4</td>
+<td>4</td>
+<td>100-150</td>
+<td>10</td>
+</tr>
+<tr>
+<td>20-30%</td>
+<td>8</td>
+<td>5.0e-5</td>
+<td>4</td>
+<td>200-250</td>
+<td>20</td>
+</tr>
+<tr>
+<td>30-40%</td>
+<td>16</td>
+<td>5.0e-5</td>
+<td>2-4</td>
+<td>300-400</td>
+<td>30</td>
+</tr>
+<tr>
+<td>40-50%</td>
+<td>16</td>
+<td>2.0e-5</td>
+<td>2</td>
+<td>400-500</td>
+<td>40</td>
+</tr>
+</tbody>
+</table>
+<h4 id="13-3-Complete-Workflow">13.3 Complete Workflow</h4>
+<p><strong>Step 1: Similarity Analysis</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">1. Load pre-trained model</span><br><span class="line">2. Prepare evaluation corpus</span><br><span class="line">3. For each layer pair:</span><br><span class="line">   a. Forward pass entire corpus</span><br><span class="line">   b. Compute angular distances</span><br><span class="line">   c. Average over tokens</span><br><span class="line">4. Generate similarity profile plot</span><br></pre></td></tr></table></figure>
+<p><strong>Step 2: Block Selection</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">1. For each possible block [l*, l* + n]:</span><br><span class="line">   a. Calculate cumulative similarity sum</span><br><span class="line">   b. Store result</span><br><span class="line">2. Select block with minimum sum</span><br><span class="line">3. Visualize selected block in similarity profile</span><br></pre></td></tr></table></figure>
+<p><strong>Step 3: Pruning &amp; Fine-tuning</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">1. Clone model architecture</span><br><span class="line">2. Remove layers [l*, l* + n]</span><br><span class="line">3. Initialize QLoRA matrices</span><br><span class="line">4. Load 4-bit quantization</span><br><span class="line">5. Fine-tune on validation set</span><br><span class="line">6. Save adapted model</span><br></pre></td></tr></table></figure>
+<p><strong>Step 4: Evaluation</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">1. Evaluate on multiple benchmarks</span><br><span class="line">2. Record performance metrics</span><br><span class="line">3. Measure inference latency</span><br><span class="line">4. Document memory usage</span><br><span class="line">5. Generate comparison report</span><br></pre></td></tr></table></figure>
+<hr>
+<h2 id="Theoretical-Perspectives-Deeper-Analysis">Theoretical Perspectives &amp; Deeper Analysis</h2>
+<h3 id="14-Connections-to-Broader-ML-Theory">14. Connections to Broader ML Theory</h3>
+<h4 id="14-1-Over-parameterization-Lottery-Ticket-Hypothesis">14.1 Over-parameterization &amp; Lottery Ticket Hypothesis</h4>
+<p>This work relates to the Lottery Ticket Hypothesis (Frankle &amp; Carbin, 2019):</p>
+<ul>
+<li>Large neural networks may contain smaller subnetworks (&quot;winning tickets&quot;)</li>
+<li>These subnetworks, when identified and trained, match full network performance</li>
+<li>Layer pruning can be viewed as finding a different type of &quot;winning subnetwork&quot;—one based on functionality rather than weight importance</li>
+</ul>
+<p><strong>Key Distinction:</strong></p>
+<ul>
+<li>Lottery Ticket: Prunes individual weights to find sparse networks</li>
+<li>Layer Pruning: Removes entire functional blocks</li>
+<li>Layer pruning may be more hardware-efficient despite being less parameter-sparse</li>
+</ul>
+<h4 id="14-2-Neural-Plasticity-Adaptation">14.2 Neural Plasticity &amp; Adaptation</h4>
+<p>The rapid performance recovery with QLoRA fine-tuning suggests neural plasticity:</p>
+<ul>
+<li>Pruned models can quickly &quot;rewire&quot; remaining layers</li>
+<li>Low-rank adaptations suffice for recovery</li>
+<li>Implies significant over-parameterization in adaptation space</li>
+</ul>
+<h4 id="14-3-Information-Compression-Emergent-Abilities">14.3 Information Compression &amp; Emergent Abilities</h4>
+<p>Some theoretical frameworks (e.g., information bottleneck theory) suggest:</p>
+<ul>
+<li>Information gets progressively compressed through layers</li>
+<li>Deeper layers may store compressed versions of earlier representations</li>
+<li>Explains why removing them causes minimal loss</li>
+</ul>
+<hr>
+<h2 id="Future-Directions-Research-Implications">Future Directions &amp; Research Implications</h2>
+<h3 id="15-Suggested-Future-Research">15. Suggested Future Research</h3>
+<h4 id="15-1-Dynamic-Adaptive-Pruning">15.1 Dynamic &amp; Adaptive Pruning</h4>
+<ul>
+<li>Pruning should vary by input or by task</li>
+<li>Mixture of Experts (MoE) style selection among layers</li>
+<li>Per-token routing to different pruned configurations</li>
+</ul>
+<h4 id="15-2-Architecture-Co-optimization">15.2 Architecture Co-optimization</h4>
+<ul>
+<li>Design models with pruning as a constraint from the start</li>
+<li>Optimal depth as function of parameter count</li>
+<li>Hardware-aware architectural search</li>
+</ul>
+<h4 id="15-3-Multi-objective-Optimization">15.3 Multi-objective Optimization</h4>
+<ul>
+<li>Simultaneous optimization across multiple dimensions:
+<ul>
+<li>Latency vs. accuracy</li>
+<li>Memory vs. computation</li>
+<li>Throughput vs. energy</li>
+</ul>
+</li>
+</ul>
+<h4 id="15-4-Mechanism-Understanding">15.4 Mechanism Understanding</h4>
+<ul>
+<li>Which internal computations do deep layers perform?</li>
+<li>Can we predict pruning efficacy from layer properties?</li>
+<li>Mechanistic interpretability of layer pruning</li>
+</ul>
+<hr>
+<h2 id="Conclusions-Impact-Assessment">Conclusions &amp; Impact Assessment</h2>
+<h3 id="16-Synthesis-of-Key-Findings">16. Synthesis of Key Findings</h3>
+<p><strong>Scientific Contribution:</strong></p>
+<ul>
+<li>Challenges assumption that all layers equally contribute</li>
+<li>Provides empirical evidence for redundancy in deep LLMs</li>
+<li>Opens new research directions in model design</li>
+</ul>
+<p><strong>Practical Contribution:</strong></p>
+<ul>
+<li>Demonstrated 20-30% inference speedup achievable</li>
+<li>Minimal fine-tuning overhead (QLoRA method)</li>
+<li>Applicable to existing open-source models</li>
+</ul>
+<p><strong>Architectural Implications:</strong></p>
+<ul>
+<li>Questions optimal depth for LLMs</li>
+<li>Suggests efficiency gains from different design choices</li>
+<li>Relevant for both model scaling and optimization</li>
+</ul>
+<h3 id="17-Recommendations-for-Practitioners">17. Recommendations for Practitioners</h3>
+<p><strong>For Production Deployment:</strong></p>
+<ol>
+<li>Consider applying layer pruning to existing models</li>
+<li>Use QLoRA fine-tuning for fast adaptation</li>
+<li>Evaluate carefully on your specific tasks</li>
+<li>Combine with quantization for maximum efficiency</li>
+</ol>
+<p><strong>For Research:</strong></p>
+<ol>
+<li>Investigate task-specific pruning strategies</li>
+<li>Explore non-uniform pruning patterns</li>
+<li>Study interaction with other compression methods</li>
+<li>Examine different architectures beyond LLaMA</li>
+</ol>
+<p><strong>For Hardware Optimization:</strong></p>
+<ol>
+<li>Layer pruning reduces compute-bound operations</li>
+<li>Enables larger batch sizes on same hardware</li>
+<li>May benefit certain accelerators more than others</li>
+<li>Consider when designing for specific deployment targets</li>
+</ol>
+<h3 id="18-The-Bigger-Picture">18. The Bigger Picture</h3>
+<p>This work exemplifies a broader trend in deep learning: <strong>efficiency through understanding</strong>.</p>
+<p>Rather than:</p>
+<ul>
+<li>Blindly scaling up all dimensions</li>
+<li>Applying generic compression techniques</li>
+<li>Accepting architectural conventions without question</li>
+</ul>
+<p>We're increasingly:</p>
+<ul>
+<li>Understanding what each component actually contributes</li>
+<li>Tailoring optimizations to specific needs</li>
+<li>Questioning foundational design assumptions</li>
+<li>Building more efficient systems through insight</li>
+</ul>
+<p>The unreasonable ineffectiveness of deeper layers may be uncomfortable for those invested in deeper-is-better paradigm, but it's ultimately valuable for building better, more efficient AI systems.</p>
+<hr>
+<h2 id="References-Related-Work">References &amp; Related Work</h2>
+<h3 id="Key-Related-Research-Areas">Key Related Research Areas</h3>
+<ul>
+<li><strong>Knowledge Distillation:</strong> Hinton et al., 2015; FitzGerald et al., 2021</li>
+<li><strong>Layer Pruning:</strong> Prior work on weight pruning, now applied systematically to layers</li>
+<li><strong>Neural Architecture Search:</strong> Zoph &amp; Quart, 2017; Elsken et al., 2019</li>
+<li><strong>Efficient Transformers:</strong> FlashAttention, Sparse Attention mechanisms</li>
+<li><strong>Mechanistic Interpretability:</strong> Logit Lens, Tuned Lens, Polysemanticity</li>
+<li><strong>Quantization:</strong> GPTQ, AWQ, BitNet</li>
+</ul>
+<hr>
+<h2 id="Final-Remarks">Final Remarks</h2>
+<p>This paper succeeds in combining rigorous empirical work with profound implications for our understanding of large language models. It demonstrates that sometimes the most important discoveries come not from adding more parameters or data, but from carefully studying what we already have—and understanding that less, when properly optimized, can indeed be more.</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Efficient-Inference/" rel="tag"># Efficient Inference</a>
+              <a href="/tags/Model-Compression/" rel="tag"># Model Compression</a>
+              <a href="/tags/Deep-Learning/" rel="tag"># Deep Learning</a>
+              <a href="/tags/Pruning/" rel="tag"># Pruning</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/03/31/2026-03-31-ConstitutionalAI-technical-review-en/" rel="prev" title="Constitutional AI: Harmlessness from AI Feedback — In-Depth Technical Review">
+      <i class="fa fa-chevron-left"></i> Constitutional AI: Harmlessness from AI Feedback — In-Depth Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/02/2026-04-02-GPipe-technical-review-en/" rel="next" title="GPipe: Easy Scaling with Micro-Batch Pipeline Parallelism — In-Depth Technical Review">
+      GPipe: Easy Scaling with Micro-Batch Pipeline Parallelism — In-Depth Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Technical-Review-The-Unreasonable-Ineffectiveness-of-the-Deeper-Layers"><span class="nav-number">1.</span> <span class="nav-text">Technical Review: &quot;The Unreasonable Ineffectiveness of the Deeper Layers&quot;</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Executive-Summary-Core-Contributions"><span class="nav-number">2.</span> <span class="nav-text">Executive Summary &amp; Core Contributions</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Foundational-Concepts-Background"><span class="nav-number">3.</span> <span class="nav-text">Foundational Concepts &amp; Background</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-The-Layer-Knowledge-Problem"><span class="nav-number">3.1.</span> <span class="nav-text">1. The Layer Knowledge Problem</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-The-Transformer-Architecture-Residual-Connections"><span class="nav-number">3.2.</span> <span class="nav-text">2. The Transformer Architecture &amp; Residual Connections</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Layer-Similarity-as-Proxy-for-Redundancy"><span class="nav-number">3.3.</span> <span class="nav-text">3. Layer Similarity as Proxy for Redundancy</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Technical-Methodology"><span class="nav-number">4.</span> <span class="nav-text">Technical Methodology</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-Three-Phase-Pruning-Protocol"><span class="nav-number">4.1.</span> <span class="nav-text">4. Three-Phase Pruning Protocol</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#4-1-Phase-1-Similarity-Analysis"><span class="nav-number">4.1.1.</span> <span class="nav-text">4.1 Phase 1: Similarity Analysis</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#4-2-Phase-2-Optimal-Block-Selection"><span class="nav-number">4.1.2.</span> <span class="nav-text">4.2 Phase 2: Optimal Block Selection</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#4-3-Phase-3-Repair-via-QLoRA-Fine-tuning"><span class="nav-number">4.1.3.</span> <span class="nav-text">4.3 Phase 3: Repair via QLoRA Fine-tuning</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-Mathematical-Framework"><span class="nav-number">4.2.</span> <span class="nav-text">5. Mathematical Framework</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#5-1-Residual-Contribution-Analysis"><span class="nav-number">4.2.1.</span> <span class="nav-text">5.1 Residual Contribution Analysis</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#5-2-Connection-to-Neural-Differential-Equations"><span class="nav-number">4.2.2.</span> <span class="nav-text">5.2 Connection to Neural Differential Equations</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#5-3-Logit-Lens-Interpretability-Insights"><span class="nav-number">4.2.3.</span> <span class="nav-text">5.3 Logit Lens &amp; Interpretability Insights</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Experimental-Design-Results"><span class="nav-number">5.</span> <span class="nav-text">Experimental Design &amp; Results</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-Comprehensive-Experimental-Setup"><span class="nav-number">5.1.</span> <span class="nav-text">6. Comprehensive Experimental Setup</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#6-1-Model-Evaluation-Suite"><span class="nav-number">5.1.1.</span> <span class="nav-text">6.1 Model Evaluation Suite</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#6-2-Evaluation-Benchmarks"><span class="nav-number">5.1.2.</span> <span class="nav-text">6.2 Evaluation Benchmarks</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#6-3-Experimental-Workflow"><span class="nav-number">5.1.3.</span> <span class="nav-text">6.3 Experimental Workflow</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-Key-Experimental-Findings"><span class="nav-number">5.2.</span> <span class="nav-text">7. Key Experimental Findings</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#7-1-LLaMA-2-70B-Pruning-Results"><span class="nav-number">5.2.1.</span> <span class="nav-text">7.1 LLaMA-2-70B Pruning Results</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#7-2-The-Layer-Specialization-Pattern"><span class="nav-number">5.2.2.</span> <span class="nav-text">7.2 The Layer Specialization Pattern</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#7-3-Cross-Model-Generalization"><span class="nav-number">5.2.3.</span> <span class="nav-text">7.3 Cross-Model Generalization</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-Fine-tuning-Analysis-Performance-Recovery"><span class="nav-number">5.3.</span> <span class="nav-text">8. Fine-tuning Analysis &amp; Performance Recovery</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#8-1-QLoRA-Effectiveness"><span class="nav-number">5.3.1.</span> <span class="nav-text">8.1 QLoRA Effectiveness</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#8-2-Hyperparameter-Sensitivity"><span class="nav-number">5.3.2.</span> <span class="nav-text">8.2 Hyperparameter Sensitivity</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#8-3-Data-Efficiency"><span class="nav-number">5.3.3.</span> <span class="nav-text">8.3 Data Efficiency</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Scientific-Implications-for-Knowledge-Representation"><span class="nav-number">6.</span> <span class="nav-text">Scientific Implications for Knowledge Representation</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-Challenging-Conventional-Wisdom"><span class="nav-number">6.1.</span> <span class="nav-text">9. Challenging Conventional Wisdom</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#9-1-The-Deeper-is-Better-Paradigm"><span class="nav-number">6.1.1.</span> <span class="nav-text">9.1 The &quot;Deeper is Better&quot; Paradigm</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#9-2-Distributed-Representation-Redundancy"><span class="nav-number">6.1.2.</span> <span class="nav-text">9.2 Distributed Representation &amp; Redundancy</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#9-3-Task-Specific-Optimal-Depth"><span class="nav-number">6.1.3.</span> <span class="nav-text">9.3 Task-Specific Optimal Depth</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Practical-Applications-Efficiency-Gains"><span class="nav-number">7.</span> <span class="nav-text">Practical Applications &amp; Efficiency Gains</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-Real-World-Performance-Improvements"><span class="nav-number">7.1.</span> <span class="nav-text">10. Real-World Performance Improvements</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#10-1-Inference-Latency-Reduction"><span class="nav-number">7.1.1.</span> <span class="nav-text">10.1 Inference Latency Reduction</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#10-2-Comparative-Analysis-with-Other-Compression-Techniques"><span class="nav-number">7.1.2.</span> <span class="nav-text">10.2 Comparative Analysis with Other Compression Techniques</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#10-3-Deployment-Scenarios"><span class="nav-number">7.1.3.</span> <span class="nav-text">10.3 Deployment Scenarios</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Limitations-Open-Questions"><span class="nav-number">8.</span> <span class="nav-text">Limitations &amp; Open Questions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#11-Methodological-Limitations"><span class="nav-number">8.1.</span> <span class="nav-text">11. Methodological Limitations</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#11-1-Method-Constraints"><span class="nav-number">8.1.1.</span> <span class="nav-text">11.1 Method Constraints</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#11-2-Experimental-Scope-Limitations"><span class="nav-number">8.1.2.</span> <span class="nav-text">11.2 Experimental Scope Limitations</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-Fundamental-Open-Questions"><span class="nav-number">8.2.</span> <span class="nav-text">12. Fundamental Open Questions</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#12-1-Dynamic-Pruning"><span class="nav-number">8.2.1.</span> <span class="nav-text">12.1 Dynamic Pruning</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#12-2-Layer-Complementarity"><span class="nav-number">8.2.2.</span> <span class="nav-text">12.2 Layer Complementarity</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#12-3-Architectural-Design"><span class="nav-number">8.2.3.</span> <span class="nav-text">12.3 Architectural Design</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#12-4-Knowledge-Representation"><span class="nav-number">8.2.4.</span> <span class="nav-text">12.4 Knowledge Representation</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Implementation-Reproducibility"><span class="nav-number">9.</span> <span class="nav-text">Implementation &amp; Reproducibility</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#13-Technical-Implementation-Guide"><span class="nav-number">9.1.</span> <span class="nav-text">13. Technical Implementation Guide</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#13-1-Numerical-Stability-for-Angular-Distance"><span class="nav-number">9.1.1.</span> <span class="nav-text">13.1 Numerical Stability for Angular Distance</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#13-2-QLoRA-Configuration-for-Different-Pruning-Rates"><span class="nav-number">9.1.2.</span> <span class="nav-text">13.2 QLoRA Configuration for Different Pruning Rates</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#13-3-Complete-Workflow"><span class="nav-number">9.1.3.</span> <span class="nav-text">13.3 Complete Workflow</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Theoretical-Perspectives-Deeper-Analysis"><span class="nav-number">10.</span> <span class="nav-text">Theoretical Perspectives &amp; Deeper Analysis</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#14-Connections-to-Broader-ML-Theory"><span class="nav-number">10.1.</span> <span class="nav-text">14. Connections to Broader ML Theory</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#14-1-Over-parameterization-Lottery-Ticket-Hypothesis"><span class="nav-number">10.1.1.</span> <span class="nav-text">14.1 Over-parameterization &amp; Lottery Ticket Hypothesis</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#14-2-Neural-Plasticity-Adaptation"><span class="nav-number">10.1.2.</span> <span class="nav-text">14.2 Neural Plasticity &amp; Adaptation</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#14-3-Information-Compression-Emergent-Abilities"><span class="nav-number">10.1.3.</span> <span class="nav-text">14.3 Information Compression &amp; Emergent Abilities</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Future-Directions-Research-Implications"><span class="nav-number">11.</span> <span class="nav-text">Future Directions &amp; Research Implications</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#15-Suggested-Future-Research"><span class="nav-number">11.1.</span> <span class="nav-text">15. Suggested Future Research</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#15-1-Dynamic-Adaptive-Pruning"><span class="nav-number">11.1.1.</span> <span class="nav-text">15.1 Dynamic &amp; Adaptive Pruning</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#15-2-Architecture-Co-optimization"><span class="nav-number">11.1.2.</span> <span class="nav-text">15.2 Architecture Co-optimization</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#15-3-Multi-objective-Optimization"><span class="nav-number">11.1.3.</span> <span class="nav-text">15.3 Multi-objective Optimization</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#15-4-Mechanism-Understanding"><span class="nav-number">11.1.4.</span> <span class="nav-text">15.4 Mechanism Understanding</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Conclusions-Impact-Assessment"><span class="nav-number">12.</span> <span class="nav-text">Conclusions &amp; Impact Assessment</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#16-Synthesis-of-Key-Findings"><span class="nav-number">12.1.</span> <span class="nav-text">16. Synthesis of Key Findings</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#17-Recommendations-for-Practitioners"><span class="nav-number">12.2.</span> <span class="nav-text">17. Recommendations for Practitioners</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#18-The-Bigger-Picture"><span class="nav-number">12.3.</span> <span class="nav-text">18. The Bigger Picture</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#References-Related-Work"><span class="nav-number">13.</span> <span class="nav-text">References &amp; Related Work</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Key-Related-Research-Areas"><span class="nav-number">13.1.</span> <span class="nav-text">Key Related Research Areas</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Final-Remarks"><span class="nav-number">14.</span> <span class="nav-text">Final Remarks</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="A technical review of ZeRO (Zero Redundancy Optimizer), analyzing how partitioning optimizer states, gradients, and parameters across data-parallel processes enables training of trillion-parameter mod">
+<meta property="og:type" content="article">
+<meta property="og:title" content="ZeRO: Shattering the Memory Wall — How DeepSpeed Trains Trillion-Parameter Models">
+<meta property="og:url" content="https://zzz0906.github.io/2026/03/19/2026-03-19-ZeRO-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="A technical review of ZeRO (Zero Redundancy Optimizer), analyzing how partitioning optimizer states, gradients, and parameters across data-parallel processes enables training of trillion-parameter mod">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-03-19T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-03T01:05:33.801Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/03/19/2026-03-19-ZeRO-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>ZeRO: Shattering the Memory Wall — How DeepSpeed Trains Trillion-Parameter Models | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/03/19/2026-03-19-ZeRO-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          ZeRO: Shattering the Memory Wall — How DeepSpeed Trains Trillion-Parameter Models
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-03-19 00:00:00" itemprop="dateCreated datePublished" datetime="2026-03-19T00:00:00+00:00">2026-03-19</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-03 01:05:33" itemprop="dateModified" datetime="2026-04-03T01:05:33+00:00">2026-04-03</time>
+              </span>
+
+          
+            <div class="post-description">A technical review of ZeRO (Zero Redundancy Optimizer), analyzing how partitioning optimizer states, gradients, and parameters across data-parallel processes enables training of trillion-parameter models.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="ZeRO-Memory-Optimizations-Toward-Training-Trillion-Parameter-Models-—-In-Depth-Technical-Review-English">ZeRO: Memory Optimizations Toward Training Trillion Parameter Models — In-Depth Technical Review (English)</h1>
+<p><strong>Author: Zhongzhu Zhou</strong>
+Paper: ZeRO: Memory Optimizations Toward Training Trillion Parameter Models (SC 2020 / arXiv 2019)
+ArXiv: <a href="https://arxiv.org/abs/1910.02054" target="_blank" rel="noopener">https://arxiv.org/abs/1910.02054</a>
+Authors: Samyam Rajbhandari, Jeff Rasley, Olatunji Ruwase, Yuxiong He (Microsoft)</p>
+<hr>
+<h2 id="Abstract">Abstract</h2>
+<p>ZeRO (Zero Redundancy Optimizer) is one of the most important systems papers in the large-model training era. It fundamentally rethinks how memory is consumed during distributed deep learning training and proposes a family of optimizations that eliminate redundant memory storage across data-parallel processes — without sacrificing computational efficiency. The result is staggering: ZeRO enables training of models with over 100 billion parameters on 400 GPUs with super-linear speedup, achieving 15 PetaFlops of throughput. This represents an 8× increase in trainable model size and 10× improvement in throughput over the state-of-the-art at the time. Perhaps most importantly, ZeRO democratizes large model training: it allows data scientists to train models with up to 13 billion parameters using nothing more than standard data parallelism — no model parallelism, no pipeline parallelism, no model refactoring required. ZeRO is the backbone of Microsoft's DeepSpeed library and powered Turing-NLG, which at the time was the world's largest language model (17B parameters).</p>
+<a id="more"></a>
+<hr>
+<h2 id="1-Prerequisites-What-You-Need-to-Know-Before-Reading-This-Paper">1. Prerequisites: What You Need to Know Before Reading This Paper</h2>
+<h3 id="1-1-Data-Parallelism-DP-—-The-Default-Distributed-Training-Strategy">1.1 Data Parallelism (DP) — The Default Distributed Training Strategy</h3>
+<p>If you have ever trained a deep learning model on more than one GPU, you have almost certainly used data parallelism. The idea is straightforward: every GPU holds a complete copy of the model (parameters, optimizer states, gradients — everything). Each GPU processes a different mini-batch of data. After the backward pass, the gradients are averaged across all GPUs using an <strong>all-reduce</strong> collective communication operation, and then every GPU updates its local copy of the model identically.</p>
+<p><strong>Why it works well:</strong> Each GPU does the same amount of computation on its own data slice, so compute utilization is high. The only communication is the gradient all-reduce, and modern implementations (like NCCL's ring all-reduce) are highly optimized.</p>
+<p><strong>Why it breaks down for large models:</strong> The critical weakness is that <em>every single GPU must hold the entire model state</em> — parameters, gradients, and optimizer states. For a 1.5B parameter model using mixed-precision Adam, this is already 24 GB. For a 10B model it is 160 GB — far beyond what fits on a single GPU. Standard data parallelism simply cannot train large models because it replicates everything.</p>
+<h3 id="1-2-Model-Parallelism-MP-—-Splitting-the-Model-Across-Devices">1.2 Model Parallelism (MP) — Splitting the Model Across Devices</h3>
+<p>When a model is too large for one GPU, model parallelism splits it <em>vertically</em> — different parts of each layer's computation are placed on different GPUs. For example, Megatron-LM splits the attention heads and MLP weight matrices across GPUs within a transformer layer.</p>
+<p><strong>The upside:</strong> Memory is shared; each GPU only holds a fraction of the parameters, gradients, and optimizer states for each layer.</p>
+<p><strong>The downside:</strong> Communication is required <em>within every layer</em> (all-reduce after each GEMM operation), which means MP only works efficiently when GPUs are connected by very fast interconnects (like NVLink within a single DGX-2 node, with 300 GB/s bandwidth). Cross-node MP over InfiniBand (12.5 GB/s) is disastrously slow. Megatron-LM's throughput drops to under 5 TFlops/GPU (below 5% of peak) when using MP across two DGX-2 nodes with a 40B parameter model.</p>
+<p>Additionally, MP requires model developers to rewrite their model code for distributed execution, limiting its accessibility.</p>
+<h3 id="1-3-Pipeline-Parallelism-PP-—-Splitting-by-Layers">1.3 Pipeline Parallelism (PP) — Splitting by Layers</h3>
+<p>Pipeline parallelism splits the model <em>horizontally</em> — different layers run on different GPUs. GPipe and PipeDream are notable examples. The model is divided into stages, and micro-batches flow through the pipeline.</p>
+<p><strong>Problems:</strong> PP introduces &quot;pipeline bubbles&quot; (idle time), requires batch sizes proportional to the number of pipeline stages, and complicates features like tied weights and batch normalization. PipeDream keeps stale parameter copies to reduce bubble time, at the cost of convergence guarantees.</p>
+<h3 id="1-4-Mixed-Precision-Training-and-Adam-Optimizer-Memory">1.4 Mixed-Precision Training and Adam Optimizer Memory</h3>
+<p>Modern large model training uses <strong>mixed-precision training</strong> (fp16/fp32): forward and backward passes use fp16 for speed (leveraging GPU tensor cores), but the optimizer maintains fp32 copies for numerical stability.</p>
+<p>For a model with Ψ parameters trained with Adam:</p>
+<ul>
+<li><strong>fp16 parameters:</strong> 2Ψ bytes</li>
+<li><strong>fp16 gradients:</strong> 2Ψ bytes</li>
+<li><strong>fp32 parameter copy (optimizer):</strong> 4Ψ bytes</li>
+<li><strong>fp32 momentum (Adam):</strong> 4Ψ bytes</li>
+<li><strong>fp32 variance (Adam):</strong> 4Ψ bytes</li>
+<li><strong>Total:</strong> 2Ψ + 2Ψ + 12Ψ = <strong>16Ψ bytes</strong></li>
+</ul>
+<p>The memory multiplier K for Adam optimizer states is 12 (the fp32 copy + momentum + variance). This means a 1.5B parameter model needs 24 GB just for model states — and a 1.5B model's fp16 parameters alone are only 3 GB! The optimizer states dominate memory consumption.</p>
+<h3 id="1-5-Activation-Memory-and-Checkpointing">1.5 Activation Memory and Checkpointing</h3>
+<p>Activations are the intermediate tensors saved during the forward pass for use in the backward pass. For transformer models, activation memory scales as: <code>batch_size × seq_length × hidden_dim × num_layers</code>. A 1.5B GPT-2 model with batch size 32 and sequence length 1024 requires ~60 GB of activation memory.</p>
+<p><strong>Activation checkpointing</strong> (also called gradient checkpointing or rematerialization) saves only a subset of activations (typically one per transformer layer) and recomputes the rest during the backward pass. This reduces memory by roughly √(total activations) at the cost of ~33% extra computation. For the 1.5B model, this brings activation memory from 60 GB down to ~8 GB. But for 100B+ models, even with checkpointing, activation memory can still reach 60 GB.</p>
+<h3 id="1-6-Communication-Collectives-All-Reduce-Reduce-Scatter-All-Gather">1.6 Communication Collectives: All-Reduce, Reduce-Scatter, All-Gather</h3>
+<p>Understanding ZeRO requires knowing these collective operations:</p>
+<ul>
+<li><strong>All-reduce:</strong> Every process ends up with the sum (or average) of all processes' data. Implemented as reduce-scatter + all-gather. Communication volume: 2Ψ (Ψ elements sent + Ψ elements received per process).</li>
+<li><strong>Reduce-scatter:</strong> Different parts of the data are reduced to different processes. Communication volume: Ψ per process.</li>
+<li><strong>All-gather:</strong> Each process sends its partition to all others so everyone has the full data. Communication volume: Ψ per process.</li>
+</ul>
+<p>These volumes matter because ZeRO's key claim is that it achieves massive memory reduction with minimal (or zero) communication overhead.</p>
+<hr>
+<h2 id="2-What-This-Paper-Does-The-Core-Idea">2. What This Paper Does (The Core Idea)</h2>
+<h3 id="The-Problem-Memory-Redundancy-in-Data-Parallelism">The Problem: Memory Redundancy in Data Parallelism</h3>
+<p>The fundamental observation is breathtakingly simple: <strong>in standard data parallelism, every GPU stores an identical copy of the entire model state</strong>. With 64 GPUs, you have 64 identical copies of the optimizer states, 64 copies of the gradients, and 64 copies of the parameters. This is pure waste — the aggregate memory across all GPUs is enormous, but 63/64ths of it stores redundant information.</p>
+<h3 id="The-Key-Insight-Partition-Instead-of-Replicate">The Key Insight: Partition Instead of Replicate</h3>
+<p>ZeRO's core insight: <strong>partition the model states across data-parallel processes instead of replicating them.</strong> Each GPU stores only 1/N_d of the optimizer states, gradients, and/or parameters (where N_d is the data-parallel degree). When a process needs data it does not own, it requests it from the responsible process through communication.</p>
+<p>The genius is that this can be done with <em>zero or minimal increase in communication volume</em> compared to standard DP, because the existing all-reduce in DP can be decomposed into exactly the communication primitives ZeRO needs.</p>
+<h3 id="Two-Complementary-Optimization-Families">Two Complementary Optimization Families</h3>
+<ol>
+<li>
+<p><strong>ZeRO-DP</strong> (Data Parallelism optimizations): Three progressive stages that partition optimizer states, gradients, and parameters respectively, reducing model state memory from 16Ψ bytes down to 16Ψ/N_d bytes.</p>
+</li>
+<li>
+<p><strong>ZeRO-R</strong> (Residual memory optimizations): Addresses the &quot;leftover&quot; memory consumers — activation memory, temporary buffers, and memory fragmentation — that become the bottleneck once model state memory is optimized.</p>
+</li>
+</ol>
+<h3 id="Why-This-is-Different-from-Model-Parallelism">Why This is Different from Model Parallelism</h3>
+<p>MP also partitions model states, but it does so by splitting the <em>computation</em> within each layer, which fragments the work into small pieces and requires expensive intra-layer communication. ZeRO-DP partitions the <em>storage</em> while keeping the computation unchanged — each GPU still processes a full forward/backward pass on its data (just like standard DP), and communication happens at well-defined, coarse-grained boundaries. This is why ZeRO retains DP's superior scaling efficiency.</p>
+<hr>
+<h2 id="3-Method-Details">3. Method Details</h2>
+<h3 id="3-1-ZeRO-DP-Stage-1-Optimizer-State-Partitioning-P-os">3.1 ZeRO-DP Stage 1: Optimizer State Partitioning (P_os)</h3>
+<p><strong>Mechanism:</strong> Divide the optimizer states (momentum, variance, and fp32 parameter copy for Adam) into N_d equal partitions. GPU i only stores and updates partition i.</p>
+<p><strong>Training flow:</strong></p>
+<ol>
+<li>Forward pass: identical on all GPUs (all hold full fp16 parameters).</li>
+<li>Backward pass: compute full gradients on all GPUs.</li>
+<li>Gradient reduction: reduce-scatter to accumulate gradients — GPU i receives the reduced gradient for partition i only.</li>
+<li>Optimizer step: GPU i updates only partition i's parameters using its local optimizer states.</li>
+<li>All-gather: collect the updated fp16 parameters from all GPUs so every GPU has the full updated model.</li>
+</ol>
+<p><strong>Memory savings:</strong> Model state memory drops from (4Ψ + KΨ) = 16Ψ to (4Ψ + KΨ/N_d). For large N_d: 16Ψ → ~4Ψ, a <strong>4× reduction</strong>.</p>
+<p><strong>Communication volume:</strong> The reduce-scatter (Ψ) + all-gather (Ψ) = 2Ψ, which is <strong>identical</strong> to the standard DP all-reduce. Zero additional communication!</p>
+<p>This is a beautiful result: by simply rearranging <em>which</em> GPU stores <em>which</em> optimizer state partition, we get 4× memory savings for free.</p>
+<h3 id="3-2-ZeRO-DP-Stage-2-Gradient-Partitioning-P-os-g">3.2 ZeRO-DP Stage 2: Gradient Partitioning (P_os+g)</h3>
+<p><strong>Mechanism:</strong> Since GPU i only needs gradients for partition i (to update its optimizer states), we only reduce gradients to their owning process. As soon as a gradient bucket is reduced and consumed, its memory is freed.</p>
+<p><strong>Implementation detail:</strong> Gradients are organized into buckets aligned with the parameter partitions. During the backward pass, as gradients become available, a reduce (not all-reduce) is performed to the responsible process. This is effectively a reduce-scatter, and after the reduce, non-owning processes can immediately release the gradient memory.</p>
+<p><strong>Memory savings:</strong> Gradient memory drops from 2Ψ to 2Ψ/N_d. Combined with P_os: model state memory = 2Ψ + 14Ψ/N_d ≈ <strong>2Ψ</strong> for large N_d, an <strong>8× reduction</strong>.</p>
+<p><strong>Communication volume:</strong> Still 2Ψ — the reduce-scatter (Ψ) + all-gather (Ψ) is the same as before. Zero additional cost.</p>
+<h3 id="3-3-ZeRO-DP-Stage-3-Parameter-Partitioning-P-os-g-p">3.3 ZeRO-DP Stage 3: Parameter Partitioning (P_os+g+p)</h3>
+<p><strong>Mechanism:</strong> Each GPU only stores 1/N_d of the parameters. During forward and backward propagation, parameters are collected via all-gather <em>on demand</em> — just before they are needed for a layer's computation — and discarded immediately after.</p>
+<p><strong>Training flow:</strong></p>
+<ol>
+<li>Forward pass: for each layer, all-gather the parameters from all processes, compute, then discard the non-local parameters. This is pipelined — the all-gather for layer k+1 can overlap with computation for layer k.</li>
+<li>Backward pass: same all-gather pattern in reverse order.</li>
+<li>Gradient reduction: reduce-scatter as before.</li>
+<li>Optimizer step: local update only.</li>
+</ol>
+<p><strong>Memory savings:</strong> All model states reduced to 16Ψ/N_d. With N_d = 64, a 7.5B model goes from 120 GB to <strong>1.9 GB</strong>.</p>
+<p><strong>Communication volume:</strong> Forward all-gather (Ψ) + backward all-gather (Ψ) + gradient reduce-scatter (Ψ) = <strong>3Ψ</strong>, which is <strong>1.5× the baseline DP</strong> volume. This is the only stage with a communication increase, and it is modest.</p>
+<p><strong>Implication:</strong> With P_os+g+p, the trainable model size scales linearly with the number of GPUs. On 1024 GPUs, a 1 trillion parameter model needs only 16 GB per GPU — well within a 32 GB V100's capacity.</p>
+<h3 id="3-4-Memory-Savings-Summary-Table-1-from-the-Paper">3.4 Memory Savings Summary (Table 1 from the Paper)</h3>
+<p>For a <strong>7.5B parameter model</strong> with mixed-precision Adam (K=12):</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:center">DP Degree (N_d)</th>
+<th style="text-align:center">Standard DP</th>
+<th style="text-align:center">P_os</th>
+<th style="text-align:center">P_os+g</th>
+<th style="text-align:center">P_os+g+p</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center">1</td>
+<td style="text-align:center">120 GB</td>
+<td style="text-align:center">120 GB</td>
+<td style="text-align:center">120 GB</td>
+<td style="text-align:center">120 GB</td>
+</tr>
+<tr>
+<td style="text-align:center">64</td>
+<td style="text-align:center">120 GB</td>
+<td style="text-align:center">31.4 GB</td>
+<td style="text-align:center">16.6 GB</td>
+<td style="text-align:center"><strong>1.88 GB</strong></td>
+</tr>
+<tr>
+<td style="text-align:center">1024</td>
+<td style="text-align:center">120 GB</td>
+<td style="text-align:center">30.1 GB</td>
+<td style="text-align:center">15.1 GB</td>
+<td style="text-align:center"><strong>0.12 GB</strong></td>
+</tr>
+</tbody>
+</table>
+<p>For a <strong>1 Trillion parameter model</strong>:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:center">DP Degree (N_d)</th>
+<th style="text-align:center">Standard DP</th>
+<th style="text-align:center">P_os</th>
+<th style="text-align:center">P_os+g</th>
+<th style="text-align:center">P_os+g+p</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center">1</td>
+<td style="text-align:center">16,000 GB</td>
+<td style="text-align:center">16,000 GB</td>
+<td style="text-align:center">16,000 GB</td>
+<td style="text-align:center">16,000 GB</td>
+</tr>
+<tr>
+<td style="text-align:center">1024</td>
+<td style="text-align:center">16,000 GB</td>
+<td style="text-align:center">4,011 GB</td>
+<td style="text-align:center">2,013 GB</td>
+<td style="text-align:center"><strong>15.6 GB</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The progression from 16 TB to 15.6 GB per device is nothing short of extraordinary.</p>
+<h3 id="3-5-ZeRO-R-Partitioned-Activation-Checkpointing-P-a">3.5 ZeRO-R: Partitioned Activation Checkpointing (P_a)</h3>
+<p><strong>Problem:</strong> Model parallelism (when used alongside ZeRO-DP) replicates activations across MP processes. For a 100B model with MP=16 and batch size 32, activation checkpoints alone consume ~33 GB per GPU.</p>
+<p><strong>Solution:</strong> Partition the activation checkpoints across MP processes and reconstruct them via all-gather only when needed for backward recomputation.</p>
+<p><strong>Memory saving:</strong> Reduces activation memory by a factor of the MP degree (up to 16× on a DGX-2).</p>
+<p><strong>Communication overhead:</strong> Only one all-gather per transformer block (communication volume = seq_length × hidden_dim), which is less than 10% of the existing MP communication. For large models, the arithmetic intensity is so high (≥10K) that the data movement can be fully overlapped.</p>
+<p><strong>CPU offloading variant (P_a+cpu):</strong> For extremely large models, the partitioned checkpoints can be moved to CPU memory, reducing activation memory to nearly zero. This adds 2× CPU data movement compared to P_a but is only activated when beneficial.</p>
+<h3 id="3-6-ZeRO-R-Constant-Size-Buffers-C-B">3.6 ZeRO-R: Constant-Size Buffers (C_B)</h3>
+<p>High-performance libraries fuse all parameters/gradients into a single large buffer for operations like all-reduce (larger messages achieve higher bandwidth). But for a 3B parameter model, a 32-bit fused buffer requires 12 GB.</p>
+<p>ZeRO-R uses <strong>fixed-size buffers</strong> — large enough for good communication efficiency but independent of model size. This prevents buffer memory from growing unboundedly with model scale.</p>
+<h3 id="3-7-ZeRO-R-Memory-Defragmentation-M-D">3.7 ZeRO-R: Memory Defragmentation (M_D)</h3>
+<p><strong>Problem:</strong> During training, short-lived tensors (intermediate activations, activation gradients) interleave with long-lived tensors (checkpointed activations, parameter gradients) in memory. This fragmentation can cause OOM errors even when 30%+ of memory is technically free — just not contiguous.</p>
+<p><strong>Solution:</strong> Pre-allocate contiguous memory chunks for long-lived data (activation checkpoints and parameter gradients) and copy data into these pre-allocated buffers on-the-fly. This eliminates fragmentation and also improves the memory allocator's efficiency (less time searching for contiguous free blocks).</p>
+<hr>
+<h2 id="4-Experiment-Setup">4. Experiment Setup</h2>
+<h3 id="4-1-Hardware">4.1 Hardware</h3>
+<ul>
+<li><strong>Cluster:</strong> 400 NVIDIA V100 GPUs (25 DGX-2 nodes)</li>
+<li><strong>Intra-node interconnect:</strong> NVSwitch (300 GB/s per link)</li>
+<li><strong>Inter-node interconnect:</strong> InfiniBand EDR (12.5 GB/s per link, 800 Gbps aggregate bandwidth)</li>
+<li><strong>GPU memory:</strong> 32 GB per V100</li>
+</ul>
+<h3 id="4-2-Implementation-ZeRO-100B">4.2 Implementation: ZeRO-100B</h3>
+<p>The full ZeRO (all three stages of ZeRO-DP + ZeRO-R) could theoretically train 1T+ parameter models, but the compute capacity of 400 V100s would make training impractically slow. Therefore, the evaluation focuses on <strong>ZeRO-100B</strong>: P_os+g (stages 1+2) of ZeRO-DP combined with all of ZeRO-R.</p>
+<p>This subset enables training of models up to ~170B parameters — an order of magnitude beyond the state of the art.</p>
+<h3 id="4-3-Models">4.3 Models</h3>
+<p>All models are GPT-2-like transformer architectures with varying hidden dimensions and number of layers:</p>
+<ul>
+<li>Sizes from 1.5B to 170B parameters</li>
+<li>Hidden dimensions: 1600 to 8192</li>
+<li>Layers: 24 to 212</li>
+</ul>
+<h3 id="4-4-Baselines">4.4 Baselines</h3>
+<ul>
+<li><strong>Without MP:</strong> PyTorch Distributed Data Parallel (DDP)</li>
+<li><strong>With MP:</strong> Megatron-LM (open-source version, September 2019) — the state-of-the-art for large model training</li>
+</ul>
+<h3 id="4-5-Evaluation-Metrics">4.5 Evaluation Metrics</h3>
+<ul>
+<li>Per-GPU throughput (TFlops/GPU)</li>
+<li>Aggregate throughput (PetaFlops)</li>
+<li>Maximum trainable model size</li>
+<li>Scalability (speedup vs. GPU count)</li>
+</ul>
+<hr>
+<h2 id="5-Results-Analysis">5. Results &amp; Analysis</h2>
+<h3 id="5-1-Throughput-and-Model-Size-Figure-2">5.1 Throughput and Model Size (Figure 2)</h3>
+<p><strong>ZeRO-100B achieves sustained 15+ PetaFlops</strong> (38+ TFlops/GPU, over 30% of V100 peak) for models from 8B to 100B parameters on 400 GPUs.</p>
+<p><strong>Megatron-LM (baseline) degrades catastrophically</strong> beyond ~40B parameters. At 40B, Megatron requires MP across two nodes, and throughput drops to ~5 TFlops/GPU (&lt;5% of peak). This is because cross-node MP uses InfiniBand (12.5 GB/s) instead of NVSwitch (300 GB/s) — a 24× bandwidth reduction.</p>
+<p><strong>Concrete comparison for 100B model:</strong> ZeRO-100B achieves ~38 TFlops/GPU. Megatron cannot even run a 100B model. This is a <strong>10× improvement</strong> over what Megatron achieves at its maximum scale.</p>
+<p><strong>Maximum model size:</strong> ZeRO-100B can efficiently train up to <strong>170B parameters</strong> on 400 GPUs. Megatron maxes out at ~20B with acceptable efficiency.</p>
+<h3 id="5-2-Super-Linear-Scalability-Figure-3">5.2 Super-Linear Scalability (Figure 3)</h3>
+<p>This is one of the most remarkable results: for a 60B parameter model, ZeRO-100B shows <strong>super-linear speedup</strong> when scaling from 64 to 400 GPUs. Doubling GPUs more than doubles throughput.</p>
+<p><strong>Why:</strong> ZeRO's P_os+g reduces per-GPU memory consumption as N_d increases. Less memory used for model states → more memory available for larger batch sizes → higher arithmetic intensity → better GPU utilization → higher per-GPU throughput.</p>
+<p>This is the opposite of typical scaling behavior, where communication overhead causes sub-linear scaling. ZeRO turns the scaling game on its head.</p>
+<h3 id="5-3-Democratizing-Large-Model-Training-Figure-4">5.3 Democratizing Large Model Training (Figure 4)</h3>
+<p>Without ZeRO, the largest model trainable with standard DP (no MP) is <strong>1.4B parameters</strong>, limited by GPU memory. ZeRO-100B pushes this to <strong>13B parameters</strong> — larger than T5 (11B) and Megatron-LM (8.3B), the largest published models at the time.</p>
+<p>Throughput exceeds 40 TFlops/GPU for these models, and since no MP is needed, there is no requirement for expensive NVLink/NVSwitch interconnects. This opens large model training to clusters with commodity networking.</p>
+<h3 id="5-4-Memory-and-Performance-Analysis-Figures-6-8">5.4 Memory and Performance Analysis (Figures 6-8)</h3>
+<p>The paper systematically evaluates five ZeRO configurations (C1-C5), combining different ZeRO-DP stages with ZeRO-R options:</p>
+<p><strong>Maximum model size progression:</strong></p>
+<ul>
+<li>C1 (P_os + C_B + M_D): 40B</li>
+<li>C2 (P_os + C_B + M_D + P_a): 60B (activation partitioning frees 16× activation memory)</li>
+<li>C4 (P_os+g + C_B + M_D + P_a): 140B (gradient partitioning halves model state memory)</li>
+<li>C5 (P_os+g + C_B + M_D + P_a+cpu): 170B (CPU offloading of activations removes the last memory bottleneck)</li>
+</ul>
+<p><strong>Performance insight:</strong> Lower memory consumption → larger possible batch size → higher throughput. The exception is C5 vs C4 for 60B models: CPU offloading adds data movement overhead that outweighs the benefit unless the model is so large that it <em>cannot run</em> without CPU offloading.</p>
+<h3 id="5-5-Turing-NLG-17B-Parameters">5.5 Turing-NLG (17B Parameters)</h3>
+<p>ZeRO-100B powered the training of <strong>Turing-NLG</strong>, which at the time (February 2020) was the world's largest language model at 17.17 billion parameters. It achieved:</p>
+<ul>
+<li><strong>Perplexity:</strong> 10.21 on WikiText-103 (new state-of-the-art)</li>
+<li><strong>Throughput:</strong> 41.4 TFlops/GPU sustained</li>
+<li>Significantly outperforming the previous SOTA (Megatron-LM 8.3B)</li>
+</ul>
+<h3 id="5-6-Theoretical-vs-Measured-Model-Sizes-Table-2">5.6 Theoretical vs. Measured Model Sizes (Table 2)</h3>
+<p>The paper validates its memory analysis by comparing theoretical maximum model sizes with measured values:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:center">MP</th>
+<th style="text-align:center">GPUs</th>
+<th style="text-align:center">Theoretical Max (P_os)</th>
+<th style="text-align:center">Measured (P_os)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center">1</td>
+<td style="text-align:center">64</td>
+<td style="text-align:center">7.6B</td>
+<td style="text-align:center">6.2B</td>
+</tr>
+<tr>
+<td style="text-align:center">4</td>
+<td style="text-align:center">256</td>
+<td style="text-align:center">30.4B</td>
+<td style="text-align:center">25B</td>
+</tr>
+<tr>
+<td style="text-align:center">16</td>
+<td style="text-align:center">1024</td>
+<td style="text-align:center">121.6B</td>
+<td style="text-align:center">100B</td>
+</tr>
+</tbody>
+</table>
+<p>The measured values closely match theoretical predictions (within ~20%), confirming that the memory analysis provides realistic upper bounds.</p>
+<hr>
+<h2 id="6-Limitations-Boundary-Conditions">6. Limitations &amp; Boundary Conditions</h2>
+<h3 id="6-1-Communication-Volume-Increase-in-Stage-3">6.1 Communication Volume Increase in Stage 3</h3>
+<p>P_os+g+p increases communication by 1.5× over baseline DP. For bandwidth-constrained clusters (e.g., low inter-node bandwidth), this overhead may not be negligible. The paper only evaluates up to P_os+g in practice — the full P_os+g+p was not implemented at publication time.</p>
+<h3 id="6-2-Compute-Capacity-Gap-for-Truly-Trillion-Parameter-Models">6.2 Compute Capacity Gap for Truly Trillion-Parameter Models</h3>
+<p>The paper honestly acknowledges that while ZeRO <em>can fit</em> a 1T model on 1024 GPUs, the compute required to train it is staggering. A 1T model has ~3000× more computation per sample than BERT-Large. On the 1024-GPU cluster that trains BERT-Large in 67 minutes, a 1T model would take over 140 days — and likely over a year with realistic sequence lengths and dataset sizes. Exa-scale compute is needed.</p>
+<h3 id="6-3-No-Stage-3-Implementation-at-Publication">6.3 No Stage 3 Implementation at Publication</h3>
+<p>The paper presents Stage 3 (parameter partitioning) theoretically but does not implement or evaluate it. The published implementation (ZeRO-100B) only includes Stages 1-2 plus ZeRO-R. (Stage 3 was later released in DeepSpeed.)</p>
+<h3 id="6-4-Batch-Size-Constraints-and-Convergence">6.4 Batch Size Constraints and Convergence</h3>
+<p>ZeRO's super-linear scaling partially relies on increasing batch sizes as more GPUs reduce per-GPU memory pressure. However, there exists a &quot;critical batch size&quot; beyond which larger batches slow convergence. The paper acknowledges this but notes that for their evaluation regime, batch sizes remain below this threshold. For extremely large GPU counts, this could become a real concern.</p>
+<h3 id="6-5-Single-Optimizer-Focus">6.5 Single Optimizer Focus</h3>
+<p>The analysis is centered on Adam with mixed-precision training (K=12). While the framework generalizes to other optimizers, the specific memory savings depend on K. For SGD (K≈0), the optimizer state savings from Stage 1 would be minimal.</p>
+<h3 id="6-6-GPT-2-Architecture-Only">6.6 GPT-2 Architecture Only</h3>
+<p>All experiments use GPT-2-like transformer models. While the memory analysis is general, performance results (throughput, scaling) may differ for other architectures (e.g., encoder-decoder models, mixture-of-experts).</p>
+<h3 id="6-7-ZeRO-R-Requires-Model-Parallelism">6.7 ZeRO-R Requires Model Parallelism</h3>
+<p>The activation partitioning optimization (P_a) only helps when model parallelism is in use (since it removes the activation <em>replication</em> across MP processes). For DP-only setups, P_a provides no benefit.</p>
+<hr>
+<h2 id="7-Reproducibility-Practical-Notes">7. Reproducibility &amp; Practical Notes</h2>
+<h3 id="7-1-Open-Source-DeepSpeed">7.1 Open Source: DeepSpeed</h3>
+<p>ZeRO is fully open-sourced as part of Microsoft's <strong>DeepSpeed</strong> library (<a href="https://github.com/microsoft/deepspeed" target="_blank" rel="noopener">https://github.com/microsoft/deepspeed</a>). It has become one of the most widely used distributed training frameworks, powering models like BLOOM-176B, various GPT-NeoX models, and many industry training runs.</p>
+<h3 id="7-2-Ease-of-Use">7.2 Ease of Use</h3>
+<p>This is ZeRO's killer advantage: <strong>no model code changes required</strong>. Users wrap their model with DeepSpeed's interface (compatible with <code>torch.nn.Module</code>) and get ZeRO-DP for free. This is in stark contrast to model parallelism (which requires model rewrites) and pipeline parallelism (which requires careful stage assignment and micro-batching).</p>
+<p>Typical integration:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">model, optimizer, _, _ = deepspeed.initialize(</span><br><span class="line">    model=model,</span><br><span class="line">    optimizer=optimizer,</span><br><span class="line">    config=ds_config</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>ZeRO stages are selected via a JSON config file — switching between Stage 1, 2, or 3 requires changing a single number.</p>
+<h3 id="7-3-Practical-Hardware-Recommendations">7.3 Practical Hardware Recommendations</h3>
+<ul>
+<li><strong>Stage 1 (P_os):</strong> Use when model fits in memory with DP but you want to train larger batch sizes or slightly larger models. Minimal code change, zero communication overhead.</li>
+<li><strong>Stage 2 (P_os+g):</strong> The sweet spot for most large model training. 8× memory reduction with zero communication overhead. Use this by default for 10B+ models.</li>
+<li><strong>Stage 3 (P_os+g+p):</strong> Use when model states still do not fit with Stage 2. Accepts 1.5× communication overhead for N_d × memory reduction. Essential for 100B+ models with limited GPU count.</li>
+</ul>
+<h3 id="7-4-Estimated-Compute-Requirements">7.4 Estimated Compute Requirements</h3>
+<p>Based on the paper's results, training a 100B model to convergence on 400 V100 GPUs at 38 TFlops/GPU would take roughly:</p>
+<ul>
+<li>~15 PFlops aggregate throughput</li>
+<li>Training time depends on dataset and tokens, but expect weeks to months</li>
+</ul>
+<p>For modern hardware (A100/H100 clusters), ZeRO Stage 2-3 remains highly relevant. The specific throughput numbers will be higher, but the memory optimization principles are hardware-agnostic.</p>
+<h3 id="7-5-Subsequent-Evolution">7.5 Subsequent Evolution</h3>
+<p>Since publication, ZeRO has evolved significantly:</p>
+<ul>
+<li><strong>ZeRO-Offload:</strong> Offloads optimizer states and computation to CPU (not just activations)</li>
+<li><strong>ZeRO-Infinity:</strong> Extends offloading to NVMe SSDs for even larger models</li>
+<li><strong>ZeRO++:</strong> Optimizes communication with quantized gradients and hierarchical partitioning</li>
+<li><strong>FSDP (Fully Sharded Data Parallelism):</strong> PyTorch's native implementation of ZeRO-like principles, heavily inspired by this work</li>
+</ul>
+<h3 id="7-6-Tips-for-Practitioners">7.6 Tips for Practitioners</h3>
+<ol>
+<li><strong>Start with ZeRO Stage 2</strong> — it is the best default for large models (8× memory reduction, zero communication overhead).</li>
+<li><strong>Enable activation checkpointing</strong> alongside ZeRO for additional memory savings.</li>
+<li><strong>Monitor batch size</strong> — ZeRO frees memory that can be used for larger batches, improving throughput, but watch for convergence degradation.</li>
+<li><strong>Stage 3 with CPU offloading</strong> is a last resort — the throughput penalty is real. Only use it when you truly cannot fit the model otherwise.</li>
+<li><strong>Combine with MP</strong> only when needed for activation memory or batch size constraints, not for model state memory (ZeRO handles that better).</li>
+</ol>
+<hr>
+<h2 id="8-Deep-Dive-Communication-Analysis-and-Why-ZeRO-is-Theoretically-Optimal">8. Deep Dive: Communication Analysis and Why ZeRO is Theoretically Optimal</h2>
+<h3 id="8-1-Why-Standard-DP-Communication-is-2Ψ">8.1 Why Standard DP Communication is 2Ψ</h3>
+<p>In standard data parallelism, after the backward pass, every GPU has locally computed gradients that must be averaged across all N_d processes. The state-of-the-art implementation of all-reduce uses a two-step pipeline:</p>
+<p><strong>Step 1 — Reduce-scatter:</strong> The gradient tensor (Ψ elements) is divided into N_d chunks. Each chunk is reduced (summed) to a different process. Communication volume per process: Ψ elements (each process sends N_d-1 chunks of size Ψ/N_d each in a ring, totaling ~Ψ).</p>
+<p><strong>Step 2 — All-gather:</strong> Each process now holds one reduced chunk. The all-gather distributes all chunks to all processes. Communication volume per process: Ψ elements.</p>
+<p><strong>Total: 2Ψ.</strong> This is the communication cost baseline that ZeRO must match or closely approximate.</p>
+<h3 id="8-2-ZeRO-Stage-1-2-Achieves-Exactly-2Ψ">8.2 ZeRO Stage 1-2 Achieves Exactly 2Ψ</h3>
+<p>ZeRO's insight is that the reduce-scatter step of a standard all-reduce <em>already</em> distributes different gradient chunks to different processes. In standard DP, this is followed by an all-gather to ensure every process has all the reduced gradients. But with ZeRO, each process only <em>needs</em> the gradients for its partition — so the reduce-scatter is sufficient for the gradient phase.</p>
+<p>After the optimizer step, each process has updated its parameter partition. Now an all-gather distributes the updated parameters to all processes (cost: Ψ). So:</p>
+<ul>
+<li><strong>Reduce-scatter of gradients:</strong> Ψ (same as the first half of standard all-reduce)</li>
+<li><strong>All-gather of updated parameters:</strong> Ψ (replaces the second half of standard all-reduce)</li>
+<li><strong>Total:</strong> 2Ψ — <strong>identical to standard DP</strong></li>
+</ul>
+<p>This is why Stages 1 and 2 are &quot;free lunch&quot; — the communication pattern is mathematically equivalent to standard DP's all-reduce, just reinterpreted to enable memory partitioning.</p>
+<h3 id="8-3-Stage-3-s-1-5×-Overhead-is-the-Theoretical-Minimum">8.3 Stage 3's 1.5× Overhead is the Theoretical Minimum</h3>
+<p>With parameter partitioning, each process only stores 1/N_d of the parameters. During forward and backward passes, it needs the full parameters, so additional all-gathers are required:</p>
+<ul>
+<li><strong>Forward all-gather:</strong> Ψ (collect all parameters before each layer)</li>
+<li><strong>Backward all-gather:</strong> Ψ (collect parameters again for backward computation)</li>
+<li><strong>Gradient reduce-scatter:</strong> Ψ</li>
+</ul>
+<p><strong>Total: 3Ψ = 1.5 × baseline.</strong> This is the minimum possible communication: you <em>must</em> gather the parameters you do not own for both forward and backward passes, and you <em>must</em> reduce the gradients. No further reduction is possible without sacrificing correctness.</p>
+<h3 id="8-4-Communication-Memory-Trade-off-Space">8.4 Communication-Memory Trade-off Space</h3>
+<p>The elegance of ZeRO's design becomes apparent when we map out the full trade-off space:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Configuration</th>
+<th style="text-align:center">Memory per GPU</th>
+<th style="text-align:center">Communication</th>
+<th style="text-align:center">Memory Reduction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">Standard DP</td>
+<td style="text-align:center">16Ψ</td>
+<td style="text-align:center">2Ψ</td>
+<td style="text-align:center">1×</td>
+</tr>
+<tr>
+<td style="text-align:left">ZeRO Stage 1 (P_os)</td>
+<td style="text-align:center">~4Ψ</td>
+<td style="text-align:center">2Ψ</td>
+<td style="text-align:center">4×</td>
+</tr>
+<tr>
+<td style="text-align:left">ZeRO Stage 1+2 (P_os+g)</td>
+<td style="text-align:center">~2Ψ</td>
+<td style="text-align:center">2Ψ</td>
+<td style="text-align:center">8×</td>
+</tr>
+<tr>
+<td style="text-align:left">ZeRO Stage 1+2+3 (P_os+g+p)</td>
+<td style="text-align:center">16Ψ/N_d</td>
+<td style="text-align:center">3Ψ</td>
+<td style="text-align:center">N_d ×</td>
+</tr>
+</tbody>
+</table>
+<p>The first two stages achieve massive memory reduction (4× and 8×) at zero communication cost. Only the third stage introduces overhead, and it is modest (50%) in exchange for linear memory scaling.</p>
+<hr>
+<h2 id="9-The-Broader-Impact-How-ZeRO-Changed-the-ML-Training-Landscape">9. The Broader Impact: How ZeRO Changed the ML Training Landscape</h2>
+<h3 id="9-1-Before-ZeRO-The-Scaling-Wall">9.1 Before ZeRO: The Scaling Wall</h3>
+<p>Before ZeRO, scaling model training required one of three painful approaches:</p>
+<ol>
+<li>
+<p><strong>Model parallelism</strong> (Megatron-LM): Required expert knowledge to partition models, only worked efficiently within single nodes, and hit a wall at ~20B parameters due to cross-node communication costs.</p>
+</li>
+<li>
+<p><strong>Pipeline parallelism</strong> (GPipe, PipeDream): Introduced pipeline bubbles, convergence complications, and required batch sizes proportional to pipeline depth.</p>
+</li>
+<li>
+<p><strong>CPU offloading</strong>: Sacrificed up to 50% of training time on GPU-CPU data transfers.</p>
+</li>
+</ol>
+<p>Each approach forced practitioners to make painful trade-offs between memory efficiency, compute efficiency, communication overhead, usability, and convergence guarantees.</p>
+<h3 id="9-2-After-ZeRO-The-New-Paradigm">9.2 After ZeRO: The New Paradigm</h3>
+<p>ZeRO demonstrated that these trade-offs were not fundamental — they were artifacts of suboptimal system design. By recognizing that data parallelism's memory redundancy could be eliminated through smart partitioning without changing the underlying parallelization paradigm, ZeRO achieved the &quot;best of both worlds&quot;:</p>
+<ul>
+<li><strong>Memory efficiency</strong> of model parallelism (or better)</li>
+<li><strong>Compute efficiency</strong> of data parallelism</li>
+<li><strong>Communication efficiency</strong> of data parallelism</li>
+<li><strong>Usability</strong> of data parallelism (zero model code changes)</li>
+</ul>
+<h3 id="9-3-The-Legacy">9.3 The Legacy</h3>
+<p>The ideas in ZeRO have become foundational:</p>
+<ul>
+<li><strong>DeepSpeed</strong> (Microsoft's open-source library) has been used to train thousands of models, including BLOOM-176B, the largest open-source model trained by the BigScience collaboration.</li>
+<li><strong>FSDP</strong> (Fully Sharded Data Parallelism) in PyTorch implements ZeRO-like principles natively, bringing these optimizations to the broader PyTorch ecosystem.</li>
+<li><strong>Megatron-DeepSpeed</strong> combines Megatron-LM's tensor/pipeline parallelism with ZeRO's data-parallel memory optimization, enabling the training of the largest models (GPT-3-scale and beyond).</li>
+<li>The concept of &quot;partition storage, communicate on demand&quot; has become a standard pattern in systems design for large-scale ML.</li>
+</ul>
+<h3 id="9-4-What-ZeRO-Got-Right-That-Others-Missed">9.4 What ZeRO Got Right That Others Missed</h3>
+<p>The deepest insight in the paper is perhaps this: <strong>redundancy in distributed computing is usually seen as a feature (for fault tolerance), but in data-parallel training, it is pure overhead.</strong> No process ever needs all the optimizer states or all the gradients at the same time. By recognizing the temporal locality of state access during training (parameters are only needed during their layer's forward/backward pass, gradients are only needed during the reduction and update), ZeRO converts spatial redundancy into temporal communication, trading cheap bandwidth for expensive memory.</p>
+<p>This &quot;lazy materialization&quot; principle — don't store what you can reconstruct on demand — is the core of ZeRO and has influenced system design well beyond just training optimization.</p>
+<hr>
+<h2 id="References">References</h2>
+<ol>
+<li>Rajbhandari, S., Rasley, J., Ruwase, O., &amp; He, Y. (2020). ZeRO: Memory Optimizations Toward Training Trillion Parameter Models. SC 2020 / arXiv:1910.02054.</li>
+<li>Shoeybi, M. et al. (2019). Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism. arXiv:1909.08053.</li>
+<li>Kingma, D. P. &amp; Ba, J. (2015). Adam: A Method for Stochastic Optimization. ICLR 2015.</li>
+<li>Chen, T. et al. (2016). Training Deep Nets with Sublinear Memory Cost. arXiv:1604.06174.</li>
+<li>Micikevicius, P. et al. (2017). Mixed Precision Training. arXiv:1710.03740.</li>
+<li>Huang, Y. et al. (2019). GPipe: Efficient Training of Giant Neural Networks using Pipeline Parallelism. NeurIPS 2019.</li>
+<li>Narayanan, D. et al. (2019). PipeDream: Generalized Pipeline Parallelism for DNN Training. SOSP 2019.</li>
+<li>Raffel, C. et al. (2020). Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer (T5). JMLR 2020.</li>
+<li>Radford, A. et al. (2019). Language Models are Unsupervised Multitask Learners. (GPT-2).</li>
+</ol>
+<hr>
+<p><em>Review written on 2026-03-19.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/03/16/2026-03-16-MetaGPT-technical-review-en/" rel="prev" title="MetaGPT: When LLM Agents Form a Software Company — Multi-Agent Collaboration Done Right">
+      <i class="fa fa-chevron-left"></i> MetaGPT: When LLM Agents Form a Software Company — Multi-Agent Collaboration Done Right
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/03/21/2026-03-21-BitNet-technical-review-en/" rel="next" title="BitNet: Scaling 1-bit Transformers for Large Language Models — In-Depth Technical Review">
+      BitNet: Scaling 1-bit Transformers for Large Language Models — In-Depth Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#ZeRO-Memory-Optimizations-Toward-Training-Trillion-Parameter-Models-—-In-Depth-Technical-Review-English"><span class="nav-number">1.</span> <span class="nav-text">ZeRO: Memory Optimizations Toward Training Trillion Parameter Models — In-Depth Technical Review (English)</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#Abstract"><span class="nav-number">1.1.</span> <span class="nav-text">Abstract</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Prerequisites-What-You-Need-to-Know-Before-Reading-This-Paper"><span class="nav-number">1.2.</span> <span class="nav-text">1. Prerequisites: What You Need to Know Before Reading This Paper</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-Data-Parallelism-DP-—-The-Default-Distributed-Training-Strategy"><span class="nav-number">1.2.1.</span> <span class="nav-text">1.1 Data Parallelism (DP) — The Default Distributed Training Strategy</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-Model-Parallelism-MP-—-Splitting-the-Model-Across-Devices"><span class="nav-number">1.2.2.</span> <span class="nav-text">1.2 Model Parallelism (MP) — Splitting the Model Across Devices</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-Pipeline-Parallelism-PP-—-Splitting-by-Layers"><span class="nav-number">1.2.3.</span> <span class="nav-text">1.3 Pipeline Parallelism (PP) — Splitting by Layers</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-4-Mixed-Precision-Training-and-Adam-Optimizer-Memory"><span class="nav-number">1.2.4.</span> <span class="nav-text">1.4 Mixed-Precision Training and Adam Optimizer Memory</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-5-Activation-Memory-and-Checkpointing"><span class="nav-number">1.2.5.</span> <span class="nav-text">1.5 Activation Memory and Checkpointing</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-6-Communication-Collectives-All-Reduce-Reduce-Scatter-All-Gather"><span class="nav-number">1.2.6.</span> <span class="nav-text">1.6 Communication Collectives: All-Reduce, Reduce-Scatter, All-Gather</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-What-This-Paper-Does-The-Core-Idea"><span class="nav-number">1.3.</span> <span class="nav-text">2. What This Paper Does (The Core Idea)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#The-Problem-Memory-Redundancy-in-Data-Parallelism"><span class="nav-number">1.3.1.</span> <span class="nav-text">The Problem: Memory Redundancy in Data Parallelism</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#The-Key-Insight-Partition-Instead-of-Replicate"><span class="nav-number">1.3.2.</span> <span class="nav-text">The Key Insight: Partition Instead of Replicate</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Two-Complementary-Optimization-Families"><span class="nav-number">1.3.3.</span> <span class="nav-text">Two Complementary Optimization Families</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Why-This-is-Different-from-Model-Parallelism"><span class="nav-number">1.3.4.</span> <span class="nav-text">Why This is Different from Model Parallelism</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Method-Details"><span class="nav-number">1.4.</span> <span class="nav-text">3. Method Details</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-ZeRO-DP-Stage-1-Optimizer-State-Partitioning-P-os"><span class="nav-number">1.4.1.</span> <span class="nav-text">3.1 ZeRO-DP Stage 1: Optimizer State Partitioning (P_os)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-ZeRO-DP-Stage-2-Gradient-Partitioning-P-os-g"><span class="nav-number">1.4.2.</span> <span class="nav-text">3.2 ZeRO-DP Stage 2: Gradient Partitioning (P_os+g)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-ZeRO-DP-Stage-3-Parameter-Partitioning-P-os-g-p"><span class="nav-number">1.4.3.</span> <span class="nav-text">3.3 ZeRO-DP Stage 3: Parameter Partitioning (P_os+g+p)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-Memory-Savings-Summary-Table-1-from-the-Paper"><span class="nav-number">1.4.4.</span> <span class="nav-text">3.4 Memory Savings Summary (Table 1 from the Paper)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-ZeRO-R-Partitioned-Activation-Checkpointing-P-a"><span class="nav-number">1.4.5.</span> <span class="nav-text">3.5 ZeRO-R: Partitioned Activation Checkpointing (P_a)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-6-ZeRO-R-Constant-Size-Buffers-C-B"><span class="nav-number">1.4.6.</span> <span class="nav-text">3.6 ZeRO-R: Constant-Size Buffers (C_B)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-7-ZeRO-R-Memory-Defragmentation-M-D"><span class="nav-number">1.4.7.</span> <span class="nav-text">3.7 ZeRO-R: Memory Defragmentation (M_D)</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Experiment-Setup"><span class="nav-number">1.5.</span> <span class="nav-text">4. Experiment Setup</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-Hardware"><span class="nav-number">1.5.1.</span> <span class="nav-text">4.1 Hardware</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-Implementation-ZeRO-100B"><span class="nav-number">1.5.2.</span> <span class="nav-text">4.2 Implementation: ZeRO-100B</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-Models"><span class="nav-number">1.5.3.</span> <span class="nav-text">4.3 Models</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-4-Baselines"><span class="nav-number">1.5.4.</span> <span class="nav-text">4.4 Baselines</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-5-Evaluation-Metrics"><span class="nav-number">1.5.5.</span> <span class="nav-text">4.5 Evaluation Metrics</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Results-Analysis"><span class="nav-number">1.6.</span> <span class="nav-text">5. Results &amp; Analysis</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-Throughput-and-Model-Size-Figure-2"><span class="nav-number">1.6.1.</span> <span class="nav-text">5.1 Throughput and Model Size (Figure 2)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Super-Linear-Scalability-Figure-3"><span class="nav-number">1.6.2.</span> <span class="nav-text">5.2 Super-Linear Scalability (Figure 3)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-Democratizing-Large-Model-Training-Figure-4"><span class="nav-number">1.6.3.</span> <span class="nav-text">5.3 Democratizing Large Model Training (Figure 4)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-Memory-and-Performance-Analysis-Figures-6-8"><span class="nav-number">1.6.4.</span> <span class="nav-text">5.4 Memory and Performance Analysis (Figures 6-8)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-5-Turing-NLG-17B-Parameters"><span class="nav-number">1.6.5.</span> <span class="nav-text">5.5 Turing-NLG (17B Parameters)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-6-Theoretical-vs-Measured-Model-Sizes-Table-2"><span class="nav-number">1.6.6.</span> <span class="nav-text">5.6 Theoretical vs. Measured Model Sizes (Table 2)</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Limitations-Boundary-Conditions"><span class="nav-number">1.7.</span> <span class="nav-text">6. Limitations &amp; Boundary Conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Communication-Volume-Increase-in-Stage-3"><span class="nav-number">1.7.1.</span> <span class="nav-text">6.1 Communication Volume Increase in Stage 3</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Compute-Capacity-Gap-for-Truly-Trillion-Parameter-Models"><span class="nav-number">1.7.2.</span> <span class="nav-text">6.2 Compute Capacity Gap for Truly Trillion-Parameter Models</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-No-Stage-3-Implementation-at-Publication"><span class="nav-number">1.7.3.</span> <span class="nav-text">6.3 No Stage 3 Implementation at Publication</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-Batch-Size-Constraints-and-Convergence"><span class="nav-number">1.7.4.</span> <span class="nav-text">6.4 Batch Size Constraints and Convergence</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-5-Single-Optimizer-Focus"><span class="nav-number">1.7.5.</span> <span class="nav-text">6.5 Single Optimizer Focus</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-6-GPT-2-Architecture-Only"><span class="nav-number">1.7.6.</span> <span class="nav-text">6.6 GPT-2 Architecture Only</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-7-ZeRO-R-Requires-Model-Parallelism"><span class="nav-number">1.7.7.</span> <span class="nav-text">6.7 ZeRO-R Requires Model Parallelism</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Reproducibility-Practical-Notes"><span class="nav-number">1.8.</span> <span class="nav-text">7. Reproducibility &amp; Practical Notes</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-Open-Source-DeepSpeed"><span class="nav-number">1.8.1.</span> <span class="nav-text">7.1 Open Source: DeepSpeed</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-Ease-of-Use"><span class="nav-number">1.8.2.</span> <span class="nav-text">7.2 Ease of Use</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-Practical-Hardware-Recommendations"><span class="nav-number">1.8.3.</span> <span class="nav-text">7.3 Practical Hardware Recommendations</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-Estimated-Compute-Requirements"><span class="nav-number">1.8.4.</span> <span class="nav-text">7.4 Estimated Compute Requirements</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-5-Subsequent-Evolution"><span class="nav-number">1.8.5.</span> <span class="nav-text">7.5 Subsequent Evolution</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-6-Tips-for-Practitioners"><span class="nav-number">1.8.6.</span> <span class="nav-text">7.6 Tips for Practitioners</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Deep-Dive-Communication-Analysis-and-Why-ZeRO-is-Theoretically-Optimal"><span class="nav-number">1.9.</span> <span class="nav-text">8. Deep Dive: Communication Analysis and Why ZeRO is Theoretically Optimal</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-Why-Standard-DP-Communication-is-2Ψ"><span class="nav-number">1.9.1.</span> <span class="nav-text">8.1 Why Standard DP Communication is 2Ψ</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-ZeRO-Stage-1-2-Achieves-Exactly-2Ψ"><span class="nav-number">1.9.2.</span> <span class="nav-text">8.2 ZeRO Stage 1-2 Achieves Exactly 2Ψ</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-Stage-3-s-1-5×-Overhead-is-the-Theoretical-Minimum"><span class="nav-number">1.9.3.</span> <span class="nav-text">8.3 Stage 3&#39;s 1.5× Overhead is the Theoretical Minimum</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-4-Communication-Memory-Trade-off-Space"><span class="nav-number">1.9.4.</span> <span class="nav-text">8.4 Communication-Memory Trade-off Space</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-The-Broader-Impact-How-ZeRO-Changed-the-ML-Training-Landscape"><span class="nav-number">1.10.</span> <span class="nav-text">9. The Broader Impact: How ZeRO Changed the ML Training Landscape</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-Before-ZeRO-The-Scaling-Wall"><span class="nav-number">1.10.1.</span> <span class="nav-text">9.1 Before ZeRO: The Scaling Wall</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-After-ZeRO-The-New-Paradigm"><span class="nav-number">1.10.2.</span> <span class="nav-text">9.2 After ZeRO: The New Paradigm</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-The-Legacy"><span class="nav-number">1.10.3.</span> <span class="nav-text">9.3 The Legacy</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-What-ZeRO-Got-Right-That-Others-Missed"><span class="nav-number">1.10.4.</span> <span class="nav-text">9.4 What ZeRO Got Right That Others Missed</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#References"><span class="nav-number">1.11.</span> <span class="nav-text">References</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

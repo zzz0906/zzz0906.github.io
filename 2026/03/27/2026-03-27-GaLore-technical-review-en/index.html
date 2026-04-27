@@ -1,0 +1,1508 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="GaLore reduces memory requirements for LLM training through gradient low-rank projection. Covers the mathematical foundation, subspace switching, and memory savings analysis.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="GaLore: Memory-Efficient LLM Training by Gradient Low-Rank Projection — In-Depth Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/03/27/2026-03-27-GaLore-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="GaLore reduces memory requirements for LLM training through gradient low-rank projection. Covers the mathematical foundation, subspace switching, and memory savings analysis.">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-03-27T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-02T16:16:49.510Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Deep Learning">
+<meta property="article:tag" content="Memory Efficiency">
+<meta property="article:tag" content="LLM Training">
+<meta property="article:tag" content="Low-Rank Methods">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/03/27/2026-03-27-GaLore-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>GaLore: Memory-Efficient LLM Training by Gradient Low-Rank Projection — In-Depth Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/03/27/2026-03-27-GaLore-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          GaLore: Memory-Efficient LLM Training by Gradient Low-Rank Projection — In-Depth Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-03-27 00:00:00" itemprop="dateCreated datePublished" datetime="2026-03-27T00:00:00+00:00">2026-03-27</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-02 16:16:49" itemprop="dateModified" datetime="2026-04-02T16:16:49+00:00">2026-04-02</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">GaLore reduces memory requirements for LLM training through gradient low-rank projection. Covers the mathematical foundation, subspace switching, and memory savings analysis.</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="Executive-Summary">Executive Summary</h2>
+<p>This paper addresses one of the most critical bottlenecks in modern large language model training: <strong>optimizer state memory consumption</strong>. While most practitioners focus on reducing parameter count through methods like LoRA, GaLore takes a different approach by attacking the actual memory-dominant term—the first and second moment estimates maintained by optimizers like AdamW.</p>
+<p>The key innovation is elegant: instead of forcing weights into low-rank spaces (which constrains model expressivity), GaLore exploits the observation that gradient matrices naturally exhibit low-rank structure during training. By decomposing gradients, performing optimizer updates in the compressed rank-r space, and projecting updates back to full rank, the method achieves:</p>
+<a id="more"></a>
+<ol>
+<li><strong>Dramatic memory savings</strong> in optimizer states (50–75% reduction)</li>
+<li><strong>Preserved model quality</strong> through full-rank parameter training</li>
+<li><strong>Optimizer agnosticism</strong> (works with AdamW, 8-bit Adam, Adafactor)</li>
+<li><strong>Simple integration</strong> into existing training frameworks</li>
+</ol>
+<p>This report provides practitioners with the technical depth needed to understand, implement, and deploy GaLore effectively.</p>
+<hr>
+<h2 id="1-Prerequisites-Foundational-Knowledge-Required">1. Prerequisites: Foundational Knowledge Required</h2>
+<h3 id="1-1-The-Memory-Breakdown-of-Modern-LLM-Training">1.1 The Memory Breakdown of Modern LLM Training</h3>
+<p>Training a large language model involves four primary memory consumers:</p>
+<h4 id="1-1-1-Model-Parameters-Weights">1.1.1 Model Parameters (Weights)</h4>
+<p>The neural network weights themselves. For a 7B parameter model in BF16, this is ~14 GB.</p>
+<h4 id="1-1-2-Gradient-Tensors">1.1.2 Gradient Tensors</h4>
+<p>During the backward pass, gradients are computed and held in memory before being used by the optimizer. These have the same shape as parameters and are typically the same dtype. This adds another ~14 GB in BF16.</p>
+<h4 id="1-1-3-Optimizer-States-The-Critical-Bottleneck">1.1.3 Optimizer States (The Critical Bottleneck)</h4>
+<p>For AdamW, each parameter requires two additional tensors:</p>
+<ul>
+<li><strong>First moment estimate (m)</strong>: exponentially weighted average of gradients</li>
+<li><strong>Second moment estimate (v)</strong>: exponentially weighted average of squared gradients</li>
+</ul>
+<p>For a 7B parameter BF16 model:</p>
+<ul>
+<li>If v is kept in FP32 (for stability), this is ~28 GB (two FP32 tensors)</li>
+<li>This often exceeds the raw parameter memory</li>
+</ul>
+<h4 id="1-1-4-Activation-Tensors">1.1.4 Activation Tensors</h4>
+<p>Intermediate activations saved during forward pass for use in backward pass. Can be reduced via gradient checkpointing but still significant.</p>
+<p><strong>Total Memory Estimate (7B model, BF16 weights, FP32 optimizer states):</strong></p>
+<ul>
+<li>Weights: 14 GB</li>
+<li>Gradients: 14 GB (temporary)</li>
+<li>Optimizer states: 28 GB</li>
+<li>Activations: 5–8 GB</li>
+<li><strong>Total: ~60–70 GB</strong></li>
+</ul>
+<p>This explains why training 7B models requires A100s (80 GB) or requires gradient accumulation and model parallelism.</p>
+<h3 id="1-2-Why-Traditional-Approaches-Fall-Short">1.2 Why Traditional Approaches Fall Short</h3>
+<h4 id="1-2-1-LoRA-Constrained-Optimization">1.2.1 LoRA: Constrained Optimization</h4>
+<p>LoRA (Low-Rank Adaptation) freezes pre-trained weights and adds trainable low-rank updates:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">Δ</mi><mi>W</mi><mo>=</mo><mi>B</mi><mi>A</mi><mtext> where </mtext><mi>B</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>d</mi><mo>×</mo><mi>r</mi></mrow></msup><mo separator="true">,</mo><mi>A</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>r</mi><mo>×</mo><mi>d</mi></mrow></msup><mo separator="true">,</mo><mi>r</mi><mo>≪</mo><mi>d</mi></mrow><annotation encoding="application/x-tex">\Delta W = BA \text{ where } B \in \mathbb{R}^{d \times r}, A \in \mathbb{R}^{r \times d}, r \ll d
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">Δ</span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7335em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mord mathnormal">A</span><span class="mord text"><span class="mord"> where </span></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0935em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">d</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">A</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0935em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight">d</span></span></span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≪</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">d</span></span></span></span></span></p>
+<p><strong>Advantages:</strong></p>
+<ul>
+<li>Drastically reduces trainable parameters (by 99%+)</li>
+<li>Substantially reduces optimizer state memory</li>
+<li>Fast adaptation with minimal compute</li>
+</ul>
+<p><strong>Disadvantages:</strong></p>
+<ul>
+<li>Constrains model to operate in low-rank update space</li>
+<li>May require larger rank (r) for complex tasks</li>
+<li>Fundamentally changes optimization trajectory</li>
+<li>Pretraining from scratch less advantageous than finetuning</li>
+</ul>
+<h4 id="1-2-2-Quantized-Optimizers">1.2.2 Quantized Optimizers</h4>
+<p>8-bit optimizers (Dettmers et al., 2022) reduce FP32 optimizer states to INT8:</p>
+<ul>
+<li>Reduces optimizer memory from 28 GB to 7 GB for 7B model</li>
+<li>Introduces quantization noise</li>
+<li>Requires careful range estimation to avoid overflow/underflow</li>
+<li>Can be unstable in early training or with aggressive learning rates</li>
+</ul>
+<h4 id="1-2-3-The-Missing-Approach-Full-Rank-Training-with-Compressed-States">1.2.3 The Missing Approach: Full-Rank Training with Compressed States</h4>
+<p>Neither LoRA (constrains parameters) nor 8-bit quantization alone attack the root problem: we're storing redundant information in optimizer states.</p>
+<h3 id="1-3-The-Low-Rank-Structure-Hypothesis">1.3 The Low-Rank Structure Hypothesis</h3>
+<p>The fundamental observation motivating GaLore: <strong>neural network gradients exhibit low-rank structure</strong>.</p>
+<h4 id="1-3-1-Empirical-Evidence">1.3.1 Empirical Evidence</h4>
+<p>For a weight matrix <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>m</mi><mo>×</mo><mi>n</mi></mrow></msup></mrow><annotation encoding="application/x-tex">W \in \mathbb{R}^{m \times n}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7713em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7713em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight">n</span></span></span></span></span></span></span></span></span></span></span></span>, the gradient <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>m</mi><mo>×</mo><mi>n</mi></mrow></msup></mrow><annotation encoding="application/x-tex">G \in \mathbb{R}^{m \times n}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal">G</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7713em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7713em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight">n</span></span></span></span></span></span></span></span></span></span></span></span> typically has singular values that decay rapidly:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>σ</mi><mn>1</mn></msub><mo>≫</mo><msub><mi>σ</mi><mn>2</mn></msub><mo>≫</mo><mo>⋯</mo><mo>≫</mo><msub><mi>σ</mi><mrow><mi>min</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi>m</mi><mo separator="true">,</mo><mi>n</mi><mo stretchy="false">)</mo></mrow></msub></mrow><annotation encoding="application/x-tex">\sigma_1 \gg \sigma_2 \gg \cdots \gg \sigma_{\min(m,n)}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6891em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≫</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6891em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≫</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.5782em;vertical-align:-0.0391em;"></span><span class="minner">⋯</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≫</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7858em;vertical-align:-0.3552em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.5198em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">i</span><span class="mtight">n</span></span><span class="mopen mtight">(</span><span class="mord mathnormal mtight">m</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight">n</span><span class="mclose mtight">)</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3552em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>In practice:</p>
+<ul>
+<li>Top 10% of singular components often capture 90%+ of energy</li>
+<li>For large linear layers, effective rank is typically 10–20% of matrix dimension</li>
+</ul>
+<h4 id="1-3-2-Why-Does-This-Occur">1.3.2 Why Does This Occur?</h4>
+<ol>
+<li><strong>Data correlation</strong>: Features and training examples are correlated; updates aren't uniformly spread across all dimensions</li>
+<li><strong>Redundancy in parametrization</strong>: Over-parametrized networks have many functionally equivalent updates</li>
+<li><strong>Smoothness</strong>: Neural network loss landscapes are relatively smooth; optimal update directions are concentrated</li>
+</ol>
+<h4 id="1-3-3-Stability-Across-Training">1.3.3 Stability Across Training</h4>
+<p>The low-rank structure persists throughout training:</p>
+<ul>
+<li>Early training: high noise, but low-rank structure still visible</li>
+<li>Mid training: low-rank structure most pronounced</li>
+<li>Late training: structure may become more isotropic, but still compressible</li>
+</ul>
+<h3 id="1-4-Singular-Value-Decomposition-SVD-for-Optimization">1.4 Singular Value Decomposition (SVD) for Optimization</h3>
+<p><strong>SVD Primer:</strong> Any matrix <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>m</mi><mo>×</mo><mi>n</mi></mrow></msup></mrow><annotation encoding="application/x-tex">G \in \mathbb{R}^{m \times n}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal">G</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7713em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7713em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight">n</span></span></span></span></span></span></span></span></span></span></span></span> can be decomposed as:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>G</mi><mo>=</mo><mi>U</mi><mi mathvariant="normal">Σ</mi><msup><mi>V</mi><mi>T</mi></msup></mrow><annotation encoding="application/x-tex">G = U \Sigma V^T
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">G</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8913em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">U</span><span class="mord">Σ</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8913em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span></span></span></span></span></span></span></span></span></p>
+<p>Where:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>U</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>m</mi><mo>×</mo><mi>m</mi></mrow></msup></mrow><annotation encoding="application/x-tex">U \in \mathbb{R}^{m \times m}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">U</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7713em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7713em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight">m</span></span></span></span></span></span></span></span></span></span></span></span>: left singular vectors (orthonormal)</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">Σ</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>m</mi><mo>×</mo><mi>n</mi></mrow></msup></mrow><annotation encoding="application/x-tex">\Sigma \in \mathbb{R}^{m \times n}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord">Σ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7713em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7713em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight">n</span></span></span></span></span></span></span></span></span></span></span></span>: singular values (diagonal, sorted descending)</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>n</mi><mo>×</mo><mi>n</mi></mrow></msup></mrow><annotation encoding="application/x-tex">V \in \mathbb{R}^{n \times n}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7713em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7713em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">n</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight">n</span></span></span></span></span></span></span></span></span></span></span></span>: right singular vectors (orthonormal)</li>
+</ul>
+<p><strong>Truncated SVD (rank-r approximation):</strong></p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>G</mi><mi>r</mi></msub><mo>=</mo><msub><mi>U</mi><mi>r</mi></msub><msub><mi mathvariant="normal">Σ</mi><mi>r</mi></msub><msubsup><mi>V</mi><mi>r</mi><mi>T</mi></msubsup></mrow><annotation encoding="application/x-tex">G_r = U_r \Sigma_r V_r^T
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">G</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1383em;vertical-align:-0.247em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">U</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord">Σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8913em;"><span style="top:-2.453em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>where we keep only top-r components. Reconstruction error: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">∥</mi><mi>G</mi><mo>−</mo><msub><mi>G</mi><mi>r</mi></msub><msub><mi mathvariant="normal">∥</mi><mi>F</mi></msub><mo>=</mo><msqrt><mrow><msubsup><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mi>r</mi><mo>+</mo><mn>1</mn></mrow><mrow><mi>min</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi>m</mi><mo separator="true">,</mo><mi>n</mi><mo stretchy="false">)</mo></mrow></msubsup><msubsup><mi>σ</mi><mi>i</mi><mn>2</mn></msubsup></mrow></msqrt></mrow><annotation encoding="application/x-tex">\|G - G_r\|_F = \sqrt{\sum_{i=r+1}^{\min(m,n)} \sigma_i^2}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∥</span><span class="mord mathnormal">G</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">G</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord">∥</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.84em;vertical-align:-0.5201em;"></span><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3199em;"><span class="svg-align" style="top:-3.8em;"><span class="pstrut" style="height:3.8em;"></span><span class="mord" style="padding-left:1em;"><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.0279em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.2029em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">i</span><span class="mtight">n</span></span><span class="mopen mtight">(</span><span class="mord mathnormal mtight">m</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight">n</span><span class="mclose mtight">)</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.358em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7959em;"><span style="top:-2.4231em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span><span style="top:-3.0448em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2769em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.2799em;"><span class="pstrut" style="height:3.8em;"></span><span class="hide-tail" style="min-width:1.02em;height:1.88em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="1.88em" viewBox="0 0 400000 1944" preserveAspectRatio="xMinYMin slice"><path d="M983 90
+l0 -0
+c4,-6.7,10,-10,18,-10 H400000v40
+H1013.1s-83.4,268,-264.1,840c-180.7,572,-277,876.3,-289,913c-4.7,4.7,-12.7,7,-24,7
+s-12,0,-12,0c-1.3,-3.3,-3.7,-11.7,-7,-25c-35.3,-125.3,-106.7,-373.3,-214,-744
+c-10,12,-21,25,-33,39s-32,39,-32,39c-6,-5.3,-15,-14,-27,-26s25,-30,25,-30
+c26.7,-32.7,52,-63,76,-91s52,-60,52,-60s208,722,208,722
+c56,-175.3,126.3,-397.3,211,-666c84.7,-268.7,153.8,-488.2,207.5,-658.5
+c53.7,-170.3,84.5,-266.8,92.5,-289.5z
+M1001 80h400000v40h-400000z"/></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.5201em;"><span></span></span></span></span></span></span></span></span></p>
+<p><strong>In the context of GaLore:</strong></p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>U</mi><mi>r</mi></msub><mo separator="true">,</mo><msubsup><mi>V</mi><mi>r</mi><mi>T</mi></msubsup></mrow><annotation encoding="application/x-tex">U_r, V_r^T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0883em;vertical-align:-0.247em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">U</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8413em;"><span style="top:-2.453em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span></span></span></span> serve as projection bases</li>
+<li>Projecting gradient: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi>G</mi><mo>~</mo></mover><mo>=</mo><msubsup><mi>U</mi><mi>r</mi><mi>T</mi></msubsup><mi>G</mi><msub><mi>V</mi><mi>r</mi></msub></mrow><annotation encoding="application/x-tex">\tilde{G} = U_r^T G V_r</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9202em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9202em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">G</span></span><span style="top:-3.6023em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">~</span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0883em;vertical-align:-0.247em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">U</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8413em;"><span style="top:-2.453em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mord mathnormal">G</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> (size r × r instead of m × n)</li>
+<li>Storing this allows dramatic memory reduction</li>
+</ul>
+<h3 id="1-5-Matrix-Multiplication-and-Backpropagation-Essentials">1.5 Matrix Multiplication and Backpropagation Essentials</h3>
+<p>For practitioners unfamiliar with training mechanics:</p>
+<p><strong>Forward pass for a linear layer:</strong></p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>Y</mi><mo>=</mo><mi>X</mi><msup><mi>W</mi><mi>T</mi></msup><mo>+</mo><mi>b</mi></mrow><annotation encoding="application/x-tex">Y = XW^T + b
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">Y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9747em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8913em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">b</span></span></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>B</mi><mo>×</mo><msub><mi>d</mi><mtext>in</mtext></msub></mrow></msup></mrow><annotation encoding="application/x-tex">X \in \mathbb{R}^{B \times d_{\text{in}}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8491em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05017em;">B</span><span class="mbin mtight">×</span><span class="mord mtight"><span class="mord mathnormal mtight">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.334em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">in</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span>, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><msub><mi>d</mi><mtext>out</mtext></msub><mo>×</mo><msub><mi>d</mi><mtext>in</mtext></msub></mrow></msup></mrow><annotation encoding="application/x-tex">W \in \mathbb{R}^{d_{\text{out}} \times d_{\text{in}}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8491em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathnormal mtight">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2963em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">out</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span><span class="mbin mtight">×</span><span class="mord mtight"><span class="mord mathnormal mtight">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.334em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">in</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span>, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Y</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>B</mi><mo>×</mo><msub><mi>d</mi><mtext>out</mtext></msub></mrow></msup></mrow><annotation encoding="application/x-tex">Y \in \mathbb{R}^{B \times d_{\text{out}}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.22222em;">Y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8491em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05017em;">B</span><span class="mbin mtight">×</span><span class="mord mtight"><span class="mord mathnormal mtight">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2963em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">out</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></p>
+<p><strong>Backward pass gradient computation:</strong></p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mfrac><mrow><mi mathvariant="normal">∂</mi><mi>L</mi></mrow><mrow><mi mathvariant="normal">∂</mi><mi>W</mi></mrow></mfrac><mo>=</mo><mfrac><mrow><mi mathvariant="normal">∂</mi><mi>L</mi></mrow><mrow><mi mathvariant="normal">∂</mi><mi>Y</mi></mrow></mfrac><mi>X</mi></mrow><annotation encoding="application/x-tex">\frac{\partial L}{\partial W} = \frac{\partial L}{\partial Y} X
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:2.0574em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3714em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord" style="margin-right:0.05556em;">∂</span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord" style="margin-right:0.05556em;">∂</span><span class="mord mathnormal">L</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.0574em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3714em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord" style="margin-right:0.05556em;">∂</span><span class="mord mathnormal" style="margin-right:0.22222em;">Y</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord" style="margin-right:0.05556em;">∂</span><span class="mord mathnormal">L</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mord mathnormal" style="margin-right:0.07847em;">X</span></span></span></span></span></p>
+<p>This gradient has shape <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mtext>out</mtext></msub><mo>×</mo><msub><mi>d</mi><mtext>in</mtext></msub></mrow><annotation encoding="application/x-tex">d_{\text{out}} \times d_{\text{in}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">out</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3175em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">in</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>—the same as W. For large layers, this gradient matrix is where low-rank structure appears.</p>
+<hr>
+<h2 id="2-The-Core-Method-Gradient-Low-Rank-Projection">2. The Core Method: Gradient Low-Rank Projection</h2>
+<h3 id="2-1-Algorithm-Overview">2.1 Algorithm Overview</h3>
+<p>GaLore operates on a per-layer basis with the following procedure:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">For each training step:</span><br><span class="line">    1. Compute gradient G for layer l (full rank)</span><br><span class="line">    2. Every m steps (refresh interval):</span><br><span class="line">        Compute SVD: G &#x3D; UΣV^T</span><br><span class="line">        Keep top-r components: U_r, V_r</span><br><span class="line">    3. Project gradient: G_proj &#x3D; U_r^T G V_r (size r × r)</span><br><span class="line">    4. Update optimizer state in low-rank space:</span><br><span class="line">        m_proj ← β1 * m_proj + (1 - β1) * G_proj</span><br><span class="line">        v_proj ← β2 * v_proj + (1 - β2) * G_proj^2</span><br><span class="line">    5. Compute update: Δ_proj &#x3D; m_proj &#x2F; (√v_proj + ε)</span><br><span class="line">    6. Project back: Δ &#x3D; U_r Δ_proj V_r^T (size d_out × d_in)</span><br><span class="line">    7. Update weights: W ← W - α * Δ</span><br></pre></td></tr></table></figure>
+<h3 id="2-2-Why-This-Works-Information-Preservation">2.2 Why This Works: Information Preservation</h3>
+<p>The method preserves optimization quality because:</p>
+<ol>
+<li>
+<p><strong>Projecting before optimizer update</strong>: Rather than approximate individual gradients (which might miss important details), GaLore projects gradient <em>before</em> the optimizer combines multiple gradients. This preserves momentum and curvature information.</p>
+</li>
+<li>
+<p><strong>Periodic refresh</strong>: Rather than freeze projection bases, refreshing them every m steps allows the model to adapt to changing gradient statistics during training.</p>
+</li>
+<li>
+<p><strong>Full-rank weights</strong>: Unlike LoRA, the model parameters remain full-rank throughout. This means:</p>
+<ul>
+<li>Model expressivity is unconstrained</li>
+<li>Any parameter can be modified in any direction</li>
+<li>Learning dynamics remain close to standard full-rank training</li>
+</ul>
+</li>
+</ol>
+<h3 id="2-3-Projection-Matrix-Refinement">2.3 Projection Matrix Refinement</h3>
+<p>The critical design decision is <strong>how and when to refresh projection bases</strong>.</p>
+<h4 id="2-3-1-SVD-Based-Refresh">2.3.1 SVD-Based Refresh</h4>
+<p>Every m steps, compute: $G_{\text{recent}} = $ mean/stacked gradients from recent m steps</p>
+<p>Options:</p>
+<ol>
+<li><strong>Exact SVD</strong>: Compute full SVD of recent gradient batch</li>
+<li><strong>Randomized SVD</strong>: Use randomized algorithms for large matrices (faster, approximate)</li>
+<li><strong>Streaming SVD</strong>: Incrementally update without recomputing from scratch</li>
+</ol>
+<p><strong>Trade-off</strong>: Exact SVD is slow (O(d³) for d×d matrix), but accuracy is high. Randomized SVD is O(d²r) and good enough in practice.</p>
+<h4 id="2-3-2-Refresh-Frequency-Strategies">2.3.2 Refresh Frequency Strategies</h4>
+<p><strong>Fixed interval (used in paper):</strong> Refresh every m steps (e.g., m=100)</p>
+<ul>
+<li><strong>Pro:</strong> Simple, predictable compute cost</li>
+<li><strong>Con:</strong> Subspace may drift significantly if m is too large; may refresh unnecessarily when subspace is stable</li>
+</ul>
+<p><strong>Adaptive refresh:</strong> Monitor subspace drift between refreshes</p>
+<ul>
+<li><strong>Pro:</strong> Minimize unnecessary refreshes, adapt to training dynamics</li>
+<li><strong>Con:</strong> Adds monitoring overhead</li>
+</ul>
+<h4 id="2-3-3-Which-Bases-to-Use">2.3.3 Which Bases to Use</h4>
+<p>The paper uses different forms:</p>
+<ul>
+<li><strong>Matrix form</strong>: For <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>m</mi><mo>×</mo><mi>n</mi></mrow></msup></mrow><annotation encoding="application/x-tex">G \in \mathbb{R}^{m \times n}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal">G</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7713em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7713em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight">n</span></span></span></span></span></span></span></span></span></span></span></span>, use left and right singular vectors from SVD</li>
+<li><strong>QR form</strong>: For some implementations, use QR decomposition of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>G</mi><mi>T</mi></msup></mrow><annotation encoding="application/x-tex">G^T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8413em;"></span><span class="mord"><span class="mord mathnormal">G</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8413em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span></span></span></span></span></span></span></span> and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi></mrow><annotation encoding="application/x-tex">G</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">G</span></span></span></span></li>
+</ul>
+<h3 id="2-4-Implementation-Details-Making-It-Practical">2.4 Implementation Details: Making It Practical</h3>
+<h4 id="2-4-1-Handling-Different-Layer-Types">2.4.1 Handling Different Layer Types</h4>
+<p>Not all layers have the same input/output structure:</p>
+<p><strong>Large linear layers</strong> (e.g., attention outputs, MLP weights):</p>
+<ul>
+<li>Straightforward SVD projection</li>
+<li>GaLore provides maximum benefit here</li>
+</ul>
+<p><strong>Embedding layers</strong>:</p>
+<ul>
+<li>Embedding size × vocabulary size can be m &gt;&gt; n or n &gt;&gt; m</li>
+<li>Might require different rank allocation or skipping for small embedding layers</li>
+</ul>
+<p><strong>Attention Q/K/V projections</strong>:</p>
+<ul>
+<li>Usually d_model → d_head × num_heads dimensions</li>
+<li>Can be reshaped as matrices for projection</li>
+</ul>
+<p><strong>Layer norms, biases</strong>:</p>
+<ul>
+<li>Not applicable for low-rank projection (wrong structure)</li>
+<li>Keep standard optimizer states for these</li>
+</ul>
+<h4 id="2-4-2-Rank-Selection-Strategies">2.4.2 Rank Selection Strategies</h4>
+<p><strong>Global rank:</strong> Use same r for all layers</p>
+<ul>
+<li><strong>Advantage:</strong> Simple, uniform memory savings</li>
+<li><strong>Disadvantage:</strong> May be suboptimal (different layers have different spectra)</li>
+</ul>
+<p><strong>Per-layer rank:</strong> Assign different r_l for each layer</p>
+<ul>
+<li>Based on observed singular value decay</li>
+<li>Based on layer importance</li>
+<li>Based on parameter count</li>
+</ul>
+<p><strong>Suggested heuristic:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">r_l &#x3D; max(100, min(dim_l &#x2F;&#x2F; 10, 500))</span><br></pre></td></tr></table></figure>
+<p>Use 10% of minimum dimension, clipped to reasonable range.</p>
+<h4 id="2-4-3-Combining-with-8-bit-Optimizer-States">2.4.3 Combining with 8-bit Optimizer States</h4>
+<p>GaLore can be combined with 8-bit quantization for even more memory savings:</p>
+<ol>
+<li>Compute <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi>G</mi><mo>~</mo></mover><mo>=</mo><msubsup><mi>U</mi><mi>r</mi><mi>T</mi></msubsup><mi>G</mi><msub><mi>V</mi><mi>r</mi></msub></mrow><annotation encoding="application/x-tex">\tilde{G} = U_r^T G V_r</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9202em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9202em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">G</span></span><span style="top:-3.6023em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">~</span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0883em;vertical-align:-0.247em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">U</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8413em;"><span style="top:-2.453em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mord mathnormal">G</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> (compress)</li>
+<li>Update in low-rank space, then quantize to INT8:
+<ul>
+<li>Estimate range of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>m</mi><mtext>proj</mtext></msub><mo separator="true">,</mo><msub><mi>v</mi><mtext>proj</mtext></msub></mrow><annotation encoding="application/x-tex">m_{\text{proj}}, v_{\text{proj}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3175em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">proj</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3175em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">proj</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span></li>
+<li>Map to INT8 range</li>
+</ul>
+</li>
+<li>Dequantize on use, then apply step</li>
+<li>Save only INT8 tensors (1 byte per value instead of 4 bytes)</li>
+</ol>
+<p><strong>Additional savings:</strong> Roughly 4× more reduction in optimizer state memory, at cost of quantization noise.</p>
+<h3 id="2-5-Gradient-Statistics-Tracking">2.5 Gradient Statistics Tracking</h3>
+<p>For implementations with multiple gradient accumulation steps:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">During accumulation:</span><br><span class="line">    grad_accum +&#x3D; compute_grad(batch)</span><br><span class="line"></span><br><span class="line">Every m steps:</span><br><span class="line">    G_recent &#x3D; grad_accum &#x2F; num_accum_steps</span><br><span class="line">    # OR concatenate gradients from recent steps</span><br><span class="line">    G_recent &#x3D; [G_1, G_2, ..., G_k]</span><br><span class="line">    </span><br><span class="line">    U_r, Sigma_r, V_r &#x3D; SVD(G_recent, rank&#x3D;r)</span><br></pre></td></tr></table></figure>
+<p>This handles gradient accumulation correctly without inflating memory.</p>
+<hr>
+<h2 id="3-Experiments-Validation-Across-Multiple-Scales">3. Experiments: Validation Across Multiple Scales</h2>
+<h3 id="3-1-Experimental-Setup">3.1 Experimental Setup</h3>
+<h4 id="3-1-1-Models-Tested">3.1.1 Models Tested</h4>
+<ul>
+<li><strong>LLaMA-style models</strong>: 1B, 3B, 7B parameters</li>
+<li><strong>Pre-trained base models</strong>: OPT, BLOOM variants</li>
+<li><strong>Task-specific models</strong>: Finetuning on RoBERTa-GLUE tasks</li>
+</ul>
+<h4 id="3-1-2-Training-Configuration">3.1.2 Training Configuration</h4>
+<ul>
+<li><strong>Data</strong>: C4 dataset (standard pretraining corpus)</li>
+<li><strong>Batch size</strong>: 256–512 tokens per GPU depending on model size</li>
+<li><strong>Sequence length</strong>: 2048 tokens</li>
+<li><strong>Training length</strong>: Varies (short 10B token pilots to 100B+ token full runs)</li>
+<li><strong>Hardware</strong>: Single GPU (A100-80GB, A10, even RTX 4090)</li>
+</ul>
+<h4 id="3-1-3-Baseline-Comparisons">3.1.3 Baseline Comparisons</h4>
+<ul>
+<li><strong>Full-rank + AdamW</strong>: Standard approach (memory baseline)</li>
+<li><strong>LoRA/ReLoRA</strong>: Low-rank parameter update baseline</li>
+<li><strong>8-bit AdamW</strong>: Quantized optimizer baseline</li>
+<li><strong>Gradient checkpointing</strong>: Activation memory reduction</li>
+</ul>
+<h3 id="3-2-Memory-Efficiency-Results">3.2 Memory Efficiency Results</h3>
+<h4 id="3-2-1-Peak-Memory-Consumption">3.2.1 Peak Memory Consumption</h4>
+<p>For a 7B parameter LLaMA model:</p>
+<table>
+<thead>
+<tr>
+<th>Configuration</th>
+<th>Peak Memory (GB)</th>
+<th>Optimizer State (GB)</th>
+<th>Reduction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Full-rank AdamW</td>
+<td>65–75</td>
+<td>28</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Full-rank + 8-bit Adam</td>
+<td>40–50</td>
+<td>7</td>
+<td>75%</td>
+</tr>
+<tr>
+<td>GaLore (r=256)</td>
+<td>45–55</td>
+<td>8–10</td>
+<td>64%</td>
+</tr>
+<tr>
+<td>GaLore (r=256) + 8-bit</td>
+<td>30–40</td>
+<td>2–3</td>
+<td>89%</td>
+</tr>
+<tr>
+<td>LoRA (r=64)</td>
+<td>35–45</td>
+<td>4–6</td>
+<td>79%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key observations:</strong></p>
+<ul>
+<li>GaLore achieves similar optimizer state memory to LoRA with full-rank training</li>
+<li>Combination with 8-bit gives further substantial savings</li>
+<li>Still requires gradient memory (unavoidable), but optimizer state dominates savings</li>
+</ul>
+<h4 id="3-2-2-Hardware-Feasibility-Implications">3.2.2 Hardware Feasibility Implications</h4>
+<p>These memory reductions translate to:</p>
+<ul>
+<li><strong>24GB GPU (RTX 4090)</strong>: Can train 7B model with GaLore (previously impossible)</li>
+<li><strong>40GB GPU (A10)</strong>: Can train 13B model with GaLore</li>
+<li><strong>80GB GPU (A100)</strong>: Can train 70B+ model with GaLore + 8-bit</li>
+</ul>
+<h3 id="3-3-Training-Quality-Does-Compression-Hurt-Performance">3.3 Training Quality: Does Compression Hurt Performance?</h3>
+<h4 id="3-3-1-Pretraining-Perplexity-C4-Validation">3.3.1 Pretraining Perplexity (C4 Validation)</h4>
+<p>For 7B model training on C4:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>10B tokens</th>
+<th>50B tokens</th>
+<th>100B tokens</th>
+<th>Final Gap</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Full-rank AdamW (baseline)</td>
+<td>8.52</td>
+<td>5.21</td>
+<td>4.18</td>
+<td>—</td>
+</tr>
+<tr>
+<td>GaLore (r=256)</td>
+<td>8.55</td>
+<td>5.24</td>
+<td>4.21</td>
+<td>+0.07%</td>
+</tr>
+<tr>
+<td>GaLore (r=128)</td>
+<td>8.58</td>
+<td>5.28</td>
+<td>4.27</td>
+<td>+0.22%</td>
+</tr>
+<tr>
+<td>LoRA (r=64, full rank)</td>
+<td>8.67</td>
+<td>5.35</td>
+<td>4.35</td>
+<td>+0.41%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Interpretation:</strong> GaLore with r=256 matches full-rank training almost exactly. Quality loss increases with more aggressive compression.</p>
+<h4 id="3-3-2-Downstream-Task-Performance">3.3.2 Downstream Task Performance</h4>
+<p>Finetuned models evaluated on GLUE benchmark:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Average Score</th>
+<th>MNLI-m</th>
+<th>QQP</th>
+<th>SST-2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pretrained full-rank</td>
+<td>83.4</td>
+<td>91.5</td>
+<td>92.1</td>
+<td>95.2</td>
+</tr>
+<tr>
+<td>GaLore finetuned</td>
+<td>83.3</td>
+<td>91.4</td>
+<td>92.0</td>
+<td>95.1</td>
+</tr>
+<tr>
+<td>LoRA finetuned</td>
+<td>82.8</td>
+<td>91.0</td>
+<td>91.5</td>
+<td>94.8</td>
+</tr>
+</tbody>
+</table>
+<p>GaLore preserves downstream performance nearly identically.</p>
+<h4 id="3-3-3-Training-Curves-Stability-and-Convergence">3.3.3 Training Curves: Stability and Convergence</h4>
+<p>Loss curves comparison:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">Loss</span><br><span class="line">  |     ┌─ baseline AdamW</span><br><span class="line">  |    ╱ ├─ GaLore (r&#x3D;256) — nearly identical</span><br><span class="line">  |   ╱  ├─ GaLore (r&#x3D;128) — small drift in mid-training</span><br><span class="line">  |  ╱   ├─ LoRA (r&#x3D;64) — visible gap</span><br><span class="line">  |_╱____└─ GaLore (r&#x3D;64) — unstable, occasional spikes</span><br><span class="line">  └─────────────────────────────────</span><br><span class="line">    Steps (millions)</span><br></pre></td></tr></table></figure>
+<p><strong>Key:</strong> GaLore (r=256) tracks baseline almost perfectly. Below r=128 compression becomes aggressive.</p>
+<h3 id="3-4-Throughput-Analysis-Is-There-a-Speed-Cost">3.4 Throughput Analysis: Is There a Speed Cost?</h3>
+<h4 id="3-4-1-Token-Throughput-tokens-sec">3.4.1 Token Throughput (tokens/sec)</h4>
+<p>For 7B model on single A100-80GB:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Throughput (tokens/sec)</th>
+<th>vs Baseline</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Full-rank AdamW</td>
+<td>2800</td>
+<td>—</td>
+<td>Baseline</td>
+</tr>
+<tr>
+<td>GaLore (r=256)</td>
+<td>2750</td>
+<td>-1.8%</td>
+<td>SVD/projection overhead</td>
+</tr>
+<tr>
+<td>GaLore (r=256) + 8-bit</td>
+<td>2700</td>
+<td>-3.6%</td>
+<td>Additional quantization</td>
+</tr>
+<tr>
+<td>LoRA (r=64)</td>
+<td>2900</td>
+<td>+3.6%</td>
+<td>Fewer optimizer states</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Analysis:</strong></p>
+<ul>
+<li>GaLore adds projection compute overhead (~1–3% slowdown)</li>
+<li>Smaller rank and 8-bit increase overhead slightly</li>
+<li>Still practical for most applications (tradeoff is favorable)</li>
+<li>Overhead reduces on newer GPUs with better tensor ops</li>
+</ul>
+<h4 id="3-4-2-Memory-Compute-Tradeoff">3.4.2 Memory-Compute Tradeoff</h4>
+<p>The useful metric is <strong>quality per unit memory</strong>:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>Efficiency</mtext><mo>=</mo><mfrac><mtext>Tokens to convergence</mtext><mrow><mo stretchy="false">(</mo><mtext>Throughput</mtext><mo stretchy="false">)</mo><mo>×</mo><mo stretchy="false">(</mo><mtext>Peak memory</mtext><mo stretchy="false">)</mo></mrow></mfrac></mrow><annotation encoding="application/x-tex">\text{Efficiency} = \frac{\text{Tokens to convergence}}{(\text{Throughput}) \times (\text{Peak memory})}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord">Efficiency</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.3074em;vertical-align:-0.936em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3714em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mopen">(</span><span class="mord text"><span class="mord">Throughput</span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mopen">(</span><span class="mord text"><span class="mord">Peak memory</span></span><span class="mclose">)</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord text"><span class="mord">Tokens to convergence</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>For similar quality (e.g., 4.21 vs 4.18 perplexity):</p>
+<ul>
+<li>GaLore: 2750 tokens/sec on 50 GB = 0.055 tokens/(sec·GB)</li>
+<li>Full-rank: 2800 tokens/sec on 70 GB = 0.040 tokens/(sec·GB)</li>
+</ul>
+<p><strong>GaLore is 37% more efficient</strong> in this metric.</p>
+<h3 id="3-5-Scaling-Behavior-How-Does-GaLore-Scale">3.5 Scaling Behavior: How Does GaLore Scale?</h3>
+<h4 id="3-5-1-Model-Size-Scaling">3.5.1 Model Size Scaling</h4>
+<p>Testing GaLore across different model sizes:</p>
+<table>
+<thead>
+<tr>
+<th>Model Size</th>
+<th>Full-rank (GB)</th>
+<th>GaLore r=256 (GB)</th>
+<th>Savings</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1B</td>
+<td>12</td>
+<td>8</td>
+<td>33%</td>
+</tr>
+<tr>
+<td>3B</td>
+<td>25</td>
+<td>16</td>
+<td>36%</td>
+</tr>
+<tr>
+<td>7B</td>
+<td>65</td>
+<td>45</td>
+<td>31%</td>
+</tr>
+<tr>
+<td>13B</td>
+<td>115</td>
+<td>78</td>
+<td>32%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Insight:</strong> Absolute memory savings scale with model size (larger models benefit more in GB), percentage savings stable ~30–35%.</p>
+<h4 id="3-5-2-Sequence-Length-Scaling">3.5.2 Sequence Length Scaling</h4>
+<p>Activation memory increases with sequence length; optimizer state is independent:</p>
+<table>
+<thead>
+<tr>
+<th>Seq Length</th>
+<th>Full-rank (GB)</th>
+<th>GaLore (GB)</th>
+<th>Reduction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>512</td>
+<td>55</td>
+<td>40</td>
+<td>27%</td>
+</tr>
+<tr>
+<td>1024</td>
+<td>65</td>
+<td>50</td>
+<td>23%</td>
+</tr>
+<tr>
+<td>2048</td>
+<td>80</td>
+<td>60</td>
+<td>25%</td>
+</tr>
+<tr>
+<td>4096</td>
+<td>110</td>
+<td>80</td>
+<td>27%</td>
+</tr>
+</tbody>
+</table>
+<p>Longer sequences: optimizer state becomes smaller fraction of total memory, so GaLore's relative benefit decreases.</p>
+<h4 id="3-5-3-Batch-Size-Scaling">3.5.3 Batch Size Scaling</h4>
+<p>Larger batches increase activation memory, not optimizer state:</p>
+<table>
+<thead>
+<tr>
+<th>Batch Size</th>
+<th>Full-rank (GB)</th>
+<th>GaLore (GB)</th>
+<th>Reduction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>40</td>
+<td>28</td>
+<td>30%</td>
+</tr>
+<tr>
+<td>4</td>
+<td>50</td>
+<td>35</td>
+<td>30%</td>
+</tr>
+<tr>
+<td>16</td>
+<td>65</td>
+<td>45</td>
+<td>31%</td>
+</tr>
+<tr>
+<td>64</td>
+<td>95</td>
+<td>65</td>
+<td>32%</td>
+</tr>
+</tbody>
+</table>
+<p>Scaling behavior: consistent savings percentage (~30%), absolute savings increase.</p>
+<h3 id="3-6-Ablation-Studies-Which-Components-Matter">3.6 Ablation Studies: Which Components Matter?</h3>
+<h4 id="3-6-1-Rank-Sensitivity">3.6.1 Rank Sensitivity</h4>
+<p>Sweeping rank parameter r:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">Perplexity @ 100B tokens</span><br><span class="line">4.5 |          ╱r&#x3D;64 (unstable)</span><br><span class="line">    |         ╱</span><br><span class="line">4.3 |     r&#x3D;128</span><br><span class="line">    |    ╱</span><br><span class="line">4.2 | r&#x3D;256</span><br><span class="line">    |╱</span><br><span class="line">4.15|</span><br><span class="line">    |</span><br><span class="line">4.1 |─ baseline</span><br><span class="line">    └──────────────────────</span><br><span class="line">     0  100  200  300  400  500</span><br><span class="line">        Rank (r)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>r &lt; 100: visible quality degradation, instability</li>
+<li>r = 128–256: minimal quality loss, stable</li>
+<li>r &gt; 256: diminishing memory returns, rapidly approaches full-rank memory</li>
+</ul>
+<p><strong>Recommendation:</strong> r = min(256, d_out // 5) as reasonable default.</p>
+<h4 id="3-6-2-Refresh-Interval-Sensitivity">3.6.2 Refresh Interval Sensitivity</h4>
+<p>Sweeping refresh frequency:</p>
+<table>
+<thead>
+<tr>
+<th>Interval (steps)</th>
+<th>Memory (GB)</th>
+<th>Quality Loss</th>
+<th>Stability</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>25</td>
+<td>47</td>
+<td>-0.05%</td>
+<td>Excellent</td>
+</tr>
+<tr>
+<td>50</td>
+<td>46</td>
+<td>-0.08%</td>
+<td>Excellent</td>
+</tr>
+<tr>
+<td>100</td>
+<td>45</td>
+<td>-0.10%</td>
+<td>Good</td>
+</tr>
+<tr>
+<td>200</td>
+<td>45</td>
+<td>-0.15%</td>
+<td>Acceptable</td>
+</tr>
+<tr>
+<td>500</td>
+<td>44</td>
+<td>-0.25%</td>
+<td>Warning: drift</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Pattern:</strong> Longer intervals save compute (fewer SVDs), but degrade quality as projection bases become stale.</p>
+<p><strong>Recommended:</strong> Refresh every 100–200 steps; can be ~200 for stable mid-training phases.</p>
+<h4 id="3-6-3-Per-Layer-Rank-Allocation">3.6.3 Per-Layer Rank Allocation</h4>
+<p>Test: Assigning different ranks to different layer groups:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">Config: attention_rank&#x3D;256, mlp_rank&#x3D;128, embed_rank&#x3D;64</span><br><span class="line"></span><br><span class="line">Compared to:</span><br><span class="line">Config: all_layers_rank&#x3D;256</span><br><span class="line"></span><br><span class="line">Result:</span><br><span class="line">- Memory: 44 GB vs 45 GB (same)</span><br><span class="line">- Quality: 4.19 vs 4.21 perplexity (–0.05% loss)</span><br></pre></td></tr></table></figure>
+<p>Per-layer assignment is complex and provides marginal gains; <strong>global rank is practical for production</strong>.</p>
+<hr>
+<h2 id="4-Limitations-and-Boundary-Conditions">4. Limitations and Boundary Conditions</h2>
+<h3 id="4-1-Hyperparameter-Explosion">4.1 Hyperparameter Explosion</h3>
+<p>GaLore introduces new hyperparameters:</p>
+<ul>
+<li><strong>Rank r</strong> (or per-layer ranks): Critical, affects memory/quality tradeoff</li>
+<li><strong>Refresh interval m</strong>: Affects compute overhead vs subspace staleness</li>
+<li><strong>Which layers to apply</strong>: Different layers have different spectral properties</li>
+</ul>
+<p>For teams with limited compute for hyperparameter sweeps, this can be burden. Heuristic defaults from papers help, but optimal tuning requires validation.</p>
+<h3 id="4-2-Layer-Heterogeneity-Not-Addressed">4.2 Layer Heterogeneity Not Addressed</h3>
+<p>Different transformer layers have different characteristics:</p>
+<ul>
+<li><strong>Embedding layers</strong>: Small dimension, might not benefit from low-rank projection</li>
+<li><strong>Large MLP layers</strong>: Highly amenable to compression (great low-rank structure)</li>
+<li><strong>Attention projections</strong>: Intermediate structure, moderate compression rates</li>
+<li><strong>Q/K/V projections</strong>: Some low-rank structure, but important for attention computation</li>
+</ul>
+<p>Uniform rank assignment is suboptimal but simplifying. More sophisticated layer-aware allocation could improve results but adds complexity.</p>
+<h3 id="4-3-Throughput-Overhead-Not-Negligible-at-Small-Scales">4.3 Throughput Overhead Not Negligible at Small Scales</h3>
+<p>SVD computation (even randomized) adds overhead:</p>
+<ul>
+<li>On A100s: 1–3% slowdown (acceptable)</li>
+<li>On smaller GPUs (RTX 4090, RTX 3090): 2–5% slowdown</li>
+<li>On low-bandwidth systems: could exceed 5–10%</li>
+</ul>
+<p>For teams focusing purely on throughput rather than memory constraints, this tradeoff may not be attractive.</p>
+<h3 id="4-4-Interaction-with-Distributed-Training">4.4 Interaction with Distributed Training</h3>
+<p>GaLore's interaction with modern distributed training systems (FSDP, ZeRO) needs care:</p>
+<p><strong>FSDP + GaLore:</strong> Each shard (partition) maintains its own projection bases. Synchronization of bases across devices adds complexity.</p>
+<p><strong>ZeRO Stage 3 + GaLore:</strong> Optimizer state partitioning interacts with low-rank projection. The compressed states are <em>further</em> partitioned across GPUs, complicating gather/scatter operations.</p>
+<p><strong>Practical recommendation:</strong> Test on your specific distributed setup before production rollout.</p>
+<h3 id="4-5-Long-Horizon-Training-Evidence-Limited">4.5 Long-Horizon Training Evidence Limited</h3>
+<p>Papers typically show &lt;100B tokens of training. Industrial-scale pretraining (&gt;1T tokens) may expose:</p>
+<ul>
+<li>Cumulative projection approximation error</li>
+<li>Divergence of subspace across training phases</li>
+<li>Stability under extremely long runs</li>
+</ul>
+<p>More evidence on massive-scale runs would increase confidence.</p>
+<h3 id="4-6-Interaction-with-Other-Optimizations">4.6 Interaction with Other Optimizations</h3>
+<p><strong>Gradient accumulation:</strong> Works fine, GaLore can observe gradients over accumulation window.</p>
+<p><strong>Gradient checkpointing:</strong> Orthogonal to GaLore (activation vs optimizer state memory), can combine.</p>
+<p><strong>Mixed precision (BF16/FP16):</strong> Requires care with projection operations; numerical stability of SVD in low precision needs validation.</p>
+<p><strong>Low-rank weight updates (LoRA):</strong> Combining GaLore with LoRA is awkward (low-rank projection on already low-rank updates). Not recommended.</p>
+<hr>
+<h2 id="5-Reproducibility-and-Practical-Deployment">5. Reproducibility and Practical Deployment</h2>
+<h3 id="5-1-Reproducibility-Checklist">5.1 Reproducibility Checklist</h3>
+<p>To reproduce GaLore results, lock:</p>
+<p><strong>Environment:</strong></p>
+<ul>
+<li>[ ] PyTorch version (e.g., 2.1.0)</li>
+<li>[ ] CUDA/cuBLAS versions</li>
+<li>[ ] GPU device and driver</li>
+<li>[ ] SVD library (NumPy/SciPy or cupy)</li>
+</ul>
+<p><strong>Data:</strong></p>
+<ul>
+<li>[ ] Dataset snapshot (C4 date, preprocessing script)</li>
+<li>[ ] Tokenizer (version, vocab size)</li>
+<li>[ ] Sequence length, padding strategy</li>
+<li>[ ] Dataloader seed and shuffle method</li>
+</ul>
+<p><strong>Training Config:</strong></p>
+<ul>
+<li>[ ] Model architecture (LLaMA v1/v2, OPT-*, etc.)</li>
+<li>[ ] Weight initialization seed</li>
+<li>[ ] Learning rate schedule (cosine annealing specifics)</li>
+<li>[ ] Warmup steps, min LR, max LR</li>
+<li>[ ] Optimizer (AdamW, epsilon=1e-8, etc.)</li>
+<li>[ ] Weight decay, gradient clipping, and values</li>
+</ul>
+<p><strong>GaLore Config:</strong></p>
+<ul>
+<li>[ ] Rank r (global or per-layer)</li>
+<li>[ ] Refresh interval m (in steps, not gradients)</li>
+<li>[ ] Which layers apply GaLore (all linear? exclude embedding?)</li>
+<li>[ ] Projection basis computation (exact SVD or randomized)</li>
+</ul>
+<p><strong>Logging:</strong></p>
+<ul>
+<li>[ ] Peak memory and running memory per step</li>
+<li>[ ] Throughput (tokens/sec) with warmup excluded</li>
+<li>[ ] Gradient norms before/after projection</li>
+<li>[ ] Subspace similarity between refresh intervals</li>
+</ul>
+<h3 id="5-2-Implementation-Guide-for-Practitioners">5.2 Implementation Guide for Practitioners</h3>
+<p><strong>Step 1: Start with Stable Baseline</strong></p>
+<p>First, ensure your baseline training (full-rank, standard optimizer) is solid:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">trainer = Trainer(model, train_dataset, optimizer=<span class="string">'adamw'</span>)</span><br><span class="line">trainer.train(num_steps=<span class="number">1000</span>)</span><br><span class="line"><span class="comment"># Log: loss, memory, throughput</span></span><br></pre></td></tr></table></figure>
+<p><strong>Step 2: Integrate GaLore Hook</strong></p>
+<p>Add projection wrapper to optimizer:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> galore <span class="keyword">import</span> GaLore</span><br><span class="line"></span><br><span class="line">galore_optimizer = GaLore(</span><br><span class="line">    base_optimizer=AdamW(...),</span><br><span class="line">    rank=<span class="number">256</span>,</span><br><span class="line">    refresh_interval=<span class="number">100</span>,</span><br><span class="line">    apply_to=[<span class="string">'linear_layers'</span>]  <span class="comment"># or specific layer names</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line">trainer = Trainer(model, train_dataset, optimizer=galore_optimizer)</span><br><span class="line">trainer.train(num_steps=<span class="number">1000</span>)</span><br><span class="line"><span class="comment"># Log: same metrics, compare to baseline</span></span><br></pre></td></tr></table></figure>
+<p><strong>Step 3: Validate Quality Preservation</strong></p>
+<p>Confirm loss curve matches baseline over short run:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Loss comparison @ 1000 steps:</span><br><span class="line">- Baseline: 4.32</span><br><span class="line">- GaLore: 4.33 (within +0.02%)</span><br></pre></td></tr></table></figure>
+<p><strong>Step 4: Sweep Rank and Refresh Interval</strong></p>
+<p>Try a small grid (not exhaustive):</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">ranks &#x3D; [64, 128, 256, 512]</span><br><span class="line">refresh &#x3D; [50, 100, 200]</span><br><span class="line"></span><br><span class="line">for r in ranks:</span><br><span class="line">    for m in refresh:</span><br><span class="line">        run_and_log(r, m, num_steps&#x3D;5000)</span><br><span class="line">        </span><br><span class="line"># Plot: pareto curve of (memory saved, quality loss)</span><br><span class="line"># Pick best point (e.g., r&#x3D;256, m&#x3D;100)</span><br></pre></td></tr></table></figure>
+<p><strong>Step 5: Long-Run Validation</strong></p>
+<p>Run full training with selected hyperparams:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">galore_optimizer = GaLore(rank=<span class="number">256</span>, refresh_interval=<span class="number">100</span>)</span><br><span class="line">trainer = Trainer(model, full_dataset, optimizer=galore_optimizer)</span><br><span class="line">trainer.train(num_steps=<span class="number">100000</span>)  <span class="comment"># Full run</span></span><br></pre></td></tr></table></figure>
+<p>Monitor for:</p>
+<ul>
+<li>Smooth loss curves (no spikes)</li>
+<li>Memory stable throughout</li>
+<li>Throughput consistent</li>
+<li>Final quality within +0.1% of baseline</li>
+</ul>
+<p><strong>Step 6: Move to Production</strong></p>
+<p>Once validated:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># Log everything</span></span><br><span class="line">logger = WandBLogger(log_galore_metrics=<span class="literal">True</span>)</span><br><span class="line">trainer.train(..., logger=logger)</span><br></pre></td></tr></table></figure>
+<h3 id="5-3-Default-Hyperparameters-For-First-Try">5.3 Default Hyperparameters (For First Try)</h3>
+<p>If you have no prior knowledge:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">GaLore(</span><br><span class="line">    rank = min(<span class="number">256</span>, min_dimension // <span class="number">5</span>),</span><br><span class="line">    refresh_interval = <span class="number">100</span>,  <span class="comment"># steps between SVD recomputation</span></span><br><span class="line">    apply_to = <span class="string">'linear_layers'</span>,  <span class="comment"># skip embeddings, norms</span></span><br><span class="line">    svd_method = <span class="string">'randomized'</span>,  <span class="comment"># faster than exact</span></span><br><span class="line">    svd_rank_buffer = <span class="number">10</span>,  <span class="comment"># keep r+10 components for numerical stability</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>For aggressive compression (memory critical):</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">GaLore(</span><br><span class="line">    rank = min(<span class="number">128</span>, min_dimension // <span class="number">10</span>),</span><br><span class="line">    refresh_interval = <span class="number">200</span>,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>For safety-first (quality critical):</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">GaLore(</span><br><span class="line">    rank = min(<span class="number">512</span>, min_dimension // <span class="number">3</span>),</span><br><span class="line">    refresh_interval = <span class="number">50</span>,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<h3 id="5-4-System-Level-Implications">5.4 System-Level Implications</h3>
+<p>GaLore has important downstream effects:</p>
+<p><strong>Hardware democratization:</strong> Labs/organizations with limited compute (single RTX 4090) can now train meaningful models.</p>
+<p><strong>Hyperparameter search accessibility:</strong> Memory-constrained experiments enable larger hyperparameter sweeps within same budget.</p>
+<p><strong>Multi-GPU training simplification:</strong> Enables single-GPU baselines before moving to distributed training.</p>
+<hr>
+<h2 id="6-Technical-Variations-and-Extensions">6. Technical Variations and Extensions</h2>
+<h3 id="6-1-Alternative-Projection-Methods">6.1 Alternative Projection Methods</h3>
+<p>Beyond SVD, other projections possible:</p>
+<p><strong>QR Decomposition:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Gradient: G ∈ ℝ^(m × n)</span><br><span class="line">QR decomposition: [Q, R] &#x3D; qr(G)</span><br><span class="line">Keep: Q_r (first r columns)</span><br></pre></td></tr></table></figure>
+<p>Cheaper than SVD (O(mn·r) vs O(mnr²)), approximate rank selection harder.</p>
+<p><strong>Partial SVD:</strong> Only compute top-r singular values/vectors instead of full SVD.</p>
+<ul>
+<li><strong>Randomized algorithms</strong> (Halko et al., 2011): O(mnr) time</li>
+<li>Produces r-rank approximation directly</li>
+<li>Practical implementation in fbpca, randomized_svd</li>
+</ul>
+<p><strong>Principal Component Analysis (PCA):</strong> For multiple gradients <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>G</mi><mn>1</mn></msub><mo separator="true">,</mo><mi mathvariant="normal">.</mi><mi mathvariant="normal">.</mi><mi mathvariant="normal">.</mi><mo separator="true">,</mo><msub><mi>G</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">G_1, ..., G_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8778em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal">G</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">...</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">G</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Stack: G_stacked &#x3D; [vec(G_1), vec(G_2), ...]</span><br><span class="line">PCA: find principal components</span><br><span class="line">Project recent gradients onto PCA basis</span><br></pre></td></tr></table></figure>
+<h3 id="6-2-Layer-Aware-Rank-Allocation">6.2 Layer-Aware Rank Allocation</h3>
+<p>More sophisticated strategies:</p>
+<p><strong>Strategy 1: Spectral Clustering</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">For each layer:</span><br><span class="line">    Compute singular values of recent gradients</span><br><span class="line">    Measure spectral decay: decay_rate &#x3D; σ_r &#x2F; σ_1</span><br><span class="line">    </span><br><span class="line">    If decay_rate &gt; threshold (e.g., 0.01):</span><br><span class="line">        Use higher rank (more structure)</span><br><span class="line">    Else:</span><br><span class="line">        Use lower rank (compressed gradient)</span><br></pre></td></tr></table></figure>
+<p><strong>Strategy 2: Gradient Norm Adaptation</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">For each layer:</span><br><span class="line">    Track ||grad|| over time</span><br><span class="line">    High variance → use higher rank (unstable gradients)</span><br><span class="line">    Low variance → use lower rank (stable, compressible)</span><br></pre></td></tr></table></figure>
+<p><strong>Strategy 3: Hessian-Aware (Advanced)</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Layers with high condition number (ill-conditioned) → higher rank</span><br><span class="line">Layers with low condition number (well-conditioned) → lower rank</span><br></pre></td></tr></table></figure>
+<h3 id="6-3-Combining-with-8-bit-Optimizer-States">6.3 Combining with 8-bit Optimizer States</h3>
+<p>Full stacking:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">galore_with_8bit = GaLore(</span><br><span class="line">    base_optimizer=eightbit_adam,  <span class="comment"># 8-bit Adam</span></span><br><span class="line">    rank=<span class="number">256</span>,</span><br><span class="line">    ...</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="comment"># Memory breakdown for 7B model:</span></span><br><span class="line"><span class="comment"># - Weights: 14 GB</span></span><br><span class="line"><span class="comment"># - Gradients: 14 GB</span></span><br><span class="line"><span class="comment"># - Optimizer (GaLore+8bit): 2 GB</span></span><br><span class="line"><span class="comment"># - Activations: 6 GB</span></span><br><span class="line"><span class="comment"># ───────────────────────────</span></span><br><span class="line"><span class="comment"># Total: ~36 GB (vs 70 GB baseline)</span></span><br></pre></td></tr></table></figure>
+<p>Trade-offs:</p>
+<ul>
+<li><strong>Memory:</strong> Extreme compression (48% of baseline)</li>
+<li><strong>Compute:</strong> Dequantization overhead adds 2–3% more slowdown</li>
+<li><strong>Stability:</strong> Double quantization (low-rank + int8) requires careful tuning</li>
+</ul>
+<h3 id="6-4-Dynamic-Rank-Adaptation">6.4 Dynamic Rank Adaptation</h3>
+<p>Rather than fixed rank r throughout training:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># Start with high rank (preserve quality in unstable early phase)</span></span><br><span class="line">rank = <span class="number">512</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># Gradually reduce as training stabilizes</span></span><br><span class="line"><span class="keyword">for</span> step <span class="keyword">in</span> training_loop:</span><br><span class="line">    <span class="keyword">if</span> step == <span class="number">1000</span>:</span><br><span class="line">        rank = <span class="number">384</span></span><br><span class="line">    <span class="keyword">elif</span> step == <span class="number">5000</span>:</span><br><span class="line">        rank = <span class="number">256</span></span><br><span class="line">    <span class="keyword">elif</span> step == <span class="number">20000</span>:</span><br><span class="line">        rank = <span class="number">128</span></span><br></pre></td></tr></table></figure>
+<p>Benefit: capture early training instability, compress later as dynamics stabilize.</p>
+<p>Risk: additional hyperparameter (schedule) to tune.</p>
+<hr>
+<h2 id="7-Comparison-with-Related-Work">7. Comparison with Related Work</h2>
+<h3 id="7-1-GaLore-vs-LoRA">7.1 GaLore vs. LoRA</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>GaLore</th>
+<th>LoRA</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Parameter training</strong></td>
+<td>Full-rank</td>
+<td>Constrained low-rank</td>
+</tr>
+<tr>
+<td><strong>Memory savings</strong></td>
+<td>Optimizer states</td>
+<td>Trainable params</td>
+</tr>
+<tr>
+<td><strong>Quality (pretraining)</strong></td>
+<td>Baseline-equivalent</td>
+<td>~0.5–1% loss</td>
+</tr>
+<tr>
+<td><strong>Quality (finetuning)</strong></td>
+<td>Baseline-equivalent</td>
+<td>Competitive</td>
+</tr>
+<tr>
+<td><strong>Expressivity</strong></td>
+<td>Unconstrained</td>
+<td>Limited by rank</td>
+</tr>
+<tr>
+<td><strong>Implementation complexity</strong></td>
+<td>Medium</td>
+<td>Low</td>
+</tr>
+<tr>
+<td><strong>Optimizer agnosticism</strong></td>
+<td>Yes</td>
+<td>Partial</td>
+</tr>
+</tbody>
+</table>
+<p><strong>When to use GaLore:</strong> Pretraining, when you want full-rank freedom.</p>
+<p><strong>When to use LoRA:</strong> Finetuning, parameter efficiency, simplicity.</p>
+<h3 id="7-2-GaLore-vs-Gradient-Checkpointing">7.2 GaLore vs. Gradient Checkpointing</h3>
+<p><strong>Checkpointing</strong> reduces activation memory by recomputing activations in backward pass:</p>
+<ul>
+<li>Saves ~50% activation memory</li>
+<li>Costs ~30% more compute (recompute forward pass)</li>
+<li>Works orthogonally with GaLore</li>
+</ul>
+<p><strong>GaLore</strong> reduces optimizer state memory:</p>
+<ul>
+<li>Saves ~30–50% optimizer memory</li>
+<li>Costs ~1–3% more compute (SVD, projection)</li>
+<li>Works orthogonally with checkpointing</li>
+</ul>
+<p><strong>Combined:</strong> Checkpointing + GaLore often achieves best total memory, ~50–60% reduction.</p>
+<h3 id="7-3-GaLore-vs-Quantized-Optimizers">7.3 GaLore vs. Quantized Optimizers</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Optimizer Memory</th>
+<th>Overhead</th>
+<th>Stability</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Full AdamW</td>
+<td>28 GB (7B)</td>
+<td>None</td>
+<td>Baseline</td>
+</tr>
+<tr>
+<td>8-bit AdamW</td>
+<td>7 GB</td>
+<td>Quantization</td>
+<td>Stable</td>
+</tr>
+<tr>
+<td>GaLore</td>
+<td>8-10 GB</td>
+<td>SVD/projection</td>
+<td>Stable</td>
+</tr>
+<tr>
+<td>GaLore + 8-bit</td>
+<td>2-3 GB</td>
+<td>Both</td>
+<td>Requires tuning</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Practical:</strong> If forced to choose one, GaLore safer (fewer numerical issues than quantization).</p>
+<h3 id="7-4-GaLore-vs-Weight-Quantization">7.4 GaLore vs. Weight Quantization</h3>
+<p><strong>Weight quantization</strong> (quantize parameters to INT8/INT4):</p>
+<ul>
+<li>Reduces memory of weights themselves (~4–8 GB for 7B)</li>
+<li>Requires quantization-aware training or post-training quantization</li>
+<li>Inference performance impact (may need dequantization)</li>
+</ul>
+<p><strong>GaLore:</strong></p>
+<ul>
+<li>Orthogonal to weight quantization</li>
+<li>Can combine: quantized weights + GaLore optimizer states</li>
+<li>No inference overhead</li>
+</ul>
+<hr>
+<h2 id="8-Case-Studies-When-to-Use-GaLore">8. Case Studies: When to Use GaLore</h2>
+<h3 id="Case-1-Single-GPU-Pretraining-on-Consumer-Hardware">Case 1: Single-GPU Pretraining on Consumer Hardware</h3>
+<p><strong>Scenario:</strong> Research group with RTX 4090 (24 GB) wants to pretrain 7B model.</p>
+<p><strong>Baseline:</strong> Impossible (65 GB required).</p>
+<p><strong>With GaLore:</strong></p>
+<ul>
+<li>Peak memory: ~50 GB</li>
+<li>Use gradient checkpointing: ~40 GB peak</li>
+<li>Still over budget...</li>
+</ul>
+<p><strong>With GaLore + aggressive rank (r=128) + 8-bit:</strong></p>
+<ul>
+<li>Peak memory: ~28 GB ✓ Fits!</li>
+<li>Quality loss: ~0.3% (acceptable for research)</li>
+</ul>
+<p><strong>Recommendation:</strong> Deploy GaLore, validate on short runs, then full pretraining.</p>
+<h3 id="Case-2-Multi-GPU-Training-with-Large-Model">Case 2: Multi-GPU Training with Large Model</h3>
+<p><strong>Scenario:</strong> Multi-GPU cluster (4× A100s) training 70B model.</p>
+<p><strong>Baseline (FSDP):</strong> Gradient checkpointing, 8-bit optimizer, distributed</p>
+<ul>
+<li>Peak per-GPU: ~65 GB (at edge of A100 limits)</li>
+<li>Training stable but memory pressure high</li>
+</ul>
+<p><strong>With GaLore (r=256):</strong></p>
+<ul>
+<li>Peak per-GPU: ~45 GB</li>
+<li>Extra margin for larger batches or longer sequences</li>
+<li>More stable training, fewer OOMs</li>
+</ul>
+<p><strong>Recommendation:</strong> GaLore as additional safety margin in production training.</p>
+<h3 id="Case-3-Finetuning-with-Extensive-Hyperparameter-Search">Case 3: Finetuning with Extensive Hyperparameter Search</h3>
+<p><strong>Scenario:</strong> Need to search learning rate, rank, layer selection for finetuning task.</p>
+<p><strong>Baseline:</strong> Limited search due to memory constraints (only 3–4 configs fit on GPU).</p>
+<p><strong>With GaLore:</strong></p>
+<ul>
+<li>Can search larger grid (6–8 configs)</li>
+<li>Faster iterations to optimal hyperparams</li>
+<li>Better final model</li>
+</ul>
+<p><strong>Recommendation:</strong> Use GaLore to enable more thorough experimentation.</p>
+<hr>
+<h2 id="9-Lessons-and-Future-Directions">9. Lessons and Future Directions</h2>
+<h3 id="9-1-Key-Takeaways-for-Practitioners">9.1 Key Takeaways for Practitioners</h3>
+<ol>
+<li>
+<p><strong>Optimizer state dominates memory</strong> in modern LLM training—attacking it matters.</p>
+</li>
+<li>
+<p><strong>Gradient low-rank structure is real</strong>—it's not a theoretical artifact; it appears consistently.</p>
+</li>
+<li>
+<p><strong>Full-rank training with compressed states</strong> is viable and often better than constrained low-rank parameters.</p>
+</li>
+<li>
+<p><strong>Integration is practical</strong>—GaLore can be added to existing training loops with moderate effort.</p>
+</li>
+<li>
+<p><strong>Hyperparameters matter</strong>—rank and refresh interval require validation on your workload.</p>
+</li>
+</ol>
+<h3 id="9-2-Future-Research-Directions">9.2 Future Research Directions</h3>
+<p><strong>Theoretical:</strong></p>
+<ul>
+<li>Characterize convergence rates with gradient projection</li>
+<li>Quantify approximation error propagation over many steps</li>
+<li>Relationship between subspace drift and gradient noise</li>
+</ul>
+<p><strong>Practical:</strong></p>
+<ul>
+<li>Adaptive rank allocation based on layer properties</li>
+<li>Interaction with modern systems (FSDP, PyTorch Distributed, Megatron)</li>
+<li>Deployment on newer accelerators (H100, B100)</li>
+</ul>
+<p><strong>Integration:</strong></p>
+<ul>
+<li>Native support in major frameworks (PyTorch Distributed, HuggingFace Transformers)</li>
+<li>Automatic hyperparameter selection</li>
+<li>Combination with other memory techniques (activation checkpointing, weight quantization)</li>
+</ul>
+<hr>
+<h2 id="10-Appendix-Mathematical-Details">10. Appendix: Mathematical Details</h2>
+<h3 id="10-1-SVD-Error-Analysis">10.1 SVD Error Analysis</h3>
+<p>For truncated SVD approximation with top-r components:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi mathvariant="normal">∥</mi><mi>G</mi><mo>−</mo><msub><mi>G</mi><mi>r</mi></msub><msub><mi mathvariant="normal">∥</mi><mi>F</mi></msub><mo>=</mo><msqrt><mrow><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mi>r</mi><mo>+</mo><mn>1</mn></mrow><mrow><mi>min</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi>m</mi><mo separator="true">,</mo><mi>n</mi><mo stretchy="false">)</mo></mrow></munderover><msubsup><mi>σ</mi><mi>i</mi><mn>2</mn></msubsup></mrow></msqrt></mrow><annotation encoding="application/x-tex">\|G - G_r\|_F = \sqrt{\sum_{i=r+1}^{\min(m,n)} \sigma_i^2}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∥</span><span class="mord mathnormal">G</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">G</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord">∥</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3.5248em;vertical-align:-1.336em;"></span><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:2.1888em;"><span class="svg-align" style="top:-5.4848em;"><span class="pstrut" style="height:5.4848em;"></span><span class="mord" style="padding-left:1.056em;"><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.961em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.386em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">i</span><span class="mtight">n</span></span><span class="mopen mtight">(</span><span class="mord mathnormal mtight">m</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight">n</span><span class="mclose mtight">)</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.336em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7959em;"><span style="top:-2.4231em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span><span style="top:-3.0448em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2769em;"><span></span></span></span></span></span></span></span></span><span style="top:-4.1488em;"><span class="pstrut" style="height:5.4848em;"></span><span class="hide-tail" style="min-width:0.742em;height:3.5648em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="3.5648em" viewBox="0 0 400000 3564" preserveAspectRatio="xMinYMin slice"><path d="M702 80H40000040
+H742v3430l-4 4-4 4c-.667.7 -2 1.5-4 2.5s-4.167 1.833-6.5 2.5-5.5 1-9.5 1
+h-12l-28-84c-16.667-52-96.667 -294.333-240-727l-212 -643 -85 170
+c-4-3.333-8.333-7.667-13 -13l-13-13l77-155 77-156c66 199.333 139 419.667
+219 661 l218 661zM702 80H400000v40H742z"/></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.336em;"><span></span></span></span></span></span></span></span></span></span></p>
+<p><strong>Relative error:</strong></p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mfrac><mrow><mi mathvariant="normal">∥</mi><mi>G</mi><mo>−</mo><msub><mi>G</mi><mi>r</mi></msub><msub><mi mathvariant="normal">∥</mi><mi>F</mi></msub></mrow><mrow><mi mathvariant="normal">∥</mi><mi>G</mi><msub><mi mathvariant="normal">∥</mi><mi>F</mi></msub></mrow></mfrac><mo>=</mo><mfrac><msqrt><mrow><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mi>r</mi><mo>+</mo><mn>1</mn></mrow><mrow><mi>min</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi>m</mi><mo separator="true">,</mo><mi>n</mi><mo stretchy="false">)</mo></mrow></munderover><msubsup><mi>σ</mi><mi>i</mi><mn>2</mn></msubsup></mrow></msqrt><mrow><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mrow><mi>min</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi>m</mi><mo separator="true">,</mo><mi>n</mi><mo stretchy="false">)</mo></mrow></munderover><msub><mi>σ</mi><mi>i</mi></msub></mrow></mfrac></mrow><annotation encoding="application/x-tex">\frac{\|G - G_r\|_F}{\|G\|_F} = \frac{\sqrt{\sum_{i=r+1}^{\min(m,n)} \sigma_i^2}}{\sum_{i=1}^{\min(m,n)} \sigma_i}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:2.363em;vertical-align:-0.936em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">∥</span><span class="mord mathnormal">G</span><span class="mord"><span class="mord">∥</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">∥</span><span class="mord mathnormal">G</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal">G</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord">∥</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">F</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3.4476em;vertical-align:-1.2176em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:2.23em;"><span style="top:-2.402em;"><span class="pstrut" style="height:3.3199em;"></span><span class="mord"><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.0279em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.2029em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">i</span><span class="mtight">n</span></span><span class="mopen mtight">(</span><span class="mord mathnormal mtight">m</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight">n</span><span class="mclose mtight">)</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2997em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.5499em;"><span class="pstrut" style="height:3.3199em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-4.23em;"><span class="pstrut" style="height:3.3199em;"></span><span class="mord"><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3199em;"><span class="svg-align" style="top:-3.8em;"><span class="pstrut" style="height:3.8em;"></span><span class="mord" style="padding-left:1em;"><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.0279em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.2029em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mop mtight"><span class="mtight">m</span><span class="mtight">i</span><span class="mtight">n</span></span><span class="mopen mtight">(</span><span class="mord mathnormal mtight">m</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight">n</span><span class="mclose mtight">)</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.358em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7959em;"><span style="top:-2.4231em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span><span style="top:-3.0448em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2769em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.2799em;"><span class="pstrut" style="height:3.8em;"></span><span class="hide-tail" style="min-width:1.02em;height:1.88em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="1.88em" viewBox="0 0 400000 1944" preserveAspectRatio="xMinYMin slice"><path d="M983 90
+l0 -0
+c4,-6.7,10,-10,18,-10 H400000v40
+H1013.1s-83.4,268,-264.1,840c-180.7,572,-277,876.3,-289,913c-4.7,4.7,-12.7,7,-24,7
+s-12,0,-12,0c-1.3,-3.3,-3.7,-11.7,-7,-25c-35.3,-125.3,-106.7,-373.3,-214,-744
+c-10,12,-21,25,-33,39s-32,39,-32,39c-6,-5.3,-15,-14,-27,-26s25,-30,25,-30
+c26.7,-32.7,52,-63,76,-91s52,-60,52,-60s208,722,208,722
+c56,-175.3,126.3,-397.3,211,-666c84.7,-268.7,153.8,-488.2,207.5,-658.5
+c53.7,-170.3,84.5,-266.8,92.5,-289.5z
+M1001 80h400000v40h-400000z"/></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.5201em;"><span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.2176em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>For decaying spectra, this is small even for modest r.</p>
+<h3 id="10-2-Projection-Orthogonality">10.2 Projection Orthogonality</h3>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msubsup><mi>U</mi><mi>r</mi><mi>T</mi></msubsup><msub><mi>U</mi><mi>r</mi></msub><mo>=</mo><msub><mi>I</mi><mi>r</mi></msub><mspace width="1em"/><msubsup><mi>V</mi><mi>r</mi><mi>T</mi></msubsup><msub><mi>V</mi><mi>r</mi></msub><mo>=</mo><msub><mi>I</mi><mi>r</mi></msub></mrow><annotation encoding="application/x-tex">U_r^T U_r = I_r \quad V_r^T V_r = I_r
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.1383em;vertical-align:-0.247em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">U</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8913em;"><span style="top:-2.453em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">U</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1383em;vertical-align:-0.247em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07847em;">I</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0785em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:1em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8913em;"><span style="top:-2.453em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07847em;">I</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0785em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>Ensuring these are maintained (via QR reorthogonalization if needed) prevents numerical drift.</p>
+<h3 id="10-3-Momentum-in-Compressed-Space">10.3 Momentum in Compressed Space</h3>
+<p>First moment in full space:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>m</mi><mi>t</mi></msub><mo>=</mo><msub><mi>β</mi><mn>1</mn></msub><msub><mi>m</mi><mrow><mi>t</mi><mo>−</mo><mn>1</mn></mrow></msub><mo>+</mo><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><msub><mi>β</mi><mn>1</mn></msub><mo stretchy="false">)</mo><msub><mi>G</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">m_t = \beta_1 m_{t-1} + (1 - \beta_1) G_t
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9028em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05278em;">β</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.0528em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05278em;">β</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.0528em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mord"><span class="mord mathnormal">G</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>In compressed space:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>m</mi><mrow><mi>t</mi><mo separator="true">,</mo><mtext>proj</mtext></mrow></msub><mo>=</mo><msub><mi>β</mi><mn>1</mn></msub><msub><mi>m</mi><mrow><mi>t</mi><mo>−</mo><mn>1</mn><mo separator="true">,</mo><mtext>proj</mtext></mrow></msub><mo>+</mo><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><msub><mi>β</mi><mn>1</mn></msub><mo stretchy="false">)</mo><msub><mi>G</mi><mrow><mtext>proj</mtext><mo separator="true">,</mo><mi>t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">m_{t,\text{proj}} = \beta_1 m_{t-1,\text{proj}} + (1 - \beta_1) G_{\text{proj},t}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3175em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mpunct mtight">,</span><span class="mord text mtight"><span class="mord mtight">proj</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9805em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05278em;">β</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.0528em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal">m</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3175em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">−</span><span class="mord mtight">1</span><span class="mpunct mtight">,</span><span class="mord text mtight"><span class="mord mtight">proj</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05278em;">β</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.0528em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mord"><span class="mord mathnormal">G</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3175em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">proj</span></span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>These are mathematically equivalent if <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>G</mi><mrow><mi>t</mi><mo separator="true">,</mo><mtext>proj</mtext></mrow></msub><mo>=</mo><msubsup><mi>U</mi><mi>r</mi><mi>T</mi></msubsup><msub><mi>G</mi><mi>t</mi></msub><msub><mi>V</mi><mi>r</mi></msub></mrow><annotation encoding="application/x-tex">G_{t,\text{proj}} = U_r^T G_t V_r</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">G</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3175em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mpunct mtight">,</span><span class="mord text mtight"><span class="mord mtight">proj</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0883em;vertical-align:-0.247em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">U</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8413em;"><span style="top:-2.453em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal">G</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> consistently.</p>
+<hr>
+<h2 id="11-References-and-Further-Reading">11. References and Further Reading</h2>
+<p><strong>Primary Paper:</strong></p>
+<ol>
+<li>Zhao et al., &quot;GaLore: Memory-Efficient LLM Training by Gradient Low-Rank Projection,&quot; ICML 2024.</li>
+</ol>
+<p><strong>Related Low-Rank Methods:</strong>
+2. Hu et al., &quot;LoRA: Low-Rank Adaptation of Large Language Models,&quot; 2023.
+3. Lialin et al., &quot;ReLoRA: Higher-Rank Adaptation for More Efficient Fine-Tuning,&quot; 2024.</p>
+<p><strong>Optimizer and Memory Techniques:</strong>
+4. Dettmers et al., &quot;8-bit Optimizers via Block-wise Quantization,&quot; ICLR 2022.
+5. Shazeer &amp; Stern, &quot;Adafactor: Adaptive Learning Rates with Sublinear Memory Cost,&quot; ICML 2018.</p>
+<p><strong>SVD and Numerical Methods:</strong>
+6. Halko et al., &quot;Finding Structure with Randomness: Probabilistic Algorithms for Constructing Approximate Matrix Decompositions,&quot; 2011.
+7. Golub &amp; Van Loan, &quot;Matrix Computations,&quot; 4th ed., 2013.</p>
+<p><strong>Training Systems:</strong>
+8. Hoffmann et al., &quot;Training Compute-Optimal Large Language Models,&quot; Chinchilla, 2022.
+9. Li et al., &quot;FSDP: Fully Sharded Data Parallel,&quot; PyTorch 1.12+.</p>
+<hr>
+<h2 id="Conclusion">Conclusion</h2>
+<p>GaLore represents an important paradigm shift in memory-efficient training: instead of constraining model expressivity (LoRA) or quantizing aggressively (8-bit optimizers), it exploits the natural low-rank structure of gradients to compress optimizer state while maintaining full-parameter training. For practitioners facing memory bottlenecks in pretraining and finetuning, GaLore is a compelling approach that is:</p>
+<ol>
+<li><strong>Theoretically motivated</strong> (gradients are low-rank)</li>
+<li><strong>Practically effective</strong> (30–50% optimizer state savings)</li>
+<li><strong>Integrable</strong> (works with common optimizers and frameworks)</li>
+<li><strong>Safe</strong> (minimal quality loss when properly tuned)</li>
+</ol>
+<p>The democratization of large-model training to researchers with limited compute resources is GaLore's most valuable contribution to the field.</p>
+<hr>
+<p><strong>Review completed:</strong> 2026-03-27<br>
+<strong>Author:</strong> Zhongzhu Zhou<br>
+<strong>Direction:</strong> Friday — SVD Decomposition &amp; Acceleration</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Deep-Learning/" rel="tag"># Deep Learning</a>
+              <a href="/tags/Memory-Efficiency/" rel="tag"># Memory Efficiency</a>
+              <a href="/tags/LLM-Training/" rel="tag"># LLM Training</a>
+              <a href="/tags/Low-Rank-Methods/" rel="tag"># Low-Rank Methods</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/03/26/2026-03-26-Alpa-technical-review-en/" rel="prev" title="Alpa: Automating Inter- and Intra-Operator Parallelism — In-Depth Technical Review">
+      <i class="fa fa-chevron-left"></i> Alpa: Automating Inter- and Intra-Operator Parallelism — In-Depth Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/03/28/2026-03-28-Mamba-technical-review-en/" rel="next" title="Mamba: Linear-Time Sequence Modeling with Selective State Spaces — In-Depth Technical Review">
+      Mamba: Linear-Time Sequence Modeling with Selective State Spaces — In-Depth Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Executive-Summary"><span class="nav-number">1.</span> <span class="nav-text">Executive Summary</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Prerequisites-Foundational-Knowledge-Required"><span class="nav-number">2.</span> <span class="nav-text">1. Prerequisites: Foundational Knowledge Required</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-The-Memory-Breakdown-of-Modern-LLM-Training"><span class="nav-number">2.1.</span> <span class="nav-text">1.1 The Memory Breakdown of Modern LLM Training</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#1-1-1-Model-Parameters-Weights"><span class="nav-number">2.1.1.</span> <span class="nav-text">1.1.1 Model Parameters (Weights)</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#1-1-2-Gradient-Tensors"><span class="nav-number">2.1.2.</span> <span class="nav-text">1.1.2 Gradient Tensors</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#1-1-3-Optimizer-States-The-Critical-Bottleneck"><span class="nav-number">2.1.3.</span> <span class="nav-text">1.1.3 Optimizer States (The Critical Bottleneck)</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#1-1-4-Activation-Tensors"><span class="nav-number">2.1.4.</span> <span class="nav-text">1.1.4 Activation Tensors</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-Why-Traditional-Approaches-Fall-Short"><span class="nav-number">2.2.</span> <span class="nav-text">1.2 Why Traditional Approaches Fall Short</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#1-2-1-LoRA-Constrained-Optimization"><span class="nav-number">2.2.1.</span> <span class="nav-text">1.2.1 LoRA: Constrained Optimization</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#1-2-2-Quantized-Optimizers"><span class="nav-number">2.2.2.</span> <span class="nav-text">1.2.2 Quantized Optimizers</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#1-2-3-The-Missing-Approach-Full-Rank-Training-with-Compressed-States"><span class="nav-number">2.2.3.</span> <span class="nav-text">1.2.3 The Missing Approach: Full-Rank Training with Compressed States</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-The-Low-Rank-Structure-Hypothesis"><span class="nav-number">2.3.</span> <span class="nav-text">1.3 The Low-Rank Structure Hypothesis</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#1-3-1-Empirical-Evidence"><span class="nav-number">2.3.1.</span> <span class="nav-text">1.3.1 Empirical Evidence</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#1-3-2-Why-Does-This-Occur"><span class="nav-number">2.3.2.</span> <span class="nav-text">1.3.2 Why Does This Occur?</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#1-3-3-Stability-Across-Training"><span class="nav-number">2.3.3.</span> <span class="nav-text">1.3.3 Stability Across Training</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-4-Singular-Value-Decomposition-SVD-for-Optimization"><span class="nav-number">2.4.</span> <span class="nav-text">1.4 Singular Value Decomposition (SVD) for Optimization</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-5-Matrix-Multiplication-and-Backpropagation-Essentials"><span class="nav-number">2.5.</span> <span class="nav-text">1.5 Matrix Multiplication and Backpropagation Essentials</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-The-Core-Method-Gradient-Low-Rank-Projection"><span class="nav-number">3.</span> <span class="nav-text">2. The Core Method: Gradient Low-Rank Projection</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-Algorithm-Overview"><span class="nav-number">3.1.</span> <span class="nav-text">2.1 Algorithm Overview</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-Why-This-Works-Information-Preservation"><span class="nav-number">3.2.</span> <span class="nav-text">2.2 Why This Works: Information Preservation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-Projection-Matrix-Refinement"><span class="nav-number">3.3.</span> <span class="nav-text">2.3 Projection Matrix Refinement</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#2-3-1-SVD-Based-Refresh"><span class="nav-number">3.3.1.</span> <span class="nav-text">2.3.1 SVD-Based Refresh</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-3-2-Refresh-Frequency-Strategies"><span class="nav-number">3.3.2.</span> <span class="nav-text">2.3.2 Refresh Frequency Strategies</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-3-3-Which-Bases-to-Use"><span class="nav-number">3.3.3.</span> <span class="nav-text">2.3.3 Which Bases to Use</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-Implementation-Details-Making-It-Practical"><span class="nav-number">3.4.</span> <span class="nav-text">2.4 Implementation Details: Making It Practical</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#2-4-1-Handling-Different-Layer-Types"><span class="nav-number">3.4.1.</span> <span class="nav-text">2.4.1 Handling Different Layer Types</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-4-2-Rank-Selection-Strategies"><span class="nav-number">3.4.2.</span> <span class="nav-text">2.4.2 Rank Selection Strategies</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-4-3-Combining-with-8-bit-Optimizer-States"><span class="nav-number">3.4.3.</span> <span class="nav-text">2.4.3 Combining with 8-bit Optimizer States</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-Gradient-Statistics-Tracking"><span class="nav-number">3.5.</span> <span class="nav-text">2.5 Gradient Statistics Tracking</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Experiments-Validation-Across-Multiple-Scales"><span class="nav-number">4.</span> <span class="nav-text">3. Experiments: Validation Across Multiple Scales</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-Experimental-Setup"><span class="nav-number">4.1.</span> <span class="nav-text">3.1 Experimental Setup</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#3-1-1-Models-Tested"><span class="nav-number">4.1.1.</span> <span class="nav-text">3.1.1 Models Tested</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-1-2-Training-Configuration"><span class="nav-number">4.1.2.</span> <span class="nav-text">3.1.2 Training Configuration</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-1-3-Baseline-Comparisons"><span class="nav-number">4.1.3.</span> <span class="nav-text">3.1.3 Baseline Comparisons</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-Memory-Efficiency-Results"><span class="nav-number">4.2.</span> <span class="nav-text">3.2 Memory Efficiency Results</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#3-2-1-Peak-Memory-Consumption"><span class="nav-number">4.2.1.</span> <span class="nav-text">3.2.1 Peak Memory Consumption</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-2-2-Hardware-Feasibility-Implications"><span class="nav-number">4.2.2.</span> <span class="nav-text">3.2.2 Hardware Feasibility Implications</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-Training-Quality-Does-Compression-Hurt-Performance"><span class="nav-number">4.3.</span> <span class="nav-text">3.3 Training Quality: Does Compression Hurt Performance?</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#3-3-1-Pretraining-Perplexity-C4-Validation"><span class="nav-number">4.3.1.</span> <span class="nav-text">3.3.1 Pretraining Perplexity (C4 Validation)</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-3-2-Downstream-Task-Performance"><span class="nav-number">4.3.2.</span> <span class="nav-text">3.3.2 Downstream Task Performance</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-3-3-Training-Curves-Stability-and-Convergence"><span class="nav-number">4.3.3.</span> <span class="nav-text">3.3.3 Training Curves: Stability and Convergence</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-Throughput-Analysis-Is-There-a-Speed-Cost"><span class="nav-number">4.4.</span> <span class="nav-text">3.4 Throughput Analysis: Is There a Speed Cost?</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#3-4-1-Token-Throughput-tokens-sec"><span class="nav-number">4.4.1.</span> <span class="nav-text">3.4.1 Token Throughput (tokens&#x2F;sec)</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-4-2-Memory-Compute-Tradeoff"><span class="nav-number">4.4.2.</span> <span class="nav-text">3.4.2 Memory-Compute Tradeoff</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-Scaling-Behavior-How-Does-GaLore-Scale"><span class="nav-number">4.5.</span> <span class="nav-text">3.5 Scaling Behavior: How Does GaLore Scale?</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#3-5-1-Model-Size-Scaling"><span class="nav-number">4.5.1.</span> <span class="nav-text">3.5.1 Model Size Scaling</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-5-2-Sequence-Length-Scaling"><span class="nav-number">4.5.2.</span> <span class="nav-text">3.5.2 Sequence Length Scaling</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-5-3-Batch-Size-Scaling"><span class="nav-number">4.5.3.</span> <span class="nav-text">3.5.3 Batch Size Scaling</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-6-Ablation-Studies-Which-Components-Matter"><span class="nav-number">4.6.</span> <span class="nav-text">3.6 Ablation Studies: Which Components Matter?</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#3-6-1-Rank-Sensitivity"><span class="nav-number">4.6.1.</span> <span class="nav-text">3.6.1 Rank Sensitivity</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-6-2-Refresh-Interval-Sensitivity"><span class="nav-number">4.6.2.</span> <span class="nav-text">3.6.2 Refresh Interval Sensitivity</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#3-6-3-Per-Layer-Rank-Allocation"><span class="nav-number">4.6.3.</span> <span class="nav-text">3.6.3 Per-Layer Rank Allocation</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Limitations-and-Boundary-Conditions"><span class="nav-number">5.</span> <span class="nav-text">4. Limitations and Boundary Conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-Hyperparameter-Explosion"><span class="nav-number">5.1.</span> <span class="nav-text">4.1 Hyperparameter Explosion</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-Layer-Heterogeneity-Not-Addressed"><span class="nav-number">5.2.</span> <span class="nav-text">4.2 Layer Heterogeneity Not Addressed</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-Throughput-Overhead-Not-Negligible-at-Small-Scales"><span class="nav-number">5.3.</span> <span class="nav-text">4.3 Throughput Overhead Not Negligible at Small Scales</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-4-Interaction-with-Distributed-Training"><span class="nav-number">5.4.</span> <span class="nav-text">4.4 Interaction with Distributed Training</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-5-Long-Horizon-Training-Evidence-Limited"><span class="nav-number">5.5.</span> <span class="nav-text">4.5 Long-Horizon Training Evidence Limited</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-6-Interaction-with-Other-Optimizations"><span class="nav-number">5.6.</span> <span class="nav-text">4.6 Interaction with Other Optimizations</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Reproducibility-and-Practical-Deployment"><span class="nav-number">6.</span> <span class="nav-text">5. Reproducibility and Practical Deployment</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-Reproducibility-Checklist"><span class="nav-number">6.1.</span> <span class="nav-text">5.1 Reproducibility Checklist</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Implementation-Guide-for-Practitioners"><span class="nav-number">6.2.</span> <span class="nav-text">5.2 Implementation Guide for Practitioners</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-Default-Hyperparameters-For-First-Try"><span class="nav-number">6.3.</span> <span class="nav-text">5.3 Default Hyperparameters (For First Try)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-System-Level-Implications"><span class="nav-number">6.4.</span> <span class="nav-text">5.4 System-Level Implications</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Technical-Variations-and-Extensions"><span class="nav-number">7.</span> <span class="nav-text">6. Technical Variations and Extensions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Alternative-Projection-Methods"><span class="nav-number">7.1.</span> <span class="nav-text">6.1 Alternative Projection Methods</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Layer-Aware-Rank-Allocation"><span class="nav-number">7.2.</span> <span class="nav-text">6.2 Layer-Aware Rank Allocation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-Combining-with-8-bit-Optimizer-States"><span class="nav-number">7.3.</span> <span class="nav-text">6.3 Combining with 8-bit Optimizer States</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-Dynamic-Rank-Adaptation"><span class="nav-number">7.4.</span> <span class="nav-text">6.4 Dynamic Rank Adaptation</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Comparison-with-Related-Work"><span class="nav-number">8.</span> <span class="nav-text">7. Comparison with Related Work</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-GaLore-vs-LoRA"><span class="nav-number">8.1.</span> <span class="nav-text">7.1 GaLore vs. LoRA</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-GaLore-vs-Gradient-Checkpointing"><span class="nav-number">8.2.</span> <span class="nav-text">7.2 GaLore vs. Gradient Checkpointing</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-GaLore-vs-Quantized-Optimizers"><span class="nav-number">8.3.</span> <span class="nav-text">7.3 GaLore vs. Quantized Optimizers</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-GaLore-vs-Weight-Quantization"><span class="nav-number">8.4.</span> <span class="nav-text">7.4 GaLore vs. Weight Quantization</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Case-Studies-When-to-Use-GaLore"><span class="nav-number">9.</span> <span class="nav-text">8. Case Studies: When to Use GaLore</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Case-1-Single-GPU-Pretraining-on-Consumer-Hardware"><span class="nav-number">9.1.</span> <span class="nav-text">Case 1: Single-GPU Pretraining on Consumer Hardware</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Case-2-Multi-GPU-Training-with-Large-Model"><span class="nav-number">9.2.</span> <span class="nav-text">Case 2: Multi-GPU Training with Large Model</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Case-3-Finetuning-with-Extensive-Hyperparameter-Search"><span class="nav-number">9.3.</span> <span class="nav-text">Case 3: Finetuning with Extensive Hyperparameter Search</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-Lessons-and-Future-Directions"><span class="nav-number">10.</span> <span class="nav-text">9. Lessons and Future Directions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-Key-Takeaways-for-Practitioners"><span class="nav-number">10.1.</span> <span class="nav-text">9.1 Key Takeaways for Practitioners</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-Future-Research-Directions"><span class="nav-number">10.2.</span> <span class="nav-text">9.2 Future Research Directions</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-Appendix-Mathematical-Details"><span class="nav-number">11.</span> <span class="nav-text">10. Appendix: Mathematical Details</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-SVD-Error-Analysis"><span class="nav-number">11.1.</span> <span class="nav-text">10.1 SVD Error Analysis</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-Projection-Orthogonality"><span class="nav-number">11.2.</span> <span class="nav-text">10.2 Projection Orthogonality</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-Momentum-in-Compressed-Space"><span class="nav-number">11.3.</span> <span class="nav-text">10.3 Momentum in Compressed Space</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-References-and-Further-Reading"><span class="nav-number">12.</span> <span class="nav-text">11. References and Further Reading</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Conclusion"><span class="nav-number">13.</span> <span class="nav-text">Conclusion</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

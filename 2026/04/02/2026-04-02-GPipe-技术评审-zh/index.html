@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="GPipe 提出了微批次流水线并行方法，实现大规模神经网络的高效训练。本文从零讲解流水线调度算法、梯度累积、重计算内存优化，以及在 AmoebaNet 和 Transformer 上的实验结果。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="GPipe：微批次流水线并行的大规模模型训练 — 深度技术评审">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/02/2026-04-02-GPipe-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="GPipe 提出了微批次流水线并行方法，实现大规模神经网络的高效训练。本文从零讲解流水线调度算法、梯度累积、重计算内存优化，以及在 AmoebaNet 和 Transformer 上的实验结果。">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-02T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-02T16:13:08.407Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Deep Learning">
+<meta property="article:tag" content="Distributed Training">
+<meta property="article:tag" content="Model Parallelism">
+<meta property="article:tag" content="Pipeline Parallelism">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/02/2026-04-02-GPipe-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>GPipe：微批次流水线并行的大规模模型训练 — 深度技术评审 | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/02/2026-04-02-GPipe-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          GPipe：微批次流水线并行的大规模模型训练 — 深度技术评审
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2026-04-02 00:00:00 / Modified: 16:13:08" itemprop="dateCreated datePublished" datetime="2026-04-02T00:00:00+00:00">2026-04-02</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">GPipe 提出了微批次流水线并行方法，实现大规模神经网络的高效训练。本文从零讲解流水线调度算法、梯度累积、重计算内存优化，以及在 AmoebaNet 和 Transformer 上的实验结果。</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="技术评审：流水线并行如何让巨型神经网络训练成为可能">技术评审：流水线并行如何让巨型神经网络训练成为可能</h2>
+<p><strong>作者：</strong> Zhongzhu Zhou<br>
+<strong>日期：</strong> 2026-04-02<br>
+<strong>论文标题：</strong> GPipe: Easy Scaling with Micro-Batch Pipeline Parallelism<br>
+<strong>原作者：</strong> Yanping Huang, Youlong Cheng, Ankur Bapna, Orhan Firat, Dehao Chen, Mia Xu Chen, HyoukJoong Lee, Jiquan Ngiam, Quoc V. Le, Yonghui Wu, Zhifeng Chen<br>
+<strong>机构：</strong> Google Brain<br>
+<strong>发表于：</strong> NeurIPS 2019<br>
+<strong>ArXiv ID：</strong> 1811.06965</p>
+<hr>
+<h2 id="核心摘要与贡献">核心摘要与贡献</h2>
+<p>2019 年，Google Brain 团队发表了 GPipe 这篇论文，解决了深度学习领域一个极为关键的工程问题：<strong>当一个神经网络模型大到单张 GPU/TPU 装不下时，怎样才能在多张加速卡上高效地训练它？</strong></p>
+<p>在 GPipe 出现之前，跨设备训练大模型需要针对每种网络架构编写专用的分布式代码，这既费时又容易出错。GPipe 提出了一种通用的流水线并行方案，适用于<em>任何可以表示为层序列的神经网络</em>，从根本上降低了训练巨型模型的工程门槛。</p>
+<p>GPipe 的核心贡献包括：</p>
+<ol>
+<li><strong>微批次流水线并行算法</strong>：将小批量（mini-batch）拆分成更小的微批次（micro-batch），在多张加速卡之间形成流水线执行，接近线性加速。</li>
+</ol>
+<a id="more"></a>
+<ol start="2">
+<li><strong>同步梯度更新保证</strong>：与 PipeDream 等异步方案不同，GPipe 在所有微批次完成后才统一更新参数，确保训练结果与单卡训练完全一致——无近似、无权重过时问题。</li>
+<li><strong>内置激活检查点（Re-materialization）技术</strong>：显著降低峰值激活内存占用，使得在有限显存下能容纳远超预期的大模型。</li>
+<li><strong>大规模实验验证</strong>：5.57 亿参数的 AmoebaNet 在 ImageNet 上达到 84.4% top-1 准确率；60 亿参数的 Transformer 实现 100+ 语言的多语言翻译。</li>
+</ol>
+<p>这篇论文是 ML Systems 领域的奠基之作。后来的 Megatron-LM、DeepSpeed、PyTorch 的流水线并行 API 等核心系统，都直接继承了 GPipe 的设计思想。</p>
+<hr>
+<h2 id="预备知识：从零理解-GPipe">预备知识：从零理解 GPipe</h2>
+<p>在深入 GPipe 的技术细节之前，我们需要先建立一些基础概念。这部分面向可能从未接触过分布式训练的读者，力求用最通俗的方式解释清楚每个关键概念。</p>
+<h3 id="1-为什么模型越大效果越好？">1. 为什么模型越大效果越好？</h3>
+<p>GPipe 论文的出发点非常直观：<strong>更大的模型通常能取得更好的性能。</strong> 论文用两组强有力的实验数据来支撑这一观点：</p>
+<ul>
+<li><strong>图像分类</strong>（论文图 1a）：从 2014 年到 2019 年，ImageNet 分类准确率从约 74% 提升到 84%，与此同时模型规模增长了 36 倍。每一次准确率的重大飞跃都伴随着模型规模的重大飞跃。</li>
+<li><strong>机器翻译</strong>（论文图 1b）：翻译质量（用 BLEU 分数衡量）随着 Transformer 模型从 4 亿参数扩大到 60 亿参数而持续提升。</li>
+</ul>
+<p>这不是简单的统计巧合。从理论上讲，更大的模型拥有更强的函数表达能力：它能编码更多知识、捕捉更复杂的模式、在合适的正则化下实现更好的泛化。问题纯粹是实践层面的：<strong>你怎么训练这么大的模型？</strong></p>
+<h3 id="2-显存墙-问题：为什么单卡装不下大模型？">2. &quot;显存墙&quot;问题：为什么单卡装不下大模型？</h3>
+<p>训练一个神经网络时，加速器（GPU 或 TPU）的内存需要同时存储多种数据：</p>
+<p><strong>模型参数（<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi></mrow><annotation encoding="application/x-tex">w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.02691em;">w</span></span></span></span>）：</strong> 网络中所有可学习的权重。一个 10 亿参数的模型仅参数本身就需要约 4 GB（32 位浮点数）。</p>
+<p><strong>优化器状态：</strong> 像 Adam 或 RMSProp 这样的优化器需要为每个参数维护额外的状态信息（动量、方差等）。这通常让参数内存翻 2-3 倍。GPipe 论文中提到，使用 RMSProp 时每个参数需要约 12 字节。</p>
+<p><strong>激活值（Activations）：</strong> 前向传播过程中，每一层的中间输出都需要缓存下来，因为反向传播时计算梯度要用到它们。对于深度网络和大批量数据，激活内存往往<strong>远超</strong>参数内存。</p>
+<p><strong>梯度：</strong> 反向传播过程中计算出的每个参数的梯度值。</p>
+<p>举一个论文中的具体例子：一个 8200 万参数的 AmoebaNet 模型，参数本身只占 1.05 GB，但训练时的激活值却占了 6.26 GB——<strong>激活内存是参数内存的 6 倍</strong>！这就是为什么&quot;显存能装下参数&quot;远远不等于&quot;显存能训练这个模型&quot;。</p>
+<p>当总内存需求超过单张加速卡的容量时，就必须使用并行策略。</p>
+<h3 id="3-数据并行：简单但有天花板">3. 数据并行：简单但有天花板</h3>
+<p>数据并行（Data Parallelism）是最常见的分布式训练方法，理解它有助于理解为什么我们还需要 GPipe：</p>
+<p><strong>工作原理：</strong></p>
+<ol>
+<li>在每张加速卡上都复制一份完整的模型。</li>
+<li>将训练数据的小批量（mini-batch）分到各卡上——每张卡处理不同的数据子集。</li>
+<li>前向和反向传播后，用 AllReduce 操作在所有卡之间同步梯度。</li>
+<li>每张卡应用相同的梯度更新。</li>
+</ol>
+<p><strong>优点：</strong> 实现简单、吞吐量接近线性扩展，PyTorch DDP、tf.distribute 等框架都有很好的支持。</p>
+<p><strong>致命缺点：</strong> 每张卡必须持有<strong>完整模型</strong>的副本。如果你的模型需要 32 GB 显存，而你的 GPU 只有 16 GB，再多的数据并行也救不了你。数据并行解决的是&quot;训练速度&quot;问题，而不是&quot;模型装不下&quot;的问题。</p>
+<h3 id="4-模型并行：将模型本身拆开">4. 模型并行：将模型本身拆开</h3>
+<p>模型并行（Model Parallelism）的核心思路是把模型拆分到多张设备上。根据拆分方式的不同，主要有两大流派：</p>
+<h4 id="4a-张量并行（Tensor-Parallelism-SPMD-层内并行）">4a. 张量并行（Tensor Parallelism / SPMD / 层内并行）</h4>
+<p>张量并行将单个运算（如矩阵乘法）拆分到多张卡上。例如，一个线性层的权重矩阵 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mn>4096</mn><mo>×</mo><mn>4096</mn></mrow></msup></mrow><annotation encoding="application/x-tex">W \in \mathbb{R}^{4096 \times 4096}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">4096</span><span class="mbin mtight">×</span><span class="mord mtight">4096</span></span></span></span></span></span></span></span></span></span></span></span> 可以按列拆成 4 份，每张卡持有 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4096</mn><mo>×</mo><mn>1024</mn></mrow><annotation encoding="application/x-tex">4096 \times 1024</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">4096</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1024</span></span></span></span> 的切片并计算部分输出。</p>
+<p><strong>优点：</strong> 能处理单层就非常大的情况。</p>
+<p><strong>缺点：</strong></p>
+<ul>
+<li>每次拆分运算后都需要跨卡通信（AllReduce），<strong>通信开销极高</strong>。</li>
+<li>只有在高带宽互联（NVLink、TPU 互联）下才实用。</li>
+<li>对架构有限制——拆分卷积层远比拆分全连接层困难。</li>
+</ul>
+<p>这就是 Mesh-TensorFlow（Shazeer 等，2018）采用的方案。</p>
+<h4 id="4b-流水线并行（Pipeline-Parallelism-层间并行）">4b. 流水线并行（Pipeline Parallelism / 层间并行）</h4>
+<p>流水线并行<strong>按层</strong>拆分模型：前几层放在设备 0，接下来几层放在设备 1，以此类推。数据像流水线上的产品一样依次通过各设备。</p>
+<p><strong>优点：</strong> 设备间通信量极小——只需在分区边界传递激活张量。</p>
+<p><strong>朴素版本的致命缺点：</strong> 严重的设备利用率低下。在朴素实现中，当设备 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> 在计算第 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> 组层的前向传播时，其他所有设备都在空闲等待。这就是所谓的&quot;气泡&quot;（bubble）问题，它让朴素流水线并行几乎毫无实用价值。</p>
+<p><strong>GPipe 的创新正是解决了气泡问题</strong>——通过微批次流水线调度。</p>
+<h3 id="5-激活检查点技术（Re-materialization）">5. 激活检查点技术（Re-materialization）</h3>
+<p>这是 Chen 等人（2016）提出的内存优化技术：在前向传播时不缓存所有层的激活值，只在特定&quot;检查点&quot;（如分区边界）保存激活值。反向传播时从最近的检查点重新计算中间激活值。</p>
+<p><strong>本质是用计算换内存：</strong> 少存东西，需要时重新算。典型的代价是增加约 33% 的计算量。</p>
+<p>GPipe 整合了这一技术，将峰值激活内存从 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><mi>N</mi><mo>×</mo><mi>L</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(N \times L)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">L</span><span class="mclose">)</span></span></span></span> 降低到 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><mi>N</mi><mo>+</mo><mfrac><mi>L</mi><mi>K</mi></mfrac><mo>×</mo><mfrac><mi>N</mi><mi>M</mi></mfrac><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(N + \frac{L}{K} \times \frac{N}{M})</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.2173em;vertical-align:-0.345em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8723em;"><span style="top:-2.655em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.07153em;">K</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.394em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">L</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.345em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.2173em;vertical-align:-0.345em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8723em;"><span style="top:-2.655em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">M</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.394em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.345em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose">)</span></span></span></span>，其中 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span></span></span></span> 是批量大小、<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi></mrow><annotation encoding="application/x-tex">L</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">L</span></span></span></span> 是层数、<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span> 是分区数、<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi></mrow><annotation encoding="application/x-tex">M</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span></span></span></span> 是微批次数。这个公式的直觉是：每张卡只需要存储自己负责的 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi mathvariant="normal">/</mi><mi>K</mi></mrow><annotation encoding="application/x-tex">L/K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">L</span><span class="mord">/</span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span> 层的激活值，而且每次只处理大小为 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mi mathvariant="normal">/</mi><mi>M</mi></mrow><annotation encoding="application/x-tex">N/M</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mord">/</span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span></span></span></span> 的微批次。</p>
+<h3 id="6-同步-vs-异步梯度更新">6. 同步 vs. 异步梯度更新</h3>
+<p>这是理解 GPipe 与 PipeDream 区别的关键概念：</p>
+<p><strong>同步更新（GPipe 采用）：</strong> 所有微批次的梯度先累加，然后一次性更新参数。等价于在单卡上用完整 mini-batch 训练——数学上完全一致。</p>
+<p><strong>异步更新（PipeDream 采用）：</strong> 不同微批次可以用不同版本的参数来计算梯度，梯度到了就立即更新。好处是设备利用率更高，坏处是引入&quot;权重过时&quot;（weight staleness）——你用旧参数算的梯度去更新新参数，训练一致性无法保证。</p>
+<hr>
+<h2 id="GPipe-算法详解">GPipe 算法详解</h2>
+<h3 id="极简接口设计">极简接口设计</h3>
+<p>GPipe 的接口设计体现了&quot;把复杂留给系统，把简单留给用户&quot;的原则。用户只需指定三样东西：</p>
+<ol>
+<li><strong><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span></strong>：模型分区数（= 使用的加速卡数）。</li>
+<li><strong><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi></mrow><annotation encoding="application/x-tex">M</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span></span></span></span></strong>：每个小批量拆分成多少个微批次。</li>
+<li><strong><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi></mrow><annotation encoding="application/x-tex">L</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">L</span></span></span></span> 层的定义</strong>：将神经网络定义为一个层的序列，每层包含前向函数 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>f</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">f_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1076em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>、参数 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">w_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02691em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>，以及可选的计算成本估算函数 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>c</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">c_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">c</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>。</li>
+</ol>
+<p>GPipe 自动完成以下工作：</p>
+<ul>
+<li>将连续的层分成 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span> 个单元（cell），将第 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> 个单元放到第 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> 张加速卡上。</li>
+<li>在分区边界自动插入通信原语。</li>
+<li>通过最小化各分区估算成本的方差来平衡负载。</li>
+</ul>
+<h3 id="流水线执行的完整流程">流水线执行的完整流程</h3>
+<p>以 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">K = 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> 张加速卡和 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">M = 8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span> 个微批次为例，详细走一遍训练的一个步骤（参考论文图 2c）：</p>
+<p><strong>第一阶段：前向传播</strong></p>
+<ol>
+<li>大小为 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span></span></span></span> 的小批量被拆成 8 个大小为 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mi mathvariant="normal">/</mi><mn>8</mn></mrow><annotation encoding="application/x-tex">N/8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mord">/8</span></span></span></span> 的微批次。</li>
+<li>微批次 1 进入加速卡 0（负责第 1 到第 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi><mi mathvariant="normal">/</mi><mn>4</mn></mrow><annotation encoding="application/x-tex">L/4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal">L</span><span class="mord">/4</span></span></span></span> 层）。加速卡 0 完成这些层的前向计算后，将输出激活发送给加速卡 1。</li>
+<li>加速卡 1 处理微批次 1 的同时，加速卡 0 <strong>同时</strong>开始处理微批次 2。</li>
+<li>流水线持续运行：在稳态下，4 张卡同时在处理不同的微批次——这就是效率的来源。</li>
+<li>每张卡只保存分区边界的激活值，中间层的激活值被丢弃（激活检查点）。</li>
+</ol>
+<p><strong>第二阶段：反向传播</strong></p>
+<ol start="6">
+<li>当微批次 1 的前向传播通过全部 4 张卡后，加速卡 3 开始对微批次 1 进行反向传播。</li>
+<li>反向传播时，每张卡需要<strong>重新计算</strong>自己负责层的前向传播，以恢复被丢弃的中间激活值。这就是激活检查点的&quot;还债&quot;环节。</li>
+<li>每个微批次的梯度被<strong>累加</strong>（注意：不是立即应用），等全部微批次完成。</li>
+</ol>
+<p><strong>第三阶段：参数更新</strong></p>
+<ol start="9">
+<li>全部 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi></mrow><annotation encoding="application/x-tex">M</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span></span></span></span> 个微批次的前向和反向传播完成后，累加的梯度一次性应用于所有加速卡的参数更新。</li>
+<li>这保证了梯度更新<strong>在数学上等价于</strong>在单设备上处理完整 mini-batch——没有任何近似或信息损失。</li>
+</ol>
+<h3 id="气泡开销的定量分析">气泡开销的定量分析</h3>
+<p>&quot;气泡&quot;是每个训练步骤开始和结束时部分加速卡空闲的时间。论文推导出气泡占总计算时间的比例为：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>气泡比例</mtext><mo>=</mo><mi>O</mi><mrow><mo fence="true">(</mo><mfrac><mrow><mi>K</mi><mo>−</mo><mn>1</mn></mrow><mrow><mi>M</mi><mo>+</mo><mi>K</mi><mo>−</mo><mn>1</mn></mrow></mfrac><mo fence="true">)</mo></mrow></mrow><annotation encoding="application/x-tex">\text{气泡比例} = O\left(\frac{K - 1}{M + K - 1}\right)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord text"><span class="mord cjk_fallback">气泡比例</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3603em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord">1</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.7693em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">)</span></span></span></span></span></span></span></p>
+<p>这个公式告诉我们关键的设计准则：</p>
+<ul>
+<li>当 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mi>K</mi></mrow><annotation encoding="application/x-tex">M = K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span> 时：气泡约占 50%，效率很低。</li>
+<li>当 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>4</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">M = 4K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">4</span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span> 时：气泡约占 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mrow><mi>K</mi><mo>−</mo><mn>1</mn></mrow><mrow><mn>5</mn><mi>K</mi><mo>−</mo><mn>1</mn></mrow></mfrac><mo>≈</mo><mn>20</mn><mi mathvariant="normal">%</mi></mrow><annotation encoding="application/x-tex">\frac{K-1}{5K-1} \approx 20\%</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.2757em;vertical-align:-0.4033em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8723em;"><span style="top:-2.655em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">5</span><span class="mord mathnormal mtight" style="margin-right:0.07153em;">K</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.394em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.07153em;">K</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.4033em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8056em;vertical-align:-0.0556em;"></span><span class="mord">20%</span></span></span></span>，已经相当不错。</li>
+<li>当 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>32</mn></mrow><annotation encoding="application/x-tex">M = 32</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">32</span></span></span></span>、<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">K = 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> 时：气泡约 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mfrac><mn>3</mn><mn>35</mn></mfrac><mo>≈</mo><mn>8.6</mn><mi mathvariant="normal">%</mi></mrow><annotation encoding="application/x-tex">\frac{3}{35} \approx 8.6\%</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.1901em;vertical-align:-0.345em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8451em;"><span style="top:-2.655em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">35</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.394em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">3</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.345em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8056em;vertical-align:-0.0556em;"></span><span class="mord">8.6%</span></span></span></span>，非常高效。</li>
+</ul>
+<p>论文指出，<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>≥</mo><mn>4</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">M \geq 4K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8193em;vertical-align:-0.136em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">4</span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span> 是实践中的最低要求。此外，反向传播阶段的重计算可以提前调度（填充部分气泡时间），实际开销比理论值更小。</p>
+<h3 id="Batch-Normalization-的特殊处理">Batch Normalization 的特殊处理</h3>
+<p>一个容易被忽视但很重要的细节：Batch Normalization 层需要在整个 batch 上计算统计量（均值和方差）。微批次拆分后，每个微批次独立计算自己的统计量用于训练。为了评估（inference）的正确性，GPipe 在训练过程中追踪整个 mini-batch 的移动平均统计量。</p>
+<p>这也是为什么现代 Transformer 普遍使用 LayerNorm 而非 BatchNorm 的原因之一：LayerNorm 在每个样本内部计算统计量，天然适配微批次/流水线并行。</p>
+<hr>
+<h2 id="实验结果深度分析">实验结果深度分析</h2>
+<h3 id="实验一：模型规模扩展能力（表-1）">实验一：模型规模扩展能力（表 1）</h3>
+<p>这是 GPipe 最核心的实验——展示它能让你训练多大的模型。</p>
+<p><strong>AmoebaNet 在 GPU（每卡 8 GB）上的表现：</strong></p>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th>参数量</th>
+<th>参数内存</th>
+<th>峰值激活内存</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无 GPipe（1 GPU）</td>
+<td>8200 万</td>
+<td>1.05 GB</td>
+<td>6.26 GB</td>
+</tr>
+<tr>
+<td>GPipe，1 GPU（仅激活检查点）</td>
+<td>3.18 亿</td>
+<td>3.8 GB</td>
+<td>3.46 GB</td>
+</tr>
+<tr>
+<td>GPipe，2 GPUs</td>
+<td>5.42 亿</td>
+<td>6.45 GB</td>
+<td>8.11 GB</td>
+</tr>
+<tr>
+<td>GPipe，4 GPUs</td>
+<td>10.5 亿</td>
+<td>12.53 GB</td>
+<td>15.21 GB</td>
+</tr>
+<tr>
+<td>GPipe，8 GPUs</td>
+<td>18 亿</td>
+<td>24.62 GB</td>
+<td>26.24 GB</td>
+</tr>
+</tbody>
+</table>
+<p>深入解读：</p>
+<ul>
+<li>仅使用激活检查点（Pipeline-1），激活内存从 6.26 GB 降到 3.46 GB，在同一张 GPU 上就能训练 <strong>3.9 倍大</strong>的模型。</li>
+<li>8 卡流水线支撑 18 亿参数——比无 GPipe 的单卡大 <strong>22 倍</strong>。</li>
+<li>AmoebaNet 的扩展是亚线性的，因为其不同层的参数分布不均匀。</li>
+</ul>
+<p><strong>Transformer 在 TPU（每卡 16 GB）上的表现：</strong></p>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th>层数</th>
+<th>参数量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无 GPipe（1 TPU）</td>
+<td>3</td>
+<td>2.82 亿</td>
+</tr>
+<tr>
+<td>GPipe，1 TPU</td>
+<td>13</td>
+<td>7.86 亿</td>
+</tr>
+<tr>
+<td>GPipe，8 TPUs</td>
+<td>103</td>
+<td>53 亿</td>
+</tr>
+<tr>
+<td>GPipe，32 TPUs</td>
+<td>415</td>
+<td>210 亿</td>
+</tr>
+<tr>
+<td>GPipe，128 TPUs</td>
+<td>1,663</td>
+<td>839 亿</td>
+</tr>
+</tbody>
+</table>
+<p>Transformer 的扩展<strong>完美线性</strong>——因为所有层结构和大小完全相同。128 张 TPU 下，GPipe 支持高达 <strong>839 亿参数</strong>，是单 TPU 的 <strong>298 倍</strong>。</p>
+<h3 id="实验二：训练吞吐量（表-2）">实验二：训练吞吐量（表 2）</h3>
+<p>吞吐量实验验证了气泡开销的理论分析：</p>
+<p><strong>Transformer 模型：</strong></p>
+<table>
+<thead>
+<tr>
+<th>微批次数 (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi></mrow><annotation encoding="application/x-tex">M</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span></span></span></span>)</th>
+<th>2 分区</th>
+<th>4 分区</th>
+<th>8 分区</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">M = 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span></td>
+<td>1.0×</td>
+<td>1.07×</td>
+<td>1.3×</td>
+</tr>
+<tr>
+<td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">M = 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span></td>
+<td>1.7×</td>
+<td>3.2×</td>
+<td>4.8×</td>
+</tr>
+<tr>
+<td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>32</mn></mrow><annotation encoding="application/x-tex">M = 32</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">32</span></span></span></span></td>
+<td>1.8×</td>
+<td>3.4×</td>
+<td>6.3×</td>
+</tr>
+</tbody>
+</table>
+<p><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>32</mn></mrow><annotation encoding="application/x-tex">M = 32</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">32</span></span></span></span>、8 分区时，Transformer 达到 6.3 倍吞吐量——接近理想的 8 倍线性加速。当 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">M = 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>（无流水线）时，增加设备几乎没有帮助，因为同一时刻只有一张卡在工作——这就是朴素模型并行的问题。</p>
+<p>AmoebaNet 的加速是亚线性的（8 分区 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mn>32</mn></mrow><annotation encoding="application/x-tex">M = 32</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">32</span></span></span></span> 时仅 3.48 倍），原因是各层计算量不均衡。这揭示了一个重要实践教训：<strong>流水线并行在各层计算成本均匀时效果最好。</strong></p>
+<h3 id="实验三：低带宽互联下的性能（表-3）">实验三：低带宽互联下的性能（表 3）</h3>
+<p>一个关键实验：在没有 NVLink 的 NVIDIA P100 GPU 上运行（只有 PCI-E 互联，带宽远低于 NVLink）：</p>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th>2 GPUs</th>
+<th>4 GPUs</th>
+<th>8 GPUs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AmoebaNet</td>
+<td>1.0×</td>
+<td>1.7×</td>
+<td>2.7×</td>
+</tr>
+<tr>
+<td>Transformer</td>
+<td>1.0×</td>
+<td>1.8×</td>
+<td>3.3×</td>
+</tr>
+</tbody>
+</table>
+<p>即使在慢速互联下仍然接近线性扩展！这证明了流水线并行的通信优势：不像张量并行需要在每个操作后进行 AllReduce，流水线并行只在分区边界传输激活张量——通信量小得多。</p>
+<h3 id="实验四：ImageNet-图像分类（表-4）">实验四：ImageNet 图像分类（表 4）</h3>
+<p>5.57 亿参数的 AmoebaNet-B (18, 512) 用 GPipe 训练后取得：</p>
+<ul>
+<li><strong>84.4% top-1 准确率</strong>（单裁剪，ImageNet-2012）</li>
+<li><strong>97.0% top-5 准确率</strong></li>
+</ul>
+<p>这在发表时是 ImageNet 的最先进结果（排除使用非公开 Instagram 数据预训练的方法）。模型在 480 × 480 输入图像上训练，跨 4 个分区。</p>
+<p>迁移学习效果同样出色：</p>
+<table>
+<thead>
+<tr>
+<th>数据集</th>
+<th>GPipe 结果</th>
+<th>此前最优</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CIFAR-10</td>
+<td>99.0%</td>
+<td>98.5%</td>
+</tr>
+<tr>
+<td>CIFAR-100</td>
+<td>91.3%</td>
+<td>89.3%</td>
+</tr>
+<tr>
+<td>Stanford Cars</td>
+<td>94.6%</td>
+<td>94.8%</td>
+</tr>
+<tr>
+<td>Oxford Pets</td>
+<td>95.9%</td>
+<td>93.8%</td>
+</tr>
+<tr>
+<td>Food-101</td>
+<td>93.0%</td>
+<td>90.4%</td>
+</tr>
+</tbody>
+</table>
+<p>这些结果验证了 Kornblith 等人（2018）的发现：&quot;更好的 ImageNet 模型迁移更好&quot;。</p>
+<h3 id="实验五：大规模多语言机器翻译">实验五：大规模多语言机器翻译</h3>
+<p>这可能是 GPipe 最令人印象深刻的展示。一个 60 亿参数、128 层的 Transformer 被训练来同时翻译 102 种语言到英语。</p>
+<p><strong>模型规模扩展：</strong></p>
+<table>
+<thead>
+<tr>
+<th>模型</th>
+<th>参数量</th>
+<th>分区数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>T(6, 8192, 16)</td>
+<td>4 亿</td>
+<td>1</td>
+</tr>
+<tr>
+<td>T(12, 16384, 32)</td>
+<td>13 亿（宽型）</td>
+<td>2</td>
+</tr>
+<tr>
+<td>T(24, 8192, 16)</td>
+<td>13 亿（深型）</td>
+<td>4</td>
+</tr>
+<tr>
+<td>T(32, 16384, 32)</td>
+<td>30 亿</td>
+<td>8</td>
+</tr>
+<tr>
+<td>T(64, 16384, 32)</td>
+<td>60 亿</td>
+<td>16</td>
+</tr>
+</tbody>
+</table>
+<p><strong>核心发现：</strong></p>
+<p><strong>发现一：规模扩大持续提升质量。</strong> 从 4 亿到 60 亿参数，所有 102 种语言的翻译质量都在提升。</p>
+<p><strong>发现二：深度 vs. 宽度的权衡。</strong> 同为 13 亿参数，深型模型 T(24, 8192, 16) 在低资源语言上显著优于宽型模型 T(12, 16384, 32)，而在高资源语言上两者表现接近。这表明<strong>深度有利于泛化和知识迁移</strong>，而宽度主要增加单任务容量。</p>
+<p><strong>发现三：低资源语言受益最大。</strong> 60 亿参数的单一多语言模型在所有 100+ 语言对上都超过了单独训练的 3.5 亿参数双语模型。低资源语言从高资源语言的正向迁移中获益最多。</p>
+<p><strong>发现四：大批量训练有益。</strong> 批量大小从 26 万 token 增加到 400 万 token，BLEU 从 30.92 提升到 32.71，NLL 损失从 2.58 降到 2.46（表 5）。</p>
+<h3 id="深层模型的训练稳定性挑战">深层模型的训练稳定性挑战</h3>
+<p>论文坦诚地讨论了训练非常深的模型时遇到的不稳定性问题，这对实践者极有价值：</p>
+<p><strong>问题一：尖锐的激活值。</strong> 训练几千步后，模型预测变得极度&quot;尖锐&quot;（高置信度、低熵），使模型对噪声非常脆弱。</p>
+<p><strong>问题二：梯度爆炸。</strong> 尖锐的预测导致巨大或非有限的梯度，最终破坏训练进度。</p>
+<p><strong>解决方案：</strong></p>
+<ul>
+<li><strong>缩放初始化</strong>（Zhang 等，2019）：将前馈层的初始化按层数 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi></mrow><annotation encoding="application/x-tex">L</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">L</span></span></span></span> 缩小。</li>
+<li><strong>Logit 裁剪</strong>：当 softmax 前的激活值超过阈值时进行裁剪。</li>
+</ul>
+<p>这些实践经验对于任何训练深层 Transformer 的人都非常宝贵。</p>
+<hr>
+<h2 id="与其他方案的详细对比">与其他方案的详细对比</h2>
+<h3 id="GPipe-vs-Mesh-TensorFlow（SPMD）">GPipe vs. Mesh-TensorFlow（SPMD）</h3>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>GPipe</th>
+<th>Mesh-TF</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>并行类型</td>
+<td>流水线（层间）</td>
+<td>张量（层内）</td>
+</tr>
+<tr>
+<td>通信量</td>
+<td>低（仅边界激活）</td>
+<td>高（每个操作后 AllReduce）</td>
+</tr>
+<tr>
+<td>互联要求</td>
+<td>PCI-E 即可</td>
+<td>需要高速互联（NVLink/TPU mesh）</td>
+</tr>
+<tr>
+<td>架构通用性</td>
+<td>任何顺序网络</td>
+<td>需要操作可拆分</td>
+</tr>
+<tr>
+<td>扩展维度</td>
+<td>模型深度（更多层）</td>
+<td>层宽度（更大矩阵）</td>
+</tr>
+<tr>
+<td>实现复杂度</td>
+<td>简单（指定 K、M、层）</td>
+<td>复杂（定义 mesh 拆分方案）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="GPipe-vs-PipeDream">GPipe vs. PipeDream</h3>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>GPipe</th>
+<th>PipeDream</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>梯度更新</td>
+<td>同步</td>
+<td>异步</td>
+</tr>
+<tr>
+<td>权重过时</td>
+<td>无</td>
+<td>存在（通过版本控制缓解）</td>
+</tr>
+<tr>
+<td>额外内存开销</td>
+<td>激活检查点减少内存</td>
+<td>需存储多版本权重</td>
+</tr>
+<tr>
+<td>训练一致性</td>
+<td>保证与单卡一致</td>
+<td>因异步而近似</td>
+</tr>
+<tr>
+<td>气泡处理</td>
+<td>微批次流水线（<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>≫</mo><mi>K</mi></mrow><annotation encoding="application/x-tex">M \gg K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≫</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span>）</td>
+<td>交错前向/反向传播</td>
+</tr>
+</tbody>
+</table>
+<p>GPipe 的同步方案用略多的气泡时间换取了训练正确性的绝对保证。PipeDream 的异步方案利用率更高，但引入的梯度过时需要小心处理。</p>
+<h3 id="GPipe-vs-数据并行">GPipe vs. 数据并行</h3>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>GPipe</th>
+<th>数据并行</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>扩展什么？</td>
+<td>模型规模</td>
+<td>训练吞吐量</td>
+</tr>
+<tr>
+<td>能否突破单卡内存？</td>
+<td>能</td>
+<td>不能</td>
+</tr>
+<tr>
+<td>通信量</td>
+<td>小（边界激活）</td>
+<td>大（所有梯度 AllReduce）</td>
+</tr>
+<tr>
+<td>可组合？</td>
+<td>是——两者可以组合</td>
+<td>是——两者可以组合</td>
+</tr>
+</tbody>
+</table>
+<p>在现代实践中，Megatron-LM 和 DeepSpeed 等系统将三者结合：数据并行 + 张量并行 + 流水线并行 = &quot;3D 并行&quot;范式。</p>
+<hr>
+<h2 id="局限性、边界条件与批判分析">局限性、边界条件与批判分析</h2>
+<h3 id="1-单层内存约束">1. 单层内存约束</h3>
+<p>GPipe 假设<strong>每一层都能装进单张加速卡的内存</strong>。如果单层有 200 亿参数（参数 + 优化器状态需要约 240 GB），GPipe 无法单独处理，必须借助张量并行来拆分这一层。这就是为什么现代系统需要同时使用流水线并行和张量并行。</p>
+<h3 id="2-气泡问题并未完全解决">2. 气泡问题并未完全解决</h3>
+<p>虽然 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>≥</mo><mn>4</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">M \geq 4K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8193em;vertical-align:-0.136em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">4</span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span> 时气泡可控，但这一约束可能带来限制：</p>
+<ul>
+<li>全局批量大小必须至少为 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">4K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">4</span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span> 乘以单个微批次的大小，对于某些收敛性对批量大小敏感的任务，这会是个问题。</li>
+<li>气泡随 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span> 线性增长，非常深的流水线（如 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi><mo>=</mo><mn>32</mn></mrow><annotation encoding="application/x-tex">K = 32</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">32</span></span></span></span>）需要极大的 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi></mrow><annotation encoding="application/x-tex">M</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span></span></span></span>。</li>
+<li>后续工作（Megatron-LM 的 1F1B 调度、交错式虚拟流水线等）已提出更优调度策略来进一步减少气泡。</li>
+</ul>
+<h3 id="3-负载不均衡">3. 负载不均衡</h3>
+<p>论文承认 AmoebaNet 的亚线性扩展源于各层计算量不均。GPipe 基于成本估算的分区是启发式的，可能无法完美平衡实际运行时间。现实网络中常见的不均衡来源：</p>
+<ul>
+<li>嵌入层与注意力层的计算量差异大</li>
+<li>注意力层的成本随序列长度变化</li>
+<li>混合专家（MoE）层的专家激活率不固定</li>
+</ul>
+<p>更优的分区算法仍然是开放问题。</p>
+<h3 id="4-微批次大小与-Batch-Normalization-的冲突">4. 微批次大小与 Batch Normalization 的冲突</h3>
+<p>拆成很多微批次意味着每个微批次很小。对于 Batch Normalization 来说，在小微批次上计算的统计量可能噪声很大，影响模型质量。这也是现代大模型普遍使用 LayerNorm（在每个样本内部计算统计量，不受批量大小影响）而非 BatchNorm 的原因之一。</p>
+<h3 id="5-内存节省-vs-计算成本">5. 内存节省 vs. 计算成本</h3>
+<p>激活检查点用重计算换内存，典型开销约增加 33% 的计算时间。论文未精确量化这一开销，但在流水线并行中，部分重计算可以填充气泡时间，实际代价比理论值更小。</p>
+<h3 id="6-容错缺失">6. 容错缺失</h3>
+<p>论文未讨论容错问题。在 128 张 TPU 的规模下，加速器故障是现实威胁。同步训练意味着任何一张设备故障都会阻塞整条流水线。后续系统如 DeepSpeed 通过检查点和弹性训练来应对这个问题。</p>
+<hr>
+<h2 id="历史影响与遗产">历史影响与遗产</h2>
+<p>GPipe 对 ML Systems 领域的影响是巨大的：</p>
+<ol>
+<li>
+<p><strong>Megatron-LM</strong>（2020-2021）：将流水线并行（受 GPipe 启发）与张量并行、数据并行结合为&quot;3D 并行&quot;——这是训练 GPT-3、LLaMA 等大模型的标准方案。</p>
+</li>
+<li>
+<p><strong>DeepSpeed ZeRO</strong>（2020）：虽然主攻数据并行的内存优化，但其流水线并行模块直接建立在 GPipe 的理念之上。</p>
+</li>
+<li>
+<p><strong>PyTorch Pipe</strong>（torch.distributed.pipeline）：PyTorch 官方流水线并行 API 就是 GPipe 设计的直接后代。</p>
+</li>
+<li>
+<p><strong>1F1B 调度</strong>（PipeDream-2BW，2020）：改进了 GPipe 的调度，通过交错前向和反向传播来减少激活累积导致的峰值内存。</p>
+</li>
+<li>
+<p><strong>虚拟流水线并行</strong>（Narayanan 等，2021）：通过给每张卡分配多个不连续的层组来进一步减少气泡。</p>
+</li>
+</ol>
+<p>从 GPipe → Megatron-LM → 现代训练框架的演进脉络非常清晰，正是这条技术路线催生了基础模型（GPT-3、PaLM、LLaMA 等）的时代。</p>
+<hr>
+<h2 id="可复现性评估">可复现性评估</h2>
+<p><strong>可复现性：中等</strong></p>
+<p>有利因素：</p>
+<ul>
+<li>算法描述清晰、相对简单、易于实现。</li>
+<li>在 Lingvo 框架下开源。</li>
+<li>关键超参数（模型架构、批量大小、分区数）都有明确说明。</li>
+</ul>
+<p>挑战：</p>
+<ul>
+<li>ImageNet 实验需要 4+ 张 TPU 和大量计算时间。</li>
+<li>多语言 NMT 实验使用的是 Google 内部私有语料库（25B 样本，102 种语言），公众无法访问。</li>
+<li>部分训练配置细节在补充材料中，但仍依赖内部基础设施。</li>
+</ul>
+<p>对实践者的建议：算法本身从论文描述即可实现。PyTorch 的 <code>torch.distributed.pipeline.sync</code> 本质上就是 GPipe，可以免费使用。</p>
+<hr>
+<h2 id="给从业者的核心建议">给从业者的核心建议</h2>
+<ol>
+<li>
+<p><strong>流水线并行是扩展模型深度的首选</strong>：当模型超出单卡内存时，它比张量并行更简单、通信需求更低。</p>
+</li>
+<li>
+<p><strong>微批次数要足够</strong>：<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>≥</mo><mn>4</mn><mi>K</mi></mrow><annotation encoding="application/x-tex">M \geq 4K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8193em;vertical-align:-0.136em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">4</span><span class="mord mathnormal" style="margin-right:0.07153em;">K</span></span></span></span> 是实践准则。微批次太少 = 气泡浪费严重。</p>
+</li>
+<li>
+<p><strong>与其他策略组合使用</strong>：现代实践中，流水线并行很少独立使用。与数据并行（提速）和张量并行（处理超大单层）组合才是正道。</p>
+</li>
+<li>
+<p><strong>偏好均匀层架构</strong>：流水线并行在各层计算成本相近时效果最好。Transformer 是理想选择；异构架构如 AmoebaNet 更难平衡。</p>
+</li>
+<li>
+<p><strong>激活检查点几乎是&quot;免费&quot;的</strong>：内存节省巨大，计算开销（约 33%）通常可以接受。对于流水线并行，它几乎是必备的。</p>
+</li>
+<li>
+<p><strong>不要害怕慢速互联</strong>：与张量并行不同，流水线并行在分区边界传输小型激活张量，即使没有 NVLink 也能高效运行。</p>
+</li>
+</ol>
+<hr>
+<h2 id="总结">总结</h2>
+<p>GPipe 是那种回头看起来很简单的论文——把 mini-batch 拆成微批次、在模型分区间形成流水线、同步累加梯度——但它产生的实际影响是巨大的。它提供了第一个通用的、架构无关的流水线并行方案，在 128 张 TPU 上训练多达 839 亿参数的模型，且接近线性加速。</p>
+<p>论文的清晰表述、对局限性的诚实讨论（负载不均、Batch Normalization、训练不稳定性）、以及多样的实验验证（图像分类 + 多语言 NMT）使其成为应用型 ML Systems 研究的典范。此后每一个大模型训练系统——Megatron-LM、DeepSpeed、FairScale、PyTorch FSDP——都携带着 GPipe 的基因。</p>
+<p>对于任何从事分布式训练系统的研究者和工程师来说，理解 GPipe 不是可选的，而是必修的。它是现代 3D 并行体系的基石。</p>
+<hr>
+<h2 id="参考文献">参考文献</h2>
+<ol>
+<li>Huang, Y., Cheng, Y., Bapna, A., et al. &quot;GPipe: Easy Scaling with Micro-Batch Pipeline Parallelism.&quot; NeurIPS 2019. arXiv:1811.06965.</li>
+<li>Shazeer, N., et al. &quot;Mesh-TensorFlow: Deep Learning for Supercomputers.&quot; NeurIPS 2018.</li>
+<li>Harlap, A., et al. &quot;PipeDream: Fast and Efficient Pipeline Parallel DNN Training.&quot; arXiv:1806.03377.</li>
+<li>Narayanan, D., et al. &quot;Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM.&quot; SC 2021.</li>
+<li>Rajbhandari, S., et al. &quot;ZeRO: Memory Optimizations Toward Training Trillion Parameter Models.&quot; SC 2020.</li>
+<li>Chen, T., et al. &quot;Training Deep Nets with Sublinear Memory Cost.&quot; arXiv:1604.06174.</li>
+<li>Vaswani, A., et al. &quot;Attention Is All You Need.&quot; NeurIPS 2017.</li>
+<li>Real, E., et al. &quot;Regularized Evolution for Image Classifier Architecture Search.&quot; AAAI 2019.</li>
+<li>Narayanan, D., et al. &quot;Memory-Efficient Pipeline-Parallel DNN Training.&quot; ICML 2021 (PipeDream-2BW).</li>
+<li>Zhang, H., Dauphin, Y.N., Ma, T. &quot;Fixup Initialization: Residual Learning Without Normalization.&quot; ICLR 2019.</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Deep-Learning/" rel="tag"># Deep Learning</a>
+              <a href="/tags/Distributed-Training/" rel="tag"># Distributed Training</a>
+              <a href="/tags/Model-Parallelism/" rel="tag"># Model Parallelism</a>
+              <a href="/tags/Pipeline-Parallelism/" rel="tag"># Pipeline Parallelism</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/02/2026-04-02-GPipe-technical-review-en/" rel="prev" title="GPipe: Easy Scaling with Micro-Batch Pipeline Parallelism — In-Depth Technical Review">
+      <i class="fa fa-chevron-left"></i> GPipe: Easy Scaling with Micro-Batch Pipeline Parallelism — In-Depth Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/03/2026-04-03-AWQ-technical-review-en/" rel="next" title="AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration — In-Depth Technical Review">
+      AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration — In-Depth Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#技术评审：流水线并行如何让巨型神经网络训练成为可能"><span class="nav-number">1.</span> <span class="nav-text">技术评审：流水线并行如何让巨型神经网络训练成为可能</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#核心摘要与贡献"><span class="nav-number">2.</span> <span class="nav-text">核心摘要与贡献</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#预备知识：从零理解-GPipe"><span class="nav-number">3.</span> <span class="nav-text">预备知识：从零理解 GPipe</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-为什么模型越大效果越好？"><span class="nav-number">3.1.</span> <span class="nav-text">1. 为什么模型越大效果越好？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-显存墙-问题：为什么单卡装不下大模型？"><span class="nav-number">3.2.</span> <span class="nav-text">2. &quot;显存墙&quot;问题：为什么单卡装不下大模型？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-数据并行：简单但有天花板"><span class="nav-number">3.3.</span> <span class="nav-text">3. 数据并行：简单但有天花板</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-模型并行：将模型本身拆开"><span class="nav-number">3.4.</span> <span class="nav-text">4. 模型并行：将模型本身拆开</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#4a-张量并行（Tensor-Parallelism-SPMD-层内并行）"><span class="nav-number">3.4.1.</span> <span class="nav-text">4a. 张量并行（Tensor Parallelism &#x2F; SPMD &#x2F; 层内并行）</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#4b-流水线并行（Pipeline-Parallelism-层间并行）"><span class="nav-number">3.4.2.</span> <span class="nav-text">4b. 流水线并行（Pipeline Parallelism &#x2F; 层间并行）</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-激活检查点技术（Re-materialization）"><span class="nav-number">3.5.</span> <span class="nav-text">5. 激活检查点技术（Re-materialization）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-同步-vs-异步梯度更新"><span class="nav-number">3.6.</span> <span class="nav-text">6. 同步 vs. 异步梯度更新</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#GPipe-算法详解"><span class="nav-number">4.</span> <span class="nav-text">GPipe 算法详解</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#极简接口设计"><span class="nav-number">4.1.</span> <span class="nav-text">极简接口设计</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#流水线执行的完整流程"><span class="nav-number">4.2.</span> <span class="nav-text">流水线执行的完整流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#气泡开销的定量分析"><span class="nav-number">4.3.</span> <span class="nav-text">气泡开销的定量分析</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Batch-Normalization-的特殊处理"><span class="nav-number">4.4.</span> <span class="nav-text">Batch Normalization 的特殊处理</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#实验结果深度分析"><span class="nav-number">5.</span> <span class="nav-text">实验结果深度分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#实验一：模型规模扩展能力（表-1）"><span class="nav-number">5.1.</span> <span class="nav-text">实验一：模型规模扩展能力（表 1）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#实验二：训练吞吐量（表-2）"><span class="nav-number">5.2.</span> <span class="nav-text">实验二：训练吞吐量（表 2）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#实验三：低带宽互联下的性能（表-3）"><span class="nav-number">5.3.</span> <span class="nav-text">实验三：低带宽互联下的性能（表 3）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#实验四：ImageNet-图像分类（表-4）"><span class="nav-number">5.4.</span> <span class="nav-text">实验四：ImageNet 图像分类（表 4）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#实验五：大规模多语言机器翻译"><span class="nav-number">5.5.</span> <span class="nav-text">实验五：大规模多语言机器翻译</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#深层模型的训练稳定性挑战"><span class="nav-number">5.6.</span> <span class="nav-text">深层模型的训练稳定性挑战</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#与其他方案的详细对比"><span class="nav-number">6.</span> <span class="nav-text">与其他方案的详细对比</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#GPipe-vs-Mesh-TensorFlow（SPMD）"><span class="nav-number">6.1.</span> <span class="nav-text">GPipe vs. Mesh-TensorFlow（SPMD）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#GPipe-vs-PipeDream"><span class="nav-number">6.2.</span> <span class="nav-text">GPipe vs. PipeDream</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#GPipe-vs-数据并行"><span class="nav-number">6.3.</span> <span class="nav-text">GPipe vs. 数据并行</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#局限性、边界条件与批判分析"><span class="nav-number">7.</span> <span class="nav-text">局限性、边界条件与批判分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-单层内存约束"><span class="nav-number">7.1.</span> <span class="nav-text">1. 单层内存约束</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-气泡问题并未完全解决"><span class="nav-number">7.2.</span> <span class="nav-text">2. 气泡问题并未完全解决</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-负载不均衡"><span class="nav-number">7.3.</span> <span class="nav-text">3. 负载不均衡</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-微批次大小与-Batch-Normalization-的冲突"><span class="nav-number">7.4.</span> <span class="nav-text">4. 微批次大小与 Batch Normalization 的冲突</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-内存节省-vs-计算成本"><span class="nav-number">7.5.</span> <span class="nav-text">5. 内存节省 vs. 计算成本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-容错缺失"><span class="nav-number">7.6.</span> <span class="nav-text">6. 容错缺失</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#历史影响与遗产"><span class="nav-number">8.</span> <span class="nav-text">历史影响与遗产</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#可复现性评估"><span class="nav-number">9.</span> <span class="nav-text">可复现性评估</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#给从业者的核心建议"><span class="nav-number">10.</span> <span class="nav-text">给从业者的核心建议</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#总结"><span class="nav-number">11.</span> <span class="nav-text">总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#参考文献"><span class="nav-number">12.</span> <span class="nav-text">参考文献</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

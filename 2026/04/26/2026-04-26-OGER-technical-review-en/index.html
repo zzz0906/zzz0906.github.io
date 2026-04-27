@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. Executive Summary OGER (Offline-Guided Exploration Reward) introduces a novel framework for enhancing Large Language Model (LLM) reasoning by seamlessly integrating offline teacher trajectories wit">
+<meta property="og:type" content="article">
+<meta property="og:title" content="---">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/26/2026-04-26-OGER-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. Executive Summary OGER (Offline-Guided Exploration Reward) introduces a novel framework for enhancing Large Language Model (LLM) reasoning by seamlessly integrating offline teacher trajectories wit">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-26T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-27T14:18:45.698Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="OGER">
+<meta property="article:tag" content="Offline RL">
+<meta property="article:tag" content="Exploration Reward">
+<meta property="article:tag" content="Hybrid RL">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/26/2026-04-26-OGER-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>--- | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/26/2026-04-26-OGER-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          ---
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-26 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-26T00:00:00+00:00">2026-04-26</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-27 14:18:45" itemprop="dateModified" datetime="2026-04-27T14:18:45+00:00">2026-04-27</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/RL-Training/" itemprop="url" rel="index"><span itemprop="name">RL Training</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-Executive-Summary">1. Executive Summary</h2>
+<p>OGER (Offline-Guided Exploration Reward) introduces a novel framework for enhancing Large Language Model (LLM) reasoning by seamlessly integrating offline teacher trajectories with online reinforcement learning. The key innovation lies in positioning offline data as a semantic reference point for computing auxiliary exploration rewards, rather than treating it as additional training samples.</p>
+<p>The framework addresses critical limitations in current RLVR (Reinforcement Learning with Verifiable Rewards) approaches: the &quot;echo chamber&quot; effect where models converge to dominant pre-existing distributions, and entropy collapse that prevents novel solution discovery. By computing divergence-based exploration rewards and refining them through entropy-aware modulation, OGER achieves 4-7.9% improvements across mathematical and general reasoning benchmarks.</p>
+<hr>
+<a id="more"></a>
+<h2 id="2-What-This-Paper-Does">2. What This Paper Does</h2>
+<p>OGER tackles a fundamental problem in modern LLM training: models trained with standard RLVR approaches often amplify pre-existing capabilities rather than discovering genuinely novel problem-solving strategies.</p>
+<p><strong>Core Problem:</strong>
+When LLMs undergo reinforcement learning for reasoning tasks, they tend to converge rapidly toward the dominant reasoning patterns present in their training data. This creates what researchers call an &quot;echo chamber&quot; effect - the model explores a narrow slice of the solution space and reinforces iterative improvements within that slice, rather than discovering fundamentally different approaches.</p>
+<p><strong>OGER's Solution:</strong>
+Rather than treating offline teacher trajectories as static training data (as in standard imitation learning), OGER employs them as a dynamic reference framework for computing exploration rewards. The method works through three integrated mechanisms:</p>
+<ol>
+<li><strong>Semantic Divergence Computation:</strong> Embedding online and offline trajectories in a shared latent space, then computing similarity scores</li>
+<li><strong>Entropy-Aware Reward Refinement:</strong> Using model confidence (measured by token-level entropy) to modulate exploration intensity</li>
+<li><strong>Hybrid Sampling Strategy:</strong> Maintaining a balanced mixture of online and offline trajectories during training</li>
+</ol>
+<p>The result is a principled exploration mechanism that encourages the model to venture into reasoning territory that differs from teacher demonstrations while maintaining training stability through entropy constraints.</p>
+<hr>
+<h2 id="3-Prerequisite-Knowledge">3. Prerequisite Knowledge</h2>
+<h3 id="3-1-Core-Concepts-Required">3.1 Core Concepts Required</h3>
+<p><strong>Reinforcement Learning Fundamentals:</strong></p>
+<ul>
+<li>Policy π(a|s): Probability distribution over actions given state</li>
+<li>Reward function R(s,a): Immediate scalar feedback for transitions</li>
+<li>Value functions: V(s) and Q(s,a) representing expected cumulative returns</li>
+<li>Policy gradient methods: Updating parameters to maximize J(θ) = E_π[Σγ^t r_t]</li>
+<li>Importance sampling: Computing expectations under one distribution using samples from another</li>
+</ul>
+<p><strong>RLVR Paradigm (Reinforcement Learning with Verifiable Rewards):</strong></p>
+<ul>
+<li>Applies RL to domains where correctness can be automatically verified (math, logic)</li>
+<li>Provides sparse binary rewards: 1 for correct solutions, 0 otherwise</li>
+<li>Requires trajectory sampling followed by verification</li>
+<li>Exemplified by DeepSeek-R1 which uses RLVR for extended reasoning</li>
+</ul>
+<p><strong>GRPO Algorithm (Group Relative Policy Optimization):</strong></p>
+<ul>
+<li>State-of-the-art RL method for LLM training</li>
+<li>Computes advantages relative to group statistics (not baseline)</li>
+<li>Uses importance-weighted clipping for stability</li>
+<li>Forms the optimization backbone that OGER builds upon</li>
+</ul>
+<p><strong>Advanced Topics:</strong></p>
+<ul>
+<li>Entropy and its measurement in probability distributions</li>
+<li>Divergence metrics: KL divergence, cosine similarity in embedding spaces</li>
+<li>Semantic similarity via learned representations</li>
+<li>Trajectory embedding and latent space geometry</li>
+</ul>
+<h3 id="3-2-The-Problem-with-Echo-Chamber-Effect">3.2 The Problem with &quot;Echo Chamber Effect&quot;</h3>
+<p>When LLMs undergo RL training without careful guidance, they exhibit what researchers call the echo chamber effect. This manifests as:</p>
+<ol>
+<li>
+<p><strong>Narrow Solution Space Exploration:</strong> The model discovers one or two working solutions and iteratively improves within that narrow space, missing fundamentally different approaches.</p>
+</li>
+<li>
+<p><strong>Convergence to Local Optima:</strong> Standard RL converges to local optima within the model's initial solution distribution, rather than discovering global improvements.</p>
+</li>
+<li>
+<p><strong>Reduced Generalization:</strong> By overspecializing to narrow solution patterns, the model generalizes poorly to problems with different structures.</p>
+</li>
+<li>
+<p><strong>Entropy Collapse:</strong> Policy entropy drops rapidly (from ~6 bits to ~1 bit within 5K training iterations), leaving no room for exploration.</p>
+</li>
+</ol>
+<p>Examples:</p>
+<ul>
+<li>Math problem: Model learns one calculation method (e.g., approach A), then refines it. Never discovers equally-valid alternative method B that would work better for subclass of problems.</li>
+<li>Logic puzzle: Model settles on one reasoning pattern and sticks with it, missing more elegant approaches.</li>
+<li>General reasoning: Model learns to output &quot;correct-looking&quot; reasoning, not necessarily diverse reasoning.</li>
+</ul>
+<h3 id="3-3-Motivation-for-Integrated-Approach">3.3 Motivation for Integrated Approach</h3>
+<p>Previous work has explored two separate directions:</p>
+<p><strong>Offline Guidance Approaches:</strong></p>
+<ul>
+<li>Luffy (Yan et al., 2025): Uses teacher trajectories as demonstrations</li>
+<li>Chord (Zhang et al., 2025a): Implements sophisticated trajectory filtering</li>
+<li><strong>Strength:</strong> Leverage high-quality expert demonstrations</li>
+<li><strong>Weakness:</strong> Often treat offline data as static; lack deep online-offline integration</li>
+</ul>
+<p><strong>Entropy-Based Regularization:</strong></p>
+<ul>
+<li>Entropy maximization: Keep policy exploration high</li>
+<li>Token-level entropy tracking: Monitor per-position uncertainty</li>
+<li>Entropy-aware advantage shaping: Weight advantages by uncertainty</li>
+<li><strong>Strength:</strong> Theoretically motivated, prevents mode collapse</li>
+<li><strong>Weakness:</strong> Limited by model capacity; doesn't exploit offline knowledge</li>
+</ul>
+<p>OGER's innovation is unifying these approaches through reward modeling, creating a synergistic combination where offline guidance informs exploration while entropy-aware refinement maintains stability.</p>
+<hr>
+<h2 id="4-Core-Technical-Contributions">4. Core Technical Contributions</h2>
+<h3 id="4-1-Trajectory-Embedding-and-Similarity-Framework">4.1 Trajectory Embedding and Similarity Framework</h3>
+<p><strong>The Embedding Space:</strong>
+OGER constructs a shared embedding space where both online and offline trajectories can be compared semantically. This is more sophisticated than simple string similarity:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">For trajectory τ and encoder Enc:</span><br><span class="line">τ_embedded &#x3D; Enc(concat([reasoning_steps, intermediate_results, final_answer]))</span><br></pre></td></tr></table></figure>
+<p>The encoder (typically a lightweight transformer) learns to capture semantic meaning rather than surface-level similarity.</p>
+<p><strong>Similarity Computation:</strong>
+For each online trajectory τ_i^on and offline trajectory τ_j^off:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">s_&#123;i,j&#125; &#x3D; cos_similarity(Enc(τ_i^on), Enc(τ_j^off))</span><br><span class="line">         &#x3D; (Enc(τ_i^on) · Enc(τ_j^off)) &#x2F; (||Enc(τ_i^on)|| · ||Enc(τ_j^off)||)</span><br></pre></td></tr></table></figure>
+<p>Averaging across M teacher trajectories:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sim_i &#x3D; (1&#x2F;M) Σ_&#123;j&#x3D;1&#125;^M s_&#123;i,j&#125;</span><br></pre></td></tr></table></figure>
+<p>This average similarity reflects how much the online model's trajectory mimics the teacher distribution.</p>
+<p><strong>Divergence as Exploration Signal:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">D_i &#x3D; 1 - sim_i  ∈ [0, 1]</span><br></pre></td></tr></table></figure>
+<p>Key insight: Trajectories most different from teachers receive highest exploration incentives. Trajectories similar to teachers receive low incentives, preventing redundant imitation.</p>
+<h3 id="4-2-Entropy-Aware-Reward-Modulation">4.2 Entropy-Aware Reward Modulation</h3>
+<p><strong>Theoretical Motivation:</strong>
+Model entropy reflects aleatoric (data) uncertainty. High entropy suggests the model is uncertain about its predictions; low entropy suggests confidence. By using entropy to modulate exploration:</p>
+<ul>
+<li>Confident, diverse trajectories → amplify exploration bonus</li>
+<li>Uncertain, diverse trajectories → dampen exploration bonus</li>
+</ul>
+<p><strong>Mathematical Formulation:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">H_i^last &#x3D; -Σ_&#123;v∈V&#125; p_v log p_v</span><br></pre></td></tr></table></figure>
+<p>where p_v is the probability of token v at the final token position.</p>
+<p><strong>Entropy-Weighted Exploration Reward:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">R_i^OGER &#x3D; D_i · exp(-H_i^last) · R_i^m</span><br><span class="line">         &#x3D; (1 - sim_i) · exp(-H_i^last) · R_i^m</span><br></pre></td></tr></table></figure>
+<p><strong>Why This Form Works:</strong></p>
+<ol>
+<li>
+<p><strong>Exponential Decay:</strong> As entropy increases, the coefficient decreases exponentially</p>
+<ul>
+<li>H=0 (zero entropy, 100% confidence) → exp(0) = 1.0 → full exploration bonus</li>
+<li>H=1.0 (moderate entropy) → exp(-1.0) ≈ 0.37 → ~37% of exploration bonus</li>
+<li>H=5.0 (high entropy) → exp(-5.0) ≈ 0.007 → ~0.7% of exploration bonus</li>
+</ul>
+</li>
+<li>
+<p><strong>Conservative Exploration:</strong> Prevents the model from exploring wildly in low-confidence regions</p>
+</li>
+<li>
+<p><strong>Interaction with Divergence:</strong> Only diverse AND confident trajectories get strong rewards</p>
+</li>
+</ol>
+<h3 id="4-3-Hybrid-Sampling-Mechanism">4.3 Hybrid Sampling Mechanism</h3>
+<p><strong>Practical Training Procedure:</strong>
+For each training iteration:</p>
+<ol>
+<li>Sample N trajectories from the online policy</li>
+<li>Embed all N online trajectories</li>
+<li>Compute divergence D_i for each online trajectory</li>
+<li>Identify the trajectory with minimum divergence (most &quot;teacher-like&quot;)</li>
+<li>Replace it with a random sample from the offline dataset</li>
+<li>This creates hybrid batch T_hyb of size N</li>
+</ol>
+<p><strong>Why Replace Rather Than Mix:</strong></p>
+<ul>
+<li><strong>Prevents Data Imbalance:</strong> Keeps batch size constant at N</li>
+<li><strong>Diversity:</strong> Ensures fresh offline data rather than repetition</li>
+<li><strong>Stability:</strong> Maintains training stability by controlling ratios</li>
+<li><strong>Interpretability:</strong> Clear mechanism for offline-online integration</li>
+</ul>
+<p><strong>Gated Reward Composition:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">R_i^total &#x3D; &#123;</span><br><span class="line">    R_i^m + R_i^OGER,   if τ_i ∈ T_on (online trajectory)</span><br><span class="line">    R_i^m,               if τ_i ∈ T_off (offline trajectory)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>Critical Design Decision:</strong>
+Exploration rewards R^OGER apply ONLY to online trajectories. Offline teacher trajectories use standard verifiable rewards only. This separation prevents:</p>
+<ul>
+<li>Noise injection into teacher demonstrations</li>
+<li>Conflicting signals from teacher + exploration</li>
+<li>Overfitting to offline diversity patterns</li>
+</ul>
+<h3 id="4-4-Integration-with-GRPO-Optimization">4.4 Integration with GRPO Optimization</h3>
+<p><strong>Group-Relative Advantage:</strong>
+Unlike standard RL that uses baseline estimates, GRPO computes advantages relative to group statistics:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">A_i &#x3D; (R_i^total - mean_group) &#x2F; std_group</span><br></pre></td></tr></table></figure>
+<p>This normalization:</p>
+<ul>
+<li>Reduces variance in advantage estimates</li>
+<li>Makes training more stable with small batch sizes</li>
+<li>Provides fairer comparison within the batch</li>
+</ul>
+<p><strong>Policy Update:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">L_GRPO(θ) &#x3D; (1&#x2F;(Σ_i |τ_i|)) Σ_i Σ_t min(r_&#123;i,t&#125;(θ)A_i, clip(r_&#123;i,t&#125;(θ), 1-ε, 1+ε)A_i)</span><br></pre></td></tr></table></figure>
+<p>where r_{i,t}(θ) = π_θ(a_t|s_t) / π_θ_old(a_t|s_t) is the importance weight.</p>
+<p><strong>KL Divergence Treatment:</strong>
+The paper omits the traditional KL penalty:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">NOT using: L_KL &#x3D; β D_KL[π_θ || π_ref]</span><br></pre></td></tr></table></figure>
+<p>Rationale: With robust advantage normalization and intrinsic exploration rewards, KL becomes redundant and can hinder exploration.</p>
+<h3 id="4-5-Multi-Teacher-Collaborative-Training">4.5 Multi-Teacher Collaborative Training</h3>
+<p><strong>Offline Dataset Composition:</strong>
+OGER leverages trajectories from multiple state-of-the-art teacher models:</p>
+<table>
+<thead>
+<tr>
+<th>Teacher Model</th>
+<th>Samples</th>
+<th>Avg Length</th>
+<th>Accuracy</th>
+<th>Reasoning Style</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DeepSeek-R1</td>
+<td>45,462</td>
+<td>4,021 tokens</td>
+<td>99.28%</td>
+<td>Direct, efficient</td>
+</tr>
+<tr>
+<td>Qwen-3-32B</td>
+<td>36,958</td>
+<td>5,252 tokens</td>
+<td>94.90%</td>
+<td>Exploratory, detailed</td>
+</tr>
+<tr>
+<td>GLM-4.5 Air</td>
+<td>17,887</td>
+<td>10,318 tokens</td>
+<td>82.14%</td>
+<td>Verbose, thorough</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Diversity Benefits:</strong></p>
+<ul>
+<li>Different teachers exhibit different reasoning patterns</li>
+<li>DeepSeek-R1: Concise, direct approaches to solutions</li>
+<li>Qwen: More exploratory with intermediate thoughts</li>
+<li>GLM: Very detailed reasoning with extensive intermediate steps</li>
+</ul>
+<p><strong>Divergence Computation Implications:</strong></p>
+<ul>
+<li>Online model forced to explore relative to multiple reference distributions</li>
+<li>Cannot simply replicate one teacher; must discover novel patterns</li>
+<li>Richer semantic reference space for divergence calculation</li>
+</ul>
+<hr>
+<h2 id="5-Experimental-Evaluation">5. Experimental Evaluation</h2>
+<h3 id="5-1-Evaluation-Setup">5.1 Evaluation Setup</h3>
+<p><strong>Test Harness:</strong></p>
+<ul>
+<li>Mathematical Reasoning: MATH-500 (diverse math olympiad problems)</li>
+<li>Mathematical Reasoning: GSM8K (grade school math)</li>
+<li>General Reasoning: MMLU (multiple choice across domains)</li>
+<li>General Reasoning: ARC-Challenge (science questions)</li>
+<li>General Reasoning: CommonsenseQA (commonsense reasoning)</li>
+</ul>
+<p><strong>Model Scales:</strong></p>
+<ul>
+<li>1.5B parameter model: Small, efficient, good for edge deployment</li>
+<li>7B parameter model: Medium-scale, good balance of capability and efficiency</li>
+</ul>
+<p><strong>Baseline Comparisons:</strong></p>
+<ol>
+<li><strong>Vanilla GRPO:</strong> No offline guidance, baseline RL approach</li>
+<li><strong>SFT-only:</strong> Supervised fine-tuning on teacher trajectories</li>
+<li><strong>Standard Offline RL:</strong> CQL-style conservative offline learning</li>
+<li><strong>Entropy-Driven Baseline:</strong> Pure entropy regularization without offline data</li>
+<li><strong>Data-Mixing Baselines:</strong> Simple mixing of offline and online samples</li>
+<li><strong>Offline Imitation:</strong> Methods like Luffy that leverage offline data differently</li>
+</ol>
+<h3 id="5-2-Main-Results">5.2 Main Results</h3>
+<p><strong>Mathematical Reasoning Performance:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>MATH-500 (1.5B)</th>
+<th>MATH-500 (7B)</th>
+<th>GSM8K (1.5B)</th>
+<th>GSM8K (7B)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Vanilla GRPO</td>
+<td>32.5%</td>
+<td>48.2%</td>
+<td>58.3%</td>
+<td>71.4%</td>
+</tr>
+<tr>
+<td>SFT-only</td>
+<td>35.2%</td>
+<td>50.1%</td>
+<td>61.5%</td>
+<td>73.2%</td>
+</tr>
+<tr>
+<td>Entropy-Driven</td>
+<td>36.1%</td>
+<td>51.3%</td>
+<td>62.8%</td>
+<td>74.1%</td>
+</tr>
+<tr>
+<td>Offline Imitation</td>
+<td>37.4%</td>
+<td>52.5%</td>
+<td>64.2%</td>
+<td>75.3%</td>
+</tr>
+<tr>
+<td><strong>OGER</strong></td>
+<td><strong>39.8%</strong></td>
+<td><strong>54.2%</strong></td>
+<td><strong>67.1%</strong></td>
+<td><strong>76.8%</strong></td>
+</tr>
+<tr>
+<td><strong>OGER Gain</strong></td>
+<td><strong>+7.3pp</strong></td>
+<td><strong>+6.0pp</strong></td>
+<td><strong>+8.8pp</strong></td>
+<td><strong>+5.4pp</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>General Reasoning Performance:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>MMLU (1.5B)</th>
+<th>MMLU (7B)</th>
+<th>ARC (1.5B)</th>
+<th>CommonsenseQA (1.5B)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Vanilla GRPO</td>
+<td>42.1%</td>
+<td>58.5%</td>
+<td>51.2%</td>
+<td>62.3%</td>
+</tr>
+<tr>
+<td>Entropy-Driven</td>
+<td>43.8%</td>
+<td>59.7%</td>
+<td>52.1%</td>
+<td>63.5%</td>
+</tr>
+<tr>
+<td><strong>OGER</strong></td>
+<td><strong>45.3%</strong></td>
+<td><strong>61.2%</strong></td>
+<td><strong>54.7%</strong></td>
+<td><strong>66.8%</strong></td>
+</tr>
+<tr>
+<td><strong>OGER Gain</strong></td>
+<td><strong>+3.2pp</strong></td>
+<td><strong>+2.7pp</strong></td>
+<td><strong>+3.5pp</strong></td>
+<td><strong>+4.5pp</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key Observations:</strong></p>
+<ol>
+<li><strong>Consistent Gains:</strong> OGER improves on all benchmarks tested</li>
+<li><strong>Larger Benefits for Math:</strong> 4-7.3pp improvements on mathematical reasoning</li>
+<li><strong>Robust to Scale:</strong> Works for both 1.5B and 7B models</li>
+<li><strong>Synergistic Effect:</strong> Outperforms individual offline or online approaches</li>
+</ol>
+<h3 id="5-3-Training-Dynamics-and-Convergence-Analysis">5.3 Training Dynamics and Convergence Analysis</h3>
+<p><strong>Score Evolution During Training:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Iteration 0:     Score ≈ 32% (vanilla GRPO baseline)</span><br><span class="line">Iteration 1K:    Score ≈ 38% (rapid initial improvement)</span><br><span class="line">Iteration 5K:    Score ≈ 45% (steady improvement)</span><br><span class="line">Iteration 10K:   Score ≈ 48% (approaching saturation)</span><br><span class="line">Iteration 20K:   Score ≈ 50% (fine-tuning regime)</span><br></pre></td></tr></table></figure>
+<p>Compared to baseline GRPO:</p>
+<ul>
+<li>OGER shows faster convergence in early training (Iterations 0-1K)</li>
+<li>Maintains momentum longer (Iterations 1K-10K)</li>
+<li>Reaches higher plateau (Iterations 10K+)</li>
+</ul>
+<p><strong>Entropy Evolution:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">GRPO Baseline Entropy:</span><br><span class="line">Iteration 0:     H ≈ 6.2 (high initial entropy)</span><br><span class="line">Iteration 1K:    H ≈ 4.1 (rapid collapse)</span><br><span class="line">Iteration 5K:    H ≈ 2.3 (severe collapse)</span><br><span class="line">Iteration 20K:   H ≈ 1.1 (minimal exploration)</span><br><span class="line"></span><br><span class="line">OGER Entropy:</span><br><span class="line">Iteration 0:     H ≈ 6.2 (same baseline)</span><br><span class="line">Iteration 1K:    H ≈ 5.8 (gradual decrease)</span><br><span class="line">Iteration 5K:    H ≈ 4.5 (controlled decrease)</span><br><span class="line">Iteration 20K:   H ≈ 3.2 (maintains exploration)</span><br></pre></td></tr></table></figure>
+<p><strong>Interpretation:</strong> OGER prevents entropy collapse, maintaining 2-3x higher entropy than baseline. This enables continued discovery of new reasoning patterns.</p>
+<p><strong>Divergence Pattern:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">OGER Divergence Values:</span><br><span class="line">Iteration 0:     D ≈ 0.72 (high initial divergence)</span><br><span class="line">Iteration 5K:    D ≈ 0.48 (moderate divergence)</span><br><span class="line">Iteration 10K:   D ≈ 0.35 (controlled divergence)</span><br><span class="line">Iteration 20K:   D ≈ 0.28 (stable low divergence)</span><br></pre></td></tr></table></figure>
+<p><strong>Three-Phase Training Pattern:</strong></p>
+<ol>
+<li><strong>Exploration Phase (0-2K iter):</strong> High D values, model tries diverse strategies</li>
+<li><strong>Consolidation Phase (2K-10K iter):</strong> D decreases, model focuses on effective directions</li>
+<li><strong>Refinement Phase (10K+ iter):</strong> Low stable D, fine-tuning within effective regions</li>
+</ol>
+<h3 id="5-4-Ablation-Studies">5.4 Ablation Studies</h3>
+<p><strong>Component-Level Contributions:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Removed</th>
+<th>Accuracy Drop</th>
+<th>% of Total Gain</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Divergence Reward (D_i)</td>
+<td>-</td>
+<td>-2.1%</td>
+<td>52%</td>
+</tr>
+<tr>
+<td>Entropy Modulation (exp(-H))</td>
+<td>-</td>
+<td>-1.8%</td>
+<td>45%</td>
+</tr>
+<tr>
+<td>Multi-Teacher Training</td>
+<td>Single teacher</td>
+<td>-1.5%</td>
+<td>37%</td>
+</tr>
+<tr>
+<td>Trajectory Replacement</td>
+<td>Pure mixing</td>
+<td>-0.8%</td>
+<td>20%</td>
+</tr>
+<tr>
+<td><strong>Full OGER</strong></td>
+<td>-</td>
+<td><strong>+4.0%</strong></td>
+<td>100%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Individual Component Performance:</strong></p>
+<ol>
+<li><strong>Divergence Reward Alone:</strong> +2.1% (strong signal)</li>
+<li><strong>Entropy Modulation Alone:</strong> +1.8% (prevents erratic exploration)</li>
+<li><strong>Multi-Teacher Alone:</strong> +1.5% (diverse references matter)</li>
+<li><strong>Trajectory Replacement Alone:</strong> +0.8% (maintains stability)</li>
+</ol>
+<p><strong>Non-Additive Gains:</strong> 2.1 + 1.8 + 1.5 + 0.8 = 6.2% &gt; 4.0% total</p>
+<ul>
+<li>Indicates negative interaction: Components partially overlap</li>
+<li>Optimal combination selects most effective aspects</li>
+<li>Integration creates efficiency gains</li>
+</ul>
+<h3 id="5-5-Sensitivity-Analyses">5.5 Sensitivity Analyses</h3>
+<p><strong>Offline Data Quality Impact:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">Offline Accuracy → OGER Improvement</span><br><span class="line">99% (High quality)     → +4.2%</span><br><span class="line">95% (Good quality)     → +3.8%</span><br><span class="line">90% (Acceptable)       → +3.1%</span><br><span class="line">80% (Low quality)      → +1.9%</span><br><span class="line">70% (Very low)         → +0.6%</span><br></pre></td></tr></table></figure>
+<p><strong>Interpretation:</strong> OGER's effectiveness degrades gracefully with offline data quality, maintaining benefits even with mediocre offline sources.</p>
+<p><strong>Number of Offline Teachers:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Teachers → OGER Improvement → Diversity Score</span><br><span class="line">1         → +2.1%           → Low</span><br><span class="line">2         → +3.2%           → Medium</span><br><span class="line">3         → +3.9%           → High</span><br><span class="line">4+        → +4.1%           → Very High (diminishing returns)</span><br></pre></td></tr></table></figure>
+<p><strong>Batch Size Effects:</strong></p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Batch Size → Computational Cost → Performance</span><br><span class="line">32         → 1.0x baseline     → +3.8%</span><br><span class="line">64         → 1.2x baseline     → +4.0%</span><br><span class="line">128        → 1.5x baseline     → +4.1%</span><br><span class="line">256        → 2.1x baseline     → +4.2%</span><br></pre></td></tr></table></figure>
+<p>Larger batches improve performance but with diminishing returns and increased cost.</p>
+<hr>
+<h2 id="6-Limitations-and-Open-Questions">6. Limitations and Open Questions</h2>
+<h3 id="6-1-Computational-Overhead">6.1 Computational Overhead</h3>
+<p><strong>Analysis:</strong></p>
+<ul>
+<li>Embedding computation: O(NM) similarity scores</li>
+<li>Encoder forward passes: O(N+M) trajectories</li>
+<li>Memory for embeddings: (N+M)×d×4 bytes</li>
+<li><strong>Typical overhead:</strong> 15-30% additional training time</li>
+</ul>
+<p>For practical scales (N=64, M=32, d=768):</p>
+<ul>
+<li>Similarity matrix: 64×32 = 2,048 scores</li>
+<li>Embedding storage: 96×768×4 ≈ 300 KB</li>
+<li>Additional forward pass: ~100 ms on modern GPUs</li>
+</ul>
+<h3 id="6-2-Offline-Data-Dependency">6.2 Offline Data Dependency</h3>
+<p><strong>Critical Dependency:</strong>
+OGER's effectiveness hinges on having high-quality offline demonstrations. In domains without good teachers:</p>
+<ul>
+<li>Divergence signal becomes noisy</li>
+<li>Entropy weighting alone insufficient</li>
+<li>May underperform compared to pure online RL</li>
+</ul>
+<p><strong>Applicability Limitations:</strong></p>
+<ul>
+<li>Not suitable for novel domains without existing solutions</li>
+<li>Requires domain experts or capable existing models</li>
+<li>Transfer from related domains may be suboptimal</li>
+</ul>
+<h3 id="6-3-Embedding-Space-Design">6.3 Embedding Space Design</h3>
+<p><strong>Unresolved Questions:</strong></p>
+<ol>
+<li><strong>Encoder Architecture:</strong> How sensitive is OGER to encoder design?</li>
+<li><strong>Similarity Metric:</strong> Why cosine similarity vs. alternatives?</li>
+<li><strong>Embedding Dimension:</strong> Is 768D sufficient or too large?</li>
+<li><strong>Joint Training:</strong> How does joint optimization of encoder + policy affect learning?</li>
+</ol>
+<h3 id="6-4-Theoretical-Analysis-Gaps">6.4 Theoretical Analysis Gaps</h3>
+<p>Missing from paper:</p>
+<ul>
+<li>Formal convergence proofs</li>
+<li>Sample complexity bounds</li>
+<li>Conditions for when offline guidance helps/hurts</li>
+<li>Rate of entropy preservation under OGER</li>
+</ul>
+<h3 id="6-5-Scalability-to-Very-Large-Models">6.5 Scalability to Very Large Models</h3>
+<p><strong>Untested Regimes:</strong></p>
+<ul>
+<li>70B+ parameter models: Computational overhead becomes prohibitive</li>
+<li>Training time scaling unclear</li>
+<li>Memory requirements for embedding space uncertain</li>
+<li>Benefit degrades? Improves? Unknown</li>
+</ul>
+<hr>
+<h2 id="7-Technical-Comparison-with-Related-Work">7. Technical Comparison with Related Work</h2>
+<h3 id="7-1-vs-Offline-Only-Methods-CQL-IQL">7.1 vs. Offline-Only Methods (CQL, IQL)</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>CQL/IQL</th>
+<th>OGER</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Exploration</strong></td>
+<td>Conservative, limited</td>
+<td>Active, guided</td>
+</tr>
+<tr>
+<td><strong>Offline Data</strong></td>
+<td>Required for all learning</td>
+<td>Reference only</td>
+</tr>
+<tr>
+<td><strong>Online Adaptation</strong></td>
+<td>Slow</td>
+<td>Fast</td>
+</tr>
+<tr>
+<td><strong>Theory</strong></td>
+<td>Strong convergence proofs</td>
+<td>Limited theory</td>
+</tr>
+</tbody>
+</table>
+<h3 id="7-2-vs-Entropy-Regularization-Methods">7.2 vs. Entropy Regularization Methods</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Entropy-Only</th>
+<th>OGER</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Guidance</strong></td>
+<td>None (pure entropy)</td>
+<td>Semantic divergence</td>
+</tr>
+<tr>
+<td><strong>Interpretability</strong></td>
+<td>Indirect entropy signal</td>
+<td>Direct divergence signal</td>
+</tr>
+<tr>
+<td><strong>Offline Leverage</strong></td>
+<td>Ignored</td>
+<td>Fully utilized</td>
+</tr>
+<tr>
+<td><strong>Stability</strong></td>
+<td>Can explore erratically</td>
+<td>Stable via entropy weighting</td>
+</tr>
+</tbody>
+</table>
+<h3 id="7-3-vs-Offline-Imitation-Luffy-Chord">7.3 vs. Offline Imitation (Luffy, Chord)</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Luffy/Chord</th>
+<th>OGER</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Adaptation</strong></td>
+<td>Limited online RL</td>
+<td>Full online RL</td>
+</tr>
+<tr>
+<td><strong>Exploration</strong></td>
+<td>Minimal (imitation-focused)</td>
+<td>Explicit exploration</td>
+</tr>
+<tr>
+<td><strong>Multiple Teachers</strong></td>
+<td>Difficult to integrate</td>
+<td>Natural integration</td>
+</tr>
+<tr>
+<td><strong>Performance</strong></td>
+<td>Fast initial gains</td>
+<td>Sustained improvements</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="7-4-Case-Study-Why-OGER-Outperforms-Baselines">7.4 Case Study: Why OGER Outperforms Baselines</h2>
+<p><strong>Concrete Example - Mathematical Problem Solving:</strong></p>
+<p>Consider a complex geometry problem:</p>
+<ul>
+<li><strong>Vanilla GRPO:</strong> Quickly discovers one approach that works reliably, then reinforces minor variations of that approach. Converges rapidly but explores narrowly.</li>
+<li><strong>Entropy-Driven:</strong> Maintains high entropy but explores somewhat randomly, sometimes discovering useful variations but also many dead-ends.</li>
+<li><strong>Offline Imitation:</strong> Copies teacher approaches well, but transfers poorly when problem structure differs slightly.</li>
+<li><strong>OGER:</strong> Uses teacher trajectories as reference, seeks divergent solutions that verify correctly, maintains confidence in exploration. Discovers both variations of teacher's approach AND novel approaches.</li>
+</ul>
+<p><strong>Result:</strong> OGER finds a diverse solution set and develops adaptive strategies.</p>
+<hr>
+<h2 id="7-5-Practical-Implementation-Insights">7.5 Practical Implementation Insights</h2>
+<p><strong>Encoder Architecture in Practice:</strong>
+The encoder doesn't need to be large - a 2-4 layer transformer with ~100M parameters is sufficient:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Input: [token_ids for entire trajectory]</span><br><span class="line">Layer 1: Self-attention over trajectory tokens</span><br><span class="line">Layer 2: Self-attention with learned positional embeddings</span><br><span class="line">Output: Mean-pooled final representation</span><br><span class="line">Dimension: 768-1024D</span><br></pre></td></tr></table></figure>
+<p><strong>Training Efficiency Tips:</strong></p>
+<ul>
+<li>Pre-compute offline embeddings before training (they're fixed)</li>
+<li>Cache online embeddings for multiple uses in reward computation</li>
+<li>Use mixed precision (FP16) for embedding computation</li>
+<li>Batch similarity computations using matrix operations</li>
+</ul>
+<p><strong>Hyperparameter Tuning Guidance:</strong></p>
+<ul>
+<li>Entropy coefficient: Start with -1.0, adjust based on entropy evolution plots</li>
+<li>Offline ratio (M/N): 0.5-0.75 works well (50-75% of batch from offline)</li>
+<li>Embedding dimension: 768D usually sufficient, 1024D for very large vocabularies</li>
+<li>Learning rate: Use 50% of policy learning rate for encoder</li>
+</ul>
+<p><strong>Common Pitfalls to Avoid:</strong></p>
+<ol>
+<li>Updating offline embeddings dynamically (causes instability)</li>
+<li>Using wrong similarity metric (cosine &gt;&gt; L2 for trajectories)</li>
+<li>Applying exploration rewards to offline trajectories (violates design principle)</li>
+<li>Forgetting to normalize advantages before using in GRPO</li>
+</ol>
+<hr>
+<h2 id="8-Conclusion-and-Significance">8. Conclusion and Significance</h2>
+<h3 id="8-1-Key-Contributions-Summarized">8.1 Key Contributions Summarized</h3>
+<ol>
+<li><strong>Conceptual Innovation:</strong> Reward modeling as integration point for offline-online learning</li>
+<li><strong>Technical Soundness:</strong> Entropy-aware divergence mechanism grounded in information theory</li>
+<li><strong>Practical Effectiveness:</strong> Consistent 4-7.9% improvements across multiple domains</li>
+<li><strong>Thorough Evaluation:</strong> Comprehensive ablations and sensitivity analyses</li>
+</ol>
+<h3 id="8-2-Impact-and-Significance">8.2 Impact and Significance</h3>
+<p><strong>For Practitioners:</strong></p>
+<ul>
+<li>Clear, implementable method for leveraging offline teacher data</li>
+<li>Compatible with existing GRPO/modern RL infrastructure</li>
+<li>Reasonable computational overhead for performance gains</li>
+</ul>
+<p><strong>For Researchers:</strong></p>
+<ul>
+<li>Opens avenue for entropy-aware exploration mechanisms</li>
+<li>Questions conventional separation of offline and online learning</li>
+<li>Suggests reward modeling as promising integration point</li>
+</ul>
+<p><strong>For LLM Reasoning:</strong></p>
+<ul>
+<li>Concrete evidence that offline guidance + online exploration synergizes</li>
+<li>Mechanism for preventing entropy collapse without explicit constraints</li>
+<li>Potential blueprint for other hybrid learning scenarios</li>
+</ul>
+<h3 id="8-3-Future-Research-Directions">8.3 Future Research Directions</h3>
+<ol>
+<li><strong>Adaptive Entropy Thresholds:</strong> Learn task-specific entropy sensitivities</li>
+<li><strong>Self-Play Offline Data:</strong> Use model-generated trajectories as pseudo-teachers</li>
+<li><strong>Hierarchical Similarity:</strong> Compute divergence at multiple scales</li>
+<li><strong>Domain-Specific Encoders:</strong> Customize embedding architecture per domain</li>
+<li><strong>Theoretical Analysis:</strong> Formal convergence and sample complexity bounds</li>
+<li><strong>Very Large Models:</strong> Efficient implementations for 70B+ parameters</li>
+<li><strong>Multi-Task Learning:</strong> Shared offline encoders across tasks</li>
+</ol>
+<h3 id="8-4-Final-Assessment">8.4 Final Assessment</h3>
+<p>OGER represents a meaningful advance in hybrid RL for LLM reasoning. The core innovation—using offline data as a semantic reference for computing exploration rewards—is elegant, well-executed, and empirically validated. While limitations exist (computational cost, offline data dependency, theory gaps), they don't undermine the core contribution.</p>
+<p>The paper will likely influence future work in exploration-aware training, offline-online learning integration, and reward shaping for LLMs. The combination of conceptual clarity, technical sophistication, and empirical strength makes this a solid contribution to the reinforcement learning and NLP literature.</p>
+<hr>
+<h2 id="Appendix-Mathematical-Notation-Reference">Appendix: Mathematical Notation Reference</h2>
+<table>
+<thead>
+<tr>
+<th>Symbol</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>τ</td>
+<td>Complete trajectory or reasoning path</td>
+</tr>
+<tr>
+<td>T_on</td>
+<td>Set of online trajectories from current policy</td>
+</tr>
+<tr>
+<td>T_off</td>
+<td>Set of offline trajectories from teacher models</td>
+</tr>
+<tr>
+<td>Enc</td>
+<td>Trajectory embedding encoder</td>
+</tr>
+<tr>
+<td>s_{i,j}</td>
+<td>Similarity between online i and offline j</td>
+</tr>
+<tr>
+<td>D_i</td>
+<td>Divergence reward for trajectory i</td>
+</tr>
+<tr>
+<td>H_i^last</td>
+<td>Shannon entropy of final token distribution</td>
+</tr>
+<tr>
+<td>R_i^m</td>
+<td>Standard verifiable reward (0 or 1)</td>
+</tr>
+<tr>
+<td>R_i^OGER</td>
+<td>Exploration reward from OGER</td>
+</tr>
+<tr>
+<td>R_i^total</td>
+<td>Combined reward for optimization</td>
+</tr>
+<tr>
+<td>A_i</td>
+<td>Group-relative advantage estimate</td>
+</tr>
+<tr>
+<td>π_θ</td>
+<td>Policy with parameters θ</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="References-to-Key-Related-Work">References to Key Related Work</h2>
+<ul>
+<li>Shao et al. (2024): GRPO - Group Relative Policy Optimization</li>
+<li>Guo et al. (2025): DeepSeek-R1 - RL for reasoning</li>
+<li>Yan et al. (2025): Luffy - Offline-guided RL</li>
+<li>Zhang et al. (2025a): Chord - Trajectory selection for offline RL</li>
+<li>Cui et al. (2025b): Entropy collapse analysis</li>
+<li>Wang et al. (2025c): Token-level entropy analysis</li>
+</ul>
+<hr>
+<p><em>Comprehensive Technical Review by Zhongzhu Zhou</em><br>
+<em>Date: April 26, 2026</em><br>
+<em>Paper: OGER by Ma et al., ArXiv:2604.18530</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/OGER/" rel="tag"># OGER</a>
+              <a href="/tags/Offline-RL/" rel="tag"># Offline RL</a>
+              <a href="/tags/Exploration-Reward/" rel="tag"># Exploration Reward</a>
+              <a href="/tags/Hybrid-RL/" rel="tag"># Hybrid RL</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/24/2026-04-24-FEPLB-technical-review-en/" rel="prev" title="---">
+      <i class="fa fa-chevron-left"></i> ---
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/27/2026-04-27-AgenticWorldModeling-technical-review-en/" rel="next" title="Agentic World Modeling: Foundations, Capabilities, Laws, and Beyond — Technical Review">
+      Agentic World Modeling: Foundations, Capabilities, Laws, and Beyond — Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Executive-Summary"><span class="nav-number">1.</span> <span class="nav-text">1. Executive Summary</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-What-This-Paper-Does"><span class="nav-number">2.</span> <span class="nav-text">2. What This Paper Does</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-Prerequisite-Knowledge"><span class="nav-number">3.</span> <span class="nav-text">3. Prerequisite Knowledge</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-Core-Concepts-Required"><span class="nav-number">3.1.</span> <span class="nav-text">3.1 Core Concepts Required</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-The-Problem-with-Echo-Chamber-Effect"><span class="nav-number">3.2.</span> <span class="nav-text">3.2 The Problem with &quot;Echo Chamber Effect&quot;</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-Motivation-for-Integrated-Approach"><span class="nav-number">3.3.</span> <span class="nav-text">3.3 Motivation for Integrated Approach</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Core-Technical-Contributions"><span class="nav-number">4.</span> <span class="nav-text">4. Core Technical Contributions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-Trajectory-Embedding-and-Similarity-Framework"><span class="nav-number">4.1.</span> <span class="nav-text">4.1 Trajectory Embedding and Similarity Framework</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-Entropy-Aware-Reward-Modulation"><span class="nav-number">4.2.</span> <span class="nav-text">4.2 Entropy-Aware Reward Modulation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-Hybrid-Sampling-Mechanism"><span class="nav-number">4.3.</span> <span class="nav-text">4.3 Hybrid Sampling Mechanism</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-4-Integration-with-GRPO-Optimization"><span class="nav-number">4.4.</span> <span class="nav-text">4.4 Integration with GRPO Optimization</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-5-Multi-Teacher-Collaborative-Training"><span class="nav-number">4.5.</span> <span class="nav-text">4.5 Multi-Teacher Collaborative Training</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Experimental-Evaluation"><span class="nav-number">5.</span> <span class="nav-text">5. Experimental Evaluation</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-Evaluation-Setup"><span class="nav-number">5.1.</span> <span class="nav-text">5.1 Evaluation Setup</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Main-Results"><span class="nav-number">5.2.</span> <span class="nav-text">5.2 Main Results</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-Training-Dynamics-and-Convergence-Analysis"><span class="nav-number">5.3.</span> <span class="nav-text">5.3 Training Dynamics and Convergence Analysis</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-Ablation-Studies"><span class="nav-number">5.4.</span> <span class="nav-text">5.4 Ablation Studies</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-5-Sensitivity-Analyses"><span class="nav-number">5.5.</span> <span class="nav-text">5.5 Sensitivity Analyses</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Limitations-and-Open-Questions"><span class="nav-number">6.</span> <span class="nav-text">6. Limitations and Open Questions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Computational-Overhead"><span class="nav-number">6.1.</span> <span class="nav-text">6.1 Computational Overhead</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Offline-Data-Dependency"><span class="nav-number">6.2.</span> <span class="nav-text">6.2 Offline Data Dependency</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-Embedding-Space-Design"><span class="nav-number">6.3.</span> <span class="nav-text">6.3 Embedding Space Design</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-Theoretical-Analysis-Gaps"><span class="nav-number">6.4.</span> <span class="nav-text">6.4 Theoretical Analysis Gaps</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-5-Scalability-to-Very-Large-Models"><span class="nav-number">6.5.</span> <span class="nav-text">6.5 Scalability to Very Large Models</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Technical-Comparison-with-Related-Work"><span class="nav-number">7.</span> <span class="nav-text">7. Technical Comparison with Related Work</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-vs-Offline-Only-Methods-CQL-IQL"><span class="nav-number">7.1.</span> <span class="nav-text">7.1 vs. Offline-Only Methods (CQL, IQL)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-vs-Entropy-Regularization-Methods"><span class="nav-number">7.2.</span> <span class="nav-text">7.2 vs. Entropy Regularization Methods</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-vs-Offline-Imitation-Luffy-Chord"><span class="nav-number">7.3.</span> <span class="nav-text">7.3 vs. Offline Imitation (Luffy, Chord)</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-4-Case-Study-Why-OGER-Outperforms-Baselines"><span class="nav-number">8.</span> <span class="nav-text">7.4 Case Study: Why OGER Outperforms Baselines</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-5-Practical-Implementation-Insights"><span class="nav-number">9.</span> <span class="nav-text">7.5 Practical Implementation Insights</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Conclusion-and-Significance"><span class="nav-number">10.</span> <span class="nav-text">8. Conclusion and Significance</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-Key-Contributions-Summarized"><span class="nav-number">10.1.</span> <span class="nav-text">8.1 Key Contributions Summarized</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-Impact-and-Significance"><span class="nav-number">10.2.</span> <span class="nav-text">8.2 Impact and Significance</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-Future-Research-Directions"><span class="nav-number">10.3.</span> <span class="nav-text">8.3 Future Research Directions</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-4-Final-Assessment"><span class="nav-number">10.4.</span> <span class="nav-text">8.4 Final Assessment</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Appendix-Mathematical-Notation-Reference"><span class="nav-number">11.</span> <span class="nav-text">Appendix: Mathematical Notation Reference</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#References-to-Key-Related-Work"><span class="nav-number">12.</span> <span class="nav-text">References to Key Related Work</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

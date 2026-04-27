@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. 这篇论文为什么值得认真读 先给一句结论：  DistServe 的价值在于：它把大模型服务里最痛的“延迟-成本矛盾”从调度层面硬扛，升级成“架构层面解耦”，然后再用算法做资源与并行策略的联合优化。  很多服务系统论文会给你“吞吐更高”的漂亮数字，但实际线上产品最在意的是：  用户是否足够快看到首个 token（TTFT）？ 后续生成是否足够流畅（TPOT）？ 在满足服务质量（SLO）的前提下">
+<meta property="og:type" content="article">
+<meta property="og:title" content="DistServe：通过 Prefill&#x2F;Decoding 解耦实现面向 Goodput 的大模型服务优化 — 深度技术评审">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/09/2026-04-09-DistServe-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. 这篇论文为什么值得认真读 先给一句结论：  DistServe 的价值在于：它把大模型服务里最痛的“延迟-成本矛盾”从调度层面硬扛，升级成“架构层面解耦”，然后再用算法做资源与并行策略的联合优化。  很多服务系统论文会给你“吞吐更高”的漂亮数字，但实际线上产品最在意的是：  用户是否足够快看到首个 token（TTFT）？ 后续生成是否足够流畅（TPOT）？ 在满足服务质量（SLO）的前提下">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-09T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-16T12:57:27.407Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="LLM Serving">
+<meta property="article:tag" content="DistServe">
+<meta property="article:tag" content="ML Systems">
+<meta property="article:tag" content="Disaggregated Serving">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/09/2026-04-09-DistServe-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>DistServe：通过 Prefill/Decoding 解耦实现面向 Goodput 的大模型服务优化 — 深度技术评审 | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/09/2026-04-09-DistServe-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          DistServe：通过 Prefill/Decoding 解耦实现面向 Goodput 的大模型服务优化 — 深度技术评审
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-09 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-09T00:00:00+00:00">2026-04-09</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-16 12:57:27" itemprop="dateModified" datetime="2026-04-16T12:57:27+00:00">2026-04-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/ML-Systems/" itemprop="url" rel="index"><span itemprop="name">ML Systems</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-这篇论文为什么值得认真读">1. 这篇论文为什么值得认真读</h2>
+<p>先给一句结论：</p>
+<blockquote>
+<p><strong>DistServe 的价值在于：它把大模型服务里最痛的“延迟-成本矛盾”从调度层面硬扛，升级成“架构层面解耦”，然后再用算法做资源与并行策略的联合优化。</strong></p>
+</blockquote>
+<p>很多服务系统论文会给你“吞吐更高”的漂亮数字，但实际线上产品最在意的是：</p>
+<ul>
+<li>用户是否足够快看到首个 token（TTFT）？</li>
+<li>后续生成是否足够流畅（TPOT）？</li>
+<li>在满足服务质量（SLO）的前提下，每块 GPU 的产出值不值？</li>
+</ul>
+<p>DistServe 不是只追求 token/s，而是明确优化 <strong>goodput</strong>（满足 SLO 约束下的单位 GPU 可服务请求率）。这点非常“工程真相”。</p>
+<p>论文报告的核心收益是：</p>
+<ul>
+<li>相比主流方案，最高 <strong>7.4×</strong> 请求率提升；</li>
+<li>或在同样请求率下，实现 <strong>12.6× 更严格 SLO</strong>；</li>
+<li>且 &gt;90% 请求满足延迟约束。</li>
+</ul>
+<p>这是“性能数字 + 用户体验 + 成本效率”三者同时进步，而不是单指标提升。</p>
+<hr>
+<a id="more"></a>
+<h2 id="2-给“零基础读者”的前置知识">2. 给“零基础读者”的前置知识</h2>
+<p>这一节我会从最基础的系统直觉开始讲起。</p>
+<h3 id="2-1-什么是大模型在线服务">2.1 什么是大模型在线服务</h3>
+<p>当你在聊天助手里提问，后台并不是“直接跑一个函数然后秒出答案”。</p>
+<p>真实系统要做很多事：</p>
+<ol>
+<li>接收请求，</li>
+<li>把请求排队、分批，</li>
+<li>调度 GPU，</li>
+<li>执行推理，</li>
+<li>把生成内容流式返回，</li>
+<li>同时保证延迟和成本别失控。</li>
+</ol>
+<p>所以 LLM serving 本质是“模型计算 + 分布式系统 + 调度优化”的组合题。</p>
+<h3 id="2-2-Prefill-和-Decoding-到底在做什么">2.2 Prefill 和 Decoding 到底在做什么</h3>
+<p>自回归生成通常分两段：</p>
+<ol>
+<li><strong>Prefill 阶段</strong>：先把整段输入提示词吃进去，算出首个输出 token。</li>
+<li><strong>Decoding 阶段</strong>：后续 token 一个一个往外生成。</li>
+</ol>
+<p>生活化比喻：</p>
+<ul>
+<li>prefill 像“做菜前备菜、起锅、下第一铲”；</li>
+<li>decoding 像“后续一盘盘持续出菜”。</li>
+</ul>
+<p>两段流程连续，但计算形态很不一样。</p>
+<h3 id="2-3-TTFT、TPOT、SLO、SLO-达标率">2.3 TTFT、TPOT、SLO、SLO 达标率</h3>
+<p>论文关心两个核心延迟指标：</p>
+<ul>
+<li><strong>TTFT（Time To First Token）</strong>：从请求发出到看到第一个 token 的时间。</li>
+<li><strong>TPOT（Time Per Output Token）</strong>：首 token 之后，每个输出 token 的平均生成时间。</li>
+</ul>
+<p>再往上是服务目标：</p>
+<ul>
+<li><strong>SLO</strong>：例如 TTFT ≤ 0.25s、TPOT ≤ 0.1s。</li>
+<li><strong>SLO attainment</strong>：满足 SLO 的请求比例（例如要 ≥90%）。</li>
+</ul>
+<p>如果系统“平均很快”但尾部很慢，SLO 达标率会很难看，用户体验也会变差。</p>
+<h3 id="2-4-Throughput-与-Goodput-的区别">2.4 Throughput 与 Goodput 的区别</h3>
+<p>很多人容易混：</p>
+<ul>
+<li><strong>Throughput</strong>：每秒处理了多少 token 或请求。</li>
+<li><strong>Goodput（本文定义）</strong>：在 SLO 达标率目标下，每块 GPU 能承载的最大请求率。</li>
+</ul>
+<p>你可以 throughput 很高，但一半请求都超时，那对产品几乎没意义。</p>
+<p>DistServe 选择优化 goodput，是非常务实的方向。</p>
+<h3 id="2-5-GPU-上的“算力瓶颈”与“带宽瓶颈”">2.5 GPU 上的“算力瓶颈”与“带宽瓶颈”</h3>
+<p>GPU 性能瓶颈常见两类：</p>
+<ul>
+<li>算不过来（compute-bound），</li>
+<li>数据搬运不过来（memory-bandwidth-bound）。</li>
+</ul>
+<p>在 LLM 推理里：</p>
+<ul>
+<li>prefill（尤其长输入）常偏算力密集，</li>
+<li>decoding（每步一个 token）常偏带宽密集。</li>
+</ul>
+<p>这意味着它们在同一资源池共存时，容易互相拖累。</p>
+<h3 id="2-6-批处理与排队：为什么延迟会突然恶化">2.6 批处理与排队：为什么延迟会突然恶化</h3>
+<p>批处理能提升利用率，但不同“作业长度”的任务混在一起时，排队延迟会迅速上升。</p>
+<p>特别是“长 prefill + 短 decode”混批时，decode 会被长任务卡住，TPOT 被抬高。</p>
+<p>DistServe 在论文中用排队模型（M/D/1 思路）解释了这种现象，不是拍脑袋结论。</p>
+<h3 id="2-7-Intra-op-Inter-op-并行是什么">2.7 Intra-op / Inter-op 并行是什么</h3>
+<ul>
+<li><strong>Intra-op 并行</strong>（可理解为张量并行风格）：把一个算子拆到多卡并行，单步更快，但通信开销高。</li>
+<li><strong>Inter-op 并行</strong>（可理解为流水并行风格）：按层分 stage 形成流水，吞吐扩展好，但会有流水气泡和协同成本。</li>
+</ul>
+<p>关键点：prefill 与 decoding 的最优并行策略往往不同。</p>
+<h3 id="2-8-NVLINK-与跨节点网络为什么决定系统设计">2.8 NVLINK 与跨节点网络为什么决定系统设计</h3>
+<p>Prefill 与 decoding 解耦后，需要传 KV cache。传输开销受网络拓扑强烈影响：</p>
+<ul>
+<li>同节点 NVLINK：很快；</li>
+<li>跨节点网络：可能明显慢（论文实验里是 25Gbps）。</li>
+</ul>
+<p>所以 DistServe 不是“只讲算法”，还专门做了网络感知的放置策略。</p>
+<hr>
+<h2 id="3-DistServe-试图解决的核心矛盾">3. DistServe 试图解决的核心矛盾</h2>
+<p>现有系统（如 vLLM、DeepSpeed-MII）常把 prefill 和 decoding 放在同一批 GPU 上协同调度。论文指出这会导致两个根本问题：</p>
+<ol>
+<li><strong>Prefill-Decoding 干扰（interference）</strong>
+<ul>
+<li>prefill 常比 decode step 慢很多，混在一起时会拖慢 decode。</li>
+<li>decode 也会给 prefill 增压。</li>
+</ul>
+</li>
+<li><strong>资源与并行策略耦合（coupling）</strong>
+<ul>
+<li>两个阶段被迫共享同一套资源配置和并行策略，无法各自最优。</li>
+</ul>
+</li>
+</ol>
+<p>图 1 给了非常直观的证据：</p>
+<ul>
+<li>13B 模型、给定工作负载下，现有系统单卡 goodput 约 1.6 rps；</li>
+<li>若只做 prefill，可到 5.6 rps；</li>
+<li>若只做 decoding，可到 10 rps；</li>
+<li>理想解耦后（如 2 卡 prefill + 1 卡 decode）总体效率显著更高。</li>
+</ul>
+<p>这不是“微调调度参数”能彻底解决的问题，而是架构层面的冲突。</p>
+<hr>
+<h2 id="4-关键洞察：Prefill-与-Decoding-不应被强行绑在一起">4. 关键洞察：Prefill 与 Decoding 不应被强行绑在一起</h2>
+<p>DistServe 的核心思想很简单也很硬核：</p>
+<blockquote>
+<p><strong>把 prefill 与 decoding 分配到不同 GPU 实例上，分别优化 TTFT 与 TPOT。</strong></p>
+</blockquote>
+<p>这样做有两大直接收益：</p>
+<ol>
+<li>消除直接计算干扰；</li>
+<li>让两阶段各自选择更适合自己的资源和并行策略。</li>
+</ol>
+<p>代价是需要在两阶段之间传 KV cache。</p>
+<p>论文并不回避这个代价，而是把它纳入 placement 优化问题，并在实验中证明：只要放置合理，传输成本远小于解耦收益。</p>
+<hr>
+<h2 id="5-DistServe-的系统架构与请求生命周期">5. DistServe 的系统架构与请求生命周期</h2>
+<p>结合论文图 6：</p>
+<ol>
+<li>请求进入中心控制器；</li>
+<li>控制器把请求派发给队列较短的 prefill 实例；</li>
+<li>prefill 完成首 token 计算并产出 KV cache；</li>
+<li>decoding 实例拉取 KV cache，继续逐 token 生成；</li>
+<li>输出回传给用户。</li>
+</ol>
+<p>几个关键工程点：</p>
+<ul>
+<li>DistServe 不是重写整个推理引擎，而是“编排层 + 并行执行引擎”组合；</li>
+<li>支持跨实例 KV 流转；</li>
+<li>使用 <strong>pull 式</strong> KV 传输应对突发流量，避免 decode 端内存被突发写爆。</li>
+</ul>
+<p>这类细节很重要，因为真正上线时，稳定性和尾延迟常由这些“看起来不起眼”的机制决定。</p>
+<hr>
+<h2 id="6-论文中的权衡分析（Tradeoff-Analysis）">6. 论文中的权衡分析（Tradeoff Analysis）</h2>
+<h3 id="6-1-Prefill-实例分析">6.1 Prefill 实例分析</h3>
+<h4 id="6-1-1-批处理策略">6.1.1 批处理策略</h4>
+<p>图 3(a) 的核心观察：</p>
+<ul>
+<li>当输入足够长时，prefill 在很小 batch 下就能把 GPU 算力吃满；</li>
+<li>继续加 batch 并不能显著提效，反而会增加等待和 TTFT。</li>
+</ul>
+<p>论文定义了阈值 (L_m)：输入长度超过 (L_m) 后，prefill 进入“近似算力饱和”。</p>
+<p>调度上就应避免盲目堆 batch。</p>
+<h4 id="6-1-2-排队模型与并行选择">6.1.2 排队模型与并行选择</h4>
+<p>论文给了简化模型，帮助理解并行策略为什么会在不同负载下出现优劣反转。</p>
+<p>单设备下平均 TTFT 近似：</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>Avg_TTFT</mtext><mo>=</mo><mi>D</mi><mo>+</mo><mfrac><mrow><mi>R</mi><msup><mi>D</mi><mn>2</mn></msup></mrow><mrow><mn>2</mn><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><mi>R</mi><mi>D</mi><mo stretchy="false">)</mo></mrow></mfrac></mrow><annotation encoding="application/x-tex">\text{Avg\_TTFT} = D + \frac{R D^2}{2(1-RD)}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9933em;vertical-align:-0.31em;"></span><span class="mord text"><span class="mord">Avg_TTFT</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">D</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.4271em;vertical-align:-0.936em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.4911em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">2</span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal" style="margin-right:0.00773em;">R</span><span class="mord mathnormal" style="margin-right:0.02778em;">D</span><span class="mclose">)</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.00773em;">R</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02778em;">D</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>其中 (D) 是执行时间，(R) 是到达率。</p>
+<p>再引入两种并行后（论文 Eq.2/Eq.3），得到结论：</p>
+<ul>
+<li>低到达率下，intra-op 可能更好（执行时间下降）；</li>
+<li>高到达率下，inter-op 常更好（排队与扩展性优势）。</li>
+</ul>
+<p>图 4 的实验与推导一致，这种“理论-实验一致性”是论文可信度的加分项。</p>
+<h3 id="6-2-Decoding-实例分析">6.2 Decoding 实例分析</h3>
+<p>Decoding 的关键特点是“单步带宽受限”，因此非常依赖批处理来提升利用率。</p>
+<p>图 3(b)、图 5 显示：</p>
+<ul>
+<li>batch 变大时吞吐显著提升；</li>
+<li>intra-op 可以降延迟但收益递减；</li>
+<li>inter-op 在一定条件下近线性扩吞吐。</li>
+</ul>
+<p>此外，decoding 需要长期持有活跃请求 KV cache，受显存容量约束明显。</p>
+<p>所以论文在解耦后允许“一个 decoding 实例对应多个 prefill 实例”，从而更容易聚出较大 decode batch，提高整体 goodput。</p>
+<h3 id="6-3-工程落地中的现实问题">6.3 工程落地中的现实问题</h3>
+<h4 id="变长输入引发流水气泡">变长输入引发流水气泡</h4>
+<p>真实请求长度不均匀会导致 pipeline stage 不平衡。论文在运行期通过分批策略尽量让每批“有效 token 量”靠近目标值，减少气泡。</p>
+<h4 id="KV-传输压力">KV 传输压力</h4>
+<p>论文举例：OPT-66B、512 token 请求的 KV cache 约 <strong>1.13GB</strong>。</p>
+<p>若 10 rps，则约 <strong>11.3GB/s</strong>（约 90Gbps）传输需求。</p>
+<p>这解释了为什么 placement 必须网络感知，而不是仅按算力放置。</p>
+<h4 id="集群拓扑限制">集群拓扑限制</h4>
+<p>当跨节点带宽不足时，必须尽量把相关 stage 放在同节点走 NVLINK，DistServe 的 low node-affinity 算法就是为此设计。</p>
+<hr>
+<h2 id="7-方法部分：Placement-优化算法">7. 方法部分：Placement 优化算法</h2>
+<p>目标函数很明确：</p>
+<blockquote>
+<p>在给定模型、负载分布、SLO 与达标率目标下，找到使 per-GPU goodput 最大的放置方案。</p>
+</blockquote>
+<h3 id="7-1-高节点亲和场景（Algorithm-1）">7.1 高节点亲和场景（Algorithm 1）</h3>
+<p>假设跨节点网络足够快，KV 传输约束较弱。</p>
+<p>流程：</p>
+<ol>
+<li>枚举 prefill 并行配置并模拟；</li>
+<li>二分搜索满足 SLO 达标率的最大请求率；</li>
+<li>decoding 做同样流程；</li>
+<li>按目标流量做实例复制。</li>
+</ol>
+<p>论文给出复杂度 (O(NM^2))（(M) 常见为每节点 8 卡），可接受。</p>
+<h3 id="7-2-低节点亲和场景（Algorithm-2）">7.2 低节点亲和场景（Algorithm 2）</h3>
+<p>假设跨节点带宽较弱（实验就是这类）。</p>
+<p>关键做法：</p>
+<ul>
+<li>用 inter-op 分 stage；</li>
+<li>将 prefill 与 decoding 的对应 stage 尽量同节点 colocate；</li>
+<li>让 KV 传输主要走 NVLINK。</li>
+</ul>
+<p>该算法多了约束，但能显著降低传输对尾延迟的冲击。</p>
+<h3 id="7-3-为什么要做模拟器（Simulator）">7.3 为什么要做模拟器（Simulator）</h3>
+<p>现实中不可能把所有并行与放置组合都在真机跑一遍。</p>
+<p>DistServe 通过延迟模型 + 离散事件模拟估算 SLO 达标率，再做搜索。</p>
+<p>附录 A 给了建模思路（prefill 与 decode 的主要计算/访存项分解）。</p>
+<p>Table 2 显示模拟结果与真机误差 &lt;2%，说明该模拟器在论文场景下是实用的。</p>
+<h3 id="7-4-在线调度与运行期优化">7.4 在线调度与运行期优化</h3>
+<p>论文不止有“离线规划”，还补上了运行期优化：</p>
+<ul>
+<li>FCFS 基础调度；</li>
+<li>通过 token 预算减小 pipeline bubbles；</li>
+<li>pull 式 KV 传输对抗突发；</li>
+<li>周期性重规划（replan）应对负载漂移；</li>
+<li>讨论了 preemption 与故障容错作为后续方向。</li>
+</ul>
+<hr>
+<h2 id="8-实现细节">8. 实现细节</h2>
+<p>论文实现量级：</p>
+<ul>
+<li>placement + 前端 + 编排层：约 <strong>6.5K 行 Python</strong>；</li>
+<li>并行执行引擎：约 <strong>8.1K 行 C++/CUDA</strong>。</li>
+</ul>
+<p>组件上：</p>
+<ul>
+<li>OpenAI API 兼容前端；</li>
+<li>NCCL 跨节点通信；</li>
+<li>节点内异步 CudaMemcpy；</li>
+<li>Ray actor 管理执行 worker；</li>
+<li>集成 continuous batching、FlashAttention、PagedAttention 等优化。</li>
+</ul>
+<p>这说明论文原型不是“玩具实现”，具备相当工程完整度。</p>
+<hr>
+<h2 id="9-实验设置">9. 实验设置</h2>
+<h3 id="9-1-集群与硬件">9.1 集群与硬件</h3>
+<ul>
+<li>4 节点共 32 卡；</li>
+<li>每节点 8×A100-80GB（NVLINK 互联）；</li>
+<li>跨节点带宽 25Gbps。</li>
+</ul>
+<h3 id="9-2-模型">9.2 模型</h3>
+<p>OPT-13B、OPT-66B、OPT-175B，均 FP16。</p>
+<p>作者故意选经典 MHA 架构（非 GQA/MQA），让 KV 传输压力更大，验证更保守。</p>
+<h3 id="9-3-工作负载与应用（Table-1）">9.3 工作负载与应用（Table 1）</h3>
+<ul>
+<li>Chatbot（ShareGPT）：
+<ul>
+<li>13B: TTFT 0.25s, TPOT 0.1s</li>
+<li>66B: TTFT 2.5s, TPOT 0.15s</li>
+<li>175B: TTFT 4.0s, TPOT 0.2s</li>
+</ul>
+</li>
+<li>Code completion（HumanEval）：TTFT 0.125s, TPOT 0.2s</li>
+<li>Summarization（LongBench）：TTFT 15s, TPOT 0.15s</li>
+</ul>
+<h3 id="9-4-对比基线">9.4 对比基线</h3>
+<ul>
+<li>vLLM</li>
+<li>DeepSpeed-MII（含 chunked prefill 思路）</li>
+</ul>
+<p>主指标：SLO 达标率曲线，关注 90% 目标下可承载请求率和可承受最严 SLO。</p>
+<hr>
+<h2 id="10-结果解读（含图表证据）">10. 结果解读（含图表证据）</h2>
+<h3 id="10-1-Chatbot-场景">10.1 Chatbot 场景</h3>
+<p>图 8 给出核心结论：</p>
+<ul>
+<li>DistServe 相比 vLLM，可承载请求率提升 <strong>2.0×–4.6×</strong>；</li>
+<li>相比 DeepSpeed-MII，提升 <strong>1.6×–7.4×</strong>；</li>
+<li>相比 vLLM，能承受 <strong>1.8×–3.2× 更严格 SLO</strong>。</li>
+</ul>
+<p>原因剖析：</p>
+<ul>
+<li>chatbot 对 TPOT 很敏感；</li>
+<li>colocation 下长 prefill 对 decode 拖累严重；</li>
+<li>DistServe 解耦后可单独优化 decode，TPOT 违规大幅减少。</li>
+</ul>
+<p>论文还举了 175B 场景的并行配置示例，prefill 与 decoding 的最优配置不同，说明“自动搜索”是刚需，不是可有可无。</p>
+<h3 id="10-2-代码补全场景">10.2 代码补全场景</h3>
+<p>图 9(a)：</p>
+<ul>
+<li>DistServe vs vLLM：请求率 <strong>5.7×</strong>；</li>
+<li>DistServe vs DeepSpeed-MII：请求率 <strong>1.6×</strong>；</li>
+<li>SLO 严格度约 <strong>1.4×</strong> 提升。</li>
+</ul>
+<p>代码补全是极低 TTFT 需求场景，DistServe 的 prefill 优化收益会被放大。</p>
+<h3 id="10-3-文档摘要场景">10.3 文档摘要场景</h3>
+<p>图 9(b)：</p>
+<ul>
+<li>DistServe vs vLLM：请求率 <strong>4.3×</strong>；</li>
+<li>DistServe vs DeepSpeed-MII：请求率 <strong>1.8×</strong>；</li>
+<li>DistServe 可承受 SLO 严格度比 vLLM 高 <strong>12.6×</strong>（非常显著），比 MII 高 <strong>2.6×</strong>。</li>
+</ul>
+<p>摘要任务常有长输入，对 prefill 压力巨大。colocation 会把这种压力外溢到 decode，DistServe 的阶段隔离优势在此非常明显。</p>
+<h3 id="10-4-延迟拆解：KV-传输是否拖后腿">10.4 延迟拆解：KV 传输是否拖后腿</h3>
+<p>图 10 给出关键证据（OPT-175B + ShareGPT）：</p>
+<ul>
+<li>KV 传输在总延迟中占比 <strong>&lt;0.1%</strong>；</li>
+<li>超过 95% 请求传输延迟 &lt;30ms。</li>
+</ul>
+<p>这说明 DistServe 的网络感知放置策略有效，通信并没有成为主要瓶颈。</p>
+<h3 id="10-5-消融实验与模拟器准确性">10.5 消融实验与模拟器准确性</h3>
+<p>Table 2：模拟器与真机 SLO 达标率误差都很小（&lt;2%）。</p>
+<p>图 11：</p>
+<ul>
+<li>只给 vLLM 加并行搜索（vLLM++）收益很有限；</li>
+<li>真正决定性提升来自“prefill/decoding 解耦”；</li>
+<li>在高带宽跨节点假设下，DistServe 还能进一步提升。</li>
+</ul>
+<h3 id="10-6-算法运行时间">10.6 算法运行时间</h3>
+<p>图 12 显示 placement 算法运行在秒到分钟级，最大场景约 1.3 分钟量级，可用于周期性重规划。</p>
+<p>对于生产系统，这是可接受开销。</p>
+<hr>
+<h2 id="11-我对这篇论文的技术判断">11. 我对这篇论文的技术判断</h2>
+<p>我给 DistServe 的总体评价是：<strong>工程价值非常高，且研究思路扎实。</strong></p>
+<p>理由有五点：</p>
+<ol>
+<li>目标对（goodput + SLO 达标），不是“只卷吞吐数字”；</li>
+<li>诊断准（干扰 + 耦合），不是“调参式补丁”；</li>
+<li>方法完整（分析 + 算法 + 运行期机制）；</li>
+<li>证据充分（多模型、多场景、含消融与误差校验）；</li>
+<li>落地意识强（网络拓扑、传输策略、重规划）。</li>
+</ol>
+<p>在 LLM serving 领域，这种“从问题定义到部署细节都闭环”的工作并不多见。</p>
+<hr>
+<h2 id="12-局限性与边界条件">12. 局限性与边界条件</h2>
+<p>论文也诚实讨论了适用边界，我补充成更工程化的版本。</p>
+<h3 id="12-1-非延迟敏感场景">12.1 非延迟敏感场景</h3>
+<p>如果业务主要看离线吞吐，不强调 TTFT/TPOT，DistServe 的复杂度收益比可能下降。</p>
+<h3 id="12-2-极小规模资源环境">12.2 极小规模资源环境</h3>
+<p>只有 1–2 张卡时，可选并行/放置空间太小，解耦收益可能不如系统复杂度带来的维护成本。</p>
+<h3 id="12-3-对负载统计稳定性的依赖">12.3 对负载统计稳定性的依赖</h3>
+<p>placement 依赖负载分布估计。若业务突发变化剧烈且频繁，规划结果可能过时，需要更激进的在线自适应。</p>
+<h3 id="12-4-运行期策略仍可更强">12.4 运行期策略仍可更强</h3>
+<p>当前 FCFS 可能出现 convoy effect；抢占与故障恢复机制仍有改进空间。</p>
+<h3 id="12-5-网络条件极差时的风险">12.5 网络条件极差时的风险</h3>
+<p>如果节点内外都缺乏高带宽，KV 传输可能重新成为瓶颈，解耦收益会被侵蚀。</p>
+<hr>
+<h2 id="13-复现与工程落地清单">13. 复现与工程落地清单</h2>
+<p>如果你要在公司里复现 DistServe 思路，我建议按这个顺序推进。</p>
+<h3 id="13-1-先做诊断">13.1 先做诊断</h3>
+<ul>
+<li>采集 TTFT/TPOT 的 P50/P90/P99；</li>
+<li>统计 prefill/decode 队列等待占比；</li>
+<li>估算 KV 大小分布与传输带宽需求；</li>
+<li>定位目前最大 SLO 违规来源。</li>
+</ul>
+<h3 id="13-2-再做规划">13.2 再做规划</h3>
+<ul>
+<li>建立简单但可校验的延迟模型；</li>
+<li>用仿真替代全量真机穷举；</li>
+<li>搜索 prefill/decode 并行配置；</li>
+<li>决定实例复制比例以满足目标流量。</li>
+</ul>
+<h3 id="13-3-最后做运行期策略">13.3 最后做运行期策略</h3>
+<ul>
+<li>采用分阶段队列与调度；</li>
+<li>实现 pull 式 KV；</li>
+<li>加入负载漂移检测与周期重规划；</li>
+<li>加入容量水位、退化策略和告警。</li>
+</ul>
+<h3 id="13-4-关键监控指标">13.4 关键监控指标</h3>
+<p>至少要持续监控：</p>
+<ul>
+<li>TTFT/TPOT 分位数，</li>
+<li>SLO 达标率，</li>
+<li>每 GPU goodput，</li>
+<li>分阶段队列长度与等待时间，</li>
+<li>KV 传输延迟分布，</li>
+<li>重规划频率与生效收益。</li>
+</ul>
+<hr>
+<h2 id="14-如果明天要上线-LLM-服务，我会怎么用这篇论文">14. 如果明天要上线 LLM 服务，我会怎么用这篇论文</h2>
+<h3 id="14-1-什么时候优先采用-DistServe-思路">14.1 什么时候优先采用 DistServe 思路</h3>
+<ul>
+<li>你有明确 TTFT + TPOT 双 SLO；</li>
+<li>你已经观测到 prefill/decode 互相拖慢；</li>
+<li>你关心每张 GPU 的成本产出；</li>
+<li>你的集群至少有较好的节点内带宽。</li>
+</ul>
+<h3 id="14-2-什么时候先不采用">14.2 什么时候先不采用</h3>
+<ul>
+<li>业务是离线批处理、延迟不敏感；</li>
+<li>集群规模太小；</li>
+<li>网络条件不足且短期不可改善。</li>
+</ul>
+<h3 id="14-3-实施路径建议">14.3 实施路径建议</h3>
+<ol>
+<li>先在一个高价值模型上灰度试点；</li>
+<li>验证 SLO 达标率与成本收益；</li>
+<li>再扩展到多模型、多应用调度；</li>
+<li>最后完善抢占、故障隔离与自动回滚。</li>
+</ol>
+<hr>
+<h2 id="15-总结">15. 总结</h2>
+<p>DistServe 的关键贡献不只是“把 prefill 和 decode 分开”这么一句口号，而是：</p>
+<ul>
+<li>先证明现有架构的干扰与耦合问题确实存在且严重；</li>
+<li>再给出可执行的、网络感知的放置算法；</li>
+<li>再用系统实现和端到端实验证明收益真实可落地。</li>
+</ul>
+<p>一句话收尾：</p>
+<blockquote>
+<p><strong>在强调服务质量（TTFT/TPOT）与成本效率（per-GPU goodput）的 LLM 线上服务里，DistServe 提供了非常值得借鉴的架构基线。</strong></p>
+</blockquote>
+<hr>
+<h2 id="16-参考文献">16. 参考文献</h2>
+<ol>
+<li>Yinmin Zhong, Shengyu Liu, Junda Chen, Jianbo Hu, Yibo Zhu, Xuanzhe Liu, Xin Jin, Hao Zhang. <strong>DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving</strong>. OSDI 2024. arXiv:2401.09670.</li>
+<li>Woosuk Kwon et al. <strong>Efficient Memory Management for Large Language Model Serving with PagedAttention (vLLM)</strong>. SOSP 2023.</li>
+<li>Amey Agrawal et al. <strong>Sarathi: Efficient LLM Inference by Piggybacking Decodes with Chunked Prefills</strong>. arXiv 2023.</li>
+<li>Bingyang Wu et al. <strong>Fast Distributed Inference Serving for Large Language Models (FastServe)</strong>. arXiv 2023.</li>
+<li>Zhuohan Li et al. <strong>AlpaServe: Statistical Multiplexing with Model Parallelism for Deep Learning Serving</strong>. arXiv 2023.</li>
+<li>Pratyush Patel et al. <strong>Splitwise: Efficient Generative LLM Inference using Phase Splitting</strong>. arXiv 2023.</li>
+</ol>
+<hr>
+<p><em>评审写于 2026-04-09。</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/LLM-Serving/" rel="tag"># LLM Serving</a>
+              <a href="/tags/DistServe/" rel="tag"># DistServe</a>
+              <a href="/tags/ML-Systems/" rel="tag"># ML Systems</a>
+              <a href="/tags/Disaggregated-Serving/" rel="tag"># Disaggregated Serving</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/09/2026-04-09-DistServe-technical-review-en/" rel="prev" title="DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving — Deep Technical Review">
+      <i class="fa fa-chevron-left"></i> DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving — Deep Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/10/2026-04-10-SVDLLM-technical-review-en/" rel="next" title="SVD-LLM: Truncation-aware Singular Value Decomposition for Large Language Model Compression — Deep Technical Review">
+      SVD-LLM: Truncation-aware Singular Value Decomposition for Large Language Model Compression — Deep Technical Review <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-这篇论文为什么值得认真读"><span class="nav-number">1.</span> <span class="nav-text">1. 这篇论文为什么值得认真读</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-给“零基础读者”的前置知识"><span class="nav-number">2.</span> <span class="nav-text">2. 给“零基础读者”的前置知识</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-什么是大模型在线服务"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 什么是大模型在线服务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-Prefill-和-Decoding-到底在做什么"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 Prefill 和 Decoding 到底在做什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-TTFT、TPOT、SLO、SLO-达标率"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 TTFT、TPOT、SLO、SLO 达标率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-Throughput-与-Goodput-的区别"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 Throughput 与 Goodput 的区别</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-GPU-上的“算力瓶颈”与“带宽瓶颈”"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 GPU 上的“算力瓶颈”与“带宽瓶颈”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-批处理与排队：为什么延迟会突然恶化"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 批处理与排队：为什么延迟会突然恶化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-7-Intra-op-Inter-op-并行是什么"><span class="nav-number">2.7.</span> <span class="nav-text">2.7 Intra-op &#x2F; Inter-op 并行是什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-8-NVLINK-与跨节点网络为什么决定系统设计"><span class="nav-number">2.8.</span> <span class="nav-text">2.8 NVLINK 与跨节点网络为什么决定系统设计</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-DistServe-试图解决的核心矛盾"><span class="nav-number">3.</span> <span class="nav-text">3. DistServe 试图解决的核心矛盾</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-关键洞察：Prefill-与-Decoding-不应被强行绑在一起"><span class="nav-number">4.</span> <span class="nav-text">4. 关键洞察：Prefill 与 Decoding 不应被强行绑在一起</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-DistServe-的系统架构与请求生命周期"><span class="nav-number">5.</span> <span class="nav-text">5. DistServe 的系统架构与请求生命周期</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-论文中的权衡分析（Tradeoff-Analysis）"><span class="nav-number">6.</span> <span class="nav-text">6. 论文中的权衡分析（Tradeoff Analysis）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Prefill-实例分析"><span class="nav-number">6.1.</span> <span class="nav-text">6.1 Prefill 实例分析</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#6-1-1-批处理策略"><span class="nav-number">6.1.1.</span> <span class="nav-text">6.1.1 批处理策略</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#6-1-2-排队模型与并行选择"><span class="nav-number">6.1.2.</span> <span class="nav-text">6.1.2 排队模型与并行选择</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Decoding-实例分析"><span class="nav-number">6.2.</span> <span class="nav-text">6.2 Decoding 实例分析</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-工程落地中的现实问题"><span class="nav-number">6.3.</span> <span class="nav-text">6.3 工程落地中的现实问题</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#变长输入引发流水气泡"><span class="nav-number">6.3.1.</span> <span class="nav-text">变长输入引发流水气泡</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#KV-传输压力"><span class="nav-number">6.3.2.</span> <span class="nav-text">KV 传输压力</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#集群拓扑限制"><span class="nav-number">6.3.3.</span> <span class="nav-text">集群拓扑限制</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-方法部分：Placement-优化算法"><span class="nav-number">7.</span> <span class="nav-text">7. 方法部分：Placement 优化算法</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-高节点亲和场景（Algorithm-1）"><span class="nav-number">7.1.</span> <span class="nav-text">7.1 高节点亲和场景（Algorithm 1）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-低节点亲和场景（Algorithm-2）"><span class="nav-number">7.2.</span> <span class="nav-text">7.2 低节点亲和场景（Algorithm 2）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-为什么要做模拟器（Simulator）"><span class="nav-number">7.3.</span> <span class="nav-text">7.3 为什么要做模拟器（Simulator）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-在线调度与运行期优化"><span class="nav-number">7.4.</span> <span class="nav-text">7.4 在线调度与运行期优化</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-实现细节"><span class="nav-number">8.</span> <span class="nav-text">8. 实现细节</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-实验设置"><span class="nav-number">9.</span> <span class="nav-text">9. 实验设置</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-集群与硬件"><span class="nav-number">9.1.</span> <span class="nav-text">9.1 集群与硬件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-模型"><span class="nav-number">9.2.</span> <span class="nav-text">9.2 模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-工作负载与应用（Table-1）"><span class="nav-number">9.3.</span> <span class="nav-text">9.3 工作负载与应用（Table 1）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-对比基线"><span class="nav-number">9.4.</span> <span class="nav-text">9.4 对比基线</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-结果解读（含图表证据）"><span class="nav-number">10.</span> <span class="nav-text">10. 结果解读（含图表证据）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-Chatbot-场景"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 Chatbot 场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-代码补全场景"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 代码补全场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-文档摘要场景"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 文档摘要场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-4-延迟拆解：KV-传输是否拖后腿"><span class="nav-number">10.4.</span> <span class="nav-text">10.4 延迟拆解：KV 传输是否拖后腿</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-5-消融实验与模拟器准确性"><span class="nav-number">10.5.</span> <span class="nav-text">10.5 消融实验与模拟器准确性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-6-算法运行时间"><span class="nav-number">10.6.</span> <span class="nav-text">10.6 算法运行时间</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-我对这篇论文的技术判断"><span class="nav-number">11.</span> <span class="nav-text">11. 我对这篇论文的技术判断</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-局限性与边界条件"><span class="nav-number">12.</span> <span class="nav-text">12. 局限性与边界条件</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#12-1-非延迟敏感场景"><span class="nav-number">12.1.</span> <span class="nav-text">12.1 非延迟敏感场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-2-极小规模资源环境"><span class="nav-number">12.2.</span> <span class="nav-text">12.2 极小规模资源环境</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-3-对负载统计稳定性的依赖"><span class="nav-number">12.3.</span> <span class="nav-text">12.3 对负载统计稳定性的依赖</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-4-运行期策略仍可更强"><span class="nav-number">12.4.</span> <span class="nav-text">12.4 运行期策略仍可更强</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-5-网络条件极差时的风险"><span class="nav-number">12.5.</span> <span class="nav-text">12.5 网络条件极差时的风险</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-复现与工程落地清单"><span class="nav-number">13.</span> <span class="nav-text">13. 复现与工程落地清单</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#13-1-先做诊断"><span class="nav-number">13.1.</span> <span class="nav-text">13.1 先做诊断</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-2-再做规划"><span class="nav-number">13.2.</span> <span class="nav-text">13.2 再做规划</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-3-最后做运行期策略"><span class="nav-number">13.3.</span> <span class="nav-text">13.3 最后做运行期策略</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-4-关键监控指标"><span class="nav-number">13.4.</span> <span class="nav-text">13.4 关键监控指标</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#14-如果明天要上线-LLM-服务，我会怎么用这篇论文"><span class="nav-number">14.</span> <span class="nav-text">14. 如果明天要上线 LLM 服务，我会怎么用这篇论文</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#14-1-什么时候优先采用-DistServe-思路"><span class="nav-number">14.1.</span> <span class="nav-text">14.1 什么时候优先采用 DistServe 思路</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-2-什么时候先不采用"><span class="nav-number">14.2.</span> <span class="nav-text">14.2 什么时候先不采用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-3-实施路径建议"><span class="nav-number">14.3.</span> <span class="nav-text">14.3 实施路径建议</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#15-总结"><span class="nav-number">15.</span> <span class="nav-text">15. 总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#16-参考文献"><span class="nav-number">16.</span> <span class="nav-text">16. 参考文献</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

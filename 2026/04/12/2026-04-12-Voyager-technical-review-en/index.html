@@ -1,0 +1,1308 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. Why this paper is worth a full weekend deep dive If I had to summarize this paper in one line for a reader who knows almost nothing about AI agents, I would say this:  Voyager tries to make a langu">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Voyager: An Open-Ended Embodied Agent with Large Language Models — Deep Technical Review">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/12/2026-04-12-Voyager-technical-review-en/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. Why this paper is worth a full weekend deep dive If I had to summarize this paper in one line for a reader who knows almost nothing about AI agents, I would say this:  Voyager tries to make a langu">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-12T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-16T12:57:27.447Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="LLM Agent">
+<meta property="article:tag" content="Voyager">
+<meta property="article:tag" content="Embodied AI">
+<meta property="article:tag" content="Minecraft">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/12/2026-04-12-Voyager-technical-review-en/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>Voyager: An Open-Ended Embodied Agent with Large Language Models — Deep Technical Review | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/12/2026-04-12-Voyager-technical-review-en/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Voyager: An Open-Ended Embodied Agent with Large Language Models — Deep Technical Review
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-12 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-12T00:00:00+00:00">2026-04-12</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-16 12:57:27" itemprop="dateModified" datetime="2026-04-16T12:57:27+00:00">2026-04-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-Why-this-paper-is-worth-a-full-weekend-deep-dive">1. Why this paper is worth a full weekend deep dive</h2>
+<p>If I had to summarize this paper in one line for a reader who knows almost nothing about AI agents, I would say this:</p>
+<blockquote>
+<p><strong>Voyager tries to make a language model behave less like a one-shot chatbot and more like a self-improving game player that keeps exploring, keeps learning reusable skills, and keeps getting stronger over time.</strong></p>
+</blockquote>
+<p>That sentence sounds simple, but the paper is trying to solve something genuinely hard.</p>
+<p>A lot of early language-model agent papers looked impressive because the model could:</p>
+<ul>
+<li>think in text,</li>
+<li>generate a plan,</li>
+<li>call a tool,</li>
+<li>or complete a short task loop.</li>
+</ul>
+<p>But many of them still had a short-horizon mindset. They were good at “solve this task now,” not “become a better agent after 100 tasks.” In other words, they could act, but they did not really <strong>accumulate competence</strong>.</p>
+<p>Voyager is interesting because it takes the accumulation question seriously. The paper asks:</p>
+<ul>
+<li>Can an LLM agent keep exploring without a fixed end goal?</li>
+<li>Can it choose manageable next tasks for itself?</li>
+<li>Can it convert successful behaviors into reusable skills?</li>
+<li>Can it carry those skills into a new world and solve unseen tasks more efficiently?</li>
+</ul>
+<p>That is already much closer to how we would describe an actually useful general agent.</p>
+<p>The reason I like this paper is that it does <strong>not</strong> claim to solve general intelligence. It is more modest and more engineering-minded than that. It says: if I have a strong LLM, a structured environment, code-generation ability, and the right feedback loop, then I can get surprisingly strong open-ended behavior <strong>without retraining the model weights</strong>.</p>
+<p>That last point matters a lot. Voyager is not a giant new pretraining pipeline. It is mainly:</p>
+<ul>
+<li>prompting,</li>
+<li>memory organization,</li>
+<li>skill reuse,</li>
+<li>execution feedback,</li>
+<li>and task selection.</li>
+</ul>
+<p>So the paper is really about <strong>agent architecture</strong>, not just model scale.</p>
+<p>Another reason it deserves a careful read is that it is not evaluated only with vague stories. The authors measure concrete things:</p>
+<ul>
+<li>how many unique items the agent discovers,</li>
+<li>how quickly it unlocks the Minecraft technology tree,</li>
+<li>how far it travels across the world,</li>
+<li>whether its learned skills transfer to a fresh world,</li>
+<li>and how each module contributes through ablations.</li>
+</ul>
+<p>That makes the paper more useful than many “cool demo” agent papers. There is a real system here, a clear decomposition, and quantitative evidence.</p>
+<p>My overall take before the deep dive is this:</p>
+<blockquote>
+<p>Voyager is one of the clearest early examples of the idea that an LLM agent becomes much more capable when we treat it as a program-synthesis-and-memory system rather than as a pure conversation system.</p>
+</blockquote>
+<p>That is why I think it is still worth studying carefully.</p>
+<hr>
+<a id="more"></a>
+<h2 id="2-Beginner-prerequisites-the-background-I-would-explain-to-an-older-relative-first">2. Beginner prerequisites: the background I would explain to an older relative first</h2>
+<p>This paper becomes much easier if we slow down and explain the background from first principles.</p>
+<h3 id="2-1-What-an-embodied-agent-is">2.1 What an embodied agent is</h3>
+<p>A normal chatbot sits inside text.</p>
+<p>You ask a question, it answers in text. The world does not change.</p>
+<p>An <strong>embodied agent</strong> is different. It lives in some environment and can do things that change that environment. The environment then responds.</p>
+<p>In simple terms, the loop is:</p>
+<ol>
+<li>observe the world,</li>
+<li>decide what to do,</li>
+<li>act,</li>
+<li>see what happened,</li>
+<li>decide again.</li>
+</ol>
+<p>That feedback loop is the core idea.</p>
+<p>In robotics, embodiment means a robot body in the physical world. In games, embodiment means a game avatar acting inside a simulated world. Minecraft counts because the world has objects, tools, terrain, movement, danger, resource collection, and long chains of dependencies.</p>
+<p>So the agent is not merely “answering a question.” It is <strong>living through consequences</strong>.</p>
+<h3 id="2-2-Why-Minecraft-is-a-serious-research-environment-rather-than-just-a-game">2.2 Why Minecraft is a serious research environment rather than just a game</h3>
+<p>To a casual reader, “Minecraft agent” can sound childish. That is the wrong reaction.</p>
+<p>Minecraft is difficult for AI because it combines many challenges at once:</p>
+<ul>
+<li>long-horizon planning,</li>
+<li>sparse and delayed rewards,</li>
+<li>compositional crafting,</li>
+<li>exploration over a large world,</li>
+<li>survival constraints,</li>
+<li>tool use,</li>
+<li>and skill dependencies.</li>
+</ul>
+<p>If you want a diamond pickaxe, you do not just ask for it. You must do a chain of prerequisite actions:</p>
+<ul>
+<li>collect wood,</li>
+<li>craft planks,</li>
+<li>craft a crafting table,</li>
+<li>make wooden tools,</li>
+<li>mine stone,</li>
+<li>make better tools,</li>
+<li>find iron,</li>
+<li>smelt it,</li>
+<li>survive long enough,</li>
+<li>then progress further.</li>
+</ul>
+<p>This dependency structure is exactly why the environment is interesting. It forces the agent to accumulate capabilities instead of faking competence for one turn.</p>
+<p>Minecraft is also open-ended. There is no single tiny benchmark goal that fully defines progress. That makes it a useful testbed for <strong>continual skill growth</strong>.</p>
+<h3 id="2-3-What-lifelong-learning-means">2.3 What lifelong learning means</h3>
+<p>Lifelong learning means the agent does not reset after every small task. It keeps going, and its earlier experience should help with later tasks.</p>
+<p>A human example is easy:</p>
+<ul>
+<li>once you learn how to chop vegetables, you can reuse that in many recipes;</li>
+<li>once you learn how to ride a bicycle, many balance-related tasks become easier;</li>
+<li>once you learn algebra, physics problems stop feeling like isolated puzzles.</li>
+</ul>
+<p>Similarly, a lifelong agent should be able to say:</p>
+<ul>
+<li>I already know how to mine wood,</li>
+<li>I already know how to build a furnace,</li>
+<li>I already know how to fight a zombie,</li>
+<li>therefore a harder future task should become easier.</li>
+</ul>
+<p>The important word is <strong>reusable</strong>. If the agent solves a task and then forgets how it did it, that is not really lifelong learning. That is just repeated improvisation.</p>
+<h3 id="2-4-Why-open-ended-exploration-is-fundamentally-harder-than-goal-conditioned-tasks">2.4 Why open-ended exploration is fundamentally harder than goal-conditioned tasks</h3>
+<p>Many AI systems look good because the goal is given very clearly.</p>
+<p>For example:</p>
+<ul>
+<li>“Reach location X.”</li>
+<li>“Craft item Y.”</li>
+<li>“Answer question Z.”</li>
+</ul>
+<p>Open-ended exploration is harder because the system must decide for itself <strong>what to pursue next</strong>.</p>
+<p>That creates a new level of difficulty. The agent now needs judgment about:</p>
+<ul>
+<li>what is achievable now,</li>
+<li>what is too hard,</li>
+<li>what is novel,</li>
+<li>what builds toward future competence,</li>
+<li>and what is worth trying given the current state.</li>
+</ul>
+<p>That is why Voyager has an automatic curriculum. Without it, the agent might waste time on impossible or pointless tasks.</p>
+<h3 id="2-5-Why-“code-as-action-space”-matters">2.5 Why “code as action space” matters</h3>
+<p>This is one of the deepest ideas in the paper.</p>
+<p>The agent does not directly output primitive controller actions like:</p>
+<ul>
+<li>step forward,</li>
+<li>turn left,</li>
+<li>swing arm,</li>
+<li>jump.</li>
+</ul>
+<p>Instead, it writes <strong>programs</strong>.</p>
+<p>That means its action is more like:</p>
+<figure class="highlight javascript"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="function"><span class="keyword">function</span> <span class="title">craftStoneSword</span>(<span class="params">bot</span>) </span>&#123;</span><br><span class="line">  <span class="comment">// gather wood if needed</span></span><br><span class="line">  <span class="comment">// craft sticks if needed</span></span><br><span class="line">  <span class="comment">// mine stone if needed</span></span><br><span class="line">  <span class="comment">// place crafting table if needed</span></span><br><span class="line">  <span class="comment">// craft stone sword</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Why is this powerful?</p>
+<p>Because code naturally represents:</p>
+<ul>
+<li>sequences,</li>
+<li>conditions,</li>
+<li>reuse,</li>
+<li>abstraction,</li>
+<li>and composition.</li>
+</ul>
+<p>A single function can express a long-horizon behavior much more cleanly than a long list of primitive motor actions.</p>
+<p>If I explain it to a beginner, I would say:</p>
+<blockquote>
+<p>Primitive actions are like telling someone how to move every muscle in their hand. Code-level actions are like telling them “make tea.”</p>
+</blockquote>
+<p>The second form is much closer to reusable intelligence.</p>
+<h3 id="2-6-What-curriculum-learning-is">2.6 What curriculum learning is</h3>
+<p>Curriculum learning means learning easier things first and harder things later.</p>
+<p>It is the educational principle everyone already knows from school:</p>
+<ul>
+<li>you learn addition before calculus,</li>
+<li>alphabet before literature,</li>
+<li>scales before concert piano.</li>
+</ul>
+<p>In Minecraft, a good curriculum might be:</p>
+<ul>
+<li>obtain wood,</li>
+<li>craft basic tools,</li>
+<li>gather food,</li>
+<li>build a furnace,</li>
+<li>smelt iron,</li>
+<li>upgrade tools,</li>
+<li>then aim for more ambitious tasks.</li>
+</ul>
+<p>A bad curriculum might ask the agent to do something impossible at its current stage, which wastes time and causes failure.</p>
+<p>Voyager’s clever move is to let GPT-4 propose the next task using the current state and progress history, rather than relying on one fixed manually written task list.</p>
+<h3 id="2-7-What-a-skill-library-is-really-doing">2.7 What a skill library is really doing</h3>
+<p>A skill library is not just a notebook of thoughts. In Voyager, it is a library of <strong>executable code snippets</strong> representing successful behaviors.</p>
+<p>That means the memory is active, not passive.</p>
+<p>If the agent has already learned how to:</p>
+<ul>
+<li>make a crafting table,</li>
+<li>smelt iron ingots,</li>
+<li>craft sticks,</li>
+<li>or fight a zombie,</li>
+</ul>
+<p>then a new harder task can reuse those programs instead of rediscovering them from scratch.</p>
+<p>So the skill library plays two roles:</p>
+<ul>
+<li>it reduces repeated work,</li>
+<li>and it lets complex behavior be built from simpler parts.</li>
+</ul>
+<p>This is one of the biggest reasons Voyager scales better than baselines.</p>
+<h3 id="2-8-Why-environment-feedback-and-execution-errors-are-different-signals">2.8 Why environment feedback and execution errors are different signals</h3>
+<p>These sound similar, but they are not the same.</p>
+<p><strong>Environment feedback</strong> means the program runs, and the world tells you what happened.</p>
+<p>Examples:</p>
+<ul>
+<li>“You need 2 more planks.”</li>
+<li>“You currently have 3 copper ingots but no amethyst shard.”</li>
+<li>“A zombie is nearby.”</li>
+</ul>
+<p>This kind of signal tells you what is missing in the world state.</p>
+<p><strong>Execution error</strong> means the program itself is invalid.</p>
+<p>Examples:</p>
+<ul>
+<li>you called a nonexistent function,</li>
+<li>you referenced an item that does not exist,</li>
+<li>you wrote a bad operation,</li>
+<li>or the generated code cannot execute correctly.</li>
+</ul>
+<p>This is closer to debugging.</p>
+<p>The distinction matters because an intelligent agent needs both:</p>
+<ul>
+<li>world-aware correction,</li>
+<li>and code-aware correction.</li>
+</ul>
+<h3 id="2-9-What-self-verification-means-here">2.9 What self-verification means here</h3>
+<p>Self-verification means the system asks another LLM call to judge whether the current task was actually completed.</p>
+<p>That is different from the main code-generation call.</p>
+<p>The verification agent checks:</p>
+<ul>
+<li>current inventory,</li>
+<li>task definition,</li>
+<li>maybe other state,</li>
+<li>then decides success or failure,</li>
+<li>and if failure, gives critique.</li>
+</ul>
+<p>This is an important design choice because otherwise the agent would often fail to know when to move on.</p>
+<p>In practical terms, self-verification answers a question like:</p>
+<blockquote>
+<p>“Did I really craft the requested thing, or do I only think I am close?”</p>
+</blockquote>
+<p>That simple check prevents a lot of useless looping.</p>
+<h3 id="2-10-Why-transfer-to-a-new-world-is-an-important-test">2.10 Why transfer to a new world is an important test</h3>
+<p>An agent can look smart in one environment because it has memorized local facts or just stumbled through many trials.</p>
+<p>The stronger test is:</p>
+<ul>
+<li>clear the inventory,</li>
+<li>reset to a fresh world,</li>
+<li>give unseen tasks,</li>
+<li>and see whether previously learned skills still help.</li>
+</ul>
+<p>If the skill library truly stores general reusable knowledge, then transfer should work.</p>
+<p>Voyager does much better than the baselines here, which is one of the most convincing parts of the paper.</p>
+<hr>
+<h2 id="3-The-exact-problem-Voyager-is-trying-to-solve">3. The exact problem Voyager is trying to solve</h2>
+<p>The paper is not merely asking, “Can GPT-4 play Minecraft?” That would be too vague.</p>
+<p>A more precise reading is this:</p>
+<blockquote>
+<p>Can a large language model, without gradient-based fine-tuning, drive a self-improving embodied agent that keeps exploring an open world, writes reusable action programs, stores them, retrieves them later, and thereby grows its competence over time?</p>
+</blockquote>
+<p>There are several subproblems hidden inside that question.</p>
+<h3 id="3-1-One-shot-generation-is-brittle">3.1 One-shot generation is brittle</h3>
+<p>LLMs often produce plausible code or plans in one shot, but that is not reliable enough for long-horizon interaction. If the generated program is slightly wrong, the agent stalls.</p>
+<h3 id="3-2-Open-ended-exploration-needs-task-selection">3.2 Open-ended exploration needs task selection</h3>
+<p>If you simply tell the agent “explore the world,” that is too abstract. It needs a concrete next objective that is neither too easy nor too hard.</p>
+<h3 id="3-3-Success-must-become-reusable-knowledge">3.3 Success must become reusable knowledge</h3>
+<p>If each new task is solved from scratch, there is no compounding capability. The agent needs a memory format that can be reused directly.</p>
+<h3 id="3-4-Long-horizon-progress-depends-on-composition">3.4 Long-horizon progress depends on composition</h3>
+<p>Harder goals are usually compositions of smaller ones. So the representation of learned behavior must support composition.</p>
+<h3 id="3-5-The-system-must-work-under-black-box-LLM-access">3.5 The system must work under black-box LLM access</h3>
+<p>The authors specifically want a framework that works via prompting and API calls, without weight access or task-specific fine-tuning.</p>
+<p>That last constraint is important because it makes the paper much more relevant to real-world agent builders. Most people building agents do not get to retrain frontier models. They architect around them.</p>
+<p>So Voyager is solving a very modern problem:</p>
+<blockquote>
+<p>How far can we go with architecture, prompting, retrieval, and execution feedback alone?</p>
+</blockquote>
+<hr>
+<h2 id="4-Big-picture-system-overview">4. Big-picture system overview</h2>
+<p>Voyager has three core components, shown conceptually in Figure 2 of the paper:</p>
+<ol>
+<li><strong>Automatic curriculum</strong> — decides what the next task should be.</li>
+<li><strong>Skill library</strong> — stores successful programs as reusable skills.</li>
+<li><strong>Iterative prompting mechanism</strong> — keeps refining generated code using multiple feedback types.</li>
+</ol>
+<p>The outer loop is conceptually simple:</p>
+<ol>
+<li>Look at the current world state and exploration history.</li>
+<li>Ask the curriculum module for the next task.</li>
+<li>Retrieve relevant prior skills.</li>
+<li>Ask GPT-4 to write code for the task.</li>
+<li>Execute the code.</li>
+<li>Gather environment feedback and execution errors.</li>
+<li>Ask the critic whether the task succeeded.</li>
+<li>If successful, store the program as a new skill.</li>
+<li>Repeat with the next task.</li>
+</ol>
+<p>That is the system in one paragraph.</p>
+<p>But the important thing is that the three components are mutually reinforcing.</p>
+<ul>
+<li>The curriculum keeps the next task at the right difficulty.</li>
+<li>The skill library ensures today’s success becomes tomorrow’s prior knowledge.</li>
+<li>Iterative prompting improves reliability on each task.</li>
+</ul>
+<p>In my view, the cleanest way to understand Voyager is this:</p>
+<blockquote>
+<p>It turns an LLM from a stateless improvisor into a <strong>self-scaffolding program synthesizer with reusable memory</strong>.</p>
+</blockquote>
+<p>That is the conceptual leap.</p>
+<hr>
+<h2 id="5-Module-1-Automatic-curriculum">5. Module 1: Automatic curriculum</h2>
+<h3 id="5-1-Why-the-agent-proposes-its-own-next-task">5.1 Why the agent proposes its own next task</h3>
+<p>Open-ended environments are full of possibilities. That freedom is attractive, but it is also dangerous. Without task selection, the agent can waste huge amounts of time.</p>
+<p>Imagine a child learning music. If you say “do whatever you want,” they may spend all day pressing random notes. If you say “first play this scale, then this chord, then this simple song,” learning becomes structured.</p>
+<p>Voyager does not use a fixed manually authored curriculum. Instead, GPT-4 proposes the next immediate task based on:</p>
+<ul>
+<li>current inventory,</li>
+<li>equipment,</li>
+<li>nearby blocks,</li>
+<li>nearby entities,</li>
+<li>biome,</li>
+<li>time,</li>
+<li>health,</li>
+<li>hunger,</li>
+<li>position,</li>
+<li>completed tasks,</li>
+<li>failed tasks,</li>
+<li>and additional context.</li>
+</ul>
+<p>This is important because the right next task depends heavily on current circumstances.</p>
+<p>If the agent is near a river and already has a fishing rod, “catch fish” makes sense.
+If the agent has raw iron and coal plus a furnace, “smelt iron” makes sense.
+If the agent is hungry and sees pigs nearby, “kill one pig” may be the rational next move.</p>
+<p>So the curriculum is not just ordering tasks by abstract difficulty. It is matching tasks to <strong>situated opportunity</strong>.</p>
+<h3 id="5-2-What-goes-into-the-curriculum-prompt">5.2 What goes into the curriculum prompt</h3>
+<p>The appendix is unusually helpful here because the authors share a lot of prompt structure.</p>
+<p>The curriculum prompt contains:</p>
+<ul>
+<li>directives about being a mentor,</li>
+<li>concrete constraints on task form,</li>
+<li>state information,</li>
+<li>completed and failed task history,</li>
+<li>and optionally additional contextual Q&amp;A.</li>
+</ul>
+<p>The task must be:</p>
+<ul>
+<li>specific,</li>
+<li>achievable,</li>
+<li>concise,</li>
+<li>verifiable,</li>
+<li>and singular.</li>
+</ul>
+<p>That design is smarter than it looks.</p>
+<p>A vague task like “become stronger” is not operational.
+A multi-part task like “collect wood, craft tools, and fight a zombie” is hard to verify.
+A visually grounded task like “build a pretty house” is also bad for the current setup because the system does not have full vision-based checking.</p>
+<p>So the prompt deliberately narrows the task format into things like:</p>
+<ul>
+<li>mine X,</li>
+<li>craft Y,</li>
+<li>smelt Z,</li>
+<li>kill one mob,</li>
+<li>cook one food,</li>
+<li>equip item.</li>
+</ul>
+<p>This is a beautiful example of practical agent design. The authors are not trying to let the model speak maximally freely. They are constraining it so that downstream execution and verification become manageable.</p>
+<h3 id="5-3-Warm-up-scheduling-and-why-it-is-smarter-than-dumping-all-context-at-once">5.3 Warm-up scheduling and why it is smarter than dumping all context at once</h3>
+<p>One subtle detail I really like is the <strong>warm-up schedule</strong>.</p>
+<p>Instead of immediately showing the curriculum model every possible part of the state, Voyager gradually increases how much information is included as the agent completes more tasks.</p>
+<p>For example, the paper says early prompts focus on core inventory information, and later prompts add richer details like biome, health, hunger, and additional context.</p>
+<p>This is clever for two reasons.</p>
+<h4 id="First-reason-early-learning-should-stay-simple">First reason: early learning should stay simple</h4>
+<p>At the beginning, the agent does not need a huge amount of context. It mostly needs to learn basics.</p>
+<p>If you overload the prompt too early, you may create distraction or noise.</p>
+<h4 id="Second-reason-competence-and-prompt-complexity-should-grow-together">Second reason: competence and prompt complexity should grow together</h4>
+<p>As the agent becomes more capable, it can benefit from more context because the set of sensible next tasks becomes larger and more nuanced.</p>
+<p>In human terms, you do not teach a child advanced strategic planning on the first day. You first help them learn simple stable actions.</p>
+<h3 id="5-4-My-interpretation-this-is-in-context-novelty-search">5.4 My interpretation: this is in-context novelty search</h3>
+<p>The paper explicitly hints at this interpretation, and I think it is exactly right.</p>
+<p>Voyager’s curriculum is not merely optimizing a fixed reward. It tries to keep the agent discovering new things and broadening capability. That is close in spirit to <strong>novelty search</strong> or curiosity-driven exploration.</p>
+<p>The overall objective is basically:</p>
+<blockquote>
+<p>Discover as many diverse things as possible.</p>
+</blockquote>
+<p>That makes the system interesting because it is not trapped by one rigid benchmark objective. It has a pressure toward breadth.</p>
+<p>I think this is one reason Voyager feels more “alive” than many prior agents. It is not just chasing one terminal reward. It is moving through a capability frontier.</p>
+<p>Of course, there is risk here too. Curiosity-driven objectives can drift or hallucinate weird goals. Later I will explain why that creates limitations. But as an architectural idea, the automatic curriculum is very strong.</p>
+<hr>
+<h2 id="6-Module-2-Skill-library">6. Module 2: Skill library</h2>
+<h3 id="6-1-Why-Voyager-stores-executable-programs-instead-of-plain-text-memories">6.1 Why Voyager stores executable programs instead of plain text memories</h3>
+<p>This may be the single most important design choice after code-as-action.</p>
+<p>A lot of agent systems store text memories such as:</p>
+<ul>
+<li>“I previously tried doing X.”</li>
+<li>“This strategy worked in a similar situation.”</li>
+<li>“Remember that zombies are dangerous at night.”</li>
+</ul>
+<p>That kind of memory can help, but it is not directly executable.</p>
+<p>Voyager instead stores <strong>programs</strong> that successfully solved tasks.</p>
+<p>This matters because successful code is:</p>
+<ul>
+<li>interpretable,</li>
+<li>reusable,</li>
+<li>compositional,</li>
+<li>and action-ready.</li>
+</ul>
+<p>If I store the code for “make crafting table,” I do not merely remember the idea. I preserve the actual operational procedure.</p>
+<p>In a sense, Voyager treats memory as <strong>executable competence</strong> rather than reflective prose.</p>
+<p>That is a deep shift.</p>
+<h3 id="6-2-How-skills-are-added">6.2 How skills are added</h3>
+<p>When the agent successfully completes a task, the generated program is saved into the skill library.</p>
+<p>The system also generates a compact textual description of the skill. That description is then embedded into vector space, and the vector becomes the retrieval key.</p>
+<p>So the library has a key-value flavor:</p>
+<ul>
+<li><strong>key</strong>: embedding of the skill description,</li>
+<li><strong>value</strong>: the program itself.</li>
+</ul>
+<p>This is a pragmatic and elegant design.</p>
+<p>The agent does not need exact symbolic matching of tasks. It can do approximate semantic retrieval.</p>
+<p>For example, a new task like “craft iron pickaxe” may retrieve related prior skills such as:</p>
+<ul>
+<li>craft stick,</li>
+<li>make crafting table,</li>
+<li>smelt iron ingot,</li>
+<li>make furnace.</li>
+</ul>
+<p>That makes the action model more like a software engineer working with reusable utility functions.</p>
+<h3 id="6-3-How-skills-are-retrieved">6.3 How skills are retrieved</h3>
+<p>The paper explains that when faced with a new task, Voyager queries the library using both:</p>
+<ul>
+<li>a self-generated plan for the task,</li>
+<li>and environment feedback.</li>
+</ul>
+<p>Then it retrieves the top relevant prior skills.</p>
+<p>This is important because retrieval is not based only on the task name. Context matters.</p>
+<p>If the current world feedback says the agent lacks planks or sticks, retrieval may prefer skills about gathering wood or crafting intermediate components. If the current task requires combat or smelting, retrieval should surface different prior programs.</p>
+<p>So the skill library is not just a warehouse. It is an <strong>active retrieval system</strong> that conditions generation.</p>
+<h3 id="6-4-Why-compositionality-matters-for-long-horizon-behavior">6.4 Why compositionality matters for long-horizon behavior</h3>
+<p>Minecraft tasks are compositional by nature.</p>
+<p>To perform a harder task, the agent often needs to combine smaller procedures.</p>
+<p>That means skill reuse is not only about efficiency. It is also about <strong>depth of capability</strong>. Without reusable modules, long-horizon behavior becomes too fragile.</p>
+<p>If every new task is solved from scratch, the search space explodes.</p>
+<p>But if existing skills become building blocks, then harder functions can be synthesized from simpler ones. That is how competence compounds.</p>
+<p>The authors explicitly emphasize that the skill library helps alleviate catastrophic forgetting and supports increasingly complex behaviors over time. I agree. In practical agent engineering, this is one of the few memory mechanisms that truly feels like it improves future action quality rather than merely adding more text to the context window.</p>
+<p>In plain language, the skill library lets the agent say:</p>
+<blockquote>
+<p>“I already know small pieces of how to do this, so I only need to figure out how to arrange them.”</p>
+</blockquote>
+<p>That is much closer to real learning.</p>
+<hr>
+<h2 id="7-Module-3-Iterative-prompting-mechanism">7. Module 3: Iterative prompting mechanism</h2>
+<p>Voyager does not trust one-shot code generation. That is wise.</p>
+<p>Instead, it uses a feedback-driven inner loop.</p>
+<h3 id="7-1-Environment-feedback">7.1 Environment feedback</h3>
+<p>Environment feedback tells the model what happened during execution in the world.</p>
+<p>One example from the paper is that GPT-4 realizes it cannot craft sticks because it needs more planks. That is not a syntax problem. It is a <strong>state mismatch</strong> problem.</p>
+<p>This kind of signal is extremely valuable because real tasks fail for situational reasons all the time.</p>
+<p>A plan can be logically correct in the abstract but impossible right now because the world is missing prerequisites.</p>
+<p>Environment feedback helps the model adjust from:</p>
+<ul>
+<li>“I know the recipe in theory”</li>
+</ul>
+<p>into:</p>
+<ul>
+<li>“I do not currently have the ingredients, so I must first collect them.”</li>
+</ul>
+<p>That transition is essential for embodied competence.</p>
+<h3 id="7-2-Execution-errors">7.2 Execution errors</h3>
+<p>Execution errors are a second feedback channel, and they are more like software debugging.</p>
+<p>The paper gives an example where GPT-4 tries to craft an <code>acacia_axe</code>, which is invalid, and the error helps it realize it should craft a wooden axe instead.</p>
+<p>This is a nice illustration of why code generation can be powerful even when imperfect:</p>
+<ul>
+<li>programs can fail visibly,</li>
+<li>visible failure produces precise debugging information,</li>
+<li>precise debugging information can be fed back into the next prompt.</li>
+</ul>
+<p>So the system gets a correction channel that plain text planning often lacks.</p>
+<h3 id="7-3-Self-verification">7.3 Self-verification</h3>
+<p>This is probably the paper’s most underrated component.</p>
+<p>The authors instantiate another GPT-4 agent as a critic. It looks at the task and the current state and decides:</p>
+<ul>
+<li>success or failure,</li>
+<li>plus critique if failure.</li>
+</ul>
+<p>The examples in Figure 6 are quite revealing. The critic can determine from inventory evidence whether the task was achieved and can propose a next correction step if not.</p>
+<p>This is more powerful than a simple yes/no hand-written checker in two ways.</p>
+<h4 id="First-it-generalizes-across-many-tasks">First: it generalizes across many tasks</h4>
+<p>Because the task space is open-ended, manually writing a checker for every new task would be annoying and brittle.</p>
+<h4 id="Second-it-also-produces-critique">Second: it also produces critique</h4>
+<p>So it is not only a stopper. It is a guide.</p>
+<p>The paper argues this is more comprehensive than standard self-reflection, and I think that is fair. Reflection often says, “I think I went wrong.” Self-verification says, “The task is still not complete, and here is why.”</p>
+<h3 id="7-4-The-four-round-inner-loop">7.4 The four-round inner loop</h3>
+<p>The appendix includes pseudocode showing that Voyager tries up to four rounds of code generation for a task before moving on.</p>
+<p>That is a very important engineering decision.</p>
+<p>If you allow infinite retry, the system may waste huge resources on one impossible or badly formed task.
+If you allow no retry, the system loses robustness.</p>
+<p>A capped number of repair rounds creates a reasonable trade-off:</p>
+<ul>
+<li>enough persistence to fix common mistakes,</li>
+<li>but not enough stubbornness to become pathological.</li>
+</ul>
+<p>The inner loop is roughly:</p>
+<ol>
+<li>retrieve relevant skills,</li>
+<li>generate code,</li>
+<li>execute code,</li>
+<li>observe feedback and errors,</li>
+<li>ask the critic for success and critique,</li>
+<li>repeat if needed,</li>
+<li>if success, add skill; if not, mark failure and move on.</li>
+</ol>
+<p>This is one of the cleanest examples of a modern agent loop that treats failure as structured information rather than as a dead end.</p>
+<hr>
+<h2 id="8-Why-code-as-action-is-the-paper’s-most-important-modeling-decision">8. Why code-as-action is the paper’s most important modeling decision</h2>
+<p>If someone asked me what single idea in Voyager mattered most, I would say this:</p>
+<blockquote>
+<p>The agent acts by writing programs rather than by emitting primitive actions.</p>
+</blockquote>
+<p>Why do I consider this more important than even the skill library?</p>
+<p>Because the skill library only works well if the stored objects are useful in the first place. Executable programs are useful objects.</p>
+<p>Let me explain the benefits carefully.</p>
+<h3 id="8-1-Programs-are-temporally-extended-actions">8.1 Programs are temporally extended actions</h3>
+<p>A function can encode a whole multi-step behavior. That makes long-horizon control easier to represent.</p>
+<h3 id="8-2-Programs-are-modular">8.2 Programs are modular</h3>
+<p>You can reuse one function inside another. This is how competence compounds.</p>
+<h3 id="8-3-Programs-are-interpretable">8.3 Programs are interpretable</h3>
+<p>A human can inspect them. That is useful for debugging and safety.</p>
+<h3 id="8-4-Programs-fail-in-informative-ways">8.4 Programs fail in informative ways</h3>
+<p>Syntax errors, missing APIs, invalid items, and execution traces all produce useful signals.</p>
+<h3 id="8-5-Programs-fit-LLM-strengths">8.5 Programs fit LLM strengths</h3>
+<p>Large language models are unusually strong at writing code and reasoning over structured procedures. Voyager aligns the action interface with one of GPT-4’s strongest abilities.</p>
+<p>This is a great example of good systems design: instead of asking the model to be good at everything, the architecture asks it to operate in a space where it is already especially competent.</p>
+<p>Of course, there are trade-offs.</p>
+<ul>
+<li>This approach assumes privileged high-level APIs.</li>
+<li>It avoids raw perception and low-level motor control.</li>
+<li>It may not transfer directly to settings where only continuous control is available.</li>
+</ul>
+<p>But within the paper’s scope, the design is extremely smart.</p>
+<p>I would go even further and say:</p>
+<blockquote>
+<p>Voyager is an early demonstration that a lot of “agent intelligence” can be reframed as <strong>program synthesis plus retrieval plus execution feedback</strong>.</p>
+</blockquote>
+<p>That lesson goes far beyond Minecraft.</p>
+<hr>
+<h2 id="9-End-to-end-algorithm-and-engineering-design">9. End-to-end algorithm and engineering design</h2>
+<p>The appendix includes pseudocode that makes the full algorithm easy to understand. In simplified form, Voyager repeatedly does this:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">reset environment</span><br><span class="line">while true:</span><br><span class="line">    summarize exploration progress</span><br><span class="line">    propose next task with curriculum agent</span><br><span class="line">    initialize code &#x2F; feedback &#x2F; critique</span><br><span class="line">    for up to 4 rounds:</span><br><span class="line">        retrieve relevant skills</span><br><span class="line">        generate code for current task</span><br><span class="line">        execute code in environment</span><br><span class="line">        collect environment feedback and execution errors</span><br><span class="line">        ask critic whether task succeeded</span><br><span class="line">        if success: break</span><br><span class="line">    if success:</span><br><span class="line">        add code to skill library</span><br><span class="line">        mark task completed</span><br><span class="line">    else:</span><br><span class="line">        mark task failed</span><br></pre></td></tr></table></figure>
+<p>I like this pseudocode because it shows the paper is not mysterious. The system is not magic. It is a well-structured loop with clear interfaces.</p>
+<p>Let us notice a few engineering principles embedded here.</p>
+<h3 id="9-1-Separate-the-roles">9.1 Separate the roles</h3>
+<p>Voyager separates:</p>
+<ul>
+<li>task proposal,</li>
+<li>code generation,</li>
+<li>success checking,</li>
+<li>skill management.</li>
+</ul>
+<p>That role separation improves clarity and makes the architecture more modular.</p>
+<h3 id="9-2-Keep-the-world-in-the-loop">9.2 Keep the world in the loop</h3>
+<p>The environment is not just a place where the agent acts. It is a provider of crucial corrective information.</p>
+<h3 id="9-3-Store-successful-action-programs-as-assets">9.3 Store successful action programs as assets</h3>
+<p>Success is not merely a passed episode. It becomes reusable infrastructure.</p>
+<h3 id="9-4-Use-retrieval-to-shape-future-generation">9.4 Use retrieval to shape future generation</h3>
+<p>Past success influences future action through relevant recall.</p>
+<h3 id="9-5-Use-bounded-persistence">9.5 Use bounded persistence</h3>
+<p>Trying four repair rounds per task is a very practical budget-control mechanism.</p>
+<p>This kind of design may look obvious after reading the paper, but it was much less obvious before systems like Voyager made the pattern concrete.</p>
+<hr>
+<h2 id="10-Experimental-setup">10. Experimental setup</h2>
+<p>The experimental section is important because the paper is making strong claims about lifelong embodied learning.</p>
+<h3 id="10-1-Models-used">10.1 Models used</h3>
+<p>The paper uses:</p>
+<ul>
+<li><strong>GPT-4-0314</strong> for major reasoning and code generation tasks,</li>
+<li><strong>GPT-3.5-turbo-0301</strong> for some lower-cost support tasks,</li>
+<li><strong>text-embedding-ada-002</strong> for skill description embeddings.</li>
+</ul>
+<p>Temperatures are mostly set to 0, except the automatic curriculum, which uses 0.1 to encourage some task diversity.</p>
+<p>That small detail is sensible. Task selection benefits from slight diversity; code generation benefits from stability.</p>
+<h3 id="10-2-Environment-stack">10.2 Environment stack</h3>
+<p>The environment is built on top of:</p>
+<ul>
+<li><strong>MineDojo</strong> as the broader Minecraft research framework,</li>
+<li><strong>Mineflayer</strong> JavaScript APIs for control.</li>
+</ul>
+<p>This is important because Voyager is not operating on pixels alone. It has access to structured state and high-level APIs. That makes the task different from raw end-to-end embodied control.</p>
+<p>This does not invalidate the work, but it defines the scope. The paper is pushing <strong>high-level agent architecture</strong>, not low-level visuomotor learning.</p>
+<h3 id="10-3-Baselines">10.3 Baselines</h3>
+<p>The authors compare against reinterpreted versions of:</p>
+<ul>
+<li><strong>ReAct</strong>,</li>
+<li><strong>Reflexion</strong>,</li>
+<li><strong>AutoGPT</strong>,</li>
+<li>and an ablated <strong>Voyager without skill library</strong>.</li>
+</ul>
+<p>These are reasonable baselines because they represent strong prior patterns in LLM agents:</p>
+<ul>
+<li>reasoning + acting,</li>
+<li>reasoning + acting + reflection,</li>
+<li>goal decomposition loops,</li>
+<li>and partial versions of the Voyager architecture.</li>
+</ul>
+<p>The authors also explicitly note that they do not compare directly against low-level pixel-control Minecraft agents because that would not be apples-to-apples.</p>
+<p>I think that is the right call.</p>
+<h3 id="10-4-Evaluation-axes">10.4 Evaluation axes</h3>
+<p>The paper evaluates several dimensions:</p>
+<ul>
+<li>unique item discovery during exploration,</li>
+<li>mastery of the Minecraft tech tree,</li>
+<li>map coverage,</li>
+<li>zero-shot generalization to unseen tasks in a new world,</li>
+<li>ablations of core modules,</li>
+<li>and a small extension using human feedback.</li>
+</ul>
+<p>This evaluation design is strong because it checks not just “did the system do something cool?” but also:</p>
+<ul>
+<li>does it keep progressing,</li>
+<li>does it build structured competence,</li>
+<li>does it transfer,</li>
+<li>and which components really matter?</li>
+</ul>
+<hr>
+<h2 id="11-Main-results-and-what-they-really-mean">11. Main results and what they really mean</h2>
+<p>Now we get to the core evidence.</p>
+<h3 id="11-1-Exploration-performance">11.1 Exploration performance</h3>
+<p>The paper’s headline result is that Voyager discovers <strong>63 unique items within 160 prompting iterations</strong>, which is <strong>3.3× more</strong> than prior baselines.</p>
+<p>This is not a trivial metric.</p>
+<p>Unique item discovery captures broad exploratory competence. To get more distinct items, the agent must:</p>
+<ul>
+<li>move through varied terrain,</li>
+<li>unlock prerequisites,</li>
+<li>survive,</li>
+<li>and execute diverse behaviors.</li>
+</ul>
+<p>So higher item diversity is a reasonable proxy for open-ended progress.</p>
+<p>The paper’s Figure 1 shows Voyager continuing to discover new items while baselines plateau much earlier.</p>
+<p>My interpretation is this:</p>
+<blockquote>
+<p>Voyager is not just slightly better at one task. It is better at staying on a productive learning trajectory.</p>
+</blockquote>
+<p>That is exactly what we want from a lifelong agent.</p>
+<h3 id="11-2-Tech-tree-mastery">11.2 Tech-tree mastery</h3>
+<p>The Minecraft tech tree is a strong test because later tools depend on earlier mastery.</p>
+<p>The paper reports that compared with baselines, Voyager unlocks:</p>
+<ul>
+<li>the <strong>wooden</strong> level <strong>15.3× faster</strong>,</li>
+<li>the <strong>stone</strong> level <strong>8.5× faster</strong>,</li>
+<li>the <strong>iron</strong> level <strong>6.4× faster</strong>,</li>
+<li>and it is the <strong>only</strong> method that reaches the <strong>diamond</strong> level.</li>
+</ul>
+<p>This is one of the most convincing parts of the paper.</p>
+<p>Why?</p>
+<p>Because the tech tree is not just exploration breadth. It is structured capability growth. To advance, the agent needs to compose skills in the right order.</p>
+<p>The fact that Voyager alone reaches diamond tells me the architecture is doing more than local repair. It is actually supporting deeper progression.</p>
+<p>The table also suggests that removing the skill library hurts performance substantially. That makes intuitive sense: harder crafting sequences become much more difficult if previous procedures are not preserved and reused.</p>
+<h3 id="11-3-Map-coverage">11.3 Map coverage</h3>
+<p>The paper reports that Voyager traverses <strong>2.3× longer distances</strong> than baselines.</p>
+<p>This matters because broader map coverage means:</p>
+<ul>
+<li>more opportunity to find new resources,</li>
+<li>more diverse contexts,</li>
+<li>better discovery potential,</li>
+<li>and fewer local traps.</li>
+</ul>
+<p>The authors show bird’s-eye visualizations of explored maps in Figure 7, and Voyager is clearly less confined.</p>
+<p>This result also supports the curriculum hypothesis. If the agent keeps getting well-chosen self-proposed tasks, it naturally has reason to move and search. Without a strong curriculum, agents often dither in local neighborhoods.</p>
+<h3 id="11-4-Zero-shot-generalization-in-a-new-world">11.4 Zero-shot generalization in a new world</h3>
+<p>This is maybe my favorite result.</p>
+<p>The authors reset the agent into a fresh world, clear the inventory, and test unseen tasks such as:</p>
+<ul>
+<li>crafting a diamond pickaxe,</li>
+<li>making a golden sword,</li>
+<li>creating a lava bucket,</li>
+<li>and crafting a compass.</li>
+</ul>
+<p>Voyager solves all of them consistently, while the main baselines fail badly. The paper also shows that even AutoGPT improves when given Voyager’s skill library.</p>
+<p>This is extremely revealing.</p>
+<p>It means the skill library is not only helping the exact original agent loop. It is a transferable competence asset.</p>
+<p>That is strong evidence that Voyager’s memory is learning something structurally useful.</p>
+<p>From the reported table, Voyager achieves full 3/3 success across these tasks with relatively few prompting iterations, outperforming weaker variants and baseline methods.</p>
+<p>So the message is clear:</p>
+<blockquote>
+<p>The skills learned during exploration are not narrow one-off tricks. They generalize.</p>
+</blockquote>
+<h3 id="11-5-Ablation-studies">11.5 Ablation studies</h3>
+<p>The ablations are excellent because they tell us which parts of the system are actually doing work.</p>
+<p>The paper highlights several findings:</p>
+<ul>
+<li>Replacing the automatic curriculum with a random one causes a <strong>93% drop</strong> in discovered item count.</li>
+<li>Removing self-verification causes a <strong>73% drop</strong>.</li>
+<li>Replacing GPT-4 with GPT-3.5 for code generation yields <strong>5.7× fewer unique items</strong>.</li>
+<li>Removing the skill library leads to plateauing later in exploration.</li>
+</ul>
+<p>These numbers tell an important story.</p>
+<h4 id="Curriculum-matters-enormously">Curriculum matters enormously</h4>
+<p>A lifelong agent is not just a solver. It must know what to attempt next.</p>
+<h4 id="Verification-matters-enormously">Verification matters enormously</h4>
+<p>Without a good stop/continue signal, the loop becomes inefficient and confused.</p>
+<h4 id="Model-quality-still-matters">Model quality still matters</h4>
+<p>The architecture helps a lot, but code-generation quality remains a major bottleneck.</p>
+<h4 id="Memory-matters-more-over-time">Memory matters more over time</h4>
+<p>The system without skill library may still do some early progress, but it loses compounding ability later.</p>
+<p>That temporal pattern is exactly what we would expect.</p>
+<h3 id="11-6-Human-feedback-extension">11.6 Human feedback extension</h3>
+<p>The paper also includes an interesting extension where Voyager builds 3D structures with human feedback.</p>
+<p>This part is not the central contribution, but it is conceptually important because it shows the modules are flexible:</p>
+<ul>
+<li>a human can act like the critic,</li>
+<li>a human can act like the curriculum.</li>
+</ul>
+<p>This suggests Voyager’s architecture is not tied only to pure self-driven loops. It can also support interactive alignment or guidance.</p>
+<p>That is promising for future human-in-the-loop agent systems.</p>
+<hr>
+<h2 id="12-What-I-found-genuinely-convincing-in-this-paper">12. What I found genuinely convincing in this paper</h2>
+<p>A lot of agent papers have one nice idea and several weak spots. Voyager also has weaknesses, but there are multiple things I find honestly persuasive.</p>
+<h3 id="12-1-The-architecture-matches-the-problem">12.1 The architecture matches the problem</h3>
+<p>The paper is about lifelong open-ended learning, and the modules directly address the needed ingredients:</p>
+<ul>
+<li>choose manageable next tasks,</li>
+<li>solve them robustly,</li>
+<li>store successes,</li>
+<li>reuse them later.</li>
+</ul>
+<p>There is a clean fit between problem and system design.</p>
+<h3 id="12-2-The-memory-is-action-centric-not-just-conversation-centric">12.2 The memory is action-centric, not just conversation-centric</h3>
+<p>This is the biggest strength in my view. Many agents “remember” by storing text. Voyager remembers by storing executable programs. That is much closer to what capability accumulation should look like.</p>
+<h3 id="12-3-The-results-are-broad-not-narrow">12.3 The results are broad, not narrow</h3>
+<p>The system is tested on exploration, tech progression, traversal, transfer, and ablation. That breadth increases my trust.</p>
+<h3 id="12-4-The-appendix-is-unusually-useful">12.4 The appendix is unusually useful</h3>
+<p>The prompts, pseudocode, and system decomposition make the paper much more reproducible than many LLM-agent papers.</p>
+<h3 id="12-5-The-paper-is-realistic-about-trade-offs">12.5 The paper is realistic about trade-offs</h3>
+<p>The authors explicitly admit cost, hallucinations, and lack of visual perception. That honesty helps credibility.</p>
+<p>Overall, the most convincing sentence I can say is:</p>
+<blockquote>
+<p>Voyager feels like a real system design contribution, not just a prompt trick wrapped in a flashy demo.</p>
+</blockquote>
+<hr>
+<h2 id="13-Limitations-caveats-and-boundary-conditions">13. Limitations, caveats, and boundary conditions</h2>
+<p>No serious review is complete without saying where the paper stops working well.</p>
+<h3 id="13-1-Heavy-dependence-on-GPT-4-quality-and-cost">13.1 Heavy dependence on GPT-4 quality and cost</h3>
+<p>The paper explicitly says GPT-4 is about 15× more expensive than GPT-3.5, and the ablations show weaker models perform much worse.</p>
+<p>So this is not a cheap architecture at the time of the paper.</p>
+<p>A skeptic could reasonably say:</p>
+<blockquote>
+<p>Maybe a lot of the result is just “GPT-4 is strong.”</p>
+</blockquote>
+<p>My response is: yes, model quality matters a lot, but the ablations still show the architecture matters too. The fair conclusion is that Voyager needs both a strong base model and a strong loop.</p>
+<h3 id="13-2-Privileged-interface-to-the-environment">13.2 Privileged interface to the environment</h3>
+<p>Voyager uses structured state and high-level APIs, not raw pixels and low-level motor actions.</p>
+<p>That makes the problem easier than full embodied intelligence.</p>
+<p>So we should not interpret this as “general robots are solved.” The system lives in a fairly friendly abstraction layer.</p>
+<h3 id="13-3-Hallucinated-tasks-and-actions">13.3 Hallucinated tasks and actions</h3>
+<p>The paper gives a delightful but revealing example: the curriculum may ask for impossible items such as a copper sword or copper chestplate. The action generator can also hallucinate invalid actions or wrong fuel choices.</p>
+<p>This shows that even with repair loops, LLMs still carry brittle world-model errors.</p>
+<h3 id="13-4-Verification-can-fail-too">13.4 Verification can fail too</h3>
+<p>Self-verification is powerful, but it is also another LLM call. That means it can misjudge success or miss subtle evidence.</p>
+<p>So the architecture improves reliability, but it does not eliminate epistemic uncertainty.</p>
+<h3 id="13-5-The-system-may-get-stuck-on-hard-tasks">13.5 The system may get stuck on hard tasks</h3>
+<p>The paper notes that the agent can still fail to generate the correct skill after multiple rounds. The curriculum can revisit failed tasks later, but some hard regions remain difficult.</p>
+<h3 id="13-6-Limited-multimodality">13.6 Limited multimodality</h3>
+<p>At the time of the paper, the available GPT-4 API was text-only. So Voyager cannot directly see the world in rich visual detail. That restricts tasks requiring visual judgment, especially building tasks or subtle spatial perception.</p>
+<h3 id="13-7-Benchmark-scope-vs-real-world-generality">13.7 Benchmark scope vs real-world generality</h3>
+<p>Minecraft is rich, but it is still Minecraft.</p>
+<p>Real-world robots face:</p>
+<ul>
+<li>noisy sensors,</li>
+<li>partial observability,</li>
+<li>irreversible physical accidents,</li>
+<li>latency,</li>
+<li>hardware wear,</li>
+<li>safety constraints,</li>
+<li>and harder grounding problems.</li>
+</ul>
+<p>So Voyager is best viewed as a strong proof of concept for high-level lifelong agent architecture, not as a direct blueprint for production robotics.</p>
+<hr>
+<h2 id="14-Reproducibility-and-practical-engineering-notes">14. Reproducibility and practical engineering notes</h2>
+<p>This section matters because many readers want to know whether the paper is actually usable.</p>
+<h3 id="14-1-Is-the-paper-reproducible">14.1 Is the paper reproducible?</h3>
+<p>Compared with many LLM-agent papers, I would say <strong>yes, relatively speaking</strong>.</p>
+<p>Why?</p>
+<ul>
+<li>The appendix includes pseudocode.</li>
+<li>The prompt structures are shared in significant detail.</li>
+<li>The paper clearly describes the three modules.</li>
+<li>There is public project code.</li>
+<li>The environment stack is named explicitly.</li>
+</ul>
+<p>This is much better than papers that just say “we designed an agentic loop” and hide all operational details.</p>
+<h3 id="14-2-What-makes-reproduction-difficult">14.2 What makes reproduction difficult?</h3>
+<p>Even with code, a few practical barriers remain:</p>
+<ul>
+<li>API version differences over time,</li>
+<li>model drift,</li>
+<li>model access cost,</li>
+<li>environment-version mismatches,</li>
+<li>dependence on specific prompt behavior,</li>
+<li>and the complexity of getting Minecraft control infrastructure working cleanly.</li>
+</ul>
+<p>So I would not call this trivial to reproduce. I would call it <strong>transparent enough to be meaningfully reproducible by a serious practitioner</strong>.</p>
+<h3 id="14-3-Why-the-system-design-is-production-relevant-even-if-the-exact-benchmark-is-not">14.3 Why the system design is production-relevant even if the exact benchmark is not</h3>
+<p>The exact Minecraft implementation may not matter to every practitioner, but several design lessons absolutely transfer:</p>
+<ul>
+<li>store successful action programs as reusable tools,</li>
+<li>use critique loops that distinguish world-state failures from code failures,</li>
+<li>generate the next task using state-aware curriculum logic,</li>
+<li>and treat success as an asset to be retrieved later.</li>
+</ul>
+<p>These are general agent-engineering patterns.</p>
+<h3 id="14-4-What-I-would-need-to-deploy-a-Voyager-like-system-today">14.4 What I would need to deploy a Voyager-like system today</h3>
+<p>If I wanted to adapt Voyager’s ideas to a real software or research workflow, I would want:</p>
+<ul>
+<li>a structured action interface,</li>
+<li>executable tools or code snippets,</li>
+<li>a vector-retrievable skill/tool memory,</li>
+<li>a separate verifier or critic,</li>
+<li>a bounded retry loop,</li>
+<li>and a mechanism for proposing next tasks at the right granularity.</li>
+</ul>
+<p>That is basically a recipe for a more robust long-horizon agent.</p>
+<hr>
+<h2 id="15-What-modern-agent-builders-should-learn-from-Voyager">15. What modern agent builders should learn from Voyager</h2>
+<p>Voyager is from 2023, but I think its lessons have aged well.</p>
+<h3 id="15-1-Memory-should-store-competence-not-just-conversation">15.1 Memory should store competence, not just conversation</h3>
+<p>Storing thoughts is helpful. Storing <strong>working procedures</strong> is better.</p>
+<h3 id="15-2-Agent-progress-depends-on-task-selection-quality">15.2 Agent progress depends on task selection quality</h3>
+<p>A smart agent is not only good at acting. It is good at choosing the next achievable frontier task.</p>
+<h3 id="15-3-Debuggable-failure-is-a-feature">15.3 Debuggable failure is a feature</h3>
+<p>Programs that fail with informative traces are better than opaque action policies that fail silently.</p>
+<h3 id="15-4-Verification-should-be-a-first-class-module">15.4 Verification should be a first-class module</h3>
+<p>A lot of agent loops still underinvest in success checking. Voyager shows how important it is.</p>
+<h3 id="15-5-High-level-APIs-can-unlock-rapid-progress">15.5 High-level APIs can unlock rapid progress</h3>
+<p>If your goal is to build useful agents, giving them the right abstraction layer can matter more than making the environment maximally raw.</p>
+<p>This is a practical engineering lesson: sometimes the right question is not “Can the model do everything end to end?” but “What interface lets the model be meaningfully effective?”</p>
+<h3 id="15-6-Skill-libraries-are-early-forms-of-externalized-procedural-memory">15.6 Skill libraries are early forms of externalized procedural memory</h3>
+<p>I think this is one of the conceptual bridges between old software engineering and modern agent design.</p>
+<ul>
+<li>Functions,</li>
+<li>tools,</li>
+<li>macros,</li>
+<li>retrieved workflows,</li>
+<li>and agent memories</li>
+</ul>
+<p>are all converging into a shared idea:</p>
+<blockquote>
+<p>intelligence becomes more durable when successful procedures are explicitly represented and reusable.</p>
+</blockquote>
+<p>Voyager makes that idea concrete.</p>
+<hr>
+<h2 id="16-Final-verdict">16. Final verdict</h2>
+<p>My final verdict is strongly positive.</p>
+<p>Voyager is not the last word on embodied lifelong learning. It depends on powerful LLMs, structured APIs, and a relatively favorable interaction layer. It does not solve raw perception, hard robotics, or full autonomous real-world reliability.</p>
+<p>But within its scope, it is one of the clearest and most influential early agent architecture papers.</p>
+<p>If I explain the paper to a complete beginner, I would say:</p>
+<blockquote>
+<p>Voyager teaches a language model to improve by giving it three habits: pick the next sensible task, save successful behaviors as reusable skills, and debug itself using feedback from the world.</p>
+</blockquote>
+<p>If I explain it to a researcher, I would say:</p>
+<blockquote>
+<p>Voyager demonstrates that open-ended LLM agency benefits dramatically from combining curriculum generation, executable skill memory, and iterative code refinement under environmental feedback.</p>
+</blockquote>
+<p>And if I explain why the paper still matters today, I would say:</p>
+<blockquote>
+<p>It showed, earlier than many people appreciated, that strong agents are not just “bigger chatbots.” They are systems with memory, tools, verifiers, and reusable procedures.</p>
+</blockquote>
+<p>For that reason, I think Voyager deserves its reputation.</p>
+<hr>
+<h2 id="17-References">17. References</h2>
+<ol>
+<li>Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan, and Anima Anandkumar. <strong>Voyager: An Open-Ended Embodied Agent with Large Language Models.</strong> arXiv:2305.16291, 2023.</li>
+<li>Shunyu Yao et al. <strong>ReAct: Synergizing Reasoning and Acting in Language Models.</strong> arXiv:2210.03629, 2022.</li>
+<li>Noah Shinn et al. <strong>Reflexion: Language Agents with Verbal Reinforcement Learning.</strong> arXiv:2303.11366, 2023.</li>
+<li>Jacky Liang et al. <strong>Code as Policies: Language Model Programs for Embodied Control.</strong> arXiv:2209.07753, 2022.</li>
+<li>Linxi Fan et al. <strong>MineDojo: Building Open-Ended Embodied Agents with Internet-Scale Knowledge.</strong> arXiv:2206.08853, 2022.</li>
+<li>Jason Wei et al. <strong>Chain-of-Thought Prompting Elicits Reasoning in Large Language Models.</strong> arXiv:2201.11903, 2022.</li>
+</ol>
+<hr>
+<p><em>Review written on 2026-04-12. The article begins with prerequisites, then moves into method details and experiments.</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/LLM-Agent/" rel="tag"># LLM Agent</a>
+              <a href="/tags/Voyager/" rel="tag"># Voyager</a>
+              <a href="/tags/Embodied-AI/" rel="tag"># Embodied AI</a>
+              <a href="/tags/Minecraft/" rel="tag"># Minecraft</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/12/2026-04-12-Voyager-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="prev" title="Voyager：一个能在 Minecraft 中持续成长的 LLM 具身智能体 —— 深度技术评审">
+      <i class="fa fa-chevron-left"></i> Voyager：一个能在 Minecraft 中持续成长的 LLM 具身智能体 —— 深度技术评审
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/13/2026-04-13-Toolformer-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="next" title="Toolformer：让语言模型自己学会“什么时候调用工具”——深度技术评审">
+      Toolformer：让语言模型自己学会“什么时候调用工具”——深度技术评审 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Why-this-paper-is-worth-a-full-weekend-deep-dive"><span class="nav-number">1.</span> <span class="nav-text">1. Why this paper is worth a full weekend deep dive</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-Beginner-prerequisites-the-background-I-would-explain-to-an-older-relative-first"><span class="nav-number">2.</span> <span class="nav-text">2. Beginner prerequisites: the background I would explain to an older relative first</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-What-an-embodied-agent-is"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 What an embodied agent is</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-Why-Minecraft-is-a-serious-research-environment-rather-than-just-a-game"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 Why Minecraft is a serious research environment rather than just a game</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-What-lifelong-learning-means"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 What lifelong learning means</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-Why-open-ended-exploration-is-fundamentally-harder-than-goal-conditioned-tasks"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 Why open-ended exploration is fundamentally harder than goal-conditioned tasks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-Why-“code-as-action-space”-matters"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 Why “code as action space” matters</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-What-curriculum-learning-is"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 What curriculum learning is</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-7-What-a-skill-library-is-really-doing"><span class="nav-number">2.7.</span> <span class="nav-text">2.7 What a skill library is really doing</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-8-Why-environment-feedback-and-execution-errors-are-different-signals"><span class="nav-number">2.8.</span> <span class="nav-text">2.8 Why environment feedback and execution errors are different signals</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-9-What-self-verification-means-here"><span class="nav-number">2.9.</span> <span class="nav-text">2.9 What self-verification means here</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-10-Why-transfer-to-a-new-world-is-an-important-test"><span class="nav-number">2.10.</span> <span class="nav-text">2.10 Why transfer to a new world is an important test</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-The-exact-problem-Voyager-is-trying-to-solve"><span class="nav-number">3.</span> <span class="nav-text">3. The exact problem Voyager is trying to solve</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-One-shot-generation-is-brittle"><span class="nav-number">3.1.</span> <span class="nav-text">3.1 One-shot generation is brittle</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-Open-ended-exploration-needs-task-selection"><span class="nav-number">3.2.</span> <span class="nav-text">3.2 Open-ended exploration needs task selection</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-Success-must-become-reusable-knowledge"><span class="nav-number">3.3.</span> <span class="nav-text">3.3 Success must become reusable knowledge</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-Long-horizon-progress-depends-on-composition"><span class="nav-number">3.4.</span> <span class="nav-text">3.4 Long-horizon progress depends on composition</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-The-system-must-work-under-black-box-LLM-access"><span class="nav-number">3.5.</span> <span class="nav-text">3.5 The system must work under black-box LLM access</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-Big-picture-system-overview"><span class="nav-number">4.</span> <span class="nav-text">4. Big-picture system overview</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Module-1-Automatic-curriculum"><span class="nav-number">5.</span> <span class="nav-text">5. Module 1: Automatic curriculum</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-Why-the-agent-proposes-its-own-next-task"><span class="nav-number">5.1.</span> <span class="nav-text">5.1 Why the agent proposes its own next task</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-What-goes-into-the-curriculum-prompt"><span class="nav-number">5.2.</span> <span class="nav-text">5.2 What goes into the curriculum prompt</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-Warm-up-scheduling-and-why-it-is-smarter-than-dumping-all-context-at-once"><span class="nav-number">5.3.</span> <span class="nav-text">5.3 Warm-up scheduling and why it is smarter than dumping all context at once</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#First-reason-early-learning-should-stay-simple"><span class="nav-number">5.3.1.</span> <span class="nav-text">First reason: early learning should stay simple</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Second-reason-competence-and-prompt-complexity-should-grow-together"><span class="nav-number">5.3.2.</span> <span class="nav-text">Second reason: competence and prompt complexity should grow together</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-My-interpretation-this-is-in-context-novelty-search"><span class="nav-number">5.4.</span> <span class="nav-text">5.4 My interpretation: this is in-context novelty search</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-Module-2-Skill-library"><span class="nav-number">6.</span> <span class="nav-text">6. Module 2: Skill library</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-Why-Voyager-stores-executable-programs-instead-of-plain-text-memories"><span class="nav-number">6.1.</span> <span class="nav-text">6.1 Why Voyager stores executable programs instead of plain text memories</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-How-skills-are-added"><span class="nav-number">6.2.</span> <span class="nav-text">6.2 How skills are added</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-How-skills-are-retrieved"><span class="nav-number">6.3.</span> <span class="nav-text">6.3 How skills are retrieved</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-Why-compositionality-matters-for-long-horizon-behavior"><span class="nav-number">6.4.</span> <span class="nav-text">6.4 Why compositionality matters for long-horizon behavior</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-Module-3-Iterative-prompting-mechanism"><span class="nav-number">7.</span> <span class="nav-text">7. Module 3: Iterative prompting mechanism</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-Environment-feedback"><span class="nav-number">7.1.</span> <span class="nav-text">7.1 Environment feedback</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-Execution-errors"><span class="nav-number">7.2.</span> <span class="nav-text">7.2 Execution errors</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-Self-verification"><span class="nav-number">7.3.</span> <span class="nav-text">7.3 Self-verification</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#First-it-generalizes-across-many-tasks"><span class="nav-number">7.3.1.</span> <span class="nav-text">First: it generalizes across many tasks</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Second-it-also-produces-critique"><span class="nav-number">7.3.2.</span> <span class="nav-text">Second: it also produces critique</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-The-four-round-inner-loop"><span class="nav-number">7.4.</span> <span class="nav-text">7.4 The four-round inner loop</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-Why-code-as-action-is-the-paper’s-most-important-modeling-decision"><span class="nav-number">8.</span> <span class="nav-text">8. Why code-as-action is the paper’s most important modeling decision</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-Programs-are-temporally-extended-actions"><span class="nav-number">8.1.</span> <span class="nav-text">8.1 Programs are temporally extended actions</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-Programs-are-modular"><span class="nav-number">8.2.</span> <span class="nav-text">8.2 Programs are modular</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-3-Programs-are-interpretable"><span class="nav-number">8.3.</span> <span class="nav-text">8.3 Programs are interpretable</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-4-Programs-fail-in-informative-ways"><span class="nav-number">8.4.</span> <span class="nav-text">8.4 Programs fail in informative ways</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-5-Programs-fit-LLM-strengths"><span class="nav-number">8.5.</span> <span class="nav-text">8.5 Programs fit LLM strengths</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-End-to-end-algorithm-and-engineering-design"><span class="nav-number">9.</span> <span class="nav-text">9. End-to-end algorithm and engineering design</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-Separate-the-roles"><span class="nav-number">9.1.</span> <span class="nav-text">9.1 Separate the roles</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-Keep-the-world-in-the-loop"><span class="nav-number">9.2.</span> <span class="nav-text">9.2 Keep the world in the loop</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-Store-successful-action-programs-as-assets"><span class="nav-number">9.3.</span> <span class="nav-text">9.3 Store successful action programs as assets</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-4-Use-retrieval-to-shape-future-generation"><span class="nav-number">9.4.</span> <span class="nav-text">9.4 Use retrieval to shape future generation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-5-Use-bounded-persistence"><span class="nav-number">9.5.</span> <span class="nav-text">9.5 Use bounded persistence</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-Experimental-setup"><span class="nav-number">10.</span> <span class="nav-text">10. Experimental setup</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-Models-used"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 Models used</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-Environment-stack"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 Environment stack</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-Baselines"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 Baselines</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-4-Evaluation-axes"><span class="nav-number">10.4.</span> <span class="nav-text">10.4 Evaluation axes</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-Main-results-and-what-they-really-mean"><span class="nav-number">11.</span> <span class="nav-text">11. Main results and what they really mean</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#11-1-Exploration-performance"><span class="nav-number">11.1.</span> <span class="nav-text">11.1 Exploration performance</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-2-Tech-tree-mastery"><span class="nav-number">11.2.</span> <span class="nav-text">11.2 Tech-tree mastery</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-3-Map-coverage"><span class="nav-number">11.3.</span> <span class="nav-text">11.3 Map coverage</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-4-Zero-shot-generalization-in-a-new-world"><span class="nav-number">11.4.</span> <span class="nav-text">11.4 Zero-shot generalization in a new world</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-5-Ablation-studies"><span class="nav-number">11.5.</span> <span class="nav-text">11.5 Ablation studies</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Curriculum-matters-enormously"><span class="nav-number">11.5.1.</span> <span class="nav-text">Curriculum matters enormously</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Verification-matters-enormously"><span class="nav-number">11.5.2.</span> <span class="nav-text">Verification matters enormously</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Model-quality-still-matters"><span class="nav-number">11.5.3.</span> <span class="nav-text">Model quality still matters</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Memory-matters-more-over-time"><span class="nav-number">11.5.4.</span> <span class="nav-text">Memory matters more over time</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-6-Human-feedback-extension"><span class="nav-number">11.6.</span> <span class="nav-text">11.6 Human feedback extension</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-What-I-found-genuinely-convincing-in-this-paper"><span class="nav-number">12.</span> <span class="nav-text">12. What I found genuinely convincing in this paper</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#12-1-The-architecture-matches-the-problem"><span class="nav-number">12.1.</span> <span class="nav-text">12.1 The architecture matches the problem</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-2-The-memory-is-action-centric-not-just-conversation-centric"><span class="nav-number">12.2.</span> <span class="nav-text">12.2 The memory is action-centric, not just conversation-centric</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-3-The-results-are-broad-not-narrow"><span class="nav-number">12.3.</span> <span class="nav-text">12.3 The results are broad, not narrow</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-4-The-appendix-is-unusually-useful"><span class="nav-number">12.4.</span> <span class="nav-text">12.4 The appendix is unusually useful</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-5-The-paper-is-realistic-about-trade-offs"><span class="nav-number">12.5.</span> <span class="nav-text">12.5 The paper is realistic about trade-offs</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-Limitations-caveats-and-boundary-conditions"><span class="nav-number">13.</span> <span class="nav-text">13. Limitations, caveats, and boundary conditions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#13-1-Heavy-dependence-on-GPT-4-quality-and-cost"><span class="nav-number">13.1.</span> <span class="nav-text">13.1 Heavy dependence on GPT-4 quality and cost</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-2-Privileged-interface-to-the-environment"><span class="nav-number">13.2.</span> <span class="nav-text">13.2 Privileged interface to the environment</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-3-Hallucinated-tasks-and-actions"><span class="nav-number">13.3.</span> <span class="nav-text">13.3 Hallucinated tasks and actions</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-4-Verification-can-fail-too"><span class="nav-number">13.4.</span> <span class="nav-text">13.4 Verification can fail too</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-5-The-system-may-get-stuck-on-hard-tasks"><span class="nav-number">13.5.</span> <span class="nav-text">13.5 The system may get stuck on hard tasks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-6-Limited-multimodality"><span class="nav-number">13.6.</span> <span class="nav-text">13.6 Limited multimodality</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#13-7-Benchmark-scope-vs-real-world-generality"><span class="nav-number">13.7.</span> <span class="nav-text">13.7 Benchmark scope vs real-world generality</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#14-Reproducibility-and-practical-engineering-notes"><span class="nav-number">14.</span> <span class="nav-text">14. Reproducibility and practical engineering notes</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#14-1-Is-the-paper-reproducible"><span class="nav-number">14.1.</span> <span class="nav-text">14.1 Is the paper reproducible?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-2-What-makes-reproduction-difficult"><span class="nav-number">14.2.</span> <span class="nav-text">14.2 What makes reproduction difficult?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-3-Why-the-system-design-is-production-relevant-even-if-the-exact-benchmark-is-not"><span class="nav-number">14.3.</span> <span class="nav-text">14.3 Why the system design is production-relevant even if the exact benchmark is not</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-4-What-I-would-need-to-deploy-a-Voyager-like-system-today"><span class="nav-number">14.4.</span> <span class="nav-text">14.4 What I would need to deploy a Voyager-like system today</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#15-What-modern-agent-builders-should-learn-from-Voyager"><span class="nav-number">15.</span> <span class="nav-text">15. What modern agent builders should learn from Voyager</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#15-1-Memory-should-store-competence-not-just-conversation"><span class="nav-number">15.1.</span> <span class="nav-text">15.1 Memory should store competence, not just conversation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-2-Agent-progress-depends-on-task-selection-quality"><span class="nav-number">15.2.</span> <span class="nav-text">15.2 Agent progress depends on task selection quality</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-3-Debuggable-failure-is-a-feature"><span class="nav-number">15.3.</span> <span class="nav-text">15.3 Debuggable failure is a feature</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-4-Verification-should-be-a-first-class-module"><span class="nav-number">15.4.</span> <span class="nav-text">15.4 Verification should be a first-class module</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-5-High-level-APIs-can-unlock-rapid-progress"><span class="nav-number">15.5.</span> <span class="nav-text">15.5 High-level APIs can unlock rapid progress</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-6-Skill-libraries-are-early-forms-of-externalized-procedural-memory"><span class="nav-number">15.6.</span> <span class="nav-text">15.6 Skill libraries are early forms of externalized procedural memory</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#16-Final-verdict"><span class="nav-number">16.</span> <span class="nav-text">16. Final verdict</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#17-References"><span class="nav-number">17.</span> <span class="nav-text">17. References</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

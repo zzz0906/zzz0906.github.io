@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="1. 为什么这篇论文值得认真读 如果让我用一句很直白的话来描述本文：  它不是在“再造一个更大的奖励模型”，而是在尝试把奖励模型从黑箱打分器，改造成“可分解、可检查、可调权重”的偏好评审系统。  这件事在 RLHF 里非常关键。 因为在很多对齐流水线里，真正最有“隐形权力”的组件不是 PPO 也不是 DPO，而是奖励模型：  它决定什么样的回答会被判定为“好”； 它的偏差会被后续策略优化放大； 一">
+<meta property="og:type" content="article">
+<meta property="og:title" content="ArmoRM：用“多目标奖励建模 + 混合专家门控”做可解释偏好学习——深度技术评审">
+<meta property="og:url" content="https://zzz0906.github.io/2026/04/14/2026-04-14-ArmoRM-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="1. 为什么这篇论文值得认真读 如果让我用一句很直白的话来描述本文：  它不是在“再造一个更大的奖励模型”，而是在尝试把奖励模型从黑箱打分器，改造成“可分解、可检查、可调权重”的偏好评审系统。  这件事在 RLHF 里非常关键。 因为在很多对齐流水线里，真正最有“隐形权力”的组件不是 PPO 也不是 DPO，而是奖励模型：  它决定什么样的回答会被判定为“好”； 它的偏差会被后续策略优化放大； 一">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-04-14T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-04-16T12:57:27.471Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="Mixture of Experts">
+<meta property="article:tag" content="Alignment">
+<meta property="article:tag" content="ArmoRM">
+<meta property="article:tag" content="Reward Modeling">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/04/14/2026-04-14-ArmoRM-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>ArmoRM：用“多目标奖励建模 + 混合专家门控”做可解释偏好学习——深度技术评审 | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/04/14/2026-04-14-ArmoRM-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          ArmoRM：用“多目标奖励建模 + 混合专家门控”做可解释偏好学习——深度技术评审
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-04-14 00:00:00" itemprop="dateCreated datePublished" datetime="2026-04-14T00:00:00+00:00">2026-04-14</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-04-16 12:57:27" itemprop="dateModified" datetime="2026-04-16T12:57:27+00:00">2026-04-16</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/" itemprop="url" rel="index"><span itemprop="name">Paper Review</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Paper-Review/RL-Training/" itemprop="url" rel="index"><span itemprop="name">RL Training</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="1-为什么这篇论文值得认真读">1. 为什么这篇论文值得认真读</h2>
+<p>如果让我用一句很直白的话来描述本文：</p>
+<blockquote>
+<p>它不是在“再造一个更大的奖励模型”，而是在尝试把奖励模型从黑箱打分器，改造成“可分解、可检查、可调权重”的偏好评审系统。</p>
+</blockquote>
+<p>这件事在 RLHF 里非常关键。</p>
+<p>因为在很多对齐流水线里，真正最有“隐形权力”的组件不是 PPO 也不是 DPO，而是奖励模型：</p>
+<ul>
+<li>它决定什么样的回答会被判定为“好”；</li>
+<li>它的偏差会被后续策略优化放大；</li>
+<li>一旦它错了，模型会“稳定地朝错误方向更努力”。</li>
+</ul>
+<p>最典型的错误就是 <strong>冗长偏置（verbosity bias）</strong>：</p>
+<ul>
+<li>奖励模型潜意识里更偏爱长回答；</li>
+<li>策略模型学到“越长越安全”；</li>
+<li>最终用户得到的不是更好答案，而是更啰嗦、更绕、甚至信息密度更低的答案。</li>
+</ul>
+<p>所以本文真正的问题不是“奖励模型能不能做”。这个问题早就有答案。</p>
+<p>它要回答的是更深一层的问题：</p>
+<blockquote>
+<p>能不能把奖励模型做成“多维、可解释、可按场景动态调节”的结构，减少黑箱偏差和 reward hacking 风险？</p>
+</blockquote>
+<p>我认为，这个问题抓得非常准。</p>
+<hr>
+<a id="more"></a>
+<h2 id="2-前置知识：理解这篇论文前需要知道什么">2. 前置知识：理解这篇论文前需要知道什么</h2>
+<p>这部分我会尽量不用行话，把必要背景一步一步讲清楚。</p>
+<h3 id="2-1-RLHF-到底在做什么">2.1 RLHF 到底在做什么</h3>
+<p>RLHF（Reinforcement Learning from Human Feedback）可以理解成：</p>
+<ul>
+<li>让模型回答问题；</li>
+<li>人类对多个回答给出偏好；</li>
+<li>再把这种偏好喂给模型，让它以后更像人类喜欢的风格。</li>
+</ul>
+<p>常见三步：</p>
+<ol>
+<li>收集偏好数据（谁比谁好）；</li>
+<li>训练奖励模型（学会“像人类那样打分”）；</li>
+<li>用这个奖励去优化策略模型。</li>
+</ol>
+<p>因此奖励模型就像“自动评委”。评委是否靠谱，直接决定后面训练方向是否靠谱。</p>
+<h3 id="2-2-奖励模型（Reward-Model）到底是什么">2.2 奖励模型（Reward Model）到底是什么</h3>
+<p>输入通常是：</p>
+<ul>
+<li>prompt（用户问题）</li>
+<li>response（模型回答）</li>
+</ul>
+<p>输出通常是：</p>
+<ul>
+<li>一个分数；或者</li>
+<li>“A 比 B 好”的偏好概率。</li>
+</ul>
+<p>看起来简单，但问题在于：</p>
+<ul>
+<li>这个分数往往是黑箱，</li>
+<li>你只看到结果，不知道它是因为“正确性高”还是“字数多”。</li>
+</ul>
+<p>这就给调试和对齐埋雷。</p>
+<h3 id="2-3-传统-Bradley-Terry-偏好建模有什么盲区">2.3 传统 Bradley-Terry 偏好建模有什么盲区</h3>
+<p>Bradley-Terry（BT）范式在 RLHF 很常见：</p>
+<ul>
+<li>同一问题给两条回答 A/B；</li>
+<li>标注谁更好；</li>
+<li>训练模型让 A 分高于 B。</li>
+</ul>
+<p>它很有效，但会丢失细节：</p>
+<ul>
+<li>A 赢 B，是因为更真实？更安全？更简洁？</li>
+<li>A 是“碾压式更好”还是“略微更好”？</li>
+</ul>
+<p>这些信息在纯 pairwise 二值标签里很难保留。</p>
+<h3 id="2-4-相对评分-vs-绝对评分">2.4 相对评分 vs 绝对评分</h3>
+<p><strong>相对评分</strong>：A 胜过 B。<br>
+<strong>绝对评分</strong>：A 在“helpfulness=4/5，truthfulness=2/5，verbosity=5/5”。</p>
+<p>本文强调一个非常重要的事实：</p>
+<ul>
+<li>如果原始数据里有绝对评分，直接二值化会损失大量信息。</li>
+</ul>
+<p>例如：</p>
+<ul>
+<li>一个样本是 1:5，</li>
+<li>另一个样本是 2:3，</li>
+</ul>
+<p>二值化后都只是“左输右赢”，但显然前者差距更大。</p>
+<h3 id="2-5-为什么“可解释性”在对齐里是硬需求">2.5 为什么“可解释性”在对齐里是硬需求</h3>
+<p>如果 RM 是黑箱，你会遇到三个现实问题：</p>
+<ol>
+<li><strong>对齐失败难定位</strong>：不知道是哪个偏好维度出了问题；</li>
+<li><strong>偏差难修复</strong>：无法只修一个因素（例如长度偏见）；</li>
+<li><strong>可信性不足</strong>：人类很难确认 RM 的内部判断是否接近人类价值观。</li>
+</ol>
+<p>所以本文提出“可解释奖励维度 + 可调门控权重”是有实际价值的，不是学术装饰。</p>
+<h3 id="2-6-本文里的-MoE-不是大模型稀疏-MoE">2.6 本文里的 MoE 不是大模型稀疏 MoE</h3>
+<p>很多人看到 MoE 会想到“很多专家网络 + router + 稀疏激活”。</p>
+<p>本文不是这个方向。</p>
+<p>这里的“专家”更接近“奖励目标维度”：</p>
+<ul>
+<li>helpfulness、correctness、safety、verbosity 等。</li>
+</ul>
+<p>门控网络做的是：</p>
+<ul>
+<li>根据 prompt 场景，动态决定这些目标各占多少权重。</li>
+</ul>
+<p>所以这是“目标加权的 MoE 思想”，不是“超大参数稀疏专家模型”。</p>
+<h3 id="2-7-什么是-verbosity-bias（冗长偏置）">2.7 什么是 verbosity bias（冗长偏置）</h3>
+<p>就是“越长越容易得高分”。</p>
+<p>这个偏置在实际系统里很常见，后果是：</p>
+<ul>
+<li>回答越来越长，</li>
+<li>但有效信息不一定增加，</li>
+<li>用户体验反而下降。</li>
+</ul>
+<p>本文直接对这个偏置做了数学校正（Eq.2/3），这是亮点之一。</p>
+<h3 id="2-8-RewardBench-的分数在衡量什么">2.8 RewardBench 的分数在衡量什么</h3>
+<p>RewardBench 是用来评估奖励模型质量的基准。</p>
+<p>本文报告的主要类别有：</p>
+<ul>
+<li>Chat</li>
+<li>Chat Hard</li>
+<li>Safety</li>
+<li>Reasoning</li>
+<li>Prior Sets</li>
+</ul>
+<p>总体分是加权平均（前四类权重 1.0，Prior Sets 权重 0.5）。</p>
+<p>所以“总分提升”不是单点偶然，而是多维任务上的综合表现。</p>
+<hr>
+<h2 id="3-论文要解决的核心问题（精确定义）">3. 论文要解决的核心问题（精确定义）</h2>
+<p>本文的问题可以正式表达为：</p>
+<blockquote>
+<p>传统 RLHF 奖励模型常用单一黑箱标量分数，难解释、难调、易受偏置影响。能否利用多目标绝对评分构建可解释的奖励向量，再通过场景自适应门控将其标量化，获得更强、更可控的偏好评估能力？</p>
+</blockquote>
+<p>拆成三个子问题：</p>
+<h3 id="子问题-A：信息损失">子问题 A：信息损失</h3>
+<p>高质量数据集里有细粒度绝对评分，但传统流程常把它压缩成二值偏好。</p>
+<h3 id="子问题-B：聚合方式僵硬">子问题 B：聚合方式僵硬</h3>
+<p>固定线性权重无法适应不同 prompt 场景（安全场景 vs 数学场景）。</p>
+<h3 id="子问题-C：偏置传播">子问题 C：偏置传播</h3>
+<p>很多目标都与“长度”高度相关，不处理会把冗长偏置传播到最终奖励。</p>
+<p>本文方案正好一一对应：</p>
+<ul>
+<li>阶段一：多目标回归保信息；</li>
+<li>阶段二：门控标量化做动态聚合；</li>
+<li>纠偏：去除与 verbosity 的相关性。</li>
+</ul>
+<hr>
+<h2 id="4-一段话看懂本文方法">4. 一段话看懂本文方法</h2>
+<p>本文提出两阶段 Reward Model：</p>
+<ul>
+<li><strong>阶段一（ArmoRM）</strong>：基于 Llama-3 8B 骨干，对 prompt+response 预测多维奖励向量（helpfulness/correctness/safety/verbosity 等）；</li>
+<li><strong>阶段二（MoE gate）</strong>：用一个小型门控 MLP 根据 prompt 生成各目标权重，对纠偏后的目标向量做加权求和，得到最终标量奖励；</li>
+<li>同时通过 Eq.(2)(3) 对 verbosity 相关性做显式校正，减轻“越长越高分”的偏置。</li>
+</ul>
+<p>结果是：在 RewardBench 上，一个 8B 级模型达到 89.0，总体逼近 340B 的 89.3，并明显优于常规 8B BT 奖励模型。</p>
+<hr>
+<h2 id="5-Figure-1-全图拆解：架构是怎么工作的">5. Figure 1 全图拆解：架构是怎么工作的</h2>
+<p>Figure 1 是整篇论文的灵魂图，我建议初学者反复看。</p>
+<p>它包含三个模块：</p>
+<ol>
+<li>LLM backbone</li>
+<li>多目标回归层（ArmoRM）</li>
+<li>门控层（MoE-style scalarization）</li>
+</ol>
+<h3 id="5-1-主干特征提取">5.1 主干特征提取</h3>
+<p>输入是 prompt + response 拼接序列，通过 decoder layers，取最后一层最后 token 的 hidden state 作为特征。</p>
+<p>这意味着：</p>
+<ul>
+<li>方法不依赖花哨新 backbone；</li>
+<li>重点在 reward head 设计与训练方式。</li>
+</ul>
+<h3 id="5-2-多目标回归输出">5.2 多目标回归输出</h3>
+<p>回归层输出 k 维目标分数，而不是单分数。</p>
+<p>这一步给我们“可解释的中间语义层”：</p>
+<ul>
+<li>这个回答到底是因为有帮助、正确，还是只是话多？</li>
+</ul>
+<h3 id="5-3-门控输出权重">5.3 门控输出权重</h3>
+<p>门控层根据 prompt 选择权重，例如：</p>
+<ul>
+<li>safety 场景提高安全权重；</li>
+<li>数学求解提高正确性/有用性权重。</li>
+</ul>
+<p>最后加权得到标量分数供排序/比较。</p>
+<h3 id="5-4-这张图的价值">5.4 这张图的价值</h3>
+<p>我很喜欢这张图，因为它把方法逻辑说透了：</p>
+<blockquote>
+<p>先“拆解偏好”，再“按场景重组偏好”。</p>
+</blockquote>
+<p>这比“直接学一个黑箱分数”更符合人类评审流程。</p>
+<hr>
+<h2 id="6-阶段一：ArmoRM-的多目标奖励回归">6. 阶段一：ArmoRM 的多目标奖励回归</h2>
+<h3 id="6-1-输入输出定义">6.1 输入输出定义</h3>
+<p>每条样本：</p>
+<ul>
+<li><code>x</code>：prompt（可能包含多轮上下文）</li>
+<li><code>y</code>：response</li>
+<li><code>r ∈ R^k</code>：k 维目标评分向量</li>
+</ul>
+<p>模型：</p>
+<ul>
+<li>backbone 提取特征 <code>f_theta(x ⊕ y)</code></li>
+<li>线性层 <code>w</code> 输出 k 维预测</li>
+</ul>
+<p>目标函数（Eq.1）是标准 L2 回归：</p>
+<ul>
+<li>让预测目标向量尽量接近标注向量。</li>
+</ul>
+<h3 id="6-2-为什么先做回归而不是直接-BT">6.2 为什么先做回归而不是直接 BT</h3>
+<p>直觉上，BT 只回答“谁赢了”，而回归能学“赢多少、在哪些维度赢”。</p>
+<p>对于有绝对评分的数据，回归能保留：</p>
+<ul>
+<li>目标细粒度信息，</li>
+<li>差距幅度信息，</li>
+<li>维度语义信息。</li>
+</ul>
+<p>这在后续门控阶段非常有用。</p>
+<h3 id="6-3-绝对评分保留了什么信息">6.3 绝对评分保留了什么信息</h3>
+<p>论文举的例子非常经典：</p>
+<ul>
+<li>1:5 与 2:3 在二值标签里都只是“后者更好”，</li>
+<li>但偏好强度明显不同。</li>
+</ul>
+<p>我再补一层工程理解：</p>
+<ul>
+<li>如果训练信号强弱都被压平，模型会更难学到稳定的“偏好曲面”；</li>
+<li>回归保留强弱，有助于后续更细致地拟合人类偏好结构。</li>
+</ul>
+<h3 id="6-4-实现上为什么“线性探针-冻结-backbone”很聪明">6.4 实现上为什么“线性探针 + 冻结 backbone”很聪明</h3>
+<p>论文没有在阶段一全量微调 8B backbone，而是：</p>
+<ul>
+<li>冻结主干，</li>
+<li>仅训练线性层（线性探针）。</li>
+</ul>
+<p>优点：</p>
+<ul>
+<li>便宜、快、稳定；</li>
+<li>更容易隔离“多目标监督本身”的收益；</li>
+<li>降低过拟合和训练震荡风险。</li>
+</ul>
+<p>这是一种很工程化、很务实的取舍。</p>
+<hr>
+<h2 id="7-阶段二：MoE-门控做目标标量化">7. 阶段二：MoE 门控做目标标量化</h2>
+<h3 id="7-1-固定线性权重为什么不够">7.1 固定线性权重为什么不够</h3>
+<p>如果你永远固定：</p>
+<ul>
+<li>helpfulness 0.4</li>
+<li>safety 0.3</li>
+<li>correctness 0.2</li>
+<li>其余 0.1</li>
+</ul>
+<p>那你默认了“所有场景都该同样打分”。现实显然不是。</p>
+<ul>
+<li>高风险提示词下，安全权重要更高；</li>
+<li>数学/代码任务里，正确性和逻辑一致性更关键；</li>
+<li>某些场景下 verbosity 应该被强惩罚。</li>
+</ul>
+<p>所以聚合必须“看场景”。</p>
+<h3 id="7-2-门控网络具体怎么做">7.2 门控网络具体怎么做</h3>
+<p>论文定义门控函数：</p>
+<ul>
+<li>输入：<code>f_theta(x)</code>（prompt 特征）</li>
+<li>输出：k 维非负权重，且总和为 1（softmax）</li>
+</ul>
+<p>然后与纠偏后的目标向量 <code>r'</code> 做内积得到最终分数 <code>R</code>（Eq.4）。</p>
+<p>这一步可以看作“按任务语境动态配方”。</p>
+<h3 id="7-3-为什么阶段二又回到-pairwise-训练">7.3 为什么阶段二又回到 pairwise 训练</h3>
+<p>阶段一用绝对评分回归，阶段二训练门控则用 BT 风格 pairwise loss（Eq.5）。</p>
+<p>这是很漂亮的组合：</p>
+<ul>
+<li>阶段一学习“评估各维质量”；</li>
+<li>阶段二学习“怎样把多维质量变成人类偏好排序”。</li>
+</ul>
+<p>它对应人类评审直觉：</p>
+<ol>
+<li>先分别看几个维度；</li>
+<li>再综合比较哪条更好。</li>
+</ol>
+<hr>
+<h2 id="8-冗长偏置校正（Eq-2-3）：一个小公式背后的大价值">8. 冗长偏置校正（Eq.2/3）：一个小公式背后的大价值</h2>
+<p>这是本文最值得工程团队借鉴的细节之一。</p>
+<p>论文观察到：</p>
+<ul>
+<li>许多目标分数与 verbosity 高相关；</li>
+<li>如果门控权重又被约束为非负，最终分数很容易继承“长即好”的倾向。</li>
+</ul>
+<p>为此他们对每个目标做修正：</p>
+<p><code>r_i' = r_i - lambda_i * r_verbose</code></p>
+<p>并选择 <code>lambda_i</code> 使得在参考分布 D 上：</p>
+<p><code>Corr_D(r_i', r_verbose) = 0</code></p>
+<p>其中相关性度量采用 Spearman，参考分布用 UltraFeedback。</p>
+<h3 id="8-1-为什么这一步很实用">8.1 为什么这一步很实用</h3>
+<p>它把“偏置治理”从口号变成可执行步骤：</p>
+<ul>
+<li>明确 nuisance variable（verbosity）；</li>
+<li>明确校正方式（减法残差）；</li>
+<li>明确准则（相关性归零）。</li>
+</ul>
+<h3 id="8-2-这一步不是万能解">8.2 这一步不是万能解</h3>
+<p>也要客观看待边界：</p>
+<ul>
+<li>去相关 ≠ 去因果；</li>
+<li>在一个数据分布上去相关，不代表所有分布都无偏；</li>
+<li>还可能存在其他偏置变量未建模。</li>
+</ul>
+<p>但作为“第一层防线”，它非常有价值。</p>
+<hr>
+<h2 id="9-数据与目标体系：19-个目标、8-个数据源、10-个-pairwise-数据集">9. 数据与目标体系：19 个目标、8 个数据源、10 个 pairwise 数据集</h2>
+<p>很多论文的亮点最后会被数据细节拖垮。本文在数据说明上做得比较实。</p>
+<h3 id="9-1-阶段一多目标训练（8-数据集，19-目标）">9.1 阶段一多目标训练（8 数据集，19 目标）</h3>
+<p>来自附录 A，典型目标如下。</p>
+<p><strong>HelpSteer（35k）</strong></p>
+<ul>
+<li>helpsteer-helpfulness</li>
+<li>helpsteer-correctness</li>
+<li>helpsteer-coherence</li>
+<li>helpsteer-complexity</li>
+<li>helpsteer-verbosity（本文用于冗长偏置校正）</li>
+</ul>
+<p><strong>UltraFeedback（240k）</strong></p>
+<ul>
+<li>overall-score</li>
+<li>instruction-following</li>
+<li>truthfulness</li>
+<li>honesty</li>
+<li>helpfulness</li>
+</ul>
+<p><strong>BeaverTails-30k（30k）</strong></p>
+<ul>
+<li>is-safe</li>
+</ul>
+<p><strong>CodeUltraFeedback（50k）</strong></p>
+<ul>
+<li>code-complexity</li>
+<li>code-style</li>
+<li>code-explanation</li>
+<li>code-instruction-following</li>
+<li>code-readability</li>
+</ul>
+<p><strong>Prometheus（200k）</strong></p>
+<ul>
+<li>prometheus-score</li>
+</ul>
+<p><strong>Argilla-Capybara2（15k）</strong></p>
+<ul>
+<li>argilla-overall-quality</li>
+</ul>
+<p><strong>Argilla-OpenOrca（13k）</strong></p>
+<ul>
+<li>argilla-judge-lm</li>
+</ul>
+<p><strong>Argilla-Math-Preference（2.4k）</strong></p>
+<ul>
+<li>与 UltraFeedback instruction-following 共享近似目标语义</li>
+</ul>
+<h3 id="9-2-阶段二门控训练（10-个-pairwise-数据集）">9.2 阶段二门控训练（10 个 pairwise 数据集）</h3>
+<p>包括：</p>
+<ul>
+<li>HelpSteer（37k pairs）</li>
+<li>UltraFeedback（340k pairs）</li>
+<li>SHP（93k pairs）</li>
+<li>HH-RLHF（157k pairs）</li>
+<li>PKU-SafeRLHF-30K</li>
+<li>Argilla-Capybara（15k pairs）</li>
+<li>Argilla-Math-Preferences（2.4k pairs）</li>
+<li>CodeUltraFeedback（50k pairs）</li>
+<li>PRM-Phase-2（80k pairs）</li>
+<li>Prometheus2-Preference-Collection（200k pairs）</li>
+</ul>
+<h3 id="9-3-数据预处理关键点">9.3 数据预处理关键点</h3>
+<p>附录里还有几个很实用的工程细节：</p>
+<ol>
+<li><strong>不同评分尺度统一到 [0,1]</strong>（比如 HelpSteer 0-4，UltraFeedback 1-10）；</li>
+<li><strong>布尔安全标签映射为 0/1</strong>；</li>
+<li><strong>相似目标不强行合并</strong>（因为标注者和 rubric 可能不同）；</li>
+<li><strong>缺失目标维度在回归时忽略</strong>（只对有标签维度计算损失）。</li>
+</ol>
+<p>这些细节看似琐碎，但往往决定模型能否稳定训练。</p>
+<hr>
+<h2 id="10-实现细节与工程成本">10. 实现细节与工程成本</h2>
+<h3 id="10-1-ArmoRM-实现">10.1 ArmoRM 实现</h3>
+<ul>
+<li>架构：Llama-3 8B backbone</li>
+<li>初始化：来自 Dong et al. 2024 的 Llama-3 8B Bradley-Terry RM</li>
+<li>训练：冻结 backbone，仅训练新增线性回归层</li>
+</ul>
+<h3 id="10-2-MoE-门控实现">10.2 MoE 门控实现</h3>
+<ul>
+<li>门控网络：ReLU MLP</li>
+<li>深度：3 个隐藏层</li>
+<li>每层宽度：1024</li>
+<li>优化器：AdamW</li>
+<li>学习率：0.001</li>
+<li>步数：10,000</li>
+<li>batch size：1024</li>
+<li>学习率策略：cosine decay</li>
+<li>β 初值：100</li>
+</ul>
+<h3 id="10-3-软件栈与硬件">10.3 软件栈与硬件</h3>
+<ul>
+<li>软件：PyTorch + Transformers + Scikit-learn</li>
+<li>阶段一：线性探针可在 CPU（离线特征后）训练</li>
+<li>阶段二：单张 NVIDIA A6000 即可</li>
+</ul>
+<h3 id="10-4-工程视角下的意义">10.4 工程视角下的意义</h3>
+<p>这说明本文的收益不是靠“疯狂堆算力”获得，而是通过更聪明的监督结构与目标聚合设计获得。</p>
+<p>这在工业落地里非常加分。</p>
+<hr>
+<h2 id="11-实验设置与对比基线">11. 实验设置与对比基线</h2>
+<h3 id="11-1-评测基准">11.1 评测基准</h3>
+<p>RewardBench：</p>
+<ul>
+<li>Chat</li>
+<li>Chat Hard</li>
+<li>Safety</li>
+<li>Reasoning</li>
+<li>Prior Sets（权重 0.5）</li>
+</ul>
+<p>总体分为加权平均。</p>
+<h3 id="11-2-对比对象（Table-1）">11.2 对比对象（Table 1）</h3>
+<ul>
+<li>HelpSteer2 RM（Nemotron-4 340B）</li>
+<li>ArmoRM + MoE（Llama-3 8B）</li>
+<li>HelpSteer2 RM（Llama-3 70B）</li>
+<li>Preference Model（Llama-3 8B）</li>
+<li>LLM-as-a-judge（GPT-4 Turbo）</li>
+<li>LLM-as-a-judge（GPT-4o）</li>
+<li>Bradley-Terry（Llama-3 8B）</li>
+<li>Bradley-Terry（Yi-34B）</li>
+</ul>
+<p>这个对比集合比较全面：</p>
+<ul>
+<li>有超大参数 RM，</li>
+<li>有同家族更大模型，</li>
+<li>有传统 BT，</li>
+<li>有 LLM 评委路线。</li>
+</ul>
+<hr>
+<h2 id="12-结果解读（带具体数字）">12. 结果解读（带具体数字）</h2>
+<h3 id="12-1-总分：8B-逼近-340B">12.1 总分：8B 逼近 340B</h3>
+<p>Table 1 总分：</p>
+<ul>
+<li><strong>ArmoRM + MoE（Llama-3 8B）：89.0</strong></li>
+<li>HelpSteer2 RM（Nemotron-4 340B）：89.3</li>
+<li>HelpSteer2 RM（Llama-3 70B）：86.3</li>
+<li>Preference Model（Llama-3 8B）：85.7</li>
+<li>GPT-4 Turbo judge：84.2</li>
+<li>GPT-4o judge：83.3</li>
+<li>Bradley-Terry（Llama-3 8B）：83.6</li>
+</ul>
+<p>关键结论：</p>
+<ul>
+<li>相比同规模 BT 8B，提升 <strong>+5.4</strong>；</li>
+<li>相比 GPT-4 Turbo judge，提升 <strong>+4.8</strong>；</li>
+<li>相比 GPT-4o judge，提升 <strong>+5.7</strong>；</li>
+<li>与 340B 超大 RM 仅差 <strong>0.3</strong>。</li>
+</ul>
+<p>这是非常有说服力的参数效率结果。</p>
+<h3 id="12-2-分项观察">12.2 分项观察</h3>
+<h4 id="Chat">Chat</h4>
+<ul>
+<li>ArmoRM + MoE：96.9</li>
+<li>BT Llama-3 8B：99.4</li>
+<li>Preference Model 8B：98.3</li>
+</ul>
+<p>这里 ArmoRM 不是最优。</p>
+<h4 id="Chat-Hard">Chat Hard</h4>
+<ul>
+<li>ArmoRM + MoE：76.8</li>
+<li>BT Llama-3 8B：65.1</li>
+<li>Preference Model 8B：65.8</li>
+<li>GPT-4 Turbo judge：74.3</li>
+<li>Nemotron 340B：87.1</li>
+</ul>
+<p>在更难聊天任务上，ArmoRM 相比 8B 传统模型提升明显，也超过 GPT-4 Turbo judge。</p>
+<h4 id="Safety">Safety</h4>
+<ul>
+<li>ArmoRM + MoE：92.2</li>
+<li>BT Llama-3 8B：87.8</li>
+<li>Preference Model 8B：89.7</li>
+<li>GPT-4 Turbo judge：87.2</li>
+</ul>
+<p>安全维度有稳定增益。</p>
+<h4 id="Reasoning">Reasoning</h4>
+<ul>
+<li>ArmoRM + MoE：97.3</li>
+<li>BT Llama-3 8B：86.4</li>
+<li>Preference Model 8B：94.7</li>
+<li>GPT-4 Turbo judge：86.9</li>
+<li>Nemotron 340B：93.7</li>
+</ul>
+<p>Reasoning 是最大亮点之一：ArmoRM 甚至超过 340B 对比项。</p>
+<h4 id="Prior-Sets">Prior Sets</h4>
+<ul>
+<li>ArmoRM + MoE：74.3</li>
+<li>BT Llama-3 8B：74.9</li>
+<li>Preference Model 8B：74.6</li>
+</ul>
+<p>这里基本持平略低。</p>
+<h3 id="12-3-如何客观看待结果">12.3 如何客观看待结果</h3>
+<p>本文不是“所有子项全赢”的故事，而是：</p>
+<ul>
+<li>在关键难项（Chat Hard/Reasoning/Safety）优势显著，</li>
+<li>在易项/历史项并非全面压制。</li>
+</ul>
+<p>这种结果反而更真实，也更可信。</p>
+<h3 id="12-4-为什么“超-GPT-4-judge”很关键">12.4 为什么“超 GPT-4 judge”很关键</h3>
+<p>在很多生产链路里，“GPT-4 评审器”常被认为是默认强基线。</p>
+<p>本文显示：</p>
+<ul>
+<li>一个专门设计的 8B RM 可以在 RewardBench 上系统性超过该路线。</li>
+</ul>
+<p>这意味着：</p>
+<ul>
+<li>成本更低，</li>
+<li>部署更可控，</li>
+<li>可解释性更好，</li>
+<li>可能成为企业内部评测/偏好标注的更优替代。</li>
+</ul>
+<hr>
+<h2 id="13-这篇论文真正强在哪里">13. 这篇论文真正强在哪里</h2>
+<h3 id="强点-1：把“信息不浪费”落地">强点 1：把“信息不浪费”落地</h3>
+<p>有绝对评分就先用绝对评分，不急着二值化。</p>
+<h3 id="强点-2：把“偏好评估”拆成两步">强点 2：把“偏好评估”拆成两步</h3>
+<ul>
+<li>第一步评各维质量；</li>
+<li>第二步按场景聚合。</li>
+</ul>
+<p>这让模型结构更接近人类评审流程。</p>
+<h3 id="强点-3：直接处理常见偏差">强点 3：直接处理常见偏差</h3>
+<p>冗长偏置不是泛泛而谈，而是写成可执行校正步骤。</p>
+<h3 id="强点-4：工程成本低、收益高">强点 4：工程成本低、收益高</h3>
+<p>冻结主干 + 线性层 + 小门控网络，却拿到大幅性能提升。</p>
+<h3 id="强点-5：参数效率非常亮眼">强点 5：参数效率非常亮眼</h3>
+<p>8B 逼近 340B，这对工业界是极具吸引力的性价比信号。</p>
+<h3 id="强点-6：方法逻辑干净">强点 6：方法逻辑干净</h3>
+<p>读完 Figure 1 + Eq.(1)(2)(3)(4)(5) 就能把全流程讲清楚，这在 RLHF 论文中并不常见。</p>
+<hr>
+<h2 id="14-局限性、边界条件与潜在风险">14. 局限性、边界条件与潜在风险</h2>
+<p>再好的论文也有边界，必须讲清楚。</p>
+<h3 id="14-1-可解释性依赖“目标词表”">14.1 可解释性依赖“目标词表”</h3>
+<p>如果目标集合没覆盖关键价值维度，模型仍会有盲区。</p>
+<h3 id="14-2-去相关不等于去因果">14.2 去相关不等于去因果</h3>
+<p>Eq.(3) 让相关性归零，但并不等价于“彻底消除长度偏见因果路径”。</p>
+<h3 id="14-3-门控只看-prompt，不看完整-response-特征">14.3 门控只看 prompt，不看完整 response 特征</h3>
+<p>这是效率与表达能力的折中。某些情况下，最优权重可能需要看回答内容本身。</p>
+<h3 id="14-4-评测主要依赖-RewardBench">14.4 评测主要依赖 RewardBench</h3>
+<p>希望看到更多外部证据，比如：</p>
+<ul>
+<li>下游 RLHF policy 训练后真实人评变化；</li>
+<li>anti-reward-hacking 对抗测试；</li>
+<li>对可解释性的用户研究。</li>
+</ul>
+<h3 id="14-5-主文中的消融还不够丰富">14.5 主文中的消融还不够丰富</h3>
+<p>我希望进一步看到：</p>
+<ul>
+<li>去掉 verbosity 校正会怎样；</li>
+<li>固定权重 vs 动态门控差异有多大；</li>
+<li>不同 reference 分布对校正效果影响。</li>
+</ul>
+<h3 id="14-6-子项存在-trade-off">14.6 子项存在 trade-off</h3>
+<p>Chat 与 Prior Sets 并非全面领先，说明方法提升具有结构性，不是“无代价全能提升”。</p>
+<hr>
+<h2 id="15-可复现性评估与复现实操建议">15. 可复现性评估与复现实操建议</h2>
+<h3 id="15-1-正面因素">15.1 正面因素</h3>
+<p>本文提供了较完整的关键信息：</p>
+<ul>
+<li>模型架构来源；</li>
+<li>两阶段训练逻辑；</li>
+<li>公式定义；</li>
+<li>门控结构与训练超参；</li>
+<li>数据源与规模；</li>
+<li>硬件/软件栈；</li>
+<li>开源代码与模型地址。</li>
+</ul>
+<h3 id="15-2-复现建议（一步一步）">15.2 复现建议（一步一步）</h3>
+<ol>
+<li>准备 8B BT RM 初始化权重；</li>
+<li>合并多数据源目标并做尺度归一化；</li>
+<li>提取特征并训练多目标线性回归头；</li>
+<li>在 UltraFeedback 上估计各目标 verbosity 校正系数；</li>
+<li>冻结 backbone+回归头，仅训练门控 MLP；</li>
+<li>用 RewardBench 同协议评测；</li>
+<li>记录分项变化与总分变化。</li>
+</ol>
+<h3 id="15-3-真正的复现难点">15.3 真正的复现难点</h3>
+<p>通常不在公式，而在数据工程：</p>
+<ul>
+<li>标签尺度统一、</li>
+<li>缺失目标处理、</li>
+<li>目标语义冲突处理、</li>
+<li>训练样本格式统一。</li>
+</ul>
+<p>如果这些环节不严谨，结果会明显漂移。</p>
+<h3 id="15-4-代码发布信息">15.4 代码发布信息</h3>
+<p>论文摘要给出代码和模型发布地址：</p>
+<p><code>https://github.com/RLHFlow/RLHF-Reward-Modeling</code></p>
+<p>这对复现非常友好。</p>
+<hr>
+<h2 id="16-我会如何在-2026-年继续推进这条路线">16. 我会如何在 2026 年继续推进这条路线</h2>
+<p>如果让我接着做，我会优先做 5 件事。</p>
+<h3 id="16-1-增加下游策略优化闭环验证">16.1 增加下游策略优化闭环验证</h3>
+<p>不仅看 RewardBench，还要看：</p>
+<ul>
+<li>用该 RM 训练出的 policy 是否更少冗长、</li>
+<li>是否更抗 reward hacking、</li>
+<li>是否在真实用户偏好中更好。</li>
+</ul>
+<h3 id="16-2-扩展奖励目标词表">16.2 扩展奖励目标词表</h3>
+<p>建议加入：</p>
+<ul>
+<li>证据忠实性（faithfulness）</li>
+<li>不确定性表达质量</li>
+<li>简洁充分性（concise sufficiency）</li>
+<li>拒答适配性（refusal appropriateness）</li>
+<li>非操控性表达</li>
+</ul>
+<h3 id="16-3-给门控加不确定性建模">16.3 给门控加不确定性建模</h3>
+<p>目前门控是确定权重。可以扩展为权重分布/置信区间，让系统知道“自己不确定”。</p>
+<h3 id="16-4-比较-prompt-only-与-prompt-response-门控">16.4 比较 prompt-only 与 prompt+response 门控</h3>
+<p>研究不同门控输入粒度的收益与代价。</p>
+<h3 id="16-5-从去相关走向更强偏置治理">16.5 从去相关走向更强偏置治理</h3>
+<p>例如：</p>
+<ul>
+<li>length-controlled 对比评测；</li>
+<li>对抗去偏；</li>
+<li>反事实评估；</li>
+<li>多 nuisance 变量联合控制。</li>
+</ul>
+<hr>
+<h2 id="17-给工程实践者的-7-条可落地启发">17. 给工程实践者的 7 条可落地启发</h2>
+<ol>
+<li><strong>不要浪费标注信息</strong>：有多维绝对分就不要急着全压成二值。</li>
+<li><strong>评估与聚合分离</strong>：先学各维质量，再学如何组合。</li>
+<li><strong>权重应场景化</strong>：同一套固定权重很难覆盖所有任务。</li>
+<li><strong>偏置要显式治理</strong>：知道 verbosity 有问题，就在模型层面处理。</li>
+<li><strong>小结构也能大收益</strong>：方法设计常比盲目堆参数更关键。</li>
+<li><strong>看分项不只看总分</strong>：总分好不代表每个场景都好。</li>
+<li><strong>可解释性是运维工具</strong>：当模型行为异常时，你需要可检查的内部指标。</li>
+</ol>
+<hr>
+<h2 id="18-总结结论">18. 总结结论</h2>
+<p>我的总体评价：<strong>强烈正面，且具有实操价值</strong>。</p>
+<p>它不是那种“铺天盖地新理论”的论文，而是把奖励模型里三个真实痛点（信息丢失、聚合僵化、冗长偏置）用一个干净的两阶段方案连接起来，并且给出了足够有力的 benchmark 结果。</p>
+<h3 id="这篇论文确实证明了什么">这篇论文确实证明了什么</h3>
+<ul>
+<li>多目标绝对评分建模可以显著增强 8B 奖励模型；</li>
+<li>动态门控聚合比固定线性聚合更适合复杂偏好场景；</li>
+<li>显式 verbosity 校正在实践上有必要；</li>
+<li>8B 模型可以逼近甚至在部分维度超过大体量基线。</li>
+</ul>
+<h3 id="这篇论文还没有证明什么">这篇论文还没有证明什么</h3>
+<ul>
+<li>在所有分布和任务上都“彻底无偏”；</li>
+<li>仅凭 RewardBench 就能保证下游 RLHF policy 全面更好；</li>
+<li>当前目标词表已完整覆盖人类价值维度。</li>
+</ul>
+<p>所以最准确的定位是：</p>
+<blockquote>
+<p>这是一篇把“奖励模型从黑箱走向结构化可解释”的关键工程论文，不是终点，但非常值得作为新一代 RM 设计基线。</p>
+</blockquote>
+<hr>
+<h2 id="19-参考文献">19. 参考文献</h2>
+<ol>
+<li>Haoxiang Wang, Wei Xiong, Tengyang Xie, Han Zhao, Tong Zhang. <strong>Interpretable Preferences via Multi-Objective Reward Modeling and Mixture-of-Experts.</strong> arXiv:2406.12845, 2024.</li>
+<li>Long Ouyang et al. <strong>Training Language Models to Follow Instructions with Human Feedback.</strong> NeurIPS 2022.</li>
+<li>Bradley, R. A.; Terry, M. E. <strong>Rank Analysis of Incomplete Block Designs: Method of Paired Comparisons.</strong> 1952.</li>
+<li>Nathan Lambert et al. <strong>RewardBench: Evaluating Reward Models for Language Modeling.</strong> arXiv:2403.13787, 2024.</li>
+<li>Zhilin Wang et al. <strong>HelpSteer2: Open-source Dataset for Training Top-performing Reward Models.</strong> 2024.</li>
+</ol>
+<hr>
+<h2 id="20-附录-A：5-个高频问答">20. 附录 A：5 个高频问答</h2>
+<p><strong>Q1：为什么不用 GPT-4 一直当评委？</strong><br>
+A：可以用，但专门训练的 RM 可能更便宜、更可控、在特定评测上甚至更强。</p>
+<p><strong>Q2：多目标打分比单分数好在哪里？</strong><br>
+A：你能知道“高分是因为什么”，便于调试和纠偏。</p>
+<p><strong>Q3：为什么要特别处理“冗长偏置”？</strong><br>
+A：因为这是最常见的偏差之一，会在策略优化后被放大，最终伤害用户体验。</p>
+<p><strong>Q4：这篇论文和 PPO/DPO 是什么关系？</strong><br>
+A：它主要改进的是“奖励模型”这层，可服务于多种 RLHF 流程，不局限于某个优化算法。</p>
+<p><strong>Q5：最值得迁移的核心思想是什么？</strong><br>
+A：先学“多维偏好”，再学“场景化聚合”，并且显式去除已知偏置变量。</p>
+<hr>
+<h2 id="21-附录-B：证据清单（图表-公式-实验）">21. 附录 B：证据清单（图表/公式/实验）</h2>
+<p>本评审显式引用并解读了：</p>
+<ul>
+<li><strong>Figure 1</strong>：总体架构（backbone + 多目标回归 + 门控聚合）</li>
+<li><strong>Equation (1)</strong>：多目标回归损失</li>
+<li><strong>Equation (2)(3)</strong>：verbosity 去相关校正</li>
+<li><strong>Equation (4)</strong>：门控加权标量奖励</li>
+<li><strong>Equation (5)</strong>：门控层的 BT 训练目标</li>
+<li><strong>Table 1</strong>：RewardBench 总分与各分项</li>
+<li><strong>实验实现</strong>：Llama-3 8B、冻结主干、线性探针、门控 MLP（3 层 1024）</li>
+<li><strong>附录 A 数据说明</strong>：8 数据源 19 目标 + 10 个 pairwise 数据集</li>
+<li><strong>训练成本信息</strong>：阶段一 CPU 线性回归、阶段二单张 A6000</li>
+</ul>
+<p>本稿结构遵循“前置知识 -&gt; 方法细节 -&gt; 证据结果 -&gt; 局限边界 -&gt; 工程启发”，帮助读者完整理解。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Mixture-of-Experts/" rel="tag"># Mixture of Experts</a>
+              <a href="/tags/Alignment/" rel="tag"># Alignment</a>
+              <a href="/tags/ArmoRM/" rel="tag"># ArmoRM</a>
+              <a href="/tags/Reward-Modeling/" rel="tag"># Reward Modeling</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/04/14/2026-04-14-ArmoRM-technical-review-en/" rel="prev" title="Interpretable Preferences via Multi-Objective Reward Modeling and Mixture-of-Experts — Deep Technical Review">
+      <i class="fa fa-chevron-left"></i> Interpretable Preferences via Multi-Objective Reward Modeling and Mixture-of-Experts — Deep Technical Review
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/04/15/2026-04-15-LayerSkip-%E6%8A%80%E6%9C%AF%E8%AF%84%E5%AE%A1-zh/" rel="next" title="LayerSkip：让大模型“提前退出 + 自校验推理”成为可部署方案——深度技术评审">
+      LayerSkip：让大模型“提前退出 + 自校验推理”成为可部署方案——深度技术评审 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-为什么这篇论文值得认真读"><span class="nav-number">1.</span> <span class="nav-text">1. 为什么这篇论文值得认真读</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-前置知识：理解这篇论文前需要知道什么"><span class="nav-number">2.</span> <span class="nav-text">2. 前置知识：理解这篇论文前需要知道什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-RLHF-到底在做什么"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 RLHF 到底在做什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-奖励模型（Reward-Model）到底是什么"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 奖励模型（Reward Model）到底是什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-传统-Bradley-Terry-偏好建模有什么盲区"><span class="nav-number">2.3.</span> <span class="nav-text">2.3 传统 Bradley-Terry 偏好建模有什么盲区</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-相对评分-vs-绝对评分"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 相对评分 vs 绝对评分</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-为什么“可解释性”在对齐里是硬需求"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 为什么“可解释性”在对齐里是硬需求</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-本文里的-MoE-不是大模型稀疏-MoE"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 本文里的 MoE 不是大模型稀疏 MoE</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-7-什么是-verbosity-bias（冗长偏置）"><span class="nav-number">2.7.</span> <span class="nav-text">2.7 什么是 verbosity bias（冗长偏置）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-8-RewardBench-的分数在衡量什么"><span class="nav-number">2.8.</span> <span class="nav-text">2.8 RewardBench 的分数在衡量什么</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-论文要解决的核心问题（精确定义）"><span class="nav-number">3.</span> <span class="nav-text">3. 论文要解决的核心问题（精确定义）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#子问题-A：信息损失"><span class="nav-number">3.1.</span> <span class="nav-text">子问题 A：信息损失</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#子问题-B：聚合方式僵硬"><span class="nav-number">3.2.</span> <span class="nav-text">子问题 B：聚合方式僵硬</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#子问题-C：偏置传播"><span class="nav-number">3.3.</span> <span class="nav-text">子问题 C：偏置传播</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-一段话看懂本文方法"><span class="nav-number">4.</span> <span class="nav-text">4. 一段话看懂本文方法</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-Figure-1-全图拆解：架构是怎么工作的"><span class="nav-number">5.</span> <span class="nav-text">5. Figure 1 全图拆解：架构是怎么工作的</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-主干特征提取"><span class="nav-number">5.1.</span> <span class="nav-text">5.1 主干特征提取</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-多目标回归输出"><span class="nav-number">5.2.</span> <span class="nav-text">5.2 多目标回归输出</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-门控输出权重"><span class="nav-number">5.3.</span> <span class="nav-text">5.3 门控输出权重</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-这张图的价值"><span class="nav-number">5.4.</span> <span class="nav-text">5.4 这张图的价值</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-阶段一：ArmoRM-的多目标奖励回归"><span class="nav-number">6.</span> <span class="nav-text">6. 阶段一：ArmoRM 的多目标奖励回归</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-输入输出定义"><span class="nav-number">6.1.</span> <span class="nav-text">6.1 输入输出定义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-为什么先做回归而不是直接-BT"><span class="nav-number">6.2.</span> <span class="nav-text">6.2 为什么先做回归而不是直接 BT</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-绝对评分保留了什么信息"><span class="nav-number">6.3.</span> <span class="nav-text">6.3 绝对评分保留了什么信息</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-实现上为什么“线性探针-冻结-backbone”很聪明"><span class="nav-number">6.4.</span> <span class="nav-text">6.4 实现上为什么“线性探针 + 冻结 backbone”很聪明</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-阶段二：MoE-门控做目标标量化"><span class="nav-number">7.</span> <span class="nav-text">7. 阶段二：MoE 门控做目标标量化</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-固定线性权重为什么不够"><span class="nav-number">7.1.</span> <span class="nav-text">7.1 固定线性权重为什么不够</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-门控网络具体怎么做"><span class="nav-number">7.2.</span> <span class="nav-text">7.2 门控网络具体怎么做</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-为什么阶段二又回到-pairwise-训练"><span class="nav-number">7.3.</span> <span class="nav-text">7.3 为什么阶段二又回到 pairwise 训练</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-冗长偏置校正（Eq-2-3）：一个小公式背后的大价值"><span class="nav-number">8.</span> <span class="nav-text">8. 冗长偏置校正（Eq.2&#x2F;3）：一个小公式背后的大价值</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#8-1-为什么这一步很实用"><span class="nav-number">8.1.</span> <span class="nav-text">8.1 为什么这一步很实用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#8-2-这一步不是万能解"><span class="nav-number">8.2.</span> <span class="nav-text">8.2 这一步不是万能解</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#9-数据与目标体系：19-个目标、8-个数据源、10-个-pairwise-数据集"><span class="nav-number">9.</span> <span class="nav-text">9. 数据与目标体系：19 个目标、8 个数据源、10 个 pairwise 数据集</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#9-1-阶段一多目标训练（8-数据集，19-目标）"><span class="nav-number">9.1.</span> <span class="nav-text">9.1 阶段一多目标训练（8 数据集，19 目标）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-2-阶段二门控训练（10-个-pairwise-数据集）"><span class="nav-number">9.2.</span> <span class="nav-text">9.2 阶段二门控训练（10 个 pairwise 数据集）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#9-3-数据预处理关键点"><span class="nav-number">9.3.</span> <span class="nav-text">9.3 数据预处理关键点</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#10-实现细节与工程成本"><span class="nav-number">10.</span> <span class="nav-text">10. 实现细节与工程成本</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#10-1-ArmoRM-实现"><span class="nav-number">10.1.</span> <span class="nav-text">10.1 ArmoRM 实现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-2-MoE-门控实现"><span class="nav-number">10.2.</span> <span class="nav-text">10.2 MoE 门控实现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-3-软件栈与硬件"><span class="nav-number">10.3.</span> <span class="nav-text">10.3 软件栈与硬件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#10-4-工程视角下的意义"><span class="nav-number">10.4.</span> <span class="nav-text">10.4 工程视角下的意义</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#11-实验设置与对比基线"><span class="nav-number">11.</span> <span class="nav-text">11. 实验设置与对比基线</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#11-1-评测基准"><span class="nav-number">11.1.</span> <span class="nav-text">11.1 评测基准</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#11-2-对比对象（Table-1）"><span class="nav-number">11.2.</span> <span class="nav-text">11.2 对比对象（Table 1）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#12-结果解读（带具体数字）"><span class="nav-number">12.</span> <span class="nav-text">12. 结果解读（带具体数字）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#12-1-总分：8B-逼近-340B"><span class="nav-number">12.1.</span> <span class="nav-text">12.1 总分：8B 逼近 340B</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-2-分项观察"><span class="nav-number">12.2.</span> <span class="nav-text">12.2 分项观察</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#Chat"><span class="nav-number">12.2.1.</span> <span class="nav-text">Chat</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Chat-Hard"><span class="nav-number">12.2.2.</span> <span class="nav-text">Chat Hard</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Safety"><span class="nav-number">12.2.3.</span> <span class="nav-text">Safety</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Reasoning"><span class="nav-number">12.2.4.</span> <span class="nav-text">Reasoning</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#Prior-Sets"><span class="nav-number">12.2.5.</span> <span class="nav-text">Prior Sets</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-3-如何客观看待结果"><span class="nav-number">12.3.</span> <span class="nav-text">12.3 如何客观看待结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#12-4-为什么“超-GPT-4-judge”很关键"><span class="nav-number">12.4.</span> <span class="nav-text">12.4 为什么“超 GPT-4 judge”很关键</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#13-这篇论文真正强在哪里"><span class="nav-number">13.</span> <span class="nav-text">13. 这篇论文真正强在哪里</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#强点-1：把“信息不浪费”落地"><span class="nav-number">13.1.</span> <span class="nav-text">强点 1：把“信息不浪费”落地</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#强点-2：把“偏好评估”拆成两步"><span class="nav-number">13.2.</span> <span class="nav-text">强点 2：把“偏好评估”拆成两步</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#强点-3：直接处理常见偏差"><span class="nav-number">13.3.</span> <span class="nav-text">强点 3：直接处理常见偏差</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#强点-4：工程成本低、收益高"><span class="nav-number">13.4.</span> <span class="nav-text">强点 4：工程成本低、收益高</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#强点-5：参数效率非常亮眼"><span class="nav-number">13.5.</span> <span class="nav-text">强点 5：参数效率非常亮眼</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#强点-6：方法逻辑干净"><span class="nav-number">13.6.</span> <span class="nav-text">强点 6：方法逻辑干净</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#14-局限性、边界条件与潜在风险"><span class="nav-number">14.</span> <span class="nav-text">14. 局限性、边界条件与潜在风险</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#14-1-可解释性依赖“目标词表”"><span class="nav-number">14.1.</span> <span class="nav-text">14.1 可解释性依赖“目标词表”</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-2-去相关不等于去因果"><span class="nav-number">14.2.</span> <span class="nav-text">14.2 去相关不等于去因果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-3-门控只看-prompt，不看完整-response-特征"><span class="nav-number">14.3.</span> <span class="nav-text">14.3 门控只看 prompt，不看完整 response 特征</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-4-评测主要依赖-RewardBench"><span class="nav-number">14.4.</span> <span class="nav-text">14.4 评测主要依赖 RewardBench</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-5-主文中的消融还不够丰富"><span class="nav-number">14.5.</span> <span class="nav-text">14.5 主文中的消融还不够丰富</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#14-6-子项存在-trade-off"><span class="nav-number">14.6.</span> <span class="nav-text">14.6 子项存在 trade-off</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#15-可复现性评估与复现实操建议"><span class="nav-number">15.</span> <span class="nav-text">15. 可复现性评估与复现实操建议</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#15-1-正面因素"><span class="nav-number">15.1.</span> <span class="nav-text">15.1 正面因素</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-2-复现建议（一步一步）"><span class="nav-number">15.2.</span> <span class="nav-text">15.2 复现建议（一步一步）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-3-真正的复现难点"><span class="nav-number">15.3.</span> <span class="nav-text">15.3 真正的复现难点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#15-4-代码发布信息"><span class="nav-number">15.4.</span> <span class="nav-text">15.4 代码发布信息</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#16-我会如何在-2026-年继续推进这条路线"><span class="nav-number">16.</span> <span class="nav-text">16. 我会如何在 2026 年继续推进这条路线</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#16-1-增加下游策略优化闭环验证"><span class="nav-number">16.1.</span> <span class="nav-text">16.1 增加下游策略优化闭环验证</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#16-2-扩展奖励目标词表"><span class="nav-number">16.2.</span> <span class="nav-text">16.2 扩展奖励目标词表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#16-3-给门控加不确定性建模"><span class="nav-number">16.3.</span> <span class="nav-text">16.3 给门控加不确定性建模</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#16-4-比较-prompt-only-与-prompt-response-门控"><span class="nav-number">16.4.</span> <span class="nav-text">16.4 比较 prompt-only 与 prompt+response 门控</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#16-5-从去相关走向更强偏置治理"><span class="nav-number">16.5.</span> <span class="nav-text">16.5 从去相关走向更强偏置治理</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#17-给工程实践者的-7-条可落地启发"><span class="nav-number">17.</span> <span class="nav-text">17. 给工程实践者的 7 条可落地启发</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#18-总结结论"><span class="nav-number">18.</span> <span class="nav-text">18. 总结结论</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#这篇论文确实证明了什么"><span class="nav-number">18.1.</span> <span class="nav-text">这篇论文确实证明了什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#这篇论文还没有证明什么"><span class="nav-number">18.2.</span> <span class="nav-text">这篇论文还没有证明什么</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#19-参考文献"><span class="nav-number">19.</span> <span class="nav-text">19. 参考文献</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#20-附录-A：5-个高频问答"><span class="nav-number">20.</span> <span class="nav-text">20. 附录 A：5 个高频问答</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#21-附录-B：证据清单（图表-公式-实验）"><span class="nav-number">21.</span> <span class="nav-text">21. 附录 B：证据清单（图表&#x2F;公式&#x2F;实验）</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">96</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
