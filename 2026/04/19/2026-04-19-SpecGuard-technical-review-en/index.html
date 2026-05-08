@@ -26,15 +26,15 @@
     var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
   </script>
 
-  <meta name="description" content="1. Error Propagation in Multi-Step Tasks When a draft makes a subtle mistake, standard SD&#39;s token-level verification doesn&#39;t catch it: 123Draft Step 1: &quot;The sum of 3 and 4 is 7&quot;      p_targe">
+  <meta name="description" content="A technical review of SpecGuard, a verification-aware speculative decoding method that uses model-internal attention and log-probability signals to improve multi-step reasoning efficiency.">
 <meta property="og:type" content="article">
 <meta property="og:title" content="SpecGuard: Verification-Aware Speculative Decoding for Efficient Multi-Step Reasoning">
 <meta property="og:url" content="https://zzz0906.github.io/2026/04/19/2026-04-19-SpecGuard-technical-review-en/index.html">
 <meta property="og:site_name" content="Zhongzhu&#39;s Blog">
-<meta property="og:description" content="1. Error Propagation in Multi-Step Tasks When a draft makes a subtle mistake, standard SD&#39;s token-level verification doesn&#39;t catch it: 123Draft Step 1: &quot;The sum of 3 and 4 is 7&quot;      p_targe">
+<meta property="og:description" content="A technical review of SpecGuard, a verification-aware speculative decoding method that uses model-internal attention and log-probability signals to improve multi-step reasoning efficiency.">
 <meta property="og:locale" content="en_US">
 <meta property="article:published_time" content="2026-04-19T00:00:00.000Z">
-<meta property="article:modified_time" content="2026-04-22T02:16:01.397Z">
+<meta property="article:modified_time" content="2026-05-08T00:38:35.891Z">
 <meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
 <meta property="article:tag" content="Speculative Decoding">
 <meta property="article:tag" content="SpecGuard">
@@ -201,7 +201,7 @@
                   <i class="far fa-calendar-check"></i>
                 </span>
                 <span class="post-meta-item-text">Edited on</span>
-                <time title="Modified: 2026-04-22 02:16:01" itemprop="dateModified" datetime="2026-04-22T02:16:01+00:00">2026-04-22</time>
+                <time title="Modified: 2026-05-08 00:38:35" itemprop="dateModified" datetime="2026-05-08T00:38:35+00:00">2026-05-08</time>
               </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
@@ -214,6 +214,7 @@
             </span>
 
           
+            <div class="post-description">A technical review of SpecGuard, a verification-aware speculative decoding method that uses model-internal attention and log-probability signals to improve multi-step reasoning efficiency.</div>
 
         </div>
       </header>
@@ -224,7 +225,74 @@
     <div class="post-body" itemprop="articleBody">
 
       
-        <h2 id="1-Error-Propagation-in-Multi-Step-Tasks">1. Error Propagation in Multi-Step Tasks</h2>
+        <h1 id="SpecGuard-Verification-Aware-Speculative-Decoding-for-Efficient-Multi-Step-Reasoning">SpecGuard: Verification-Aware Speculative Decoding for Efficient Multi-Step Reasoning</h1>
+<p><strong>Paper:</strong> From Tokens to Steps: Verification-Aware Speculative Decoding for Efficient Multi-Step Reasoning<br>
+<strong>ArXiv ID:</strong> 2604.15244<br>
+<strong>Authors:</strong> Kiran Purohit (IIT Kharagpur), Ramasuri Narayanam (Adobe Research), Soumyabrata Pal (Adobe Research)<br>
+<strong>Date:</strong> April 16, 2026<br>
+<strong>Author of This Review:</strong> Zhongzhu Zhou</p>
+<p>This review explains why token-level speculative decoding can fail on multi-step reasoning, and how SpecGuard uses internal verification signals to decide when to trust draft steps.</p>
+<hr>
+<a id="more"></a>
+<h2 id="Table-of-Contents">Table of Contents</h2>
+<ol>
+<li><a href="#prerequisites--context">Prerequisites &amp; Context</a></li>
+<li><a href="#the-problem-why-speculative-decoding-fails-at-reasoning">The Problem: Why Speculative Decoding Fails at Reasoning</a></li>
+<li><a href="#core-contribution-specguard-framework">Core Contribution: SpecGuard Framework</a></li>
+<li><a href="#technical-deep-dive-verification-mechanisms">Technical Deep Dive: Verification Mechanisms</a></li>
+<li><a href="#experimental-evaluation">Experimental Evaluation</a></li>
+<li><a href="#practical-implications">Practical Implications</a></li>
+<li><a href="#limitations--future-directions">Limitations &amp; Future Directions</a></li>
+<li><a href="#reproducibility--implementation-notes">Reproducibility &amp; Implementation Notes</a></li>
+</ol>
+<hr>
+<h2 id="Prerequisites-Context">Prerequisites &amp; Context</h2>
+<p>Before diving into SpecGuard, you need to understand a few foundational concepts that make this paper's contribution meaningful.</p>
+<h3 id="What-is-Speculative-Decoding">What is Speculative Decoding?</h3>
+<p>Speculative decoding (SD) is a technique that accelerates large language model (LLM) inference by splitting the decoding process into two models:</p>
+<ol>
+<li><strong>Draft Model:</strong> A smaller, faster model that generates candidate tokens sequentially</li>
+<li><strong>Target Model:</strong> A larger, more capable model that verifies the draft's predictions</li>
+</ol>
+<p>The workflow is simple:</p>
+<ul>
+<li>Draft generates 4-8 tokens in parallel on a single GPU</li>
+<li>Target model checks (in parallel) whether each draft token has reasonable probability under the target</li>
+<li>If the draft token is accepted, we save computation by reusing it</li>
+<li>If it's rejected, we resample from the target</li>
+</ul>
+<p><strong>Why this works:</strong> GPUs can parallelize the verification step. If the draft is accurate 80% of the time, we get ~4-5x speedup with minimal quality loss.</p>
+<p><strong>Standard SD Algorithm:</strong></p>
+<ol>
+<li>Draft model proposes token t: <code>p_draft(t)</code></li>
+<li>Target model computes probability: <code>p_target(t)</code></li>
+<li>Accept token if <code>u &lt; min(1, p_target(t) / p_draft(t))</code> where u is random [0,1]</li>
+<li>If rejected, resample from target and continue</li>
+</ol>
+<p>This unbiasedness guarantee is critical—it ensures the final output distribution matches the target model exactly.</p>
+<h3 id="The-Token-Centric-Assumption-Reasoning-Tasks">The Token-Centric Assumption &amp; Reasoning Tasks</h3>
+<p>Standard SD assumes that <strong>each token decision is independent</strong>. For simple tasks (summarization, translation), this works fine.</p>
+<p>But for <strong>multi-step reasoning</strong> (math problems, code generation, logical deduction), tokens are NOT independent:</p>
+<ul>
+<li>Token A in step 1 should logically enable token B in step 2</li>
+<li>An early error propagates through subsequent reasoning chains</li>
+<li>A single wrong &quot;=&quot; symbol breaks an entire equation</li>
+</ul>
+<p><strong>Example:</strong> In math problems, a draft might generate:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Step 1: Calculate 2+2 &#x3D; 4    (correct, accepted)</span><br><span class="line">Step 2: Multiply by 3 &#x3D; 12   (logically sound)</span><br><span class="line">Step 3: Add 5 &#x3D; 17           (semantically plausible but built on earlier error)</span><br></pre></td></tr></table></figure>
+<p>Standard SD accepts tokens based on probability alone—it doesn't verify that step 2 <em>logically follows</em> from step 1.</p>
+<h3 id="Why-External-Reward-Models-Have-Overhead">Why External Reward Models Have Overhead</h3>
+<p>Recent work (reward-guided SD, or RSD) tried to solve this by adding <strong>process reward models (PRMs)</strong>—external models trained to score intermediate reasoning steps as &quot;correct&quot; or &quot;incorrect.&quot;</p>
+<p><strong>Problem:</strong> PRMs are expensive:</p>
+<ul>
+<li>Add ~30-50% latency overhead</li>
+<li>Require task-specific training</li>
+<li>Don't generalize across different reasoning domains</li>
+</ul>
+<hr>
+<h2 id="The-Problem-Why-Speculative-Decoding-Fails-at-Reasoning">The Problem: Why Speculative Decoding Fails at Reasoning</h2>
+<p>SpecGuard addresses three specific failures of standard SD on reasoning tasks:</p>
+<h3 id="1-Error-Propagation-in-Multi-Step-Tasks">1. Error Propagation in Multi-Step Tasks</h3>
 <p>When a draft makes a subtle mistake, standard SD's token-level verification doesn't catch it:</p>
 <figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Draft Step 1: &quot;The sum of 3 and 4 is 7&quot;      p_target &#x3D; 0.8  ✓ Accepted</span><br><span class="line">Draft Step 2: &quot;Multiply by 2 to get 15&quot;      p_target &#x3D; 0.7  ✓ Accepted</span><br><span class="line">Draft Step 3: &quot;The answer is 15&quot;             p_target &#x3D; 0.6  ✓ Accepted</span><br></pre></td></tr></table></figure>
 <p>Each individual token has reasonable probability, but the chain violates arithmetic. An external reward model would catch this immediately, but SD cannot.</p>
@@ -933,7 +1001,7 @@ Low log-prob (-5.0 to -2.0) = model is uncertain</p>
 
       <!--noindex-->
       <div class="post-toc-wrap sidebar-panel">
-          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-Error-Propagation-in-Multi-Step-Tasks"><span class="nav-number">1.</span> <span class="nav-text">1. Error Propagation in Multi-Step Tasks</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Latency-Overhead-of-External-Verifiers"><span class="nav-number">1.1.</span> <span class="nav-text">2. Latency &amp; Overhead of External Verifiers</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Limited-Generalization"><span class="nav-number">1.2.</span> <span class="nav-text">3. Limited Generalization</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Core-Contribution-SpecGuard-Framework"><span class="nav-number">2.</span> <span class="nav-text">Core Contribution: SpecGuard Framework</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#High-Level-Architecture"><span class="nav-number">2.1.</span> <span class="nav-text">High-Level Architecture</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Key-Innovation-Self-Consistency-Selector"><span class="nav-number">2.2.</span> <span class="nav-text">Key Innovation: Self-Consistency Selector</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Technical-Deep-Dive-Verification-Mechanisms"><span class="nav-number">3.</span> <span class="nav-text">Technical Deep Dive: Verification Mechanisms</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Mechanism-1-Attention-Based-Grounding-Verification-ABGV"><span class="nav-number">3.1.</span> <span class="nav-text">Mechanism 1: Attention-Based Grounding Verification (ABGV)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Mechanism-2-Log-Probability-Based-Verification-LPBV"><span class="nav-number">3.2.</span> <span class="nav-text">Mechanism 2: Log-Probability-Based Verification (LPBV)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Mechanism-3-Ensemble-Verification-Adaptive-Acceptance"><span class="nav-number">3.3.</span> <span class="nav-text">Mechanism 3: Ensemble Verification &amp; Adaptive Acceptance</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Self-Consistency-Selector-Algorithm"><span class="nav-number">3.4.</span> <span class="nav-text">Self-Consistency Selector Algorithm</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Experimental-Evaluation"><span class="nav-number">4.</span> <span class="nav-text">Experimental Evaluation</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Benchmarks-Setup"><span class="nav-number">4.1.</span> <span class="nav-text">Benchmarks &amp; Setup</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Main-Results"><span class="nav-number">4.2.</span> <span class="nav-text">Main Results</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Ablation-Studies"><span class="nav-number">4.3.</span> <span class="nav-text">Ablation Studies</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Sensitivity-Analysis"><span class="nav-number">4.4.</span> <span class="nav-text">Sensitivity Analysis</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Practical-Implications"><span class="nav-number">5.</span> <span class="nav-text">Practical Implications</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Inference-Cost-Reduction"><span class="nav-number">5.1.</span> <span class="nav-text">1. Inference Cost Reduction</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Scalability-Without-External-Models"><span class="nav-number">5.2.</span> <span class="nav-text">2. Scalability Without External Models</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Memory-Efficient-Verification"><span class="nav-number">5.3.</span> <span class="nav-text">3. Memory-Efficient Verification</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Limitations-Future-Directions"><span class="nav-number">6.</span> <span class="nav-text">Limitations &amp; Future Directions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Known-Limitations"><span class="nav-number">6.1.</span> <span class="nav-text">Known Limitations</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Future-Research-Directions"><span class="nav-number">6.2.</span> <span class="nav-text">Future Research Directions</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Reproducibility-Implementation-Notes"><span class="nav-number">7.</span> <span class="nav-text">Reproducibility &amp; Implementation Notes</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Key-Implementation-Details"><span class="nav-number">7.1.</span> <span class="nav-text">Key Implementation Details</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Computational-Complexity"><span class="nav-number">7.2.</span> <span class="nav-text">Computational Complexity</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Code-Resources"><span class="nav-number">7.3.</span> <span class="nav-text">Code &amp; Resources</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Conclusion"><span class="nav-number">8.</span> <span class="nav-text">Conclusion</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#References-Further-Reading"><span class="nav-number">9.</span> <span class="nav-text">References &amp; Further Reading</span></a></li></ol></div>
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#SpecGuard-Verification-Aware-Speculative-Decoding-for-Efficient-Multi-Step-Reasoning"><span class="nav-number">1.</span> <span class="nav-text">SpecGuard: Verification-Aware Speculative Decoding for Efficient Multi-Step Reasoning</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#Table-of-Contents"><span class="nav-number">1.1.</span> <span class="nav-text">Table of Contents</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Prerequisites-Context"><span class="nav-number">1.2.</span> <span class="nav-text">Prerequisites &amp; Context</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#What-is-Speculative-Decoding"><span class="nav-number">1.2.1.</span> <span class="nav-text">What is Speculative Decoding?</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#The-Token-Centric-Assumption-Reasoning-Tasks"><span class="nav-number">1.2.2.</span> <span class="nav-text">The Token-Centric Assumption &amp; Reasoning Tasks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Why-External-Reward-Models-Have-Overhead"><span class="nav-number">1.2.3.</span> <span class="nav-text">Why External Reward Models Have Overhead</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#The-Problem-Why-Speculative-Decoding-Fails-at-Reasoning"><span class="nav-number">1.3.</span> <span class="nav-text">The Problem: Why Speculative Decoding Fails at Reasoning</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Error-Propagation-in-Multi-Step-Tasks"><span class="nav-number">1.3.1.</span> <span class="nav-text">1. Error Propagation in Multi-Step Tasks</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Latency-Overhead-of-External-Verifiers"><span class="nav-number">1.3.2.</span> <span class="nav-text">2. Latency &amp; Overhead of External Verifiers</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Limited-Generalization"><span class="nav-number">1.3.3.</span> <span class="nav-text">3. Limited Generalization</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Core-Contribution-SpecGuard-Framework"><span class="nav-number">1.4.</span> <span class="nav-text">Core Contribution: SpecGuard Framework</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#High-Level-Architecture"><span class="nav-number">1.4.1.</span> <span class="nav-text">High-Level Architecture</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Key-Innovation-Self-Consistency-Selector"><span class="nav-number">1.4.2.</span> <span class="nav-text">Key Innovation: Self-Consistency Selector</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Technical-Deep-Dive-Verification-Mechanisms"><span class="nav-number">1.5.</span> <span class="nav-text">Technical Deep Dive: Verification Mechanisms</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Mechanism-1-Attention-Based-Grounding-Verification-ABGV"><span class="nav-number">1.5.1.</span> <span class="nav-text">Mechanism 1: Attention-Based Grounding Verification (ABGV)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Mechanism-2-Log-Probability-Based-Verification-LPBV"><span class="nav-number">1.5.2.</span> <span class="nav-text">Mechanism 2: Log-Probability-Based Verification (LPBV)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Mechanism-3-Ensemble-Verification-Adaptive-Acceptance"><span class="nav-number">1.5.3.</span> <span class="nav-text">Mechanism 3: Ensemble Verification &amp; Adaptive Acceptance</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Self-Consistency-Selector-Algorithm"><span class="nav-number">1.5.4.</span> <span class="nav-text">Self-Consistency Selector Algorithm</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Experimental-Evaluation"><span class="nav-number">1.6.</span> <span class="nav-text">Experimental Evaluation</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Benchmarks-Setup"><span class="nav-number">1.6.1.</span> <span class="nav-text">Benchmarks &amp; Setup</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Main-Results"><span class="nav-number">1.6.2.</span> <span class="nav-text">Main Results</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Ablation-Studies"><span class="nav-number">1.6.3.</span> <span class="nav-text">Ablation Studies</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Sensitivity-Analysis"><span class="nav-number">1.6.4.</span> <span class="nav-text">Sensitivity Analysis</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Practical-Implications"><span class="nav-number">1.7.</span> <span class="nav-text">Practical Implications</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-Inference-Cost-Reduction"><span class="nav-number">1.7.1.</span> <span class="nav-text">1. Inference Cost Reduction</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-Scalability-Without-External-Models"><span class="nav-number">1.7.2.</span> <span class="nav-text">2. Scalability Without External Models</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-Memory-Efficient-Verification"><span class="nav-number">1.7.3.</span> <span class="nav-text">3. Memory-Efficient Verification</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Limitations-Future-Directions"><span class="nav-number">1.8.</span> <span class="nav-text">Limitations &amp; Future Directions</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Known-Limitations"><span class="nav-number">1.8.1.</span> <span class="nav-text">Known Limitations</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Future-Research-Directions"><span class="nav-number">1.8.2.</span> <span class="nav-text">Future Research Directions</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Reproducibility-Implementation-Notes"><span class="nav-number">1.9.</span> <span class="nav-text">Reproducibility &amp; Implementation Notes</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Key-Implementation-Details"><span class="nav-number">1.9.1.</span> <span class="nav-text">Key Implementation Details</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Computational-Complexity"><span class="nav-number">1.9.2.</span> <span class="nav-text">Computational Complexity</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Code-Resources"><span class="nav-number">1.9.3.</span> <span class="nav-text">Code &amp; Resources</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Conclusion"><span class="nav-number">1.10.</span> <span class="nav-text">Conclusion</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#References-Further-Reading"><span class="nav-number">1.11.</span> <span class="nav-text">References &amp; Further Reading</span></a></li></ol></li></ol></div>
       </div>
       <!--/noindex-->
 
@@ -954,13 +1022,13 @@ Low log-prob (-5.0 to -2.0) = model is uncertain</p>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
-        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-count">21</span>
         <span class="site-state-item-name">categories</span>
       </div>
       <div class="site-state-item site-state-tags">
             <a href="/tags/">
           
-        <span class="site-state-item-count">123</span>
+        <span class="site-state-item-count">124</span>
         <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
