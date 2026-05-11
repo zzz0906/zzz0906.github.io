@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="一篇关于 Tutti 的中文阅读笔记：它从 GPU-native KV cache object store、GPU io_uring 与 slack-aware scheduling 出发，让 SSD-backed KV cache 更适合长上下文 LLM serving。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Tutti：让基于 SSD 的 KV Cache 真正适用于长上下文 LLM Serving">
+<meta property="og:url" content="https://zzz0906.github.io/2026/05/10/2026-05-10-Tutti-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="一篇关于 Tutti 的中文阅读笔记：它从 GPU-native KV cache object store、GPU io_uring 与 slack-aware scheduling 出发，让 SSD-backed KV cache 更适合长上下文 LLM serving。">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-05-10T09:05:00.000Z">
+<meta property="article:modified_time" content="2026-05-11T18:21:57.957Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="KV Cache">
+<meta property="article:tag" content="LLM Serving">
+<meta property="article:tag" content="vLLM">
+<meta property="article:tag" content="Tutti">
+<meta property="article:tag" content="SSD">
+<meta property="article:tag" content="GPU I&#x2F;O">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/05/10/2026-05-10-Tutti-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>Tutti：让基于 SSD 的 KV Cache 真正适用于长上下文 LLM Serving | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/05/10/2026-05-10-Tutti-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Tutti：让基于 SSD 的 KV Cache 真正适用于长上下文 LLM Serving
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-05-10 09:05:00" itemprop="dateCreated datePublished" datetime="2026-05-10T09:05:00+00:00">2026-05-10</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-05-11 18:21:57" itemprop="dateModified" datetime="2026-05-11T18:21:57+00:00">2026-05-11</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/ML-Systems/" itemprop="url" rel="index"><span itemprop="name">ML Systems</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/ML-Systems/LLM-Inference/" itemprop="url" rel="index"><span itemprop="name">LLM Inference</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">一篇关于 Tutti 的中文阅读笔记：它从 GPU-native KV cache object store、GPU io_uring 与 slack-aware scheduling 出发，让 SSD-backed KV cache 更适合长上下文 LLM serving。</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p><strong>笔记日期：</strong> 2026-05-10<br>
+<strong>笔记作者：</strong> Zhongzhu Zhou<br>
+<strong>阅读论文：</strong> <em>Tutti: Making SSD-Backed KV Cache Practical for Long-Context LLM Serving</em><br>
+<strong>论文作者：</strong> Shi Qiu, Yifan Hu, Xintao Wang, Wenhao Zhu, Jianqin Yan, Hao Chen, Kaiqiang Xu, Kai Chen, Yiming Zhang<br>
+<strong>arXiv：</strong> 2605.03375v1，2026-05-05<br>
+<strong>论文状态：</strong> arXiv preprint，方向：Operating Systems<br>
+<strong>本文使用的论文文件：</strong> <code>src/related-documents/papers/2605.03375-Tutti.pdf</code></p>
+<hr>
+<h2 id="简短结论">简短结论</h2>
+<p>这篇论文讨论的是长上下文 LLM serving 里一个很现实的问题：<strong>能不能把 KV cache 放到 SSD 上，同时让恢复速度快到足以比重新计算更划算？</strong></p>
+<p>现代推理系统已经有很多优化：vLLM / SGLang 这类系统使用 paged KV cache、continuous batching、prefix caching、分层内存管理等技术。它们的目标很明确：如果多个请求共享一段长 prompt，系统最好复用已经计算好的 key/value 状态，而不是每次都重新 prefill。问题是，长上下文、多轮对话、agent 工作流会产生巨大的 KV cache。GPU HBM 很快不够，CPU DRAM 也会在规模化场景下不够。NVMe SSD 容量大、单位成本低，看起来是自然的下一层缓存介质。</p>
+<p>但论文指出，已有 SSD-backed KV cache 路径经常不够快。瓶颈并不主要是 SSD 原始带宽低，而是 <strong>paged KV cache 的细粒度碎片化访问</strong> 和 <strong>CPU-centric I/O 控制路径</strong> 不匹配。即使使用 GPU Direct Storage（GDS）绕过 CPU bounce buffer，只要每个 I/O 仍然需要 CPU 发起，CPU 仍然会卡在关键路径上。</p>
+<p>Tutti 的核心思路是：把 SSD-backed KV cache 的关键数据路径和 I/O 控制路径尽量搬到 GPU 侧，让 CPU 只做粗粒度准备工作。它由三个主要部分组成：</p>
+<ol>
+<li><strong>GPU-native KV cache object store</strong>：用贴合 KV cache 的对象抽象组织 SSD 上的数据，而不是只暴露普通 block/file 接口；</li>
+<li><strong>GPU io_uring</strong>：在 GPU HBM 中维护 submission/completion queue，让 GPU 侧 kernel 可以批量发起和完成 NVMe I/O；</li>
+<li><strong>slack-aware I/O scheduler</strong>：通过离线 profiling 找到 GPU 执行里的空隙，把读写 I/O 放到不容易干扰模型计算的位置。</li>
+</ol>
+<p>实验结果比较强。相对带 GDS 的 SSD-backed LMCache，Tutti 在严格 SLO 约束下把 TTFT 降低 <strong>78.3%</strong>，把可承载请求率提高到 <strong>2×</strong>，并把 serving 成本降低约 <strong>27%</strong>。在原始带宽实验中，Tutti 的 retrieval bandwidth 最高达到 <strong>25.9 GB/s</strong>，相对 LMCache-GDS 最高有 <strong>2.08×</strong> 提升。延迟分解实验里，Tutti 把 compute/I/O crossover point 推到 <strong>98.3% cache hit rate</strong>，说明大多数测试区间里系统仍然接近 compute-bound，而不是被 SSD I/O 卡住。</p>
+<p>我的总体理解是：Tutti 不只是“多加一层 SSD 缓存”。它其实是在围绕 LLM inference 的真实执行形态重做一部分存储栈。随着推理 kernel 越来越快，过去那种“CPU 负责调度每个 I/O”的方式会越来越不适合长上下文 KV cache。真正有效的系统需要把模型执行、KV cache 布局、GPU I/O、SSD 访问和 scheduler 一起设计。</p>
+<hr>
+<h2 id="1-前置知识">1. 前置知识</h2>
+<h3 id="1-1-KV-cache-是什么，为什么会占很多内存">1.1 KV cache 是什么，为什么会占很多内存</h3>
+<p>自回归 Transformer decoder 生成文本时，是一个 token 一个 token 生成的。生成新 token 时，模型需要对之前所有 token 做 attention。为了避免每一步都重新计算历史 token 的 key/value 向量，推理系统会把这些 key/value 向量缓存起来，这就是 <strong>KV cache</strong>。</p>
+<p>一个简化流程是：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">输入 prompt -&gt; prefill -&gt; 计算并存下 prompt 的 K&#x2F;V</span><br><span class="line">生成 token 1 -&gt; decode -&gt; 追加 token 1 的 K&#x2F;V</span><br><span class="line">生成 token 2 -&gt; decode -&gt; 追加 token 2 的 K&#x2F;V</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+<p>KV cache 的好处是节省计算，代价是占用显存/内存。prompt 越长，初始 cache 越大；输出越长，decode 过程中 cache 保留得越久、增长得越多；并发请求越多，总 cache 占用越大。</p>
+<p>所以长上下文推理并不是单纯的算力问题，也不是单纯的显存问题，而是一个算力、显存、主存、SSD、调度共同作用的问题。</p>
+<h3 id="1-2-Prefix-caching-为什么重要">1.2 Prefix caching 为什么重要</h3>
+<p>Prefix caching 指的是：如果多个请求共享相同前缀，系统可以复用这段前缀已经计算好的 KV cache。例如：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">请求 1：[80K token 的代码仓库上下文] + 问题 A</span><br><span class="line">请求 2：[80K token 的代码仓库上下文] + 问题 B</span><br><span class="line">请求 3：[80K token 的代码仓库上下文] + 问题 C</span><br></pre></td></tr></table></figure>
+<p>如果每次都重新 prefill 这 80K token，成本会非常高。如果系统可以复用前缀 KV cache，就能显著降低 TTFT 和单位 token 成本。论文也提到，prefix caching 在现代服务中可以显著改善 SLO，并把 per-token cost 降低到原来的一个数量级以内。</p>
+<p>问题是，prefix caching 越有效，就越需要保留大量历史 KV cache。HBM 很快不够；DRAM 容量更大，但论文指出，即使约 2 TB DRAM，在大规模场景下也可能只能保留大约五分钟的 KV cache。SSD 容量可以到几十 TB、上百 TB，单位成本也低很多，因此很适合作为下一层 KV cache 容量池。</p>
+<h3 id="1-3-HBM、DRAM、SSD-的差别不只是速度">1.3 HBM、DRAM、SSD 的差别不只是速度</h3>
+<p>可以先用一个简单层次理解：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">HBM  -&gt; 最快、容量最小、最贵</span><br><span class="line">DRAM -&gt; 较慢、容量更大、规模化时仍然很贵</span><br><span class="line">SSD  -&gt; 更慢、容量很大、单位 GB 成本低得多</span><br></pre></td></tr></table></figure>
+<p>但对 KV cache 来说，这个理解还不够。HBM 直接被 GPU kernel 使用。DRAM 虽然慢一些，但随机访问能力较好，也比较容易通过 GPU-assisted copy 和 layer-wise pipeline 隐藏一部分传输开销。SSD 原始顺序带宽可以很高，但它非常不喜欢大量小而随机的 I/O。</p>
+<p>现代 LLM serving 里的 KV cache 刚好很容易形成大量小随机访问。原因是 paged KV layout 会把逻辑上连续的 KV cache 切成很多 block，分散在不同物理位置。把这些 block 换出到 SSD 后，再恢复时就会产生很多零散读取。</p>
+<p>论文的重点就是：SSD 不是不能用，而是不能用传统 CPU-centric 的方式粗暴接上去。</p>
+<h3 id="1-4-Paged-KV-cache：为什么会产生碎片化-I-O">1.4 Paged KV cache：为什么会产生碎片化 I/O</h3>
+<p>vLLM 的 PagedAttention 代表了一类现代 KV cache 管理方式。它不要求一个请求的 KV cache 在 HBM 中连续存放，而是把 KV cache 切成 block，按需分配。</p>
+<p>这样做的好处是显存利用率高，适合不同长度、动态增长的请求：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">一个请求逻辑上的 KV cache：</span><br><span class="line">[token 0 ... token 127]</span><br><span class="line"></span><br><span class="line">HBM 中真实 block：</span><br><span class="line">block 17, block 901, block 42, block 603, ...</span><br></pre></td></tr></table></figure>
+<p>但当这些 block 被换出到 SSD，再被读回来时，逻辑上连续的长前缀就变成了物理上分散的大量对象。论文给了一个很直观的例子：对 64 层 Qwen3-32B、block size 64 的模型，恢复一个 128K-token KV cache 可能需要读取大约 <strong>256K 个分散的 80 KB 对象</strong>。</p>
+<p>这个数量级非常关键。即使每个对象不大，只要每次 I/O 都要 CPU 参与发起、同步、管理，那么 CPU 软件开销就会吞掉 SSD 的硬件带宽优势。</p>
+<h3 id="1-5-TTFT、ITL-和-GPU-bubble">1.5 TTFT、ITL 和 GPU bubble</h3>
+<p>论文主要关注两个 serving 指标。</p>
+<p><strong>TTFT（Time to First Token）</strong> 是用户请求到达后，到第一个 token 输出之间的时间。它强烈受 prefill 和 prefix cache retrieval 影响。</p>
+<p><strong>ITL（Inter-Token Latency）</strong> 是流式生成中 token 与 token 之间的时间间隔。它影响输出是否顺滑。</p>
+<p>如果 GPU 在等待 SSD 把 KV cache 读回来，这段时间 GPU 没有做有用计算。论文把这种等待称作 <strong>GPU bubble</strong>。可以用下面的图理解：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">理想情况： compute compute compute compute compute</span><br><span class="line">差的 SSD： compute wait wait compute wait wait compute</span><br><span class="line">Tutti：    compute + 被隐藏的 I&#x2F;O，尽量少 visible wait</span><br></pre></td></tr></table></figure>
+<p>Tutti 的目标不是简单地“能从 SSD 读 KV cache”，而是让 SSD 读取尽量不暴露在用户可见延迟里。</p>
+<h3 id="1-6-GDS-不等于真正-GPU-centric">1.6 GDS 不等于真正 GPU-centric</h3>
+<p>GPU Direct Storage（GDS）可以让数据在存储设备和 GPU memory 之间直接移动，避免 CPU bounce buffer。这个优化很重要，但它不等于 CPU 完全退出关键路径。</p>
+<p>论文强调：GDS-enabled LMCache 仍然是 CPU-centric，因为每个 I/O 仍然需要 CPU 发起。对大量碎片化 KV 对象来说，CPU 仍然要处理很多 I/O submission/completion 控制工作。也就是说，GDS 解决的是数据拷贝路径的一部分问题，没有解决 I/O 控制路径的问题。</p>
+<p>Tutti 想做得更彻底：CPU 负责准备粗粒度 metadata，真正大量并行 I/O 的发起和完成由 GPU 侧完成。</p>
+<hr>
+<h2 id="2-这篇论文解决了什么问题">2. 这篇论文解决了什么问题</h2>
+<p>Tutti 面向的是长上下文 LLM serving 中的 SSD-backed prefix KV cache。论文的基本判断是：如果服务想保留足够多的历史 KV cache，SSD 几乎不可避免；但如果 SSD 路径还是 CPU-centric，那么高 cache hit rate 也不一定带来低延迟。</p>
+<p>可以把已有路径简化成：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">CPU-centric 路径</span><br><span class="line"></span><br><span class="line">inference engine -&gt; CPU 准备大量 I&#x2F;O -&gt; GDS 或普通异步 I&#x2F;O -&gt; SSD</span><br><span class="line">                         ^ 对很多碎片化 KV block 重复发生</span><br></pre></td></tr></table></figure>
+<p>Tutti 想变成：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">GPU-centric 路径</span><br><span class="line"></span><br><span class="line">CPU 一次性准备 layer-level metadata</span><br><span class="line">GPU-side queue 批量发起 KV-object I&#x2F;O</span><br><span class="line">scheduler 把 I&#x2F;O 放进 profiled slack window</span><br></pre></td></tr></table></figure>
+<p>论文 Figure 1 清楚对比了 CPU-centric LMCache 和 GPU-centric Tutti。LMCache 即使使用 GDS，CPU 仍然在 I/O 控制关键路径上；Tutti 则把关键路径尽量移到 GPU 侧。</p>
+<p>从设计原则上看，Tutti 要同时满足三点：</p>
+<ol>
+<li><strong>抽象要贴合 KV cache。</strong> 存储层应该理解 layer-wise KV object，而不是只暴露普通 block/file。</li>
+<li><strong>控制路径要支持大规模并行。</strong> I/O submission/completion 不能让 CPU 对每个小对象逐个介入。</li>
+<li><strong>I/O 必须理解计算调度。</strong> 即使 I/O 能在 GPU 上发起，如果它抢占 SM 或造成读写带宽冲突，也会拖慢 inference。</li>
+</ol>
+<p>所以 Tutti 是一个跨内存管理、GPU runtime、存储 I/O、serving scheduler 的共同设计。这也是它和“简单加一层 SSD cache”最大的区别。</p>
+<hr>
+<h2 id="3-方法细节">3. 方法细节</h2>
+<h3 id="3-1-从-Figure-2-和-Figure-3-看问题来源">3.1 从 Figure 2 和 Figure 3 看问题来源</h3>
+<p>Figure 2 比较了 vLLM + LMCache 在 HBM、DRAM、SSD tier 上的表现，模型是 Llama3-8B，sequence length 是 64K，cache hit rate 是 75%。这个图展示了几个关键信号：</p>
+<ul>
+<li>DRAM-backed cache 相对 HBM 只带来较小开销；</li>
+<li>SSD-backed cache 造成很大的 GPU bubble；</li>
+<li>GDS 能减少一部分数据搬运开销，但 GPU bubble 仍然很大；</li>
+<li>当 vLLM 从 v0.12.0 进化到 v0.17.0，计算更快后，SSD/GDS 路径的相对瓶颈更明显。</li>
+</ul>
+<p>最后一点特别重要。推理 kernel 越快，能够隐藏 I/O 的计算时间越少。如果存储路径不一起变快，那么整个系统会越来越像“GPU 在等 SSD”。</p>
+<p>Figure 3 比较 CPU 和 GPU 上做 hash table 的性能。论文报告，在不同 sequence length 下，GPU hash insert 比 CPU 慢 <strong>9.0× 到 24.2×</strong>，lookup 比 CPU 慢 <strong>25.6× 到 50.0×</strong>。这个结果说明，把所有 KV cache metadata 管理都搬到 GPU 并不现实。hash lookup 有顺序依赖，不是 GPU 最擅长的模式。</p>
+<p>因此 Tutti 采用一种折中：<strong>CPU-prepared, GPU-executed</strong>。复杂 metadata 和 mapping 仍然由 CPU 管理，但每个 I/O 不再由 CPU 逐个发起。</p>
+<h3 id="3-2-GPU-native-KV-cache-object-store">3.2 GPU-native KV cache object store</h3>
+<p>Tutti 的第一部分是 GPU-centric KV cache object store。它不是简单把 KV block 当普通文件写到 SSD，而是设计了贴合 KV cache 的 object abstraction。</p>
+<p>论文 Figure 4 展示了整体布局，主要包括：</p>
+<ul>
+<li><strong>GPU file pool</strong>：对 inference engine 可见；</li>
+<li><strong>NVMe file pool</strong>：由类似 GeminiFS 的机制管理 SSD 上的物理 extent；</li>
+<li><strong>P2P memory mapping table</strong>：把 GPU-visible object 映射到真实存储位置。</li>
+</ul>
+<p>Tutti 使用 tensor-stripe layout，把 GPU file 映射到多个 NVMe file，同时尽量保持和原始 KV tensor 粒度一致。这样做的目标是让存储 I/O 和 KV cache 的 layer-wise 移动对齐。</p>
+<p>对 inference engine 来说，Tutti 暴露的是 <code>retrieve_layer</code> 和 <code>store_layer</code> 这样的接口。也就是说，系统可以按 layer 批量恢复或写回 KV cache，而不是临时构造几万、几十万个细碎 I/O。</p>
+<p>论文给出的复杂度变化很直观：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">传统 CPU 准备路径：O(layer × blocks)</span><br><span class="line">Tutti 准备路径：   O(layer)</span><br></pre></td></tr></table></figure>
+<p>当 block 数随上下文长度快速增长时，这个变化非常有价值。</p>
+<h4 id="PRP-与-SGL：一个低层细节为什么影响很大">PRP 与 SGL：一个低层细节为什么影响很大</h4>
+<p>论文中特别值得注意的是 PRP 和 SGL 的对比。</p>
+<p>PRP（Physical Region Page）使用固定 4 KB page 描述 GPU HBM 地址。对 KV cache 这种几十 KB、上百 KB 的可变长度对象来说，PRP 会引入大量指针 page 和地址翻译开销。论文举例：在 80 GB HBM 上描述 60 GB KV cache，如果使用 PRP，需要 <strong>15,728,640 个 page</strong>；如果 PRP list page 以 64 KB 粒度分配，实际 HBM 元数据占用可以达到约 <strong>3.75 GB</strong>。</p>
+<p>SGL（Scatter Gather List）更适合这个场景。一个 16 字节 entry 可以描述较大连续 chunk，包括物理地址、长度、identifier。同样例子下，元数据内存可以降到约 <strong>15 MB</strong>。</p>
+<p>这个细节说明：GPU direct I/O 不是打开一个开关就结束了。descriptor 格式、地址翻译、metadata 内存占用都会直接影响最终性能。</p>
+<h3 id="3-3-GPU-io-uring">3.3 GPU io_uring</h3>
+<p>Tutti 的第二部分是 <strong>GPU io_uring</strong>，论文中写作 <code>gio_uring</code>。它借鉴 CPU-side io_uring 的思想，但把 submission queue 和 completion queue 放到 GPU HBM 中，让 GPU 侧可以异步发起和完成 I/O。</p>
+<p>Figure 5 展示了它的结构。主要组成包括：</p>
+<ul>
+<li>GPU HBM 中的 SQ / CQ；</li>
+<li>IOCB（I/O control block），每个 IOCB 里包含多个 IOCTX；</li>
+<li>通过 non-cached <code>mmap</code> 映射给 CPU 的 zero-copy ring buffer；</li>
+<li>用 CUDA event 维护 out-of-order stream 下的依赖顺序；</li>
+<li>GPU I/O kernel 负责生成 NVMe command、提交、轮询完成并写入 CQ。</li>
+</ul>
+<p>运行流程可以简化为：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">1. init_queue(depth)</span><br><span class="line">   创建 GPU-resident SQ&#x2F;CQ 和 IOCB</span><br><span class="line"></span><br><span class="line">2. get_iocb(nums, event)</span><br><span class="line">   预留 IOCB，填入 CPU 准备好的 metadata</span><br><span class="line"></span><br><span class="line">3. issue_io(IOCB_ids, SMs)</span><br><span class="line">   以指定 SM 预算启动 GPU I&#x2F;O kernel</span><br><span class="line"></span><br><span class="line">4. wait_cqe(IOCB_ids)</span><br><span class="line">   在 GPU-side completion queue 等待完成</span><br></pre></td></tr></table></figure>
+<p>这个设计的关键不是“异步”两个字。CPU-side async I/O 也可以异步。关键是大量 I/O 的 submission/completion 不再要求 CPU 每次都进入关键路径。</p>
+<h4 id="SM-partitioning：I-O-kernel-不能随便抢计算资源">SM partitioning：I/O kernel 不能随便抢计算资源</h4>
+<p>把 I/O 搬到 GPU 之后，还有一个新问题：I/O kernel 也会占 GPU SM。如果一个长 I/O kernel 抢占了 SM，模型计算 kernel 可能被延迟，反而伤害 TTFT/ITL。</p>
+<p>Tutti 使用 NVIDIA green context，把 GPU 资源分成 compute domain 和 I/O control domain。I/O kernel 运行在专门分配的 SM 上，不容易被模型计算波动影响，也不容易反过来造成计算 kernel 的长尾延迟。</p>
+<p>这一步很重要。它说明 Tutti 不是只追求高 I/O bandwidth，而是在追求可预测的 compute-I/O coexistence。</p>
+<h3 id="3-4-Slack-aware-I-O-scheduler">3.4 Slack-aware I/O scheduler</h3>
+<p>Tutti 的第三部分是 slack-aware I/O scheduler。问题是：即使 GPU 能发 I/O，什么时候发才不会影响模型计算？</p>
+<p>Figure 6 先展示了一个负面现象：如果 read/write 并发执行，PCIe 带宽会严重下降。论文报告，在复现实验中 concurrent read/write 会造成 <strong>60.1% bandwidth drop</strong>。原因不是简单的读写平分带宽，而是 NVMe 内部资源（例如 SSD cache）竞争导致整体带宽塌陷。</p>
+<p>Figure 7 展示了 scheduler。Tutti 离线 profile 每层执行中的 slack window。所谓 slack window，可以理解为：这段时间里 GPU 有可用 SM 资源，同时发起 I/O 不会造成有害读写带宽冲突。lookup table 的索引包括 input length 和 prefix length，因为 attention 计算量会随上下文长度变化。</p>
+<p>调度策略大致如下：</p>
+<ul>
+<li>prefill 阶段优先调度 read，因为 KV retrieval 在 prefix reuse 的关键路径上；</li>
+<li>write 可以延迟，避免干扰关键 read 和 TTFT；</li>
+<li>如果当前 layer 前有合适 slack window，就尽量启动能放进去的 IOCB；</li>
+<li>如果没有合适 slack window，说明 retrieval 已经成为瓶颈，就立即启动必要 read，避免后面计算停等；</li>
+<li>剩余 write 可以在 decode 阶段 best-effort flush。</li>
+</ul>
+<p>可以用下面的对比理解：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">差的 pipeline：</span><br><span class="line">  只要有机会就读写 -&gt; 读写互相打架 + I&#x2F;O kernel 抢 SM</span><br><span class="line"></span><br><span class="line">Tutti pipeline：</span><br><span class="line">  profile compute slack -&gt; critical read 优先 -&gt; write 延后 -&gt; 尽量隐藏 I&#x2F;O</span><br></pre></td></tr></table></figure>
+<p>我觉得这里最值得学习的是工程取舍：Tutti 没有做复杂在线最优调度，而是用离线 profile 换运行时简单查表。这种方式更适合低延迟 serving，因为 runtime decision 必须便宜且稳定。</p>
+<h3 id="3-5-vLLM-集成、多-GPU-和分布式路径">3.5 vLLM 集成、多 GPU 和分布式路径</h3>
+<p>论文报告 Tutti 用约 <strong>8,000 行 C++</strong> 实现，并用约 <strong>1,500 行 Python</strong> 集成到 vLLM 的 KVConnector。它向 vLLM 暴露 <code>retrieve_layer</code> 和 <code>store_layer</code>，注册预分配 KV memory block pool，识别可复用 prefix，并把 logical KV block 映射到 GPU file。</p>
+<p>多 GPU 场景下，Tutti 延续 vLLM 的 one-process-per-GPU 模式。每个 GPU process 有自己的 Tutti instance，只管理该 GPU 上的 KV cache。local daemon 负责分配 GPU memory，并为每个 GPU 初始化专门的 NVMe submission/completion queue pair。每个 GPU 有独立 queue pair，因此多个 GPU 可以并行访问本地 NVMe，不需要争抢同一个 queue。</p>
+<p>更大规模分布式场景下，论文描述了和 Mooncake 的配合：Tutti 保持本机 GPU-to-local-NVMe 的快速路径，Mooncake 负责集群范围内的 space allocation、replica metadata、location lookup。不过当前 remote path 还没有完全 GPU-driven：如果 KV 在远端，prototype 会通过 CPU-side interface 读到 host memory，再通过 RDMA 发到本地。这部分作者也明确留作未来工作。</p>
+<p>所以这篇论文证据最强的部分是 local SSD-backed KV reuse。跨节点路径有方向，但成熟度还需要后续系统工作验证。</p>
+<hr>
+<h2 id="4-实验设置">4. 实验设置</h2>
+<h3 id="4-1-硬件环境">4.1 硬件环境</h3>
+<p>实验服务器配置为：</p>
+<ul>
+<li>64-core Intel Xeon 6530；</li>
+<li>512 GB memory；</li>
+<li>2 张 NVIDIA H100 GPU，每张 80 GB HBM；</li>
+<li>4 块 Solidigm D7-PS1010 7.68 TB enterprise NVMe SSD。</li>
+</ul>
+<p>分层存储配置中，作者分配 <strong>256 GB host DRAM</strong> 作为 pinned memory，并为每张 GPU 配置 <strong>14 TB SSD volume</strong>。相关 SSD 实验使用 two-disk RAID-0。</p>
+<p>这个硬件环境很高端，因此结果应该理解为数据中心 serving 场景，而不是普通开发机环境。</p>
+<h3 id="4-2-模型">4.2 模型</h3>
+<p>主要单 GPU 实验使用 <strong>Llama3-8B</strong>。多 GPU scalability 实验使用 <strong>GLM-4-9B-Chat-1M</strong>，这个模型支持 1M token context window，并通过 tensor parallelism 部署在两张 GPU 上。</p>
+<p>这样的选择比较合理：Llama3-8B 适合在单 H100 上观察 serving/system 行为；GLM-4-9B-Chat-1M 则更能体现长上下文和多 GPU 下的 KV cache 压力。</p>
+<h3 id="4-3-Workloads">4.3 Workloads</h3>
+<p>论文使用两个 long-context benchmark：</p>
+<ul>
+<li><strong>LEval</strong>：包含 20 个子任务，覆盖 law、finance、technology、academic papers、code 等领域，输入长度从约 3K 到 200K tokens；</li>
+<li><strong>LooGLE</strong>：包含 4 个 ultra-long-context 任务，很多样本超过 100K tokens，关注 long dependency QA 和 single-turn summarization。</li>
+</ul>
+<p>因为这些数据集没有真实请求到达时间戳，作者使用 Poisson distribution 模拟请求到达，并用 round-robin 方式从不同子任务中抽取请求。这是 serving 论文里常见的实验折中，但仍然意味着流量模式是合成的。</p>
+<h3 id="4-4-Baselines">4.4 Baselines</h3>
+<p>论文对比了以下 baseline：</p>
+<ol>
+<li><strong>HBM</strong>：标准 vLLM，只使用 HBM；</li>
+<li><strong>LMCache-DRAM-LW</strong>：使用 host memory 扩展容量，并用 layer-wise compute/I/O pipelining；</li>
+<li><strong>LMCache-SSD</strong>：用 NVMe SSD offload KV data，采用 memcopy 和标准异步 I/O；</li>
+<li><strong>LMCache-GDS</strong>：使用 GDS 优化 SSD access，绕过 CPU bounce buffer；</li>
+<li>ablation 里还展示了不使用 layer-wise transfer 的 <strong>LMCache-DRAM</strong>。</li>
+</ol>
+<p>作者还比较了两个 vLLM 世代：<strong>v0.12.0</strong> 和 <strong>v0.17.0</strong>。这点很有价值，因为推理框架迭代很快。如果一个 SSD 路径只在旧版慢 runtime 下有效，随着 compute kernel 变快，它可能很快暴露瓶颈。</p>
+<h3 id="4-5-指标">4.5 指标</h3>
+<p>论文主要报告：</p>
+<ul>
+<li>TTFT：首 token 延迟；</li>
+<li>ITL：生成 token 间隔；</li>
+<li>cache hit rate：不同 tier 能保留多少可复用 KV；</li>
+<li>retrieve/store bandwidth：原始读写带宽；</li>
+<li>GPU bubble time：I/O 是否暴露为 GPU 等待；</li>
+<li>cost per 1M tokens：归一化 serving 成本。</li>
+</ul>
+<p>这组指标比较完整，因为它把低层 I/O 性能和用户可感知 serving 延迟联系了起来。</p>
+<hr>
+<h2 id="5-结果与分析">5. 结果与分析</h2>
+<h3 id="5-1-Table-1：SSD-容量为什么重要">5.1 Table 1：SSD 容量为什么重要</h3>
+<p>Table 1 给出不同存储 tier 的 cache hit rate：</p>
+<table>
+<thead>
+<tr>
+<th>Storage medium</th>
+<th style="text-align:right">LEval hit rate</th>
+<th style="text-align:right">LooGLE hit rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HBM</td>
+<td style="text-align:right">8%</td>
+<td style="text-align:right">4%</td>
+</tr>
+<tr>
+<td>DRAM</td>
+<td style="text-align:right">53%</td>
+<td style="text-align:right">24%</td>
+</tr>
+<tr>
+<td>SSD</td>
+<td style="text-align:right">84%</td>
+<td style="text-align:right">86%</td>
+</tr>
+</tbody>
+</table>
+<p>这个表非常关键。HBM-only 在长上下文场景里 hit rate 很低，说明大量可复用 KV 很快被挤掉。DRAM 明显改善 LEval，但对 LooGLE 这类更长上下文仍然不足。SSD 因为容量大，可以保留绝大多数可复用 KV 状态。</p>
+<p>这也解释了为什么 Tutti 要做 SSD-backed KV cache：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">HBM-only：hit 很快，但 hit 很少</span><br><span class="line">DRAM tier：hit 更多，但容量仍有限</span><br><span class="line">SSD tier：hit 很多，但必须把 retrieval 做快</span><br></pre></td></tr></table></figure>
+<p>如果 SSD retrieval 很慢，84%/86% 的 hit rate 反而可能只是“高命中但高延迟”。Tutti 的价值就是让这些 hit 真正转化成低 TTFT 和低成本。</p>
+<h3 id="5-2-Figure-8：端到端-TTFT-和-ITL">5.2 Figure 8：端到端 TTFT 和 ITL</h3>
+<p>Figure 8 比较 Llama3-8B 在 LEval 和 LooGLE 上的 TTFT/ITL，覆盖 vLLM v0.12.0 和 v0.17.0。</p>
+<p>论文报告了几个关键结果：</p>
+<ul>
+<li>在旧版 vLLM 的 LEval 高负载点，Tutti 相对 GDS 把 TTFT 降低 <strong>71.8%</strong>；</li>
+<li>在新版 vLLM 中，高负载下 Tutti 相对 DRAM 降低 TTFT <strong>69.1%</strong>，相对 GDS 降低 <strong>78.3%</strong>；</li>
+<li>在 <strong>1s TTFT SLO</strong> 下，Tutti 相对 DRAM 把 effective request rate 提高 <strong>50%</strong>，相对 GDS 提高 <strong>100%</strong>；</li>
+<li>在新版 vLLM 的 LooGLE 0.6 RPS 下，GDS 的 TTFT 仍然约为 Tutti 的 <strong>2.63×</strong>；</li>
+<li>同一负载点，Tutti 相对 DRAM 降低 TTFT <strong>93.2%</strong>，相对 GDS 降低 <strong>62.0%</strong>。</li>
+</ul>
+<p>ITL 方面也有明显改善：</p>
+<ul>
+<li>旧版 vLLM 的 LEval 1.5 RPS 下，Tutti 相对 DRAM 降低 ITL <strong>60.4%</strong>，相对 GDS 降低 <strong>24.9%</strong>；</li>
+<li>新版 vLLM 的 LEval 1.5 RPS 下，Tutti 相对 DRAM 仍降低 ITL <strong>22.0%</strong>，相对 GDS 降低 <strong>24.4%</strong>；</li>
+<li>LooGLE 上 ITL 改善幅度变小，因为更长输入让每 token compute 变重，但 Tutti 仍然保持最好或最稳定的曲线。</li>
+</ul>
+<p>我的理解是：Tutti 最适合那些“有足够多 prefix reuse，同时还有足够 compute 可以隐藏 I/O”的场景。如果 workload 极端 compute-heavy，存储优化对 ITL 的相对收益会变小；如果 workload 极端 retrieval-heavy，DRAM 的低延迟优势可能重新出现。但在论文测试的长上下文 serving 区间里，Tutti 的优势很明显。</p>
+<h3 id="5-3-Figure-9：retrieve-store-bandwidth">5.3 Figure 9：retrieve/store bandwidth</h3>
+<p>Figure 9 直接测试 1K 到 128K context length 下的 retrieve/store bandwidth。</p>
+<p>retrieval 方面：</p>
+<ul>
+<li>Tutti 曲线平滑，长上下文下最高达到 <strong>25.9 GB/s</strong>；</li>
+<li>LMCache-GDS 即使用两块 SSD，也大约卡在 <strong>11.9 GB/s</strong>；</li>
+<li>因此 Tutti retrieval bandwidth 最高达到 LMCache-GDS 的 <strong>2.08×</strong>；</li>
+<li>LMCache-DRAM 有明显不稳定，例如在 16K tokens 时因为 memory fragmentation 降到 <strong>8.5 GB/s</strong>。</li>
+</ul>
+<p>store 方面：</p>
+<ul>
+<li>LMCache-DRAM 最高可到 <strong>18.4 GB/s</strong>，但它没有 SSD 持久容量，仍受 DRAM 限制；</li>
+<li>Tutti 在持久存储后端中更稳定，约 <strong>10 GB/s</strong>，128K tokens 时为 <strong>9.8 GB/s</strong>；</li>
+<li>LMCache-GDS 在同样双 SSD 配置下约 <strong>7 GB/s</strong>。</li>
+</ul>
+<p>这里要注意 retrieval 比 store 更关键，因为 prefix cache hit 的读取通常在 TTFT 关键路径上。write 可以通过 scheduler 延后，在 decode 或后续 slack window 里 best-effort flush。</p>
+<h3 id="5-4-Figure-10：SGL-为什么比-PRP-重要">5.4 Figure 10：SGL 为什么比 PRP 重要</h3>
+<p>Figure 10 是一个单 GPU thread microbenchmark，每次读写 500 MB 数据。结果如下：</p>
+<table>
+<thead>
+<tr>
+<th>Descriptor path</th>
+<th style="text-align:right">Read bandwidth</th>
+<th style="text-align:right">Write bandwidth</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PRP</td>
+<td style="text-align:right">0.287 GB/s</td>
+<td style="text-align:right">0.032 GB/s</td>
+</tr>
+<tr>
+<td>SGL</td>
+<td style="text-align:right">8.891 GB/s</td>
+<td style="text-align:right">2.922 GB/s</td>
+</tr>
+</tbody>
+</table>
+<p>从 PRP 切到 SGL 后，read 提升 <strong>31.0×</strong>，write 提升 <strong>91.3×</strong>。</p>
+<p>这个结果很有启发。很多时候我们讨论 LLM serving 只看 batch size、attention kernel、KV cache policy，但底层 NVMe descriptor 的选择也可能决定系统是否能跑起来。Tutti 的贡献之一就是把这些底层细节和上层 KV cache 对象形态对齐。</p>
+<h3 id="5-5-Figure-11：不同-prefix-reuse-下的-TTFT">5.5 Figure 11：不同 prefix reuse 下的 TTFT</h3>
+<p>Figure 11 固定 total input length 为 128K tokens，把 cached prefix 从 16K 增加到 128K。这个实验测试随着 prefix reuse 增加，各系统如何变化。</p>
+<p>论文报告：</p>
+<ul>
+<li>cached prefix 为 112K 时，LMCache-SSD 的 TTFT 达到 <strong>7.84 s</strong>；</li>
+<li>Tutti 同一位置为 <strong>3.43 s</strong>，比 LMCache-SSD 快 <strong>2.28×</strong>；</li>
+<li>相对 LMCache-GDS，Tutti 在所有 prefix length 下都有改善，从 32K 的 <strong>5.8%</strong> 到 128K 的 <strong>61.4%</strong>；</li>
+<li>在 16K 到 96K 的中等 reuse 区间，Tutti 甚至可以匹配或超过 DRAM，最高提升 <strong>13.4%</strong>；</li>
+<li>当 reuse 极高（超过 96K）时，任务几乎变成纯 retrieval-bound，DRAM 会重新领先，Tutti 最多落后 <strong>20.6%</strong>。</li>
+</ul>
+<p>这个结果很细腻。它没有说 Tutti 在任何情况下都比 DRAM 快。更准确的说法是：当 compute-I/O overlap 和 SSD 容量优势能发挥作用时，Tutti 可以超过 DRAM；当剩下的工作几乎全是读取，DRAM 的低延迟优势仍然存在。</p>
+<h3 id="5-6-Figure-12：多-GPU-和超长上下文">5.6 Figure 12：多 GPU 和超长上下文</h3>
+<p>Figure 12 使用 GLM-4-9B-Chat-1M，在两张 GPU 和四块 SSD 上测试 prefix length 变化。论文报告，128K prefix 时 Tutti 的 TTFT 为 <strong>155.743 s</strong>，相比 LMCache-GDS 的 <strong>207.12 s</strong> 降低约 <strong>25%</strong>。</p>
+<p>更重要的是长 prefix 下的稳定性：LMCache-GDS 在 512K 和 640K prefix length 失败，出现 OOM。论文认为原因是 GDS 通过 <code>cufile</code> 做 direct transfer 时需要额外 GPU memory 作为 staging buffer；长上下文下这些 buffer 会触发显存不足。Tutti 通过和 inference engine 深度集成，直接管理 GPU memory，避免了这类额外 staging buffer，因此能完成更长 prefix 的测试。</p>
+<p>我更愿意把这个结果看成架构鲁棒性的证据。长上下文系统的失败往往不是平均带宽不够，而是某些额外 memory buffer、metadata、同步路径在极端上下文下突然放大。Tutti 的价值之一就是减少这些隐藏额外开销。</p>
+<h3 id="5-7-Figure-13：bubble-time-和-crossover-point">5.7 Figure 13：bubble time 和 crossover point</h3>
+<p>Figure 13 把 latency 分解成 compute time 和 bubble time，并随 cache hit rate 变化。核心直觉是：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">如果 T_compute &gt; T_transfer：</span><br><span class="line">    I&#x2F;O 可以被计算隐藏</span><br><span class="line">否则：</span><br><span class="line">    storage bubble 会暴露出来</span><br></pre></td></tr></table></figure>
+<p>LMCache-SSD 的 bubble 很大，无法被有效隐藏。Tutti 则在大多数测试区间里把 bubble 压得很小。论文报告，Tutti 的 bubble time 平均约 <strong>25 ms</strong>，在 <strong>93.75% hit rate</strong> 时低到 <strong>6 ms</strong>，并把 crossover point 推到 <strong>98.3% hit rate</strong>。</p>
+<p>我认为这是论文里最能体现 scheduler 价值的结果。Figure 9 说明 Tutti I/O 路径更快；Figure 13 进一步说明，这条更快的路径确实被放到了合适时间点，所以没有显著打断模型计算。</p>
+<h3 id="5-8-Figure-14：成本">5.8 Figure 14：成本</h3>
+<p>Figure 14 计算每 1M tokens 的 serving 成本。公式可以理解为：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">每 1M tokens 成本 &#x3D; (GPU 成本 + DRAM&#x2F;SSD 成本) &#x2F; token throughput × 1,000,000</span><br></pre></td></tr></table></figure>
+<p>论文使用的价格假设包括：</p>
+<ul>
+<li>H100：每小时 $5；</li>
+<li>DRAM：每 GB 每小时 $0.0088；</li>
+<li>NVMe SSD：每 GB 每小时 $0.000082。</li>
+</ul>
+<p>在 LooGLE 0.5 QPS 下，Tutti 相对 LMCache-SSD 降低成本 <strong>66.2%</strong>，相对 LMCache-GDS 降低约 <strong>27%</strong>。</p>
+<p>这个成本优势来自两方面：SSD 容量很便宜，同时 Tutti 又能让 GPU 不因为等待 SSD 而空转。便宜存储本身不够，如果 GPU 利用率低，最终每 token 成本仍然会高。Tutti 的目标就是同时利用 SSD 容量和 GPU 计算能力。</p>
+<hr>
+<h2 id="6-局限性与边界条件">6. 局限性与边界条件</h2>
+<h3 id="6-1-设计强依赖硬件和系统栈">6.1 设计强依赖硬件和系统栈</h3>
+<p>Tutti 依赖高端 GPU、企业级 NVMe SSD、GPU direct access、CUDA runtime、SM partitioning、vLLM integration 等能力。论文使用的是 H100 和 Solidigm D7-PS1010 这类数据中心硬件。</p>
+<p>因此，这不是一个可以直接搬到普通开发机或任意云环境的方案。某些云平台可能不允许足够低层的 NVMe / GDS / GPU P2P 控制；某些 PCIe topology 也可能不适合。</p>
+<h3 id="6-2-Offline-profiling-会带来运维成本">6.2 Offline profiling 会带来运维成本</h3>
+<p>slack-aware scheduler 依赖离线 profile。模型、GPU、CUDA version、attention kernel、vLLM version、tensor parallel layout、SSD 数量、batch policy 变化后，profile 都可能需要重新生成。</p>
+<p>这在稳定线上集群里是可以接受的，但它确实增加了系统维护成本。如果 workload 跑到 profile 覆盖范围外，scheduler 的效果也可能下降。</p>
+<h3 id="6-3-分布式-remote-path-还不是最成熟部分">6.3 分布式 remote path 还不是最成熟部分</h3>
+<p>论文描述了通过 Mooncake 做分布式 metadata 和 replica management，但当前 remote retrieval path 仍然会通过 CPU-side interface 读到 host memory，再用 RDMA 发到其他节点。更直接的 GPU-driven RDMA path 被留作未来工作。</p>
+<p>所以本文最扎实的证据集中在本机 GPU-to-local-NVMe 路径。真正大规模多节点生产系统还需要处理远端 KV 放置、跨节点复制、失效恢复、网络拥塞、远端读取延迟等问题。</p>
+<h3 id="6-4-Baseline-会随系统演化变化">6.4 Baseline 会随系统演化变化</h3>
+<p>论文主要对比 LMCache-SSD 和 LMCache-GDS。这个对比是合理的，但 serving/storage 系统迭代很快。未来如果 LMCache 或其他系统也引入 GPU-side submission、更强 scheduler、更贴合 KV object 的布局，百分比差距可能变化。</p>
+<p>所以我更看重论文的架构判断，而不只看某个版本上的 78.3%。最重要的信息是：CPU-centric I/O 不适合长上下文碎片化 KV retrieval。</p>
+<h3 id="6-5-Cache-hit-假设决定收益">6.5 Cache hit 假设决定收益</h3>
+<p>Tutti 对 prefix reuse 高的 workload 很有价值。如果 workload 几乎没有 prefix reuse，或者隐私/租户隔离策略不允许跨请求复用 KV cache，那么 SSD 容量再大也未必有用。</p>
+<p>此外，系统还需要决定哪些 KV 值得保留、何时 evict、如何避免低价值 prefix 占满 SSD、如何保证多租户隔离。论文重点解决的是“SSD-backed KV retrieval 怎么足够快”，并没有完全展开 cache admission / eviction / privacy policy。</p>
+<h3 id="6-6-复现信息还不够完整">6.6 复现信息还不够完整</h3>
+<p>论文摘要说 Tutti 是 open-source SSD-backed KV caching solution，但正文 PDF 中没有给出清晰仓库地址。要完整复现实验，读者需要代码、构建步骤、兼容 vLLM 分支、驱动版本、SSD 配置、GeminiFS 或等价组件、profiling 脚本、workload 生成脚本等。</p>
+<p>仅凭论文内容，理解系统设计没有问题，但要从零搭起同等系统会比较困难。</p>
+<hr>
+<h2 id="7-可复现性与实用笔记">7. 可复现性与实用笔记</h2>
+<h3 id="7-1-如果我要复现实验，需要哪些信息">7.1 如果我要复现实验，需要哪些信息</h3>
+<p>我会希望作者提供：</p>
+<ul>
+<li>Tutti C++ 和 Python 代码；</li>
+<li>对应 vLLM v0.12.0 / v0.17.0 的集成分支；</li>
+<li>LMCache 版本，尤其是图中出现的 LMCache 0.3.9 / 0.4.1；</li>
+<li>CUDA、driver、GDS、NVMe driver 版本；</li>
+<li>GeminiFS 或等价 GPU file system 的搭建方式；</li>
+<li>RAID-0、SSD queue、P2P mapping 配置脚本；</li>
+<li>slack-window profiling 脚本；</li>
+<li>LEval / LooGLE workload 预处理脚本；</li>
+<li>Poisson arrival traffic generator；</li>
+<li>SLO 规则和 Figure 8 中缺失点的判定逻辑。</li>
+</ul>
+<p>论文提供了理解设计和结果所需的主要信息，但要精确复现，还需要工程细节。</p>
+<h3 id="7-2-如果在生产里评估类似系统，我会先检查什么">7.2 如果在生产里评估类似系统，我会先检查什么</h3>
+<p><strong>Workload 是否适合</strong></p>
+<ul>
+<li>prefix reuse 是否足够高？</li>
+<li>长上下文请求是常态还是极少数尾部？</li>
+<li>多租户和隐私策略是否允许 KV cache 复用？</li>
+<li>流量分布是否接近 LEval/LooGLE，还是完全不同？</li>
+</ul>
+<p><strong>硬件是否适合</strong></p>
+<ul>
+<li>GPU 和 NVMe SSD 是否在合适的 PCIe topology 下？</li>
+<li>P2P DMA 是否稳定可用？</li>
+<li>SSD 是否能承受持续 mixed read/write？</li>
+<li>预留 SM 给 I/O 是否会伤害模型吞吐？</li>
+</ul>
+<p><strong>Runtime 是否适合</strong></p>
+<ul>
+<li>当前使用哪个 vLLM 版本？</li>
+<li>是否有 KVConnector 类似接口？</li>
+<li>团队是否能维护 CUDA/C++ storage kernel？</li>
+<li>profile 多久需要重新生成一次？</li>
+</ul>
+<p><strong>运维是否可控</strong></p>
+<ul>
+<li>SSD 故障时如何 fallback？</li>
+<li>KV object 如何 evict、replicate、invalidate？</li>
+<li>如何监控 GPU bubble、SSD queue depth、cache hit quality？</li>
+<li>SSD tier 不稳定时，能否回退到 DRAM 或 recomputation？</li>
+</ul>
+<h3 id="7-3-这篇论文给我的系统启发">7.3 这篇论文给我的系统启发</h3>
+<p>这篇论文背后的趋势是：LLM serving 正在变成更完整的 full-stack systems 问题。过去很多推理系统可以把 storage 当成外围组件：加载权重、写日志、偶尔 offload 一些数据。但长上下文改变了这一点。KV cache 本身可能比模型权重大得多，KV cache 移动也可能直接决定用户看到的延迟。</p>
+<p>Tutti 的设计风格可以概括成：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">模型结构      -&gt; layer-wise KV object</span><br><span class="line">GPU runtime   -&gt; io_uring-like async queue</span><br><span class="line">存储设备      -&gt; SGL-friendly high-bandwidth transfer</span><br><span class="line">scheduler     -&gt; profile compute slack，避免 I&#x2F;O 干扰</span><br><span class="line">serving 指标  -&gt; TTFT &#x2F; ITL &#x2F; cost under load</span><br></pre></td></tr></table></figure>
+<p>它最有价值的地方不是某一个技巧，而是说明单点优化不够：</p>
+<ul>
+<li>只有 SSD 容量，不解决延迟；</li>
+<li>只有 GDS，不解决 CPU 控制路径；</li>
+<li>只有异步 I/O，不解决 SM 干扰；</li>
+<li>只有带宽，不解决 read/write 竞争；</li>
+<li>只有 cache hit，不保证用户体验。</li>
+</ul>
+<p>最后的性能来自这些组件围绕 KV cache 数据流的共同设计。</p>
+<hr>
+<h2 id="8-我的主要收获">8. 我的主要收获</h2>
+<ol>
+<li>
+<p><strong>SSD-backed KV cache 必要但不自动有效。</strong> Table 1 说明 SSD 能显著提高 hit rate，但 Figure 2 也说明低效 SSD retrieval 可能比 recomputation 更糟。</p>
+</li>
+<li>
+<p><strong>CPU control path 是长上下文碎片化 I/O 的核心瓶颈之一。</strong> GDS 去掉了 CPU bounce buffer，但如果每个 I/O 还要 CPU 发起，仍然无法适应大量小对象。</p>
+</li>
+<li>
+<p><strong>抽象必须贴合 KV cache。</strong> Tutti 的 object store 有价值，是因为它把存储操作和 layer-wise KV movement 对齐。</p>
+</li>
+<li>
+<p><strong>调度和带宽同样重要。</strong> Figure 13 显示 Tutti 不只是提高 GB/s，还把 I/O 放到合适时间，使 bubble time 很小。</p>
+</li>
+<li>
+<p><strong>系统复杂度不低。</strong> Tutti 需要 CUDA/C++ kernel、vLLM integration、NVMe/GPU memory 细节和离线 profiling。它不是一个简单 Python cache。</p>
+</li>
+<li>
+<p><strong>未来 LLM serving 可能会越来越 GPU-centric。</strong> 当 KV cache 成为主导状态时，GPU-controlled data movement、model-aware storage layout、compute-I/O joint scheduling 会越来越重要。</p>
+</li>
+</ol>
+<hr>
+<h2 id="参考与延伸阅读">参考与延伸阅读</h2>
+<ol>
+<li>Qiu et al., <em>Tutti: Making SSD-Backed KV Cache Practical for Long-Context LLM Serving</em>, arXiv:2605.03375, 2026.</li>
+<li>Kwon et al., <em>Efficient Memory Management for Large Language Model Serving with PagedAttention</em>, SOSP 2023.</li>
+<li>Liu et al., <em>CacheGen: KV Cache Compression and Streaming for Fast Large Language Model Serving</em>, SIGCOMM 2024.</li>
+<li>Qin et al., <em>Mooncake: Kimi's KVCache-centric Architecture for LLM Serving</em>, arXiv:2407.00079, 2024.</li>
+<li>Qiu et al., <em>GeminiFS: A Companion File System for GPUs</em>, FAST 2025.</li>
+<li>Qureshi et al., <em>GPU-Initiated On-Demand High-Throughput Storage Access in the BaM System Architecture</em>, ASPLOS 2023.</li>
+<li>Chen et al., <em>IMPRESS: An Importance-Informed Multi-Tier Prefix KV Storage System for Large Language Model Inference</em>, FAST 2025.</li>
+<li>Gao et al., <em>Fast State Restoration in LLM Serving with HCache</em>, EuroSys 2025.</li>
+</ol>
+<hr>
+<p><em>笔记写于 2026-05-10。</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/KV-Cache/" rel="tag"># KV Cache</a>
+              <a href="/tags/LLM-Serving/" rel="tag"># LLM Serving</a>
+              <a href="/tags/vLLM/" rel="tag"># vLLM</a>
+              <a href="/tags/Tutti/" rel="tag"># Tutti</a>
+              <a href="/tags/SSD/" rel="tag"># SSD</a>
+              <a href="/tags/GPU-I-O/" rel="tag"># GPU I/O</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/05/10/2026-05-10-Tutti-technical-review-en/" rel="prev" title="Tutti: Making SSD-Backed KV Cache Practical for Long-Context LLM Serving">
+      <i class="fa fa-chevron-left"></i> Tutti: Making SSD-Backed KV Cache Practical for Long-Context LLM Serving
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/05/11/2026-05-11-MASPO-technical-review-en/" rel="next" title="MASPO: Joint Prompt Optimization for LLM-based Multi-Agent Systems">
+      MASPO: Joint Prompt Optimization for LLM-based Multi-Agent Systems <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#简短结论"><span class="nav-number">1.</span> <span class="nav-text">简短结论</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-前置知识"><span class="nav-number">2.</span> <span class="nav-text">1. 前置知识</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-KV-cache-是什么，为什么会占很多内存"><span class="nav-number">2.1.</span> <span class="nav-text">1.1 KV cache 是什么，为什么会占很多内存</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-Prefix-caching-为什么重要"><span class="nav-number">2.2.</span> <span class="nav-text">1.2 Prefix caching 为什么重要</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-HBM、DRAM、SSD-的差别不只是速度"><span class="nav-number">2.3.</span> <span class="nav-text">1.3 HBM、DRAM、SSD 的差别不只是速度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-4-Paged-KV-cache：为什么会产生碎片化-I-O"><span class="nav-number">2.4.</span> <span class="nav-text">1.4 Paged KV cache：为什么会产生碎片化 I&#x2F;O</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-5-TTFT、ITL-和-GPU-bubble"><span class="nav-number">2.5.</span> <span class="nav-text">1.5 TTFT、ITL 和 GPU bubble</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-6-GDS-不等于真正-GPU-centric"><span class="nav-number">2.6.</span> <span class="nav-text">1.6 GDS 不等于真正 GPU-centric</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-这篇论文解决了什么问题"><span class="nav-number">3.</span> <span class="nav-text">2. 这篇论文解决了什么问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-方法细节"><span class="nav-number">4.</span> <span class="nav-text">3. 方法细节</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-从-Figure-2-和-Figure-3-看问题来源"><span class="nav-number">4.1.</span> <span class="nav-text">3.1 从 Figure 2 和 Figure 3 看问题来源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-GPU-native-KV-cache-object-store"><span class="nav-number">4.2.</span> <span class="nav-text">3.2 GPU-native KV cache object store</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#PRP-与-SGL：一个低层细节为什么影响很大"><span class="nav-number">4.2.1.</span> <span class="nav-text">PRP 与 SGL：一个低层细节为什么影响很大</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-GPU-io-uring"><span class="nav-number">4.3.</span> <span class="nav-text">3.3 GPU io_uring</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#SM-partitioning：I-O-kernel-不能随便抢计算资源"><span class="nav-number">4.3.1.</span> <span class="nav-text">SM partitioning：I&#x2F;O kernel 不能随便抢计算资源</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-Slack-aware-I-O-scheduler"><span class="nav-number">4.4.</span> <span class="nav-text">3.4 Slack-aware I&#x2F;O scheduler</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-vLLM-集成、多-GPU-和分布式路径"><span class="nav-number">4.5.</span> <span class="nav-text">3.5 vLLM 集成、多 GPU 和分布式路径</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-实验设置"><span class="nav-number">5.</span> <span class="nav-text">4. 实验设置</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-硬件环境"><span class="nav-number">5.1.</span> <span class="nav-text">4.1 硬件环境</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-模型"><span class="nav-number">5.2.</span> <span class="nav-text">4.2 模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-Workloads"><span class="nav-number">5.3.</span> <span class="nav-text">4.3 Workloads</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-4-Baselines"><span class="nav-number">5.4.</span> <span class="nav-text">4.4 Baselines</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-5-指标"><span class="nav-number">5.5.</span> <span class="nav-text">4.5 指标</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-结果与分析"><span class="nav-number">6.</span> <span class="nav-text">5. 结果与分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-Table-1：SSD-容量为什么重要"><span class="nav-number">6.1.</span> <span class="nav-text">5.1 Table 1：SSD 容量为什么重要</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Figure-8：端到端-TTFT-和-ITL"><span class="nav-number">6.2.</span> <span class="nav-text">5.2 Figure 8：端到端 TTFT 和 ITL</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-Figure-9：retrieve-store-bandwidth"><span class="nav-number">6.3.</span> <span class="nav-text">5.3 Figure 9：retrieve&#x2F;store bandwidth</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-Figure-10：SGL-为什么比-PRP-重要"><span class="nav-number">6.4.</span> <span class="nav-text">5.4 Figure 10：SGL 为什么比 PRP 重要</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-5-Figure-11：不同-prefix-reuse-下的-TTFT"><span class="nav-number">6.5.</span> <span class="nav-text">5.5 Figure 11：不同 prefix reuse 下的 TTFT</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-6-Figure-12：多-GPU-和超长上下文"><span class="nav-number">6.6.</span> <span class="nav-text">5.6 Figure 12：多 GPU 和超长上下文</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-7-Figure-13：bubble-time-和-crossover-point"><span class="nav-number">6.7.</span> <span class="nav-text">5.7 Figure 13：bubble time 和 crossover point</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-8-Figure-14：成本"><span class="nav-number">6.8.</span> <span class="nav-text">5.8 Figure 14：成本</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-局限性与边界条件"><span class="nav-number">7.</span> <span class="nav-text">6. 局限性与边界条件</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-设计强依赖硬件和系统栈"><span class="nav-number">7.1.</span> <span class="nav-text">6.1 设计强依赖硬件和系统栈</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-Offline-profiling-会带来运维成本"><span class="nav-number">7.2.</span> <span class="nav-text">6.2 Offline profiling 会带来运维成本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-分布式-remote-path-还不是最成熟部分"><span class="nav-number">7.3.</span> <span class="nav-text">6.3 分布式 remote path 还不是最成熟部分</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-Baseline-会随系统演化变化"><span class="nav-number">7.4.</span> <span class="nav-text">6.4 Baseline 会随系统演化变化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-5-Cache-hit-假设决定收益"><span class="nav-number">7.5.</span> <span class="nav-text">6.5 Cache hit 假设决定收益</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-6-复现信息还不够完整"><span class="nav-number">7.6.</span> <span class="nav-text">6.6 复现信息还不够完整</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-可复现性与实用笔记"><span class="nav-number">8.</span> <span class="nav-text">7. 可复现性与实用笔记</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-如果我要复现实验，需要哪些信息"><span class="nav-number">8.1.</span> <span class="nav-text">7.1 如果我要复现实验，需要哪些信息</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-如果在生产里评估类似系统，我会先检查什么"><span class="nav-number">8.2.</span> <span class="nav-text">7.2 如果在生产里评估类似系统，我会先检查什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-这篇论文给我的系统启发"><span class="nav-number">8.3.</span> <span class="nav-text">7.3 这篇论文给我的系统启发</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-我的主要收获"><span class="nav-number">9.</span> <span class="nav-text">8. 我的主要收获</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#参考与延伸阅读"><span class="nav-number">10.</span> <span class="nav-text">参考与延伸阅读</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">106</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">29</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">146</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+<script>
+if (document.querySelectorAll('pre.mermaid').length) {
+  NexT.utils.getScript('//cdn.jsdelivr.net/npm/mermaid@8/dist/mermaid.min.js', () => {
+    mermaid.initialize({
+      theme    : 'forest',
+      logLevel : 3,
+      flowchart: { curve     : 'linear' },
+      gantt    : { axisFormat: '%m/%d/%Y' },
+      sequence : { actorMargin: 50 }
+    });
+  }, window.mermaid);
+}
+</script>
+
+
+  
+
+  
+
+</body>
+</html>
