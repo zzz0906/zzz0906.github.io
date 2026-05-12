@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="一篇关于 DAPO 的中文阅读笔记：它把 Clip-Higher、动态采样、token-level loss 与 overlong reward shaping 组合成可复现的大规模 LLM 强化学习配方。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="DAPO：大规模开源 LLM 强化学习系统">
+<meta property="og:url" content="https://zzz0906.github.io/2026/05/12/2026-05-12-DAPO-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="一篇关于 DAPO 的中文阅读笔记：它把 Clip-Higher、动态采样、token-level loss 与 overlong reward shaping 组合成可复现的大规模 LLM 强化学习配方。">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-05-12T09:05:00.000Z">
+<meta property="article:modified_time" content="2026-05-12T17:21:00.466Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="LLM Reasoning">
+<meta property="article:tag" content="Reinforcement Learning">
+<meta property="article:tag" content="RLVR">
+<meta property="article:tag" content="DAPO">
+<meta property="article:tag" content="RL Training">
+<meta property="article:tag" content="GRPO">
+<meta property="article:tag" content="Open-Source Systems">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/05/12/2026-05-12-DAPO-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>DAPO：大规模开源 LLM 强化学习系统 | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/05/12/2026-05-12-DAPO-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          DAPO：大规模开源 LLM 强化学习系统
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2026-05-12 09:05:00 / Modified: 17:21:00" itemprop="dateCreated datePublished" datetime="2026-05-12T09:05:00+00:00">2026-05-12</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/RL-Training/" itemprop="url" rel="index"><span itemprop="name">RL Training</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/RL-Training/LLM-Training/" itemprop="url" rel="index"><span itemprop="name">LLM Training</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">一篇关于 DAPO 的中文阅读笔记：它把 Clip-Higher、动态采样、token-level loss 与 overlong reward shaping 组合成可复现的大规模 LLM 强化学习配方。</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p><strong>笔记日期：</strong> 2026-05-12<br>
+<strong>笔记作者：</strong> Zhongzhu Zhou<br>
+<strong>论文：</strong> <em>DAPO: An Open-Source LLM Reinforcement Learning System at Scale</em><br>
+<strong>论文作者：</strong> Qiying Yu 等<br>
+<strong>arXiv：</strong> 2503.14476v2，2025-05-20<br>
+<strong>论文状态：</strong> arXiv 预印本<br>
+<strong>本笔记使用的论文文件：</strong> <code>src/related-documents/papers/2503.14476-DAPO.pdf</code></p>
+<hr>
+<h2 id="简短结论">简短结论</h2>
+<p>这篇论文讨论的是一个非常实际的问题：<strong>大模型推理能力的强化学习训练，到底怎样才能被复现出来？</strong> OpenAI o1、DeepSeek-R1 之后，大家基本形成了一个共识：如果让模型在推理时生成更长的思考过程，再用强化学习强化最终答对的行为，模型在数学、代码等任务上会出现明显提升。但是，高层报告通常不会把训练细节全部写清楚。很多团队知道方向，却很难把训练跑到同等水平。</p>
+<p>DAPO 的价值就在这里。作者从 Qwen2.5-32B base 模型出发，先跑一个直接的 GRPO 基线。这个基线在 AIME 2024 上只能达到 <strong>30 avg@32</strong>，而论文中引用的 DeepSeek-R1-Zero-Qwen-32B 是 <strong>47</strong>。也就是说，“用 GRPO + 最终答案奖励”这个描述本身并不足够。真正困难的地方在于训练过程中会出现一串问题：熵很快塌缩、batch 里大量样本没有有效梯度、长推理回答的 token 权重不合理、超过长度上限的回答带来奖励噪声。</p>
+<p>DAPO，全称 <strong>Decoupled Clip and Dynamic sAmpling Policy Optimization</strong>，可以理解成一套让长 CoT 强化学习稳定工作的训练配方。它不是只改了一个公式，而是组合了四个关键技术：</p>
+<ol>
+<li><strong>Clip-Higher</strong>：把 PPO/GRPO 中下侧 clipping 和上侧 clipping 拆开，只提高上侧 clipping，给有用但低概率的探索 token 更大的上升空间。</li>
+<li><strong>Dynamic Sampling</strong>：只保留同一题目下“有的采样答对、有的采样答错”的 prompt group，让 GRPO 的组内相对优势真的有信息量。</li>
+<li><strong>Token-Level Policy Gradient Loss</strong>：从 sample-level loss 改成 token-level loss，避免很长的推理轨迹被平均掉。</li>
+<li><strong>Overlong Reward Shaping</strong>：对超长/截断回答做更平滑的长度惩罚，而不是粗暴地全部当成坏样本。</li>
+</ol>
+<p>最后，DAPO 把 Qwen2.5-32B 训练到 <strong>AIME 2024 avg@32 = 50</strong>，超过论文中引用的 DeepSeek-R1-Zero-Qwen-32B 的 47，并且作者说训练步数大约只有后者的一半。更重要的是，作者开源了基于 verl 的训练代码和 DAPO-Math-17K 数据集。对于想复现 reasoning RL 的研究者来说，这篇论文最有用的地方不是“又多了一个名字”，而是它把很多之前藏在工程经验里的细节写成了可检查、可实现、可复盘的训练流程。</p>
+<p>我的总体看法是：DAPO 更像是一篇“强化学习后训练系统配方”论文。它提醒我们，长推理 RL 的效果不只取决于 PPO、GRPO 这类目标函数，还取决于数据格式、奖励解析、采样策略、长度控制、loss reduction 方式、熵监控和训练曲线诊断。只看算法名，很容易低估这些细节的影响。</p>
+<hr>
+<h2 id="1-前置知识">1. 前置知识</h2>
+<h3 id="1-1-什么是-inference-scaling-与长-CoT-推理">1.1 什么是 inference scaling 与长 CoT 推理</h3>
+<p>所谓 inference scaling，直观地说，就是让模型在推理阶段花更多计算。普通问答可能是：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">问题 -&gt; 直接回答</span><br></pre></td></tr></table></figure>
+<p>而长 CoT 推理更像是：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">问题 -&gt; 初步尝试 -&gt; 检查 -&gt; 发现问题 -&gt; 换一种思路 -&gt; 推导 -&gt; 验证 -&gt; 最终答案</span><br></pre></td></tr></table></figure>
+<p>在数学竞赛、代码生成、定理证明这类任务里，第二种方式通常更强。模型不一定一眼知道答案，但它可能通过中间推导、枚举、反证、代数变换、自我检查等步骤逐渐找到答案。</p>
+<p>强化学习之所以适合这类任务，是因为很多题目有明确的最终答案。模型生成一段推理和最终答案后，系统可以检查最终答案是否正确。答对给正奖励，答错给负奖励。经过很多轮采样和更新，模型会更倾向于生成能导向正确答案的推理过程。</p>
+<p>困难在于：奖励只在最后出现，而模型可能已经生成了几千甚至上万 token。一个最终的 +1 或 -1 要回传到整段推理轨迹上，这天然有噪声。哪一步推理有用？哪一步只是碰巧？答案错是因为方向错、计算错、没写完，还是解析器没读对？这些问题都会影响训练稳定性。</p>
+<h3 id="1-2-PPO、clipping-与为什么-clipping-会影响探索">1.2 PPO、clipping 与为什么 clipping 会影响探索</h3>
+<p>PPO（Proximal Policy Optimization）是一种常见的强化学习算法。它的核心思想是：让策略朝着更好方向更新，但不要一步走太远。具体做法是比较新策略和旧策略给某个 action 的概率之比：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ratio &#x3D; 新策略概率 &#x2F; 旧策略概率</span><br></pre></td></tr></table></figure>
+<p>如果 ratio 太大或太小，就把它截断到一个范围内。例如默认 clipping 为 0.2 时，ratio 大概被限制在 <code>[0.8, 1.2]</code>。这个机制可以让训练更稳定，避免一次噪声很大的 batch 把模型推坏。</p>
+<p>在语言模型里，每个 token 都可以看成一个 action。长 CoT 强化学习里，一个回答不是一个动作，而是一串 token 动作。有些 token 原本就很容易出现，比如常见连接词、常见公式开头；有些 token 是探索性的，比如“wait”、“let me check”、换一种几何构造、重新设变量，或者在中文里写“这里需要重新审视前面的假设”。这些探索 token 在 base model 里概率可能很低。</p>
+<p>DAPO 的一个重要观察是：默认的上侧 clipping 对低概率探索 token 很不友好。假设一个 token 的旧概率是 0.01，即使 ratio 允许到 1.2，新概率也只能到 0.012。这种变化非常小。相反，一个旧概率为 0.9 的 token，乘以 1.2 后已经超过 1，本来就会饱和。于是，上侧 clipping 实际上更容易限制低概率探索 token 的上升，而不太限制高概率常规 token 的继续增强。</p>
+<p>这就是 Clip-Higher 的动机：不要把上下两侧 clipping 绑死在同一个值，而是单独提高上侧 clipping，让有正 advantage 的低概率 token 有更大的上升空间。</p>
+<h3 id="1-3-GRPO-与组内相对优势">1.3 GRPO 与组内相对优势</h3>
+<p>GRPO（Group Relative Policy Optimization）可以看成一种去掉 value model 的 PPO 变体。PPO 通常需要一个 value function 来估计 advantage；GRPO 不训练 value model，而是对同一个 prompt 采样多个回答，在这组回答内部比较 reward。</p>
+<p>例如对一道数学题采样 16 个回答：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">题目 q</span><br><span class="line">  -&gt; 回答 1：错，reward &#x3D; -1</span><br><span class="line">  -&gt; 回答 2：对，reward &#x3D; +1</span><br><span class="line">  -&gt; 回答 3：错，reward &#x3D; -1</span><br><span class="line">  ...</span><br><span class="line">  -&gt; 回答 16：对，reward &#x3D; +1</span><br></pre></td></tr></table></figure>
+<p>然后用这 16 个 reward 的均值和标准差做归一化。答对的回答相对更好，advantage 为正；答错的回答相对更差，advantage 为负。这种方式很适合可验证任务，因为不需要训练额外的 reward model 或 value model。</p>
+<p>但是 GRPO 有一个关键前提：同一组回答内部要有差异。如果 16 个回答全都答对，每个 reward 都一样，归一化后 advantage 近似为 0。如果 16 个回答全都答错，也是一样。这样的 prompt group 消耗了 rollout 预算，却没有给优化器提供有效对比信号。DAPO 的 Dynamic Sampling 正是为了解决这个问题。</p>
+<h3 id="1-4-可验证奖励与奖励噪声">1.4 可验证奖励与奖励噪声</h3>
+<p>DAPO 主要使用数学题。数学题的好处是最终答案可以由规则检查。论文里的 reward 可以简化理解为：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">如果预测答案和标准答案等价，reward &#x3D; +1</span><br><span class="line">否则 reward &#x3D; -1</span><br></pre></td></tr></table></figure>
+<p>这比用一个偏好模型打分更干净，也降低了 reward hacking 的风险。不过，“规则奖励”并不等于“没有噪声”。数学答案可能是分数、根式、表达式、坐标、集合，也可能混在一段很长的解释里。解析器要判断这些形式是否等价，可能出错。模型如果因为长度上限被截断，也可能没来得及写最终答案。此时直接给 -1，可能会把一个有希望的推理过程误判成坏样本。</p>
+<p>所以 DAPO 处理了两个看似琐碎但很重要的环节：</p>
+<ul>
+<li>把数据集中的答案尽量转换成整数形式，降低解析难度；</li>
+<li>对超长回答做平滑长度惩罚，减少截断导致的奖励噪声。</li>
+</ul>
+<p>很多复现实验失败，不一定是因为算法公式错了，而是因为 reward interface 太脏。DAPO 的贡献之一，就是把这个接口打磨得更适合大规模训练。</p>
+<h3 id="1-5-为什么长-CoT-RL-是系统问题">1.5 为什么长 CoT RL 是系统问题</h3>
+<p>长推理强化学习不是一个单点算法问题。它同时牵涉多个子系统：</p>
+<ul>
+<li>rollout 需要为每个 prompt 采样很多长回答；</li>
+<li>verifier 需要稳定地抽取和检查最终答案；</li>
+<li>optimizer 需要处理稀疏、高方差的 reward；</li>
+<li>response length 需要被监控，因为越长不一定越好；</li>
+<li>entropy 需要被监控，因为太低会失去探索，太高可能变成重复或胡言乱语；</li>
+<li>batch 的 wall-clock 时间可能被最长的几个样本拖慢；</li>
+<li>数据难度分布会随着模型能力变化而改变。</li>
+</ul>
+<p>改变其中一个组件，常常会影响其他组件。例如提高最大生成长度，可能让模型探索更复杂推理，也可能带来更多截断样本和更高训练成本。提高熵，可能增加探索，也可能带来无意义重复。过滤掉太容易或太难的 prompt，可以提升梯度质量，但也改变了训练分布。</p>
+<p>DAPO 的实用价值就在于它把这些相互作用放在一起考虑。它不是只问“目标函数怎么写”，还问“哪些 batch 真有梯度”、“长回答应该怎么加权”、“超长样本应该怎么给 reward”、“哪些曲线说明训练健康”。</p>
+<hr>
+<h2 id="2-这篇论文做了什么">2. 这篇论文做了什么</h2>
+<p>论文提出了一套可复现的大规模 LLM 强化学习系统，用于训练数学推理模型。它从一个很多人都会自然尝试的 baseline 开始：用 GRPO，加上基于最终答案的规则奖励。这个 baseline 能提升模型，但只能到 <strong>AIME 2024 avg@32 = 30</strong>。</p>
+<p>接下来，作者逐步分析为什么 naive GRPO 不够，并给出对应修复。整体逻辑可以概括成：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">Qwen2.5-32B base model</span><br><span class="line">        |</span><br><span class="line">        v</span><br><span class="line">naive GRPO + rule-based math reward</span><br><span class="line">        |</span><br><span class="line">        |-- 问题 1：entropy collapse，模型过早变得确定</span><br><span class="line">        |       -&gt; Clip-Higher</span><br><span class="line">        |</span><br><span class="line">        |-- 问题 2：很多 prompt group 全对或全错，没有有效梯度</span><br><span class="line">        |       -&gt; Dynamic Sampling</span><br><span class="line">        |</span><br><span class="line">        |-- 问题 3：sample-level loss 让长推理 token 权重不合理</span><br><span class="line">        |       -&gt; Token-Level Policy Gradient Loss</span><br><span class="line">        |</span><br><span class="line">        |-- 问题 4：截断回答被粗暴惩罚，reward noise 很大</span><br><span class="line">        |       -&gt; Overlong Reward Shaping</span><br><span class="line">        |</span><br><span class="line">        v</span><br><span class="line">DAPO system：AIME 2024 avg@32 &#x3D; 50</span><br></pre></td></tr></table></figure>
+<p>论文还开源了训练代码和 DAPO-Math-17K 数据集。训练代码基于 verl 框架，数据集包含 17K 个经过处理的数学 prompt，答案尽量变成容易解析的整数形式。这一点非常关键，因为复现 reasoning RL 不只是知道“用 GRPO”，还需要知道数据怎么处理、答案怎么检查、超长回答怎么处理、采样怎么过滤、loss 怎么归约。</p>
+<p>从症状和对应组件看，DAPO 的结构非常清楚：</p>
+<table>
+<thead>
+<tr>
+<th>训练症状</th>
+<th>为什么有害</th>
+<th>DAPO 的对应设计</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>熵下降太快</td>
+<td>模型停止探索新的推理路径</td>
+<td>Clip-Higher</td>
+</tr>
+<tr>
+<td>prompt group 全对或全错</td>
+<td>组内相对 advantage 变成 0</td>
+<td>Dynamic Sampling</td>
+</tr>
+<tr>
+<td>长回答和短回答按样本平均</td>
+<td>长推理中的 token 信号被稀释</td>
+<td>Token-Level Policy Gradient Loss</td>
+</tr>
+<tr>
+<td>截断回答被直接惩罚</td>
+<td>有希望的推理过程也被当成坏样本</td>
+<td>Overlong Reward Shaping</td>
+</tr>
+</tbody>
+</table>
+<p>我觉得这篇论文最好的地方，是它没有把问题包装成“一个神奇新算法”。它承认长 CoT RL 是由很多小失配组成的：objective 和 token-level 行为之间有失配，reward 和截断行为之间有失配，采样预算和有效梯度之间有失配，默认 clipping 和探索需求之间也有失配。DAPO 就是把这些失配逐个补上。</p>
+<hr>
+<h2 id="3-方法细节">3. 方法细节</h2>
+<h3 id="3-1-从-GRPO-出发，并去掉不必要的-KL-约束">3.1 从 GRPO 出发，并去掉不必要的 KL 约束</h3>
+<p>论文先回顾 PPO 和 GRPO。GRPO 的核心是：对同一个 prompt 采样多个回答，然后用组内 reward 的均值和标准差计算相对 advantage。简化写法是：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">advantage_i &#x3D; (reward_i - group_mean) &#x2F; group_std</span><br></pre></td></tr></table></figure>
+<p>这对数学题很自然。每道题采样 16 个答案，答对的相对更好，答错的相对更差，不需要额外 value model。</p>
+<p>DAPO 还去掉了 reference policy 的 KL penalty。在传统 RLHF 中，KL penalty 的作用是防止对齐后的模型离初始模型太远。因为偏好对齐通常希望模型保持原有语言能力，只在行为上更符合人类偏好。但是在长 CoT 推理中，训练目标本来就要求模型产生与 base model 不同的行为：更长推理、反思、回溯、自我验证。如果 KL 太强，可能会阻止这些新行为出现。</p>
+<p>所以 DAPO 的选择是：不直接加 KL 约束，而是依靠 clipping 维持更新稳定。这说明作者把 reasoning RL 看成一种“发现新推理行为”的过程，而不只是轻微偏好调整。</p>
+<h3 id="3-2-Clip-Higher：提高上侧-clipping，保护探索">3.2 Clip-Higher：提高上侧 clipping，保护探索</h3>
+<p>Figure 2 是论文第一组关键证据。它比较了使用和不使用 Clip-Higher 时，AIME accuracy 和 actor model 生成概率熵的变化。不使用 Clip-Higher 时，entropy 很快下降，模型变得过于确定；使用 Clip-Higher 后，entropy 保持得更健康，准确率也更好。</p>
+<p>这背后的直觉是：PPO/GRPO 的 clipping 有两侧。</p>
+<ul>
+<li>下侧 clipping 限制某个 token 概率下降得太多；</li>
+<li>上侧 clipping 限制某个 token 概率上升得太多。</li>
+</ul>
+<p>默认情况下，两侧通常用同一个 epsilon，比如 0.2。但在语言模型探索里，上侧 clipping 对低概率 token 特别严格。旧概率 0.01 的 token，即使有正 advantage，也只能被放大到 0.012 左右；旧概率 0.9 的 token，则几乎已经接近饱和。于是默认上界会阻碍低概率探索 token 成长。</p>
+<p>DAPO 把上下界拆成两个参数：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">epsilon_low  &#x3D; 0.2</span><br><span class="line">epsilon_high &#x3D; 0.28</span><br></pre></td></tr></table></figure>
+<p>也就是保持下界不变，提高上界。这样做的含义是：不要让坏 token 的概率被一下压得太狠，但允许好 token，尤其是低概率探索 token，有更大的上升空间。</p>
+<p>Figure 3a 支持这个判断。论文显示被 up-clipped 的 token 平均概率并不高，常常低于 0.2。这意味着上侧 clipping 确实主要卡住的是那些原本不太常见的 token，而不是已经非常高概率的 token。Figure 3b 又显示，训练过程中全对 prompt group 的比例会增加，这进一步引出 Dynamic Sampling。</p>
+<p>我的理解是，Clip-Higher 并不是简单地“让训练更激进”。它是针对 token 概率空间中的不对称性做修正。默认 clipping 是通用稳定技巧，但长 CoT RL 需要模型把一些原本少见的推理行为提上来。如果上界太紧，探索行为还没来得及成长就被压住了。</p>
+<h3 id="3-3-Dynamic-Sampling：把梯度预算花在有信息量的组上">3.3 Dynamic Sampling：把梯度预算花在有信息量的组上</h3>
+<p>GRPO 依赖组内 reward 差异。如果一个 prompt 下的 16 个回答全都答对，那么每个 reward 一样，advantage 近似为 0。如果全都答错，也一样。这样的组对训练几乎没有帮助。</p>
+<p>DAPO 的条件很直接：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">0 &lt; 正确回答数量 &lt; G</span><br></pre></td></tr></table></figure>
+<p>其中 G 是每个 prompt 的采样数量。也就是说，只保留“有些回答对，有些回答错”的 prompt group。这类样本最有价值，因为它们告诉模型：在同一道题上，哪些生成模式更可能成功，哪些更可能失败。</p>
+<p>Dynamic Sampling 的做法是先过采样，把有用的 prompt group 放入 buffer。如果 buffer 不够，就继续采样，直到凑满足够多的有效样本。这个过程的采样成本是动态的。模型越强，简单题越容易全对，采样器就越需要找到那些处在能力边界上的题。</p>
+<p>这听起来可能更贵，但论文指出，在同步训练系统中，生成时间往往被长尾样本主导。过滤一些无效组不一定显著增加 wall-clock time。Figure 6 还显示 Dynamic Sampling 让训练更快达到目标性能，因为保留下来的 batch 梯度质量更高。</p>
+<p>这个设计很像自动 curriculum。模型不是平均训练所有题，而是更多训练“当前刚好有区分度”的题。对于组内相对强化学习来说，这非常合理。</p>
+<h3 id="3-4-Token-Level-Policy-Gradient-Loss：长推理不能被-sample-平均掉">3.4 Token-Level Policy Gradient Loss：长推理不能被 sample 平均掉</h3>
+<p>原始 GRPO 的 loss reduction 更接近 sample-level：先在每个回答内部对 token loss 求平均，再在不同回答之间平均。这样一来，一个 200 token 的回答和一个 5000 token 的回答，最终 sample 权重可能差不多。</p>
+<p>在长 CoT 里，这会造成两个问题。第一，如果长回答质量很高，里面有很多有用推理 token，但 sample-level 平均会把这些 token 的贡献稀释掉。第二，如果长回答质量很差，里面有大量重复、乱码或无意义绕圈，sample-level 平均也会把这些坏 token 的惩罚稀释掉。</p>
+<p>DAPO 改成 token-level policy gradient loss。直观地说，优化时不再把一个长回答先压缩成一个 sample 平均值，而是让 token 本身成为更直接的学习单位。这样，长回答中的好模式和坏模式都更容易被强化或抑制。</p>
+<p>Figure 4 展示了这个改变的影响。不使用 token-level loss 时，entropy 和 response length 可能出现不健康增长；使用后，长度和熵更可控。论文也说明，token-level loss 在 Table 1 中带来的最终 accuracy 增幅不是最大，但它改善了训练稳定性，让 response length 的增长更健康。</p>
+<p>这里有一个很实用的经验：在长序列 RL 里，<code>loss.mean()</code> 这种看似普通的 reduction 选择会影响训练。到底先对 token 平均，还是全局按 token 聚合，不是实现细节，而是训练目标的一部分。</p>
+<h3 id="3-5-Overlong-Reward-Shaping：不要把截断误判成坏推理">3.5 Overlong Reward Shaping：不要把截断误判成坏推理</h3>
+<p>长 CoT 模型必须设置最大生成长度。DAPO 实验中，作者设置的 expected maximum length 是 <strong>16,384 tokens</strong>，额外给 <strong>4,096 tokens</strong> 的 soft punishment cache，总生成上限是 <strong>20,480 tokens</strong>。</p>
+<p>即使这么长，仍然会有回答触及上限。最简单的处理方式是：只要被截断，就给负奖励。但这会带来噪声。一个回答可能正在走正确推理，只是太长没写完；也可能已经接近答案，但没来得及输出最终格式。粗暴给 -1，会让模型误以为这整段推理都是错的。</p>
+<p>论文先测试了 Overlong Filtering：把截断样本的 loss mask 掉，不让它参与训练。Figure 5 显示，这样能明显稳定训练并提升 AIME 表现。接着作者提出 Soft Overlong Punishment，也就是平滑长度惩罚：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">如果 length &lt;&#x3D; Lmax - Lcache：</span><br><span class="line">    长度惩罚 &#x3D; 0</span><br><span class="line">如果 Lmax - Lcache &lt; length &lt;&#x3D; Lmax：</span><br><span class="line">    惩罚从 0 逐渐下降到 -1</span><br><span class="line">如果 length &gt; Lmax：</span><br><span class="line">    惩罚 &#x3D; -1</span><br></pre></td></tr></table></figure>
+<p>这个设计比硬惩罚更合理。它告诉模型：太长确实不好，但“稍微进入惩罚区间”和“完全超过最大长度”不是同一种错误。对于长推理 RL，这种平滑信号很重要。</p>
+<h3 id="3-6-数据集转换：让最终答案更容易被检查">3.6 数据集转换：让最终答案更容易被检查</h3>
+<p>DAPO 使用的数据集叫 <strong>DAPO-Math-17K</strong>，包含 17K 个数学 prompt。数据来自网页和官方竞赛主页，经过 web scraping 和人工标注。论文特别强调，他们会把答案尽量转换成整数形式。</p>
+<p>为什么这重要？因为规则 reward 需要判断模型最终答案是否等价于标准答案。如果标准答案是根式、分数、代数表达式，解析和等价判断都可能出错。把题目改写成要求输出整数，可以大幅降低 verifier 的复杂度。</p>
+<p>Appendix A 给了一个例子。原题答案是 <code>11 - 2 sqrt(6)</code>，转换后的题目要求把答案写成 <code>k - m sqrt(n)</code> 后输出 <code>k + m + n</code>，于是最终答案变成整数 <code>19</code>。论文用 LLM 辅助转换，并要求模型按几个步骤工作：抽取答案格式、改写题目、解改写后的题、给出整数答案。</p>
+<p>我觉得这是整篇论文里最容易被低估的细节之一。很多强化学习训练的问题并不发生在 optimizer 里，而是发生在 reward 入口处。如果答案解析不稳，训练信号就会脏。DAPO 通过数据转换减少这种噪声。</p>
+<h3 id="3-7-Algorithm-1：完整训练循环">3.7 Algorithm 1：完整训练循环</h3>
+<p>Algorithm 1 把 DAPO 写成一个循环：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">for each training step:</span><br><span class="line">    从数据集中采样 prompt batch</span><br><span class="line">    把 old policy 更新成当前 policy</span><br><span class="line">    对每个 prompt 采样 G 个回答</span><br><span class="line">    用规则奖励计算每个回答的 reward</span><br><span class="line">    过滤并填充 dynamic sampling buffer</span><br><span class="line">    如果 buffer 不够大，就继续采样</span><br><span class="line">    计算组内相对 advantage</span><br><span class="line">    用 DAPO objective 更新 policy</span><br></pre></td></tr></table></figure>
+<p>这个伪代码不长，但每一行都对应一个工程问题。采样长回答很贵，reward 解析要可靠，dynamic sampling 会改变 batch 分布，token-level loss 要正确实现，长度惩罚要和最大生成长度配套。DAPO 的意义就是把这些工程经验整理成一个相对明确的训练流程。</p>
+<hr>
+<h2 id="4-实验设置">4. 实验设置</h2>
+<h3 id="4-1-模型与训练框架">4.1 模型与训练框架</h3>
+<p>主模型是 <strong>Qwen2.5-32B base</strong>。这个选择很重要，因为它和论文引用的 DeepSeek-R1-Zero-Qwen-32B 在规模上可比。训练框架是 <strong>verl</strong>，也就是一个开源的 RLHF/RL 训练框架。</p>
+<p>baseline 是 naive GRPO，使用组内 reward normalization。DAPO 在此基础上逐步加入 Overlong Filtering、Clip-Higher、Soft Overlong Punishment、Token-level Loss 和 Dynamic Sampling。</p>
+<h3 id="4-2-数据与奖励">4.2 数据与奖励</h3>
+<p>训练数据是 <strong>DAPO-Math-17K</strong>。这是一个经过整理的数学数据集，包含 17K 个 prompt，每个 prompt 配一个整数答案。reward 是基于最终答案的规则奖励：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">预测答案等价于标准答案：+1</span><br><span class="line">否则：-1</span><br></pre></td></tr></table></figure>
+<p>论文主要关注数学推理。作者提到方法可以迁移到其他任务，但主要实验证据集中在 math setting 上。因此解读结果时要记住：DAPO 在数学可验证奖励场景下证据最强。</p>
+<h3 id="4-3-关键超参数">4.3 关键超参数</h3>
+<p>论文给出了不少具体超参数，这一点对复现很有帮助：</p>
+<ul>
+<li>optimizer：AdamW；</li>
+<li>learning rate：常数 <code>1e-6</code>；</li>
+<li>warm-up：20 个 rollout steps 的线性 warm-up；</li>
+<li>prompt batch size：512；</li>
+<li>每个 prompt 采样 responses：16；</li>
+<li>training mini-batch size：512；</li>
+<li>每个 rollout step 做 16 次 gradient updates；</li>
+<li>expected maximum length：16,384 tokens；</li>
+<li>soft punishment cache：4,096 tokens；</li>
+<li>maximum generation length：20,480 tokens；</li>
+<li>clipping：<code>epsilon_low = 0.2</code>，<code>epsilon_high = 0.28</code>；</li>
+<li>evaluation temperature：1.0；</li>
+<li>evaluation top-p：0.7。</li>
+</ul>
+<p>这些参数不是装饰。长 CoT RL 对它们非常敏感。只写“我们使用 GRPO”远远不够，因为不同长度上限、不同采样数、不同 clipping、不同 loss reduction，都可能让结果完全不一样。</p>
+<h3 id="4-4-评估方式">4.4 评估方式</h3>
+<p>主要评估指标是 <strong>AIME 2024 avg@32</strong>。作者对评估集重复采样 32 次，并报告平均准确率。对于随机采样的推理模型来说，这比单次 greedy 评估更稳定，因为模型可能某次采样解出，某次采样失败。</p>
+<p>AIME 是很有挑战性的数学竞赛 benchmark，但它仍然只是 reasoning 的一个子集。它不能代表代码、工具使用、开放问答、多轮 agent 任务或科学推理。DAPO 的结论最好先理解为：在数学可验证奖励场景中，这套训练配方非常有效。</p>
+<hr>
+<h2 id="5-结果与分析">5. 结果与分析</h2>
+<h3 id="5-1-Figure-1：核心-AIME-结果">5.1 Figure 1：核心 AIME 结果</h3>
+<p>Figure 1 展示了 DAPO 在 AIME 2024 上的训练曲线。核心数字是：DAPO 用 Qwen2.5-32B base 达到 <strong>50 avg@32</strong>，超过论文中引用的 DeepSeek-R1-Zero-Qwen-32B 的 <strong>47</strong>。作者还强调，DAPO 使用的训练步数大约只有后者的 50%。</p>
+<p>这个结果的意义不是简单的“高 3 分”。更重要的是，它说明公开配方可以把 32B base model 训练到接近甚至超过强 reasoning model 报告数字的区域。过去很多复现实验卡在 naive GRPO 附近，DAPO 证明差距很大一部分来自训练 recipe，而不是方向本身不可复现。</p>
+<p>当然，这不是对所有闭源/半开源训练细节的严格控制对比。DeepSeek-R1 的完整细节并不完全公开，所以我们不能说 DAPO 在所有条件下都优于 R1 recipe。更稳妥的说法是：DAPO 给出了一个公开、可操作、效果很强的替代配方。</p>
+<h3 id="5-2-Table-1：从-30-到-50-的逐步提升">5.2 Table 1：从 30 到 50 的逐步提升</h3>
+<p>Table 1 是整篇论文最值得反复看的表：</p>
+<table>
+<thead>
+<tr>
+<th>模型 / 技术组合</th>
+<th style="text-align:right">AIME24 avg@32</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DeepSeek-R1-Zero-Qwen-32B</td>
+<td style="text-align:right">47</td>
+</tr>
+<tr>
+<td>Naive GRPO</td>
+<td style="text-align:right">30</td>
+</tr>
+<tr>
+<td>+ Overlong Filtering</td>
+<td style="text-align:right">36</td>
+</tr>
+<tr>
+<td>+ Clip-Higher</td>
+<td style="text-align:right">38</td>
+</tr>
+<tr>
+<td>+ Soft Overlong Punishment</td>
+<td style="text-align:right">41</td>
+</tr>
+<tr>
+<td>+ Token-level Loss</td>
+<td style="text-align:right">42</td>
+</tr>
+<tr>
+<td>+ Dynamic Sampling (DAPO)</td>
+<td style="text-align:right">50</td>
+</tr>
+</tbody>
+</table>
+<p>这个表说明几个问题。</p>
+<p>第一，naive GRPO 不是完全无效。它能到 30，说明最终答案奖励确实能激活一些推理能力。但它离强结果还很远。</p>
+<p>第二，Overlong Filtering 一下提升 6 分，说明超长截断带来的 reward noise 非常严重。如果不处理，训练会被大量不干净的负反馈干扰。</p>
+<p>第三，Clip-Higher 提升 2 分，和熵塌缩的观察一致。长推理需要探索，如果模型太快变得确定，就会卡在有限推理模式里。</p>
+<p>第四，Soft Overlong Punishment 又提升 3 分，说明比起简单 mask，平滑长度惩罚能给模型更细的长度管理信号。</p>
+<p>第五，Token-level Loss 提升 1 分，看起来不大，但它改善了训练稳定性和长度曲线。对于实际系统来说，这种稳定性很重要。</p>
+<p>第六，Dynamic Sampling 最后带来 8 分，是最大的一跳。这个结果说明：batch 里是否有有效对比信号，是 GRPO 类方法的核心瓶颈之一。</p>
+<h3 id="5-3-Figures-2-和-3：熵塌缩与-clipping-不对称">5.3 Figures 2 和 3：熵塌缩与 clipping 不对称</h3>
+<p>Figure 2 比较了有无 Clip-Higher 的训练过程。最关键的是 entropy 曲线。不使用 Clip-Higher 时，actor model 的 generation entropy 很快下降，表示模型变得过于确定，探索空间收缩。使用 Clip-Higher 后，entropy 保持得更高，accuracy 也更好。</p>
+<p>Figure 3a 显示被 up-clipped 的 token 平均概率较低。这支持论文的解释：默认上界 clipping 主要限制的是低概率探索 token，而不是高概率常规 token。Figure 3b 显示训练中全对 prompt group 的比例上升，这说明随着模型能力提升，越来越多 prompt 对 GRPO 来说不再提供有效梯度。</p>
+<p>把这两个图放在一起看，可以得到一个训练阶段图景：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">早期：模型还弱，需要更多探索，避免 entropy collapse</span><br><span class="line">中后期：模型变强，很多题全对，需要过滤 zero-gradient group</span><br></pre></td></tr></table></figure>
+<p>所以 DAPO 不是只解决一个阶段的问题。Clip-Higher 更像是保护早期和中期探索；Dynamic Sampling 更像是在模型逐渐变强后保持梯度有效性。</p>
+<h3 id="5-4-Figure-4：token-level-loss-控制长度和熵">5.4 Figure 4：token-level loss 控制长度和熵</h3>
+<p>Figure 4 展示 token-level loss 对 generation entropy 和 response length 的影响。不使用 token-level loss 时，长度和熵可能以不健康方式增长；使用后，两条曲线更可控。</p>
+<p>这背后的关键是 loss reduction。长回答里可能包含大量有用推理 token，也可能包含大量坏模式。如果先把一个长回答平均成一个 sample loss，就会弱化这些 token 的影响。token-level loss 让长回答中的每个 token 更直接地参与优化。</p>
+<p>这对长 CoT 特别重要，因为长推理的质量不是一个二值属性。一个回答可能前 3000 token 都有价值，后面开始绕圈；也可能前面走错，后来反思纠正。sample-level 平均很难表达这种细粒度信号，token-level 聚合至少减少了一层不必要的稀释。</p>
+<h3 id="5-5-Figure-5：超长处理不是边角问题">5.5 Figure 5：超长处理不是边角问题</h3>
+<p>Figure 5 比较了有无 Overlong Filtering 的训练。使用 filtering 后，AIME 表现更好，entropy 曲线也更稳定。这说明“截断样本怎么处理”不是小细节，而是能显著影响训练成败的关键因素。</p>
+<p>如果所有截断样本都直接给 -1，模型会收到很混乱的信号：有些样本确实是在无意义绕圈，有些样本只是太长没来得及完成。DAPO 先用 filtering 证明噪声确实存在，再用 soft overlong punishment 给出更细的处理方式。</p>
+<p>我的理解是，长 CoT RL 必须同时鼓励“足够长的思考”和“不要无限变长”。这两个目标天然冲突。过短，模型没有推理空间；过长，成本高且容易发散。平滑长度惩罚就是在这个冲突之间找可训练的折中。</p>
+<h3 id="5-6-Figure-6：Dynamic-Sampling-提升收敛效率">5.6 Figure 6：Dynamic Sampling 提升收敛效率</h3>
+<p>Figure 6 展示使用 Dynamic Sampling 后，baseline setting 的训练进展更快。虽然 dynamic sampling 需要额外采样，最后的 wall-clock 不一定明显变差，因为训练步数减少了，而且同步生成本来就会被长尾样本拖慢。</p>
+<p>更本质的解释是：它提升了每个训练 batch 的信息密度。全对组和全错组对组内相对优势没有帮助，而混合组最能告诉模型哪些行为值得强化。Dynamic Sampling 把预算集中在这些混合组上。</p>
+<p>这也提示实践者：如果训练很慢，不一定只应该加机器或调学习率。也许要先检查 batch 里到底有多少 prompt group 真的产生了非零 advantage。</p>
+<h3 id="5-7-Figure-7：训练时应该监控什么">5.7 Figure 7：训练时应该监控什么</h3>
+<p>Figure 7 给出了 response length、reward score、generation entropy、mean probability 等曲线。论文强调这些中间指标对诊断训练很重要。</p>
+<p>我会这样理解这些指标：</p>
+<ul>
+<li><strong>Response length</strong>：适度增长说明模型有更多推理空间；失控增长可能意味着绕圈或重复。</li>
+<li><strong>Training reward</strong>：应该整体上升，但训练集 reward 不一定和验证准确率强相关，可能过拟合。</li>
+<li><strong>Generation entropy</strong>：太低表示探索消失；太高可能表示输出不稳定或无意义。</li>
+<li><strong>Mean probability</strong>：和 entropy 互补，反映分布是否越来越尖锐。</li>
+</ul>
+<p>这部分很实际。强化学习训练经常出现“理论上应该更好，实际跑坏了”的情况。没有这些曲线，很难判断问题来自 reward、长度、entropy、采样分布还是 optimizer。</p>
+<h3 id="5-8-Tables-2-和-3：反思行为的出现">5.8 Tables 2 和 3：反思行为的出现</h3>
+<p>Table 2 展示了模型训练过程中出现的反思行为。示例里，模型在几何题中写到一半意识到需要重新思考二面角和几何平面关系，于是调整路线。Appendix 的 Table 3 也给了类似案例：模型在组合计数中发现当前方法得到非整数结果，于是重新考虑变量定义。</p>
+<p>这些例子不是严格统计证明，但它们很有启发。长 CoT RL 追求的不只是最终答案数字提升，也希望模型学会检查、回溯、纠正。表中的案例展示了这种行为的具体形态。</p>
+<p>未来如果要把这部分做得更强，可以统计自我检查语句、回溯标记、分支切换次数，并分析它们和最终答对率之间的关系。这样可以把“反思行为出现了”从案例观察推进到可量化分析。</p>
+<hr>
+<h2 id="6-局限性与边界条件">6. 局限性与边界条件</h2>
+<h3 id="6-1-主要证据集中在数学任务">6.1 主要证据集中在数学任务</h3>
+<p>DAPO 的核心结果来自 AIME 2024 和数学数据。数学任务很适合规则奖励，但这不代表方法可以原样迁移到所有场景。代码任务、开放问答、工具使用、多轮 agent、科学推理、偏好对齐，都有不同 reward 形态。</p>
+<p>DAPO 最适合的任务大概有几个特征：</p>
+<ul>
+<li>最终答案可以自动验证；</li>
+<li>同一 prompt 采样多次时，有可能一部分成功、一部分失败；</li>
+<li>有足够预算为每个 prompt 生成多个回答；</li>
+<li>answer extraction 比较可靠；</li>
+<li>长推理确实能带来额外收益。</li>
+</ul>
+<p>如果任务的正确性很主观，或者 reward model 本身噪声很大，DAPO 的这些技巧仍可能有启发，但需要重新验证。</p>
+<h3 id="6-2-与闭源-recipe-的比较无法完全控制变量">6.2 与闭源 recipe 的比较无法完全控制变量</h3>
+<p>论文把 DAPO 和 DeepSeek-R1-Zero-Qwen-32B 的报告数字对比。但 DeepSeek-R1 的完整训练细节并不完全公开，这正是 DAPO 的动机，也是比较的限制。我们无法完全知道差异来自算法、数据、采样、超参数、基础模型 checkpoint、评估协议还是系统实现。</p>
+<p>因此，最稳妥的解读是：DAPO 给出了一个公开配方，能够达到同一性能区域，并在论文设置下超过引用数字。不要把它解读成对所有 R1-style 隐藏细节的最终裁决。</p>
+<h3 id="6-3-Dynamic-Sampling-改变了训练分布">6.3 Dynamic Sampling 改变了训练分布</h3>
+<p>Dynamic Sampling 会过滤掉全对和全错的 prompt group。这提高了梯度质量，但也改变了有效训练分布。模型会更多训练在当前能力边界附近的题目上，较少训练太容易或太难的题。</p>
+<p>这通常对优化有利，但也可能带来副作用：</p>
+<ul>
+<li>简单题上的简洁正确行为可能被强化得不够；</li>
+<li>很难的题在模型尚不能部分解出前会被过滤；</li>
+<li>训练课程完全依赖当前模型采样行为；</li>
+<li>如果评估集难度分布不同，收益可能变化。</li>
+</ul>
+<p>所以 Dynamic Sampling 不是无风险小技巧，而是一种隐式 curriculum。实践中应该记录被过滤比例、混合组比例、题目难度分布随时间的变化。</p>
+<h3 id="6-4-长度惩罚需要按任务重新设定">6.4 长度惩罚需要按任务重新设定</h3>
+<p>DAPO 使用 16,384 + 4,096 tokens 的长度设置。这适合论文中的数学推理实验，但其他任务未必合适。代码生成可能需要不同长度，生产聊天系统可能要求更短答案，定理证明可能需要更长轨迹。</p>
+<p>Soft Overlong Punishment 的思想值得复用，但具体阈值不能机械照搬。长度上限实际上定义了模型被鼓励学习的推理风格：是短而直接，还是长而探索充分。</p>
+<h3 id="6-5-数据转换可能带来选择偏差">6.5 数据转换可能带来选择偏差</h3>
+<p>把答案转换成整数有助于 reward 解析，但也可能改变题目分布。容易转换的题和难转换的题可能不同。LLM 辅助转换和人工标注也可能引入偏差。论文开源数据可以降低不透明性，但使用者仍应检查数据质量。</p>
+<p>尤其要注意：如果训练集大量由“可整数化”的题组成，模型学到的格式习惯可能和原始竞赛题分布略有差别。评估时需要确认 answer extraction 和训练数据转换没有给模型带来意外偏置。</p>
+<h3 id="6-6-复现仍然需要较强基础设施">6.6 复现仍然需要较强基础设施</h3>
+<p>论文给了代码、数据和超参数，但用 32B 模型做长 CoT RL 仍然是昂贵系统工程。实践者还需要解决：</p>
+<ul>
+<li>需要多少 GPU；</li>
+<li>rollout 和训练如何并行；</li>
+<li>长尾样本如何影响同步等待；</li>
+<li>checkpoint、失败恢复、日志系统如何设计；</li>
+<li>训练一次大约需要多少 wall-clock time；</li>
+<li>不同推理引擎或硬件拓扑对结果有多大影响。</li>
+</ul>
+<p>verl 提供了很好的起点，但复现 50 AIME 仍不是轻量任务。</p>
+<hr>
+<h2 id="7-可复现性与实用笔记">7. 可复现性与实用笔记</h2>
+<h3 id="7-1-DAPO-哪些部分真正有助于复现">7.1 DAPO 哪些部分真正有助于复现</h3>
+<p>我认为 DAPO 的可复现性强，是因为它同时给了三类东西：</p>
+<ol>
+<li><strong>算法配方</strong>：四个技术组件和 DAPO objective；</li>
+<li><strong>训练代码</strong>：基于 verl 的实现；</li>
+<li><strong>数据集</strong>：DAPO-Math-17K，包含经过处理的答案格式。</li>
+</ol>
+<p>这三者缺一不可。只有算法没有数据，很难复现；只有数据没有代码，工程选择太多；只有代码没有清楚解释，很难知道哪些部分是关键。DAPO 把这三部分放在一起，降低了社区复现实验的门槛。</p>
+<h3 id="7-2-如果我自己实现，会先检查什么">7.2 如果我自己实现，会先检查什么</h3>
+<p>如果要做 DAPO-style RL，我不会只复制目标函数，而会先列一个检查表：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line">数据与奖励</span><br><span class="line">  [ ] 最终答案是否容易解析？</span><br><span class="line">  [ ] verifier 是否确定、可测试、可审计？</span><br><span class="line">  [ ] 无效答案、缺失答案、截断答案怎么处理？</span><br><span class="line"></span><br><span class="line">采样</span><br><span class="line">  [ ] 每个 prompt 采样多少个回答？</span><br><span class="line">  [ ] 全对、全错、混合组比例是多少？</span><br><span class="line">  [ ] Dynamic Sampling 是否形成合理课程？</span><br><span class="line"></span><br><span class="line">优化</span><br><span class="line">  [ ] epsilon_low 和 epsilon_high 是否拆开？</span><br><span class="line">  [ ] loss 是 sample-level 还是 token-level？</span><br><span class="line">  [ ] 长回答是否被过度弱化或过度放大？</span><br><span class="line"></span><br><span class="line">长度控制</span><br><span class="line">  [ ] expected maximum length 是多少？</span><br><span class="line">  [ ] soft punishment cache 是多少？</span><br><span class="line">  [ ] overlong 比例是否随训练上升？</span><br><span class="line"></span><br><span class="line">监控</span><br><span class="line">  [ ] validation accuracy</span><br><span class="line">  [ ] training reward</span><br><span class="line">  [ ] response length</span><br><span class="line">  [ ] generation entropy</span><br><span class="line">  [ ] mean probability</span><br><span class="line">  [ ] mixed prompt group ratio</span><br></pre></td></tr></table></figure>
+<p>这张表比单个公式更接近 DAPO 的精神。它是一套训练 runbook。</p>
+<h3 id="7-3-什么时候适合用-DAPO">7.3 什么时候适合用 DAPO</h3>
+<p>我会优先在以下场景考虑 DAPO：数学题、带单元测试的代码生成、自动定理证明、结构化数据转换、可以用程序验证最终答案的任务。这些场景有共同点：reward 比较明确，能多次采样，模型有机会通过长推理提升成功率。</p>
+<p>我会谨慎用于开放式写作、普通聊天偏好、安全对齐、多目标人类偏好等任务。那些任务通常需要 reward model 或人类偏好数据，reward noise 的性质不同，Dynamic Sampling 和 rule-based correctness 不一定直接适用。</p>
+<h3 id="7-4-DAPO-与-PPO、GRPO、RLVR-的关系">7.4 DAPO 与 PPO、GRPO、RLVR 的关系</h3>
+<p>DAPO 属于 RLVR（reinforcement learning with verifiable rewards）这一趋势。PPO 提供稳定 clipping 更新；GRPO 用组内相对 reward 去掉 value model；DeepSeekMath 和 DeepSeek-R1 让 GRPO-style reasoning RL 被广泛关注；DAPO 进一步问：怎样把这个方向真正跑稳、跑强、跑到可复现？</p>
+<p>它的答案可以概括为：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">保留 group-relative policy optimization，</span><br><span class="line">但把上下 clipping 拆开；</span><br><span class="line">过滤没有对比信号的 prompt group；</span><br><span class="line">按 token 而不是按 sample 归约长回答；</span><br><span class="line">平滑处理超长截断带来的 reward noise；</span><br><span class="line">像监控复杂系统一样监控训练曲线。</span><br></pre></td></tr></table></figure>
+<p>所以 DAPO 不是推翻 GRPO，而是补齐 GRPO 在长 CoT 场景下缺失的工程和优化细节。</p>
+<hr>
+<h2 id="8-总结">8. 总结</h2>
+<p>DAPO 是一篇很实用的论文。它解决的不是“强化学习能不能提升推理”这个宏观问题，而是“为什么我照着公开描述跑 GRPO，结果还是差很多”这个复现问题。它的贡献是一套透明配方：Clip-Higher 保护探索，Dynamic Sampling 提高梯度信息密度，Token-Level Loss 修正长回答权重，Overlong Reward Shaping 减少截断噪声，再配合可解析的数据集和训练监控。</p>
+<p>Table 1 是最能代表这篇论文的信息：从 naive GRPO 的 <strong>30</strong> 到 DAPO 的 <strong>50</strong>，不是一步跳上去，而是多个细节逐步累积。这个结果说明，长 CoT RL 的难点经常藏在“默认设置”里。默认 clipping、默认 loss reduction、默认截断惩罚、默认采样 batch，都可能不适合推理模型训练。</p>
+<p>我对这篇论文的最终判断是：如果研究者想做 reasoning RL，DAPO 应该作为一个重要 open baseline；如果系统工程师想训练可验证任务模型，DAPO 是一份很好的排障清单；如果只是想理解 R1-like 训练为什么难，DAPO 也给出了清楚答案：算法名字只是一层，数据、奖励、采样、长度和监控同样决定结果。</p>
+<p>它的边界也很明确。DAPO 在数学可验证奖励场景中证据最强，迁移到其他任务需要重新检查 reward、长度、采样和数据分布。但正因为论文把这些细节讲清楚了，后续工作才能更有针对性地改进，而不是继续停留在“用了 GRPO 但复现不了”的状态。</p>
+<hr>
+<h2 id="参考文献">参考文献</h2>
+<ol>
+<li>Qiying Yu 等，<em>DAPO: An Open-Source LLM Reinforcement Learning System at Scale</em>，arXiv:2503.14476v2，2025。</li>
+<li>Zhihong Shao 等，<em>DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models</em>，arXiv:2402.03300，2024。</li>
+<li>John Schulman 等，<em>Proximal Policy Optimization Algorithms</em>，arXiv:1707.06347，2017。</li>
+<li>Daya Guo 等，<em>DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning</em>，arXiv:2501.12948，2025。</li>
+<li>Guangming Sheng 等，<em>HybridFlow: A Flexible and Efficient RLHF Framework</em>，arXiv:2409.19256，2024。</li>
+</ol>
+<hr>
+<p><em>笔记写于 2026-05-12。</em></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/LLM-Reasoning/" rel="tag"># LLM Reasoning</a>
+              <a href="/tags/Reinforcement-Learning/" rel="tag"># Reinforcement Learning</a>
+              <a href="/tags/RLVR/" rel="tag"># RLVR</a>
+              <a href="/tags/DAPO/" rel="tag"># DAPO</a>
+              <a href="/tags/RL-Training/" rel="tag"># RL Training</a>
+              <a href="/tags/GRPO/" rel="tag"># GRPO</a>
+              <a href="/tags/Open-Source-Systems/" rel="tag"># Open-Source Systems</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/05/12/2026-05-12-DAPO-technical-review-en/" rel="prev" title="DAPO: An Open-Source LLM Reinforcement Learning System at Scale">
+      <i class="fa fa-chevron-left"></i> DAPO: An Open-Source LLM Reinforcement Learning System at Scale
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#简短结论"><span class="nav-number">1.</span> <span class="nav-text">简短结论</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-前置知识"><span class="nav-number">2.</span> <span class="nav-text">1. 前置知识</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-什么是-inference-scaling-与长-CoT-推理"><span class="nav-number">2.1.</span> <span class="nav-text">1.1 什么是 inference scaling 与长 CoT 推理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-PPO、clipping-与为什么-clipping-会影响探索"><span class="nav-number">2.2.</span> <span class="nav-text">1.2 PPO、clipping 与为什么 clipping 会影响探索</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-GRPO-与组内相对优势"><span class="nav-number">2.3.</span> <span class="nav-text">1.3 GRPO 与组内相对优势</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-4-可验证奖励与奖励噪声"><span class="nav-number">2.4.</span> <span class="nav-text">1.4 可验证奖励与奖励噪声</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-5-为什么长-CoT-RL-是系统问题"><span class="nav-number">2.5.</span> <span class="nav-text">1.5 为什么长 CoT RL 是系统问题</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-这篇论文做了什么"><span class="nav-number">3.</span> <span class="nav-text">2. 这篇论文做了什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-方法细节"><span class="nav-number">4.</span> <span class="nav-text">3. 方法细节</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-从-GRPO-出发，并去掉不必要的-KL-约束"><span class="nav-number">4.1.</span> <span class="nav-text">3.1 从 GRPO 出发，并去掉不必要的 KL 约束</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-Clip-Higher：提高上侧-clipping，保护探索"><span class="nav-number">4.2.</span> <span class="nav-text">3.2 Clip-Higher：提高上侧 clipping，保护探索</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-Dynamic-Sampling：把梯度预算花在有信息量的组上"><span class="nav-number">4.3.</span> <span class="nav-text">3.3 Dynamic Sampling：把梯度预算花在有信息量的组上</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-Token-Level-Policy-Gradient-Loss：长推理不能被-sample-平均掉"><span class="nav-number">4.4.</span> <span class="nav-text">3.4 Token-Level Policy Gradient Loss：长推理不能被 sample 平均掉</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-Overlong-Reward-Shaping：不要把截断误判成坏推理"><span class="nav-number">4.5.</span> <span class="nav-text">3.5 Overlong Reward Shaping：不要把截断误判成坏推理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-6-数据集转换：让最终答案更容易被检查"><span class="nav-number">4.6.</span> <span class="nav-text">3.6 数据集转换：让最终答案更容易被检查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-7-Algorithm-1：完整训练循环"><span class="nav-number">4.7.</span> <span class="nav-text">3.7 Algorithm 1：完整训练循环</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-实验设置"><span class="nav-number">5.</span> <span class="nav-text">4. 实验设置</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#4-1-模型与训练框架"><span class="nav-number">5.1.</span> <span class="nav-text">4.1 模型与训练框架</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-2-数据与奖励"><span class="nav-number">5.2.</span> <span class="nav-text">4.2 数据与奖励</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-3-关键超参数"><span class="nav-number">5.3.</span> <span class="nav-text">4.3 关键超参数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-4-评估方式"><span class="nav-number">5.4.</span> <span class="nav-text">4.4 评估方式</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-结果与分析"><span class="nav-number">6.</span> <span class="nav-text">5. 结果与分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-Figure-1：核心-AIME-结果"><span class="nav-number">6.1.</span> <span class="nav-text">5.1 Figure 1：核心 AIME 结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-Table-1：从-30-到-50-的逐步提升"><span class="nav-number">6.2.</span> <span class="nav-text">5.2 Table 1：从 30 到 50 的逐步提升</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-3-Figures-2-和-3：熵塌缩与-clipping-不对称"><span class="nav-number">6.3.</span> <span class="nav-text">5.3 Figures 2 和 3：熵塌缩与 clipping 不对称</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-4-Figure-4：token-level-loss-控制长度和熵"><span class="nav-number">6.4.</span> <span class="nav-text">5.4 Figure 4：token-level loss 控制长度和熵</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-5-Figure-5：超长处理不是边角问题"><span class="nav-number">6.5.</span> <span class="nav-text">5.5 Figure 5：超长处理不是边角问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-6-Figure-6：Dynamic-Sampling-提升收敛效率"><span class="nav-number">6.6.</span> <span class="nav-text">5.6 Figure 6：Dynamic Sampling 提升收敛效率</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-7-Figure-7：训练时应该监控什么"><span class="nav-number">6.7.</span> <span class="nav-text">5.7 Figure 7：训练时应该监控什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-8-Tables-2-和-3：反思行为的出现"><span class="nav-number">6.8.</span> <span class="nav-text">5.8 Tables 2 和 3：反思行为的出现</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-局限性与边界条件"><span class="nav-number">7.</span> <span class="nav-text">6. 局限性与边界条件</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#6-1-主要证据集中在数学任务"><span class="nav-number">7.1.</span> <span class="nav-text">6.1 主要证据集中在数学任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-2-与闭源-recipe-的比较无法完全控制变量"><span class="nav-number">7.2.</span> <span class="nav-text">6.2 与闭源 recipe 的比较无法完全控制变量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-3-Dynamic-Sampling-改变了训练分布"><span class="nav-number">7.3.</span> <span class="nav-text">6.3 Dynamic Sampling 改变了训练分布</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-4-长度惩罚需要按任务重新设定"><span class="nav-number">7.4.</span> <span class="nav-text">6.4 长度惩罚需要按任务重新设定</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-5-数据转换可能带来选择偏差"><span class="nav-number">7.5.</span> <span class="nav-text">6.5 数据转换可能带来选择偏差</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#6-6-复现仍然需要较强基础设施"><span class="nav-number">7.6.</span> <span class="nav-text">6.6 复现仍然需要较强基础设施</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#7-可复现性与实用笔记"><span class="nav-number">8.</span> <span class="nav-text">7. 可复现性与实用笔记</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#7-1-DAPO-哪些部分真正有助于复现"><span class="nav-number">8.1.</span> <span class="nav-text">7.1 DAPO 哪些部分真正有助于复现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-2-如果我自己实现，会先检查什么"><span class="nav-number">8.2.</span> <span class="nav-text">7.2 如果我自己实现，会先检查什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-3-什么时候适合用-DAPO"><span class="nav-number">8.3.</span> <span class="nav-text">7.3 什么时候适合用 DAPO</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#7-4-DAPO-与-PPO、GRPO、RLVR-的关系"><span class="nav-number">8.4.</span> <span class="nav-text">7.4 DAPO 与 PPO、GRPO、RLVR 的关系</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#8-总结"><span class="nav-number">9.</span> <span class="nav-text">8. 总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#参考文献"><span class="nav-number">10.</span> <span class="nav-text">参考文献</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">108</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">31</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">150</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+<script>
+if (document.querySelectorAll('pre.mermaid').length) {
+  NexT.utils.getScript('//cdn.jsdelivr.net/npm/mermaid@8/dist/mermaid.min.js', () => {
+    mermaid.initialize({
+      theme    : 'forest',
+      logLevel : 3,
+      flowchart: { curve     : 'linear' },
+      gantt    : { axisFormat: '%m/%d/%Y' },
+      sequence : { actorMargin: 50 }
+    });
+  }, window.mermaid);
+}
+</script>
+
+
+  
+
+  
+
+</body>
+</html>
