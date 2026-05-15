@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="en,zh-CN,default">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.2.1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<style>
+  .katex-display { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0.5em 0; }
+  .katex-display > .katex { white-space: nowrap; }
+  .katex { font-size: 1.1em; }
+</style>
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"zzz0906.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="一篇关于 Zero Sum SVD 的中文阅读笔记：把所有层的奇异值堆到一个全局优先队列里，用带符号的损失敏感度和「零和守恒」的贪心规则一次性决定全模型的秩预算，让异质化的逐层秩自然从一条标量约束里掉出来。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Zero Sum SVD：用「损失零和」做全局奇异值预算分配的 LLM 压缩方法">
+<meta property="og:url" content="https://zzz0906.github.io/2026/05/15/2026-05-15-ZeroSumSVD-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/index.html">
+<meta property="og:site_name" content="Zhongzhu&#39;s Blog">
+<meta property="og:description" content="一篇关于 Zero Sum SVD 的中文阅读笔记：把所有层的奇异值堆到一个全局优先队列里，用带符号的损失敏感度和「零和守恒」的贪心规则一次性决定全模型的秩预算，让异质化的逐层秩自然从一条标量约束里掉出来。">
+<meta property="og:locale" content="en_US">
+<meta property="article:published_time" content="2026-05-15T09:05:00.000Z">
+<meta property="article:modified_time" content="2026-05-15T16:06:06.637Z">
+<meta property="article:author" content="Zhongzhu &#x2F; Chralie Zhou">
+<meta property="article:tag" content="SVD">
+<meta property="article:tag" content="Model Compression">
+<meta property="article:tag" content="LLM Compression">
+<meta property="article:tag" content="Zero Sum SVD">
+<meta property="article:tag" content="Low-Rank Approximation">
+<meta property="article:tag" content="Singular Value Decomposition">
+<meta property="article:tag" content="Activation Whitening">
+<meta property="article:tag" content="Loss Sensitivity">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://zzz0906.github.io/2026/05/15/2026-05-15-ZeroSumSVD-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>Zero Sum SVD：用「损失零和」做全局奇异值预算分配的 LLM 压缩方法 | Zhongzhu's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">Zhongzhu's Blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">Keep</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>About</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="https://zzz0906.github.io/2026/05/15/2026-05-15-ZeroSumSVD-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.png">
+      <meta itemprop="name" content="Zhongzhu / Chralie Zhou">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Zhongzhu's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Zero Sum SVD：用「损失零和」做全局奇异值预算分配的 LLM 压缩方法
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2026-05-15 09:05:00 / Modified: 16:06:06" itemprop="dateCreated datePublished" datetime="2026-05-15T09:05:00+00:00">2026-05-15</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/LLM-Compression/" itemprop="url" rel="index"><span itemprop="name">LLM Compression</span></a>
+                </span>
+                  , 
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/LLM-Compression/Model-Optimization/" itemprop="url" rel="index"><span itemprop="name">Model Optimization</span></a>
+                </span>
+            </span>
+
+          
+            <div class="post-description">一篇关于 Zero Sum SVD 的中文阅读笔记：把所有层的奇异值堆到一个全局优先队列里，用带符号的损失敏感度和「零和守恒」的贪心规则一次性决定全模型的秩预算，让异质化的逐层秩自然从一条标量约束里掉出来。</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p><strong>笔记日期：</strong> 2026-05-15
+<strong>笔记作者：</strong> Zhongzhu Zhou
+<strong>所读论文：</strong> <em>Zero Sum SVD: Balancing Loss Sensitivity for Low Rank LLM Compression</em>
+<strong>论文作者：</strong> Ali Abbasi, Chayne Thrash, Haoran Qin, Shansita Sharma, Sepehr Seifi, Soheil Kolouri（Vanderbilt University，Department of Computer Science）
+<strong>arXiv：</strong> 2602.02848v1，2026-02-02
+<strong>收录状态：</strong> Preprint</p>
+<hr>
+<h2 id="简短结论">简短结论</h2>
+<p>这篇论文回答了一个我一直觉得&quot;被绕过去&quot;的问题：<strong>LLM 做 SVD 压缩时，每一层到底应该砍掉几个奇异值才合理？</strong></p>
+<p>历来的做法有两种极端：</p>
+<ul>
+<li>同质化分配：所有大小相似的矩阵都用同一个 rank（SVD-LLM、ASVD 走这条路）；</li>
+<li>在每一层上做昂贵的优化来挑 rank（Dobi-SVD 是代表）。</li>
+</ul>
+<p>Zero Sum SVD（下面缩写 ZS-SVD）走的是第三条路。它的核心想法是：<strong>不要去优化&quot;每一层留多少 rank&quot;，而是直接在所有层的奇异值池里做一次全局贪心选择，让&quot;被砍掉那些奇异值带来的预测损失变化&quot;在累计上始终保持在零附近</strong>。这一条规则就自然产生了异质化 rank 分配，不用解任何优化问题。</p>
+<p>具体在干这几件事：</p>
+<ul>
+<li>在白化后的坐标系里给每个奇异值算一个<strong>有符号</strong>的一阶损失敏感度 ∆Lᵢ ≈ −σᵢ · gσ,ᵢ（gσ,ᵢ 是损失对奇异值的方向导数）。</li>
+<li>全局维护两个最小堆：∆L 为正的、∆L 为负的，每一步根据当前累计和 s 的符号决定优先从哪个堆里弹一个。s ≤ 0 就选 ∆L ≥ 0 的（这些会让损失下降）；s &gt; 0 就选 ∆L &lt; 0 的（这些会让损失上升）。这一步就是论文标题里&quot;Zero Sum&quot;的字面含义。</li>
+<li>在每个矩阵内部仍然保持&quot;先砍最小奇异值&quot;的局部秩序，避免破坏 SVD 在白化空间里的最优性。</li>
+<li>砍完之后可选地做一步&quot;truncate–correct–re-truncate&quot;修正：让权重短暂离开 low-rank 流形做一次梯度更新，再投回低秩流形。论文证明这次回投影的误差很小，因为预训练点附近梯度本身就低秩。</li>
+</ul>
+<p>在 LLaMA-7B / 2-7B / 13B、Vicuna-7B、OPT-6.7B、LLaMA-30B 上做 perplexity 和七项常识推理任务（OpenBookQA、ARC-E、ARC-C、WinoGrande、HellaSwag、PIQA、MathQA），各个压缩率下 ZS-SVD 都超过了 ASVD、SVD-LLM、Dobi-SVD 这些 SVD 基线，也优于 LLM-Pruner、SliceGPT、Wanda-sp、FLAP 等结构化剪枝基线。压缩到 0.4 维持比时，加上 Dobi-SVD 风格的 remapping，ZS-SVD 在 LLaMA-7B 上把 WikiText2 PPL 从未压缩的 5.68 推到 6.96，而 SVD-LLM 同压缩率下 PPL 高达 53.74。GPU 上吞吐方面，60% 压缩在 RTX A5000 上比未压缩快 5.86×。</p>
+<p>我自己读完最深的一个体会是：<strong>它把&quot;全局 rank 分配&quot;这件原本要解一个组合优化问题的事情，化简成了一条简单的贪心规则</strong>——只需要 σᵢ 排序 + 一个标量符号判断。这种&quot;用一阶展开 + 一个累计守恒量&quot;代替优化的写法，在系统/数值领域并不少见（NTK 里的 lazy regime、ZeRO 里的通信均摊），但在 LLM 压缩这个口子上还没被这么干净地用过，值得仔细看看它在做什么取舍。</p>
+<hr>
+<h2 id="1-前置知识">1. 前置知识</h2>
+<p>这一节是写给已经训过 transformer、但没有把 SVD / 低秩压缩这条线吃透的同学的。我会把奇异值分解、白化、激活重建、校准损失、Fisher 信息这五件事讲清楚，再进入论文。</p>
+<h3 id="1-1-一句话讲清-SVD">1.1 一句话讲清 SVD</h3>
+<p>任何一个 m×n 的矩阵 A 都可以写成 A = U Σ Vᵀ，其中 U（m×m）和 V（n×n）是正交矩阵，Σ 是对角的非负矩阵，对角线上从大到小排列着 r = min(m, n) 个奇异值 σ₁ ≥ σ₂ ≥ … ≥ 0。所谓&quot;rank-k 截断 SVD&quot;就是只保留前 k 列 / 前 k 个奇异值，得到 Aₖ = Uₖ Σₖ Vₖᵀ。Eckart–Young 定理告诉我们：在 Frobenius 范数下，Aₖ 是所有秩 ≤ k 的矩阵中最逼近 A 的那一个。</p>
+<p>这件事翻译成 LLM 压缩：一个 W ∈ ℝ^{m×n} 的矩阵原本占 mn 个参数；写成 rank-k 的两个矩阵 Wᵤ ∈ ℝ^{m×k} 和 Wᵥ ∈ ℝ^{k×n} 之后，只占 k(m+n) 个参数。当 k(m+n) ≤ mn 时（也就是 k ≤ mn/(m+n)），存储就真的省了。</p>
+<h3 id="1-2-为什么直接对-W-做-SVD-还不够">1.2 为什么直接对 W 做 SVD 还不够</h3>
+<p>这是这篇论文（以及最近几年所有 SVD-based LLM 压缩工作）的出发点。直接拿 W 做 SVD、把小奇异值砍掉，看起来很对——但 W 是要乘上一个<strong>激活 X</strong> 之后才进入下一层的，模型最终关心的不是 ‖W − W′‖，而是 ‖W X − W′ X‖。如果 W 里有一个方向 V_i 在白噪声意义上很小，但实际激活 X 恰好就经常落在这个方向上，那砍掉它就会&quot;看起来误差小、其实损失爆炸&quot;。所以光看权重本身做 SVD 是不够的。</p>
+<h3 id="1-3-白化（whitening）：把激活拉成各向同性">1.3 白化（whitening）：把激活拉成各向同性</h3>
+<p>正确的做法是把激活的协方差信息提前&quot;折&quot;进 W 里。定义激活的二阶矩 C = X Xᵀ ∈ ℝ^{n×n}（实际只用一个 256 条 × 2048 token 的小校准集估），找一个矩阵 S 使得 S Sᵀ = C（典型做法是 Cholesky 分解，可加一个小 ridge λI 保数值稳）。然后定义&quot;白化后的权重&quot; A = W S。</p>
+<p>这时候有一个很重要的代数恒等式：</p>
+<p>‖W X − W′ X‖²_F = tr[(W − W′) C (W − W′)ᵀ] = ‖(W − W′) S‖²_F</p>
+<p>也就是说<strong>激活空间下的重建误差，等于白化空间下的 Frobenius 误差</strong>。因此在白化空间里对 A 做最优 rank-k 截断（再把 S⁻¹ 乘回去），等价于在激活空间里做最优 rank-k 投影。这就是 SVD-LLM、ASVD、Dobi-SVD 全部基于的代数事实，论文里写成了 Theorem 3.1 和 Corollary 3.2。</p>
+<h3 id="1-4-校准损失（calibration-loss）：跨层的真实目标">1.4 校准损失（calibration loss）：跨层的真实目标</h3>
+<p>激活重建误差仍然是<strong>局部</strong>目标——它只关心&quot;这一层的输出有没有失真&quot;。但 LLM 的真实目标是端到端的下一个 token 预测损失。砍掉某一层的一个奇异值，可能会通过非线性层在下游被放大或抵消，所以&quot;局部失真小&quot;不等于&quot;损失变化小&quot;。</p>
+<p>这就引出了所谓的<strong>校准损失（calibration loss）</strong> L：拿一小批校准数据（论文里是 WikiText2 的 256 条长度 2048 的序列），跑一遍完整的前向，得到 LLM 在这批数据上的语言建模损失。然后对 ZS-SVD 来说，关心的就是&quot;砍掉某一个 σᵢ 之后，L 会变多少&quot;。</p>
+<h3 id="1-5-Fisher-信息和-按重要性加权">1.5 Fisher 信息和&quot;按重要性加权&quot;</h3>
+<p>更老一些的 SVD 压缩工作（FWSVD、Dip-SVD）会用 Fisher 信息 F 来对参数加权——Fisher 信息直观上是&quot;损失曲面在这个参数方向上的二阶曲率&quot;。曲率大 = 这个参数动一动损失变很多 = 重要 = 不要砍。这是一种&quot;局部 + 二阶&quot;的视角。ZS-SVD 的差别是它<strong>只用一阶</strong>信息，但因为一阶展开就够精准（在预训练点附近梯度本来就低秩），同时它在<strong>全局</strong>层面累加这些一阶项，所以反而比 Fisher-style 启发式更稳。</p>
+<h3 id="1-6-后训练压缩（post-training-compression）">1.6 后训练压缩（post-training compression）</h3>
+<p>&quot;训练完一个 LLM 再压缩&quot;的范式叫 post-training compression。它的对立面是&quot;训练时就压缩&quot;（QAT、LoRA 这种）。Post-training 的好处是：</p>
+<ul>
+<li>不需要大规模重训；</li>
+<li>不需要原始训练数据，只需要一个小校准集；</li>
+<li>可以叠加在已经发布的 checkpoint 上。</li>
+</ul>
+<p>ZS-SVD 完全在 post-training 框架内，硬件无关（只用 BLAS 算 SVD），跟量化、蒸馏、剪枝是并列关系，理论上可以再和量化叠加（论文里的 remapping / HQ 方案就是在做这件事）。</p>
+<h3 id="1-7-异质-rank-分配（heterogeneous-rank-allocation）">1.7 异质 rank 分配（heterogeneous rank allocation）</h3>
+<p>每一层 transformer 都有六个常被 SVD 压缩的矩阵：q_proj、k_proj、v_proj、o_proj（attention 投影）和 gate_proj、up_proj、down_proj（MLP）。它们大小不一样、对损失的敏感程度也不一样。&quot;同质 rank&quot; = 给每一种矩阵设一个全局比例 ρ，每一层都按这个比例砍。&quot;异质 rank&quot; = 不同层、不同矩阵可以保留不同比例。直觉上后者更优，但难点在于&quot;怎么挑&quot;。Dobi-SVD 是用一个可微分 SVD 把每一层的截断秩当作连续变量来优化；ZS-SVD 用零和规则直接得到异质 rank，省掉了优化过程。</p>
+<h3 id="1-8-一阶展开（first-order-expansion）">1.8 一阶展开（first-order expansion）</h3>
+<p>整篇论文的&quot;魂&quot;是这条简单的代数：对参数空间里任何小扰动 ∆W，损失变化可以近似为</p>
+<p>∆L ≈ ⟨∇_W L, ∆W⟩</p>
+<p>对&quot;砍掉 A 的第 i 个奇异值&quot;这件事，∆A = −σᵢ uᵢ vᵢᵀ；因为 A = W S，扰动会通过 S⁻¹ 传回 W：∆W = ∆A S⁻¹。把它代进去：</p>
+<p>∆Lᵢ ≈ ⟨∇_W L · S⁻ᵀ, ∆A⟩ = ⟨H, −σᵢ uᵢ vᵢᵀ⟩ = −σᵢ uᵢᵀ H vᵢ</p>
+<p>这里 H = ∇_W L · S⁻ᵀ 是&quot;白化后的梯度&quot;。注意它是有符号的：σᵢ 是正的，uᵢᵀ H vᵢ 可正可负。所以<strong>砍掉某些奇异值反而会让校准损失变小</strong>——这是后面&quot;零和规则&quot;成立的前提。</p>
+<hr>
+<h2 id="2-方法">2. 方法</h2>
+<h3 id="2-1-总流程">2.1 总流程</h3>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line">输入：预训练 LLM 权重 &#123;W_ℓ&#125;、校准集、全局参数预算 ρ</span><br><span class="line">                       │</span><br><span class="line">                       ▼</span><br><span class="line">         对每一层 W_ℓ 计算 S_ℓ（激活协方差 Cholesky）</span><br><span class="line">                       │</span><br><span class="line">                       ▼</span><br><span class="line">         A_ℓ &#x3D; W_ℓ · S_ℓ, 做 SVD 得到 U_ℓ Σ_ℓ V_ℓᵀ</span><br><span class="line">                       │</span><br><span class="line">                       ▼</span><br><span class="line">         做一次反向，得到 G_ℓ &#x3D; ∇_&#123;W_ℓ&#125; L</span><br><span class="line">                       │</span><br><span class="line">                       ▼</span><br><span class="line">         H_ℓ &#x3D; G_ℓ · S_ℓ⁻ᵀ</span><br><span class="line">         ∆L_&#123;ℓ,i&#125; &#x3D; −σ_&#123;ℓ,i&#125; · u_&#123;ℓ,i&#125;ᵀ H_ℓ v_&#123;ℓ,i&#125;</span><br><span class="line">                       │</span><br><span class="line">                       ▼</span><br><span class="line">         维护两个堆 Q⁺（∆L≥0）和 Q⁻（∆L&lt;0）</span><br><span class="line">         按零和规则一个一个弹奇异值</span><br><span class="line">                       │</span><br><span class="line">                       ▼</span><br><span class="line">         达到全局预算后，每一层得到自己的 final rank k_ℓ</span><br><span class="line">                       │</span><br><span class="line">                       ▼</span><br><span class="line">       （可选）truncate–correct–re-truncate 修正一步</span><br><span class="line">                       │</span><br><span class="line">                       ▼</span><br><span class="line">         返回压缩后的 &#123;W&#39;_ℓ&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="2-2-奇异值敏感度的计算">2.2 奇异值敏感度的计算</h3>
+<p>这一步是 ZS-SVD 最便宜的地方。整个 LLM 只需要：</p>
+<ol>
+<li>对每一层做一次 Cholesky → 得到 S_ℓ；</li>
+<li>对每一层做一次 SVD → 得到 U_ℓ Σ_ℓ V_ℓᵀ；</li>
+<li>对整个模型做一次完整反向 → 得到 G_ℓ；</li>
+<li>对每个奇异值算一个标量 σᵢ · uᵢᵀ H vᵢ。</li>
+</ol>
+<p>第 1～3 步在工程上和 SVD-LLM 是一个数量级的开销（SVD-LLM 也要算白化和一次 SVD），第 4 步是 O(k) 的标量乘加，几乎免费。论文 Table 8 报告 LLaMA-7B 上 ZS-SVD 全流程 15.9 分钟（SVD-LLM 7.9 分钟，Dobi-SVD 19.25 小时——后者主要花在它的 differentiable rank 优化上）。<strong>ZS-SVD 把&quot;接近 Dobi-SVD 的精度&quot;用&quot;略高于 SVD-LLM 的时间预算&quot;做出来了</strong>，这是它最实用的卖点。</p>
+<h3 id="2-3-零和选择规则">2.3 零和选择规则</h3>
+<p>这里是论文最有意思的代数。维护一个累计变量</p>
+<p>s = Σ_{j∈D} ∆L_j</p>
+<p>D 是当前已经被砍掉的奇异值集合。直觉是：<strong>s 是 ZS-SVD 预测的整体损失漂移</strong>，我们希望它一直贴近 0。规则就是：</p>
+<ul>
+<li>当 s ≤ 0（预测损失偏低），下一个挑 ∆Lᵢ ≥ 0 的，让损失&quot;补一点回来&quot;；</li>
+<li>当 s &gt; 0（预测损失偏高），下一个挑 ∆Lᵢ &lt; 0 的，让损失&quot;再降一点&quot;。</li>
+</ul>
+<p>每个层各自维护&quot;在我这一层里下一个被砍的最小奇异值是哪个&quot;。所有这些候选者按 ∆L 的符号分别进入 Q⁺ 或 Q⁻，堆内的排序键是 |∆Lᵢ|（取绝对值最小的——也就是预测影响最小的那个）。每弹一个，s 就更新一次，再从对应层的下一个 σ 替补进来。</p>
+<p>关键约束：<strong>每个矩阵内部仍保持 spectral order</strong>，下一个候选只能是它当前剩下的最小那个 σ。这条约束论文用消融试过——如果允许跳着砍（不按从小到大），效果会显著变差（Table 6）。这是因为如果不在每层内保持 spectral order，就破坏了&quot;白化空间最优截断 = 留最大的几个 σ&quot;这条性质，于是局部重建误差爆炸。零和规则只控全局，不控局部；局部还得靠 Eckart–Young。</p>
+<h3 id="2-4-一步修正：truncate–correct–re-truncate">2.4 一步修正：truncate–correct–re-truncate</h3>
+<p>砍完之后，模型已经是低秩形态了，但还有进一步的优化空间。论文设计了一个非常轻量的修正：</p>
+<ul>
+<li>设当前截断后的权重是 W'_k，截断残差 ∆W = W − W'_k；</li>
+<li>在 W'_k 处算一次梯度 g = ∇_W L(W'_k)；</li>
+<li><strong>求一个最小 Frobenius 范数的 ∆W'</strong>，让它满足 ⟨g, ∆W'⟩ = ⟨g, ∆W⟩——它在一阶意义上等价于&quot;如果我能让权重瞬间回到 W 会发生的损失变化&quot;，但用最小的 perturbation 实现。论文给出闭式解 ∆W' = (⟨g, ∆W⟩ / ⟨g, g⟩) · g。</li>
+<li>把 ∆W' 加上去，再 re-truncate 回 rank k。</li>
+</ul>
+<p>为什么 re-truncate 不会把刚才的好处全部毁掉？因为 rank(∆W') = rank(g) = rank(∇_W L)，而经验证据（论文 Figure 3）和文献（PowerSGD、LoRA、GaLore）都表明<strong>预训练点附近的梯度是低秩的</strong>：在 LLaMA-2-7B 第 1/16/32 层、20% 压缩时，gradient 的有效秩 / weight 的有效秩比值在 0.001 ~ 0.4 之间，大部分模块上更接近 0.05。所以 ∆W' 本身是低秩的，加进去之后总秩 ≤ k + ℓ（ℓ 是梯度的秩），再 re-truncate 回 k 的投影误差就很小。</p>
+<p>这一步可以重复 1×、5×、10×。Table 1 显示越多越好，在 0.4 维持比下 PPL 从 ZS-SVD 的 45.17 一路降到 ZS-SVD-10× 的 18.49。</p>
+<h3 id="2-5-Remapping：和量化耦合的存储模式">2.5 Remapping：和量化耦合的存储模式</h3>
+<p>直接用 ρ = k(m+n)/mn 当做&quot;压缩比例&quot;有一个不对称的现象——当 ρ = 1 时 k = mn/(m+n) &lt; min(m,n)，并不能取到满秩。Dobi-SVD 引入了一种 packed storage：把 Vₖ 用 8-bit 打包进 Uₖ 的前 n 行（假设 m ≥ n），存储足迹变成 k·max(m,n)。在这种 remapping 下，ρ̃ = k/rank(W) 是和 k 一一对应的。ZS-SVD 把这条 remapping 直接接入它的 budget accounting：每砍掉一个奇异值的存储节省是 max(m,n) 个 fp16 等价参数。</p>
+<p>在压缩比 ≥ 50% 的极端场景，论文还提了一个变体叫 HQ（Half-prune + Quantize）：先做 50% 的 SVD 压缩，然后对所有目标参数统一 halve 位宽（典型 fp16 → fp8），等价的总占用相同，但 perplexity 更稳。论文里在 0.4 维持比下 HQ 版的 ZS-SVD 把 PPL 拉到 6.73——已经接近未压缩 baseline 的 5.68。</p>
+<h3 id="2-6-一些工程细节">2.6 一些工程细节</h3>
+<ul>
+<li>校准集：WikiText2 的 256 条序列、长度 2048。和 SVD-LLM 一致，可控变量。</li>
+<li>只压缩 transformer block 里的&quot;主线性&quot;矩阵（q/k/v/o + MLP），embedding / layer norm 不动。</li>
+<li>梯度低秩的实验测的是 τ = 0.95 的有效秩（能量 95% 所需的最小奇异向量数量）。</li>
+<li>整个流程是单卡可跑的，论文跑在 RTX PRO 6000 Blackwell Max-Q 96 GB。</li>
+</ul>
+<h3 id="2-7-伪代码与复杂度">2.7 伪代码与复杂度</h3>
+<p>整套零和选择的逻辑可以用下面这段简化伪代码看清楚：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line">def zs_svd(model, calib_loader, target_budget):</span><br><span class="line">    layers &#x3D; list(model.linear_layers())</span><br><span class="line">    # 1. 准备阶段</span><br><span class="line">    S, A, U, Σ, V &#x3D; [], [], [], [], []</span><br><span class="line">    for ℓ in layers:</span><br><span class="line">        C_ℓ &#x3D; activation_covariance(ℓ, calib_loader)</span><br><span class="line">        S_ℓ &#x3D; cholesky(C_ℓ + λI)</span><br><span class="line">        A_ℓ &#x3D; ℓ.W @ S_ℓ</span><br><span class="line">        U_ℓ, Σ_ℓ, V_ℓ &#x3D; svd(A_ℓ)</span><br><span class="line">        S.append(S_ℓ); A.append(A_ℓ); U.append(U_ℓ); Σ.append(Σ_ℓ); V.append(V_ℓ)</span><br><span class="line"></span><br><span class="line">    # 2. 一次反向得到所有梯度</span><br><span class="line">    L &#x3D; calibration_loss(model, calib_loader)</span><br><span class="line">    G &#x3D; backward(L)  # &#123;G_ℓ&#125;</span><br><span class="line"></span><br><span class="line">    # 3. 计算 ∆L_&#123;ℓ,i&#125;</span><br><span class="line">    ΔL &#x3D; &#123;&#125;</span><br><span class="line">    for ℓ in layers:</span><br><span class="line">        H_ℓ &#x3D; G[ℓ] @ inv(S[ℓ].T)</span><br><span class="line">        for i in range(rank(A[ℓ])):</span><br><span class="line">            ΔL[(ℓ, i)] &#x3D; -Σ[ℓ][i] * (U[ℓ][:, i].T @ H_ℓ @ V[ℓ][:, i])</span><br><span class="line"></span><br><span class="line">    # 4. 双堆 + 零和贪心</span><br><span class="line">    Q_pos &#x3D; MinHeap(key&#x3D;lambda x: abs(ΔL[x]))   # ∆L ≥ 0</span><br><span class="line">    Q_neg &#x3D; MinHeap(key&#x3D;lambda x: abs(ΔL[x]))   # ∆L &lt; 0</span><br><span class="line">    cursor &#x3D; &#123;ℓ: rank(A[ℓ]) - 1 for ℓ in layers&#125;  # 每层下一个待砍 σ 的索引（最小的）</span><br><span class="line">    for ℓ in layers:</span><br><span class="line">        i &#x3D; cursor[ℓ]</span><br><span class="line">        (Q_pos if ΔL[(ℓ, i)] &gt;&#x3D; 0 else Q_neg).push((ℓ, i))</span><br><span class="line"></span><br><span class="line">    s &#x3D; 0</span><br><span class="line">    removed &#x3D; set()</span><br><span class="line">    while saved_params(removed) &lt; target_budget:</span><br><span class="line">        prefer &#x3D; Q_pos if s &lt;&#x3D; 0 else Q_neg</span><br><span class="line">        if not prefer: prefer &#x3D; Q_neg if prefer is Q_pos else Q_pos</span><br><span class="line">        (ℓ, i) &#x3D; prefer.pop()</span><br><span class="line">        s +&#x3D; ΔL[(ℓ, i)]</span><br><span class="line">        removed.add((ℓ, i))</span><br><span class="line">        cursor[ℓ] -&#x3D; 1</span><br><span class="line">        if cursor[ℓ] &gt;&#x3D; 0:</span><br><span class="line">            j &#x3D; cursor[ℓ]</span><br><span class="line">            (Q_pos if ΔL[(ℓ, j)] &gt;&#x3D; 0 else Q_neg).push((ℓ, j))</span><br><span class="line"></span><br><span class="line">    # 5. 形成压缩权重</span><br><span class="line">    for ℓ in layers:</span><br><span class="line">        keep &#x3D; sorted(&#123;i for i in range(rank(A[ℓ])) if (ℓ, i) not in removed&#125;)</span><br><span class="line">        Uk, Σk, Vk &#x3D; U[ℓ][:, keep], diag(Σ[ℓ][keep]), V[ℓ][:, keep]</span><br><span class="line">        ℓ.W_u &#x3D; Uk @ sqrt(Σk)</span><br><span class="line">        ℓ.W_v &#x3D; sqrt(Σk) @ Vk.T @ inv(S[ℓ])</span><br></pre></td></tr></table></figure>
+<p>复杂度逐项分析：</p>
+<ul>
+<li>Cholesky：每层 O(n³)，其中 n 是 W 的列数。LLaMA-7B 的 hidden = 4096，所以一次 ~ 7×10¹⁰ flops。</li>
+<li>SVD：每层 O(m·n²)（randomized SVD 可降到 O(m·n·k)）。</li>
+<li>反向：一次 256×2048 mini-batch 完整 forward+backward，和正常一次训练 step 同量级。</li>
+<li>内积 uᵢᵀ H vᵢ：每个 σ 一个 O(m·n) 标量乘加，全部一起也只是矩阵乘量级。</li>
+<li>堆操作：O(N log N)，其中 N 是全模型奇异值总数，对于 7B 大约 10⁷ 量级，毫秒级开销。</li>
+</ul>
+<p>所以全流程的瓶颈是 SVD 和反向，和 SVD-LLM 完全同量级；ZS-SVD 比 SVD-LLM 多出来的那一倍时间主要在反向 + 显存换入换出。</p>
+<h3 id="2-8-与-Dobi-SVD-的工程对比">2.8 与 Dobi-SVD 的工程对比</h3>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Dobi-SVD</th>
+<th>ZS-SVD</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>rank 决策方式</td>
+<td>反向传播优化</td>
+<td>全局贪心 + 零和守恒</td>
+</tr>
+<tr>
+<td>需要的迭代次数</td>
+<td>数千步可微 SVD 优化</td>
+<td>1 次反向 + 1 次堆贪心</td>
+</tr>
+<tr>
+<td>显存峰值</td>
+<td>高（IPCA 反传）</td>
+<td>中（一次完整反向 + 一次 SVD）</td>
+</tr>
+<tr>
+<td>LLaMA-7B 端到端时间</td>
+<td>19.25 小时</td>
+<td>15.9 分钟</td>
+</tr>
+<tr>
+<td>精度顶点</td>
+<td>高</td>
+<td>略高</td>
+</tr>
+<tr>
+<td>可解释性</td>
+<td>黑盒优化</td>
+<td>一阶展开 + 守恒律</td>
+</tr>
+</tbody>
+</table>
+<p>ZS-SVD 的工程胜利不在于&quot;算的少&quot;——它算的不见得少多少——而在于&quot;避开了一段长长的、需要 fine-tune 的优化循环&quot;。这对部署工程师特别友好：你拿一个已经发布的 checkpoint，跑 15 分钟就出一个不错的压缩版本，不用任何额外训练数据。</p>
+<hr>
+<h2 id="3-5b-额外消融解读：为什么-贪心负-∆L-会爆炸">3.5b 额外消融解读：为什么&quot;贪心负 ∆L&quot;会爆炸</h2>
+<p>我想多花一段讲 Table 6 里那条 PPL 飙到 160000 的&quot;Most negative ∆L&quot;策略，因为它揭示了 ZS-SVD 设计的关键工程直觉。</p>
+<p>设想一个简化场景：你在 W₀ 处展开 L(W₀+∆W) ≈ L(W₀) + ⟨g, ∆W⟩。这条一阶近似在 ‖∆W‖ 足够小的范围内（线性邻域 R）有效。一旦 ‖∆W‖ 跑出 R，近似失效，真实 L 就由二阶以上的项主导。</p>
+<p>&quot;贪心负 ∆L&quot;做的事情是<strong>每一步都让 s 进一步往负方向走</strong>——也就是每一步都让 ‖∆W‖ 朝同一个方向累加。这等价于沿着一个固定方向走出一条直线，很快就跑出 R。</p>
+<p>零和规则做的事情是<strong>让 s 在 0 附近震荡</strong>。这相当于沿着一个随机游走式的轨迹前进，在 t 步之后期望偏移大约只是 O(√t) 而不是 O(t)。也就是说，它把&quot;经过 t 次决策&quot;对应的 ‖∆W‖ 控制在 √t 量级。在 7B 模型上这一项可能差几个数量级——这就是 PPL 从 45.2 跳到 160594 的原因。</p>
+<p>这种&quot;用随机游走代替直线推进&quot;的设计在数值优化里有个经典名字：<strong>conservation-based step control</strong>。它在 stochastic optimal control 和 simulated annealing 都有体现。ZS-SVD 把它搬进 LLM 压缩，是这条领域里第一篇这么做的。</p>
+<hr>
+<h2 id="3-实验">3. 实验</h2>
+<p>我主要看了五个实验：主表 perplexity、压缩极端下的 vs SVD baseline、vs 结构化剪枝、跨模型规模、消融。</p>
+<h3 id="3-1-主表（Table-1，LLaMA-7B）">3.1 主表（Table 1，LLaMA-7B）</h3>
+<blockquote>
+<p>维持比 0.8/0.6/0.4，对比 ASVD、SVD-LLM、Dobi-SVD，加 1×/5× truncate-correct 迭代，再加 Dobi-SVD remapping 和 HQ 变体。</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>维持比</th>
+<th>方法</th>
+<th>WikiText2 PPL</th>
+<th>平均 Acc</th>
+<th>相对 drop</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1.0</td>
+<td>Baseline</td>
+<td>5.68</td>
+<td>0.55</td>
+<td>0.0%</td>
+</tr>
+<tr>
+<td>0.8</td>
+<td>ASVD</td>
+<td>11.14</td>
+<td>0.43</td>
+<td>21.8%</td>
+</tr>
+<tr>
+<td>0.8</td>
+<td>SVD-LLM</td>
+<td>7.94</td>
+<td>0.44</td>
+<td>20.0%</td>
+</tr>
+<tr>
+<td>0.8</td>
+<td>Dobi-SVD</td>
+<td>8.54</td>
+<td>0.46</td>
+<td>16.4%</td>
+</tr>
+<tr>
+<td>0.8</td>
+<td>ZS-SVD</td>
+<td>6.74</td>
+<td>0.50</td>
+<td><strong>9.1%</strong></td>
+</tr>
+<tr>
+<td>0.8</td>
+<td>ZS-SVD 5×</td>
+<td>6.43</td>
+<td>0.51</td>
+<td>7.3%</td>
+</tr>
+<tr>
+<td>0.8</td>
+<td>ZS-SVD* (remap)</td>
+<td>5.90</td>
+<td>0.54</td>
+<td><strong>1.8%</strong></td>
+</tr>
+<tr>
+<td>0.6</td>
+<td>SVD-LLM</td>
+<td>13.11</td>
+<td>0.37</td>
+<td>32.7%</td>
+</tr>
+<tr>
+<td>0.6</td>
+<td>Dobi-SVD</td>
+<td>13.54</td>
+<td>0.38</td>
+<td>30.9%</td>
+</tr>
+<tr>
+<td>0.6</td>
+<td>ZS-SVD 5×</td>
+<td>9.45</td>
+<td>0.42</td>
+<td>23.6%</td>
+</tr>
+<tr>
+<td>0.6</td>
+<td>ZS-SVD* (remap)</td>
+<td>6.96</td>
+<td>0.50</td>
+<td><strong>9.1%</strong></td>
+</tr>
+<tr>
+<td>0.4</td>
+<td>SVD-LLM</td>
+<td>53.74</td>
+<td>0.31</td>
+<td>43.6%</td>
+</tr>
+<tr>
+<td>0.4</td>
+<td>Dobi-SVD</td>
+<td>46.18</td>
+<td>0.32</td>
+<td>41.8%</td>
+</tr>
+<tr>
+<td>0.4</td>
+<td>ZS-SVD 10×</td>
+<td>18.49</td>
+<td>0.35</td>
+<td>36.4%</td>
+</tr>
+<tr>
+<td>0.4</td>
+<td>ZS-SVD† (HQ)</td>
+<td>6.73</td>
+<td>0.51</td>
+<td><strong>7.3%</strong></td>
+</tr>
+</tbody>
+</table>
+<p>我看到三个值得说的现象：</p>
+<ol>
+<li><strong>没有 remap 的 vanilla ZS-SVD 在 0.8 / 0.6 上就明显赢 SVD-LLM 和 Dobi-SVD</strong>——零和规则单独就足够。</li>
+<li><strong>加 remap 之后，曲线被整体往下压</strong>——这是 packed storage 让 ZS-SVD 在同样存储预算下可以保留更多秩。</li>
+<li><strong>HQ 在 0.4 这种极端压缩下是最优的</strong>——把&quot;硬砍秩&quot;和&quot;半位宽&quot;叠加比&quot;硬砍到 60% 秩&quot;更稳。</li>
+</ol>
+<h3 id="3-2-vs-Dip-SVD（Table-2，30-pruning）">3.2 vs Dip-SVD（Table 2，30% pruning）</h3>
+<table>
+<thead>
+<tr>
+<th>模型</th>
+<th>方法</th>
+<th>W2 PPL</th>
+<th>PTB</th>
+<th>C4</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LLaMA-7B</td>
+<td>ASVD</td>
+<td>95.3</td>
+<td>200.9</td>
+<td>86.3</td>
+</tr>
+<tr>
+<td>LLaMA-7B</td>
+<td>FWSVD</td>
+<td>33.0</td>
+<td>53.6</td>
+<td>38.2</td>
+</tr>
+<tr>
+<td>LLaMA-7B</td>
+<td>SVD-LLM</td>
+<td>9.5</td>
+<td>29.0</td>
+<td>26.4</td>
+</tr>
+<tr>
+<td>LLaMA-7B</td>
+<td>Dip-SVD</td>
+<td>9.4</td>
+<td>22.3</td>
+<td>19.9</td>
+</tr>
+<tr>
+<td>LLaMA-7B</td>
+<td><strong>ZS-SVD</strong></td>
+<td><strong>8.2</strong></td>
+<td><strong>19.6</strong></td>
+<td><strong>16.8</strong></td>
+</tr>
+<tr>
+<td>Vicuna-7B</td>
+<td>SVD-LLM</td>
+<td>12.4</td>
+<td>124.5</td>
+<td>39.5</td>
+</tr>
+<tr>
+<td>Vicuna-7B</td>
+<td>Dip-SVD</td>
+<td>12.1</td>
+<td>81.1</td>
+<td>28.8</td>
+</tr>
+<tr>
+<td>Vicuna-7B</td>
+<td><strong>ZS-SVD</strong></td>
+<td><strong>10.2</strong></td>
+<td><strong>48.0</strong></td>
+<td><strong>21.8</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Dip-SVD 是最直接的对手——它也用梯度信息，但是用 Fisher-style 启发式来给&quot;每一层的整体重要性&quot;打分。ZS-SVD 比它精细一档，因为它打分的对象是&quot;每一个奇异值&quot;。结果是 ZS-SVD 在 PTB / C4 上把 Dip-SVD 的 PPL 几乎全部砍掉 20% 以上。</p>
+<h3 id="3-3-vs-结构化剪枝（Tables-3-4）">3.3 vs 结构化剪枝（Tables 3 &amp; 4）</h3>
+<ul>
+<li>LLaMA-2-7B、0.6 维持比下，ZS-SVD 0.45 平均 Acc vs LLM-Pruner 0.48 vs SliceGPT 0.51；Dobi-SVD* 56% Acc，ZS-SVD* 57%。</li>
+<li>0.4 维持比下 HQ 版 ZS-SVD 平均 Acc 0.59，远超所有 SVD 和剪枝基线。</li>
+<li>LLaMA-13B、0.8 维持比下 ZS-SVD* 平均 Acc 0.70，和未压缩 baseline 持平。</li>
+</ul>
+<p>意思是：<strong>当你愿意把 SVD 和量化耦合在一起做存储</strong>（HQ 或 remap），ZS-SVD 在大模型上的表现可以达到&quot;几乎无损&quot;。</p>
+<h3 id="3-4-跨模型规模（Table-5，20-pruning）">3.4 跨模型规模（Table 5，20% pruning）</h3>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>OPT-6.7B PPL/Acc</th>
+<th>Vicuna-7B PPL/Acc</th>
+<th>LLaMA-30B PPL/Acc</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Original</td>
+<td>10.86 / 0.52</td>
+<td>6.78 / 0.56</td>
+<td>4.10 / 0.61</td>
+</tr>
+<tr>
+<td>ASVD</td>
+<td>82.00 / 0.32</td>
+<td>16.23 / 0.33</td>
+<td>6.74 / 0.44</td>
+</tr>
+<tr>
+<td>SVD-LLM</td>
+<td>16.04 / 0.41</td>
+<td>8.41 / 0.51</td>
+<td>6.61 / 0.54</td>
+</tr>
+<tr>
+<td><strong>ZS-SVD</strong></td>
+<td><strong>11.40 / 0.51</strong></td>
+<td><strong>8.08 / 0.53</strong></td>
+<td><strong>4.83 / 0.59</strong></td>
+</tr>
+</tbody>
+</table>
+<p>在 LLaMA-30B 上几乎只损失了 0.02 准确率——零和规则对模型族泛化得不错。</p>
+<h3 id="3-5-消融：四种选择策略（Table-6）">3.5 消融：四种选择策略（Table 6）</h3>
+<p>这张表是论文最有说服力的。固定全局预算，比较四种&quot;选哪个 σ&quot;的策略：</p>
+<table>
+<thead>
+<tr>
+<th>策略</th>
+<th>Per-W σ 排序</th>
+<th>Ratio 0.4 PPL</th>
+<th>Ratio 0.6 PPL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Most negative ∆L</td>
+<td>×</td>
+<td>160594</td>
+<td>373585</td>
+</tr>
+<tr>
+<td>Magnitude of ∆L</td>
+<td>×</td>
+<td>341.3</td>
+<td>88.7</td>
+</tr>
+<tr>
+<td>Most negative ∆L</td>
+<td>✓</td>
+<td>182452</td>
+<td>369350</td>
+</tr>
+<tr>
+<td>Magnitude of ∆L</td>
+<td>✓</td>
+<td>51.8</td>
+<td>12.0</td>
+</tr>
+<tr>
+<td>Magnitude of σ</td>
+<td>✓</td>
+<td>803599</td>
+<td>32750</td>
+</tr>
+<tr>
+<td><strong>Zero-sum ∆L (ZS-SVD)</strong></td>
+<td><strong>✓</strong></td>
+<td><strong>45.2</strong></td>
+<td><strong>11.4</strong></td>
+</tr>
+</tbody>
+</table>
+<p>几个关键 takeaway：</p>
+<ul>
+<li>&quot;贪心地一直让 ∆L 最负&quot;（疯狂选会让损失下降的奇异值）反而是灾难——结果 PPL 爆炸到几十万。这一条反直觉的现象正好揭示了<strong>一阶展开在远离当前点之后会失效</strong>：单看局部线性预测会把损失降到很低，但你已经偏离了线性近似的有效邻域，真实损失反而炸了。零和规则就是在用&quot;累计漂移贴近 0&quot;来强行把每一步都钉在线性近似有效的区域里。</li>
+<li>&quot;在每层内保持 σ 排序&quot;也是必要的——把它去掉之后所有策略都崩。</li>
+<li>&quot;只看 σ 大小、不看损失敏感度&quot;也不行——光靠白化空间的局部最优会忽略下游层的复合放大。</li>
+</ul>
+<p>这条消融基本上把 ZS-SVD 的核心论点钉死了。</p>
+<h3 id="3-6-推理效率（Table-7）">3.6 推理效率（Table 7）</h3>
+<table>
+<thead>
+<tr>
+<th>压缩</th>
+<th>方法</th>
+<th>RTX A5000 吞吐</th>
+<th>峰值显存</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0%</td>
+<td>原模型</td>
+<td>130.03</td>
+<td>13.56</td>
+</tr>
+<tr>
+<td>40%</td>
+<td>SVD-LLM</td>
+<td>675.24</td>
+<td>15.86</td>
+</tr>
+<tr>
+<td>40%</td>
+<td>Dobi-SVD</td>
+<td>692.49</td>
+<td>17.07</td>
+</tr>
+<tr>
+<td>40%</td>
+<td><strong>ZS-SVD</strong></td>
+<td><strong>731.68</strong></td>
+<td>15.78</td>
+</tr>
+<tr>
+<td>60%</td>
+<td><strong>ZS-SVD</strong></td>
+<td><strong>762.34</strong></td>
+<td><strong>13.37</strong></td>
+</tr>
+</tbody>
+</table>
+<p>ZS-SVD 在 RTX A5000 上 60% 压缩时吞吐是未压缩的 5.86×。在显存受限的 Titan Xp（12GB，baseline 必须 offload）上提升 2.61×。注意 SVD 类压缩对硬件零依赖——你不需要特殊 kernel、特殊指令集，只需要&quot;两次小矩阵乘法代替一次大矩阵乘法&quot;。</p>
+<hr>
+<h2 id="4-我的解读">4. 我的解读</h2>
+<p>我把这篇论文放在我自己的 reading mental map 里大约是这样的：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">LLM 压缩</span><br><span class="line">   ├── 量化（QAT &#x2F; PTQ）→ GPTQ &#x2F; AWQ &#x2F; SmoothQuant &#x2F; QuIP &#x2F; SpinQuant</span><br><span class="line">   ├── 结构化剪枝 → LLM-Pruner &#x2F; SliceGPT &#x2F; Wanda &#x2F; FLAP</span><br><span class="line">   └── 低秩分解（SVD-based）</span><br><span class="line">         ├── 不带激活信息：FWSVD（用 Fisher）</span><br><span class="line">         ├── 局部活化重建：ASVD &#x2F; SVD-LLM（白化）</span><br><span class="line">         ├── 损失感知 + 启发式：Dip-SVD</span><br><span class="line">         ├── 损失感知 + 可微优化：Dobi-SVD</span><br><span class="line">         └── 损失感知 + 全局贪心 + 零和守恒：ZS-SVD  ← 这里</span><br></pre></td></tr></table></figure>
+<p>它的精度顶点和 Dobi-SVD 接近，但<strong>避开了 Dobi-SVD 用反向传播去优化 rank 的工程负担</strong>，把整套流程压到了 16 分钟 vs 19 小时。这个时间差是非常实用的：如果你只是想给一个已发布的 checkpoint 做一次性的 4-bit/低秩组合压缩，ZS-SVD 就是性价比最好的选项之一。</p>
+<p>它的工程要点也很清晰：</p>
+<ul>
+<li>需要的资源：1 张能装下 LLM 的 GPU，做一次 SVD + 一次反向，不需要 fine-tune。</li>
+<li>校准集：256 × 2048 token，很小。</li>
+<li>输出：每一层一个 (Uₖ, Vₖ) 替代矩阵，标准 BLAS 即可推理。</li>
+</ul>
+<p>我比较关心的几个边界：</p>
+<ol>
+<li><strong>校准集分布</strong>：这套全局零和规则强依赖于校准数据的统计代表性。如果你的部署场景和 WikiText2 差很远（比如代码生成、对话），∆Lᵢ 的符号可能完全反过来。论文没系统讨论这一点，只是说&quot;和 SVD-LLM 用同一份校准集做对比&quot;。</li>
+<li><strong>梯度低秩假设</strong>：作者用 Figure 3 + 文献证明梯度在预训练点附近低秩。但当 batch size 很大、或者权重已经被严重压缩（比如 ratio 0.4 之后还要做修正）时，∆W' 的有效秩会不会被显著拉高？论文没给&quot;修正后实际秩增长&quot;的曲线。</li>
+<li><strong>和量化的组合复杂度</strong>：HQ 和 remapping 已经在做这件事，但理论上还有 joint allocation 的空间——同时优化&quot;每一层留几个 σ + 每一层用几位宽&quot;。论文把这个明确列为 future work。</li>
+</ol>
+<p>最后一个观察是结构上的：<strong>ZS-SVD 的写法很像数值优化里的&quot;primal feasibility + dual control&quot;</strong>——σ 排序保 local feasibility，零和守恒保 global dual。这种&quot;用一个标量守恒量代替全局优化&quot;的模式，我猜接下来会被推广到剪枝（&quot;零和剪枝&quot;）和量化（&quot;零和位宽分配&quot;）。这条线值得关注。</p>
+<hr>
+<h2 id="5-局限与可复现性">5. 局限与可复现性</h2>
+<h3 id="5-1-局限">5.1 局限</h3>
+<ul>
+<li>校准集偏差：所有 ∆Lᵢ 都基于一份 WikiText2 校准；论文未做跨数据集的鲁棒性研究。</li>
+<li>一阶近似适用边界：消融 Table 6 已经显示 ∆L 极度跑偏时一阶展开崩溃；零和规则只是&quot;经验上&quot;贴近线性邻域。</li>
+<li>极端压缩（≤0.4）必须搭配 quantization (HQ/remap) 才能维持精度——不是纯 SVD 路线。</li>
+<li>对 attention 矩阵和 MLP 矩阵一视同仁——没考虑 attention head 内部的几何（比如 head pruning 的工作）。</li>
+</ul>
+<h3 id="5-2-可复现性">5.2 可复现性</h3>
+<ul>
+<li>代码已开源：<a href="https://github.com/mint-vu/Zero-Sum-SVD%EF%BC%88%E8%AE%BA%E6%96%87%E6%91%98%E8%A6%81%E9%87%8C%E7%BB%99%E7%9A%84%EF%BC%89%E3%80%82" target="_blank" rel="noopener">https://github.com/mint-vu/Zero-Sum-SVD（论文摘要里给的）。</a></li>
+<li>校准集：WikiText2 256 × 2048 token，可复现。</li>
+<li>评测：lm-eval-harness 标准设置，OpenBookQA / ARC-E / ARC-C / WinoGrande / HellaSwag / PIQA / MathQA。</li>
+<li>模型：LLaMA-7B / 2-7B / 13B / 30B、Vicuna-7B、OPT-6.7B，全部是开放 checkpoint。</li>
+<li>硬件：单卡 96 GB RTX PRO 6000 Blackwell Max-Q；普通研究者用一张 80 GB A100 重现 7B-13B 应该没问题，30B 可能要做一点 offloading。</li>
+<li>计时是公平的——SVD-LLM 7.9 min、ZS-SVD 15.9 min、Dobi-SVD 19.25 h，作者明确说在同一台机器上测的。</li>
+</ul>
+<p>整体看可复现性不错。我个人下一步会试着把 ZS-SVD 的&quot;零和规则&quot;挪到结构化剪枝场景（neuron-level），看一阶展开 + 全局守恒能不能在剪枝里也跑通——这是论文没碰但显然顺手的延伸。</p>
+<hr>
+<h2 id="参考资料">参考资料</h2>
+<ul>
+<li>Abbasi 等, <em>Zero Sum SVD: Balancing Loss Sensitivity for Low Rank LLM Compression</em>, arXiv 2602.02848v1 (2026)。</li>
+<li>Wang 等, <em>SVD-LLM: Truncation-aware Singular Value Decomposition for Large Language Model Compression</em>, ICLR 2025。</li>
+<li>Qinsi 等, <em>Dobi-SVD: Differentiable SVD for LLM Compression and Some New Perspectives</em>, ICLR 2025。</li>
+<li>Yuan 等, <em>ASVD: Activation-aware Singular Value Decomposition for Compressing LLMs</em>, arXiv 2312.05821 (2025)。</li>
+<li>Ding 等, <em>Dip-SVD: Dual-importance Protected SVD for Efficient LLM Compression</em>, arXiv 2506.20353 (2025)。</li>
+<li>Hsu 等, <em>Language Model Compression with Weighted Low-Rank Factorization (FWSVD)</em>, ICLR 2022。</li>
+<li>Hu 等, <em>LoRA: Low-Rank Adaptation of Large Language Models</em>, ICLR 2022。</li>
+<li>Zhao 等, <em>GaLore: Memory-Efficient LLM Training by Gradient Low-Rank Projection</em>, ICML 2024。</li>
+<li>Balzano 等, <em>An Overview of Low-Rank Structures in the Training and Adaptation of Large Models</em>, arXiv 2503.19859 (2025)。</li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/SVD/" rel="tag"># SVD</a>
+              <a href="/tags/Model-Compression/" rel="tag"># Model Compression</a>
+              <a href="/tags/LLM-Compression/" rel="tag"># LLM Compression</a>
+              <a href="/tags/Zero-Sum-SVD/" rel="tag"># Zero Sum SVD</a>
+              <a href="/tags/Low-Rank-Approximation/" rel="tag"># Low-Rank Approximation</a>
+              <a href="/tags/Singular-Value-Decomposition/" rel="tag"># Singular Value Decomposition</a>
+              <a href="/tags/Activation-Whitening/" rel="tag"># Activation Whitening</a>
+              <a href="/tags/Loss-Sensitivity/" rel="tag"># Loss Sensitivity</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/05/15/2026-05-15-ZeroSumSVD-technical-review-en/" rel="prev" title="Zero Sum SVD: A Global, Loss-Aware Rank Budget for LLM Compression">
+      <i class="fa fa-chevron-left"></i> Zero Sum SVD: A Global, Loss-Aware Rank Budget for LLM Compression
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#简短结论"><span class="nav-number">1.</span> <span class="nav-text">简短结论</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#1-前置知识"><span class="nav-number">2.</span> <span class="nav-text">1. 前置知识</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-一句话讲清-SVD"><span class="nav-number">2.1.</span> <span class="nav-text">1.1 一句话讲清 SVD</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-为什么直接对-W-做-SVD-还不够"><span class="nav-number">2.2.</span> <span class="nav-text">1.2 为什么直接对 W 做 SVD 还不够</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-白化（whitening）：把激活拉成各向同性"><span class="nav-number">2.3.</span> <span class="nav-text">1.3 白化（whitening）：把激活拉成各向同性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-4-校准损失（calibration-loss）：跨层的真实目标"><span class="nav-number">2.4.</span> <span class="nav-text">1.4 校准损失（calibration loss）：跨层的真实目标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-5-Fisher-信息和-按重要性加权"><span class="nav-number">2.5.</span> <span class="nav-text">1.5 Fisher 信息和&quot;按重要性加权&quot;</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-6-后训练压缩（post-training-compression）"><span class="nav-number">2.6.</span> <span class="nav-text">1.6 后训练压缩（post-training compression）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-7-异质-rank-分配（heterogeneous-rank-allocation）"><span class="nav-number">2.7.</span> <span class="nav-text">1.7 异质 rank 分配（heterogeneous rank allocation）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-8-一阶展开（first-order-expansion）"><span class="nav-number">2.8.</span> <span class="nav-text">1.8 一阶展开（first-order expansion）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-方法"><span class="nav-number">3.</span> <span class="nav-text">2. 方法</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-总流程"><span class="nav-number">3.1.</span> <span class="nav-text">2.1 总流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-奇异值敏感度的计算"><span class="nav-number">3.2.</span> <span class="nav-text">2.2 奇异值敏感度的计算</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-零和选择规则"><span class="nav-number">3.3.</span> <span class="nav-text">2.3 零和选择规则</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-一步修正：truncate–correct–re-truncate"><span class="nav-number">3.4.</span> <span class="nav-text">2.4 一步修正：truncate–correct–re-truncate</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-Remapping：和量化耦合的存储模式"><span class="nav-number">3.5.</span> <span class="nav-text">2.5 Remapping：和量化耦合的存储模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6-一些工程细节"><span class="nav-number">3.6.</span> <span class="nav-text">2.6 一些工程细节</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-7-伪代码与复杂度"><span class="nav-number">3.7.</span> <span class="nav-text">2.7 伪代码与复杂度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-8-与-Dobi-SVD-的工程对比"><span class="nav-number">3.8.</span> <span class="nav-text">2.8 与 Dobi-SVD 的工程对比</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-5b-额外消融解读：为什么-贪心负-∆L-会爆炸"><span class="nav-number">4.</span> <span class="nav-text">3.5b 额外消融解读：为什么&quot;贪心负 ∆L&quot;会爆炸</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-实验"><span class="nav-number">5.</span> <span class="nav-text">3. 实验</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-主表（Table-1，LLaMA-7B）"><span class="nav-number">5.1.</span> <span class="nav-text">3.1 主表（Table 1，LLaMA-7B）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-vs-Dip-SVD（Table-2，30-pruning）"><span class="nav-number">5.2.</span> <span class="nav-text">3.2 vs Dip-SVD（Table 2，30% pruning）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-3-vs-结构化剪枝（Tables-3-4）"><span class="nav-number">5.3.</span> <span class="nav-text">3.3 vs 结构化剪枝（Tables 3 &amp; 4）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-4-跨模型规模（Table-5，20-pruning）"><span class="nav-number">5.4.</span> <span class="nav-text">3.4 跨模型规模（Table 5，20% pruning）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-5-消融：四种选择策略（Table-6）"><span class="nav-number">5.5.</span> <span class="nav-text">3.5 消融：四种选择策略（Table 6）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-6-推理效率（Table-7）"><span class="nav-number">5.6.</span> <span class="nav-text">3.6 推理效率（Table 7）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-我的解读"><span class="nav-number">6.</span> <span class="nav-text">4. 我的解读</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-局限与可复现性"><span class="nav-number">7.</span> <span class="nav-text">5. 局限与可复现性</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#5-1-局限"><span class="nav-number">7.1.</span> <span class="nav-text">5.1 局限</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-2-可复现性"><span class="nav-number">7.2.</span> <span class="nav-text">5.2 可复现性</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#参考资料"><span class="nav-number">8.</span> <span class="nav-text">参考资料</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="Zhongzhu / Chralie Zhou"
+      src="/images/avatar.png">
+  <p class="site-author-name" itemprop="name">Zhongzhu / Chralie Zhou</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">112</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">34</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">160</span>
+        <span class="site-state-item-name">tags</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/zzz0906" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;zzz0906" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:zhongzhu.zhou@sydney.edu.au" title="E-Mail → mailto:zhongzhu.zhou@sydney.edu.au" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&hl=zh-CN" title="Scholar → https:&#x2F;&#x2F;scholar.google.com.hk&#x2F;citations?user&#x3D;BoZKZl4AAAAJ&amp;hl&#x3D;zh-CN" rel="noopener" target="_blank"><i class="fab fa-google fa-fw"></i>Scholar</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="https://www.linkedin.com/in/zhongzhu-zhou/" title="Linkedin → https:&#x2F;&#x2F;www.linkedin.com&#x2F;in&#x2F;zhongzhu-zhou&#x2F;" rel="noopener" target="_blank"><i class="fab fa-linkedin-in fa-fw"></i>Linkedin</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Zhongzhu / Chralie Zhou</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+<script>
+if (document.querySelectorAll('pre.mermaid').length) {
+  NexT.utils.getScript('//cdn.jsdelivr.net/npm/mermaid@8/dist/mermaid.min.js', () => {
+    mermaid.initialize({
+      theme    : 'forest',
+      logLevel : 3,
+      flowchart: { curve     : 'linear' },
+      gantt    : { axisFormat: '%m/%d/%Y' },
+      sequence : { actorMargin: 50 }
+    });
+  }, window.mermaid);
+}
+</script>
+
+
+  
+
+  
+
+</body>
+</html>
