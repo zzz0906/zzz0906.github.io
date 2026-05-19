@@ -1,0 +1,391 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>KTO：把模型对齐看成「前景理论」优化 —— 阅读笔记 | Zhongzhu / Charlie</title><meta name="description" content="KTO 阅读笔记：把 DPO 与 PPO-Clip 放到 Kahneman-Tversky 前景理论框架下，统一为 Human-Aware Losses (HALO)，再推出只需『二元 desirable/undesirable 信号』的 Kahneman-Tversky Optimization。在 Pythia-1.4B → Llama-30B 全尺度追平或超过 DPO（Zephyr-β-SFT + UltraFeedback 上 GSM8K +13.5 pts），且在 1:10 类不平衡下仍稳健。Stanford / Contextual AI, ICML 2024, arXiv 2402.01306。"><meta property="og:title" content="KTO：把模型对齐看成「前景理论」优化 —— 阅读笔记 | Zhongzhu / Charlie"><meta property="og:description" content="KTO 阅读笔记：把 DPO 与 PPO-Clip 放到 Kahneman-Tversky 前景理论框架下，统一为 Human-Aware Losses (HALO)，再推出只需『二元 desirable/undesirable 信号』的 Kahneman-Tversky Optimization。在 Pythia-1.4B → Llama-30B 全尺度追平或超过 DPO（Zephyr-β-SFT + UltraFeedback 上 GSM8K +13.5 pts），且在 1:10 类不平衡下仍稳健。Stanford / Contextual AI, ICML 2024, arXiv 2402.01306。"><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-05-19-kto-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-05-19-kto-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.BtdlpukG.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>116</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>21</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> <nav class="blog-post-toc" aria-label="Table of contents"> <p class="blog-post-toc-title">Contents</p> <ul> <li class="toc-level-2"> <a href="#一句话总结">一句话总结</a> </li><li class="toc-level-2"> <a href="#1-前置知识">1. 前置知识</a> </li><li class="toc-level-3"> <a href="#11-经典三阶段对齐流水线rlhf--dpo">1.1 经典三阶段对齐流水线（RLHF + DPO）</a> </li><li class="toc-level-3"> <a href="#12-成对偏好为什么贵">1.2 成对偏好为什么贵</a> </li><li class="toc-level-3"> <a href="#13-前景理论-60-秒速览">1.3 前景理论 60 秒速览</a> </li><li class="toc-level-3"> <a href="#14-这一切跟-llm-有什么关系">1.4 这一切跟 LLM 有什么关系？</a> </li><li class="toc-level-2"> <a href="#2-这篇论文到底干了什么">2. 这篇论文到底干了什么</a> </li><li class="toc-level-2"> <a href="#3-方法细节">3. 方法细节</a> </li><li class="toc-level-3"> <a href="#31-halo-的模板">3.1 HALO 的”模板”</a> </li><li class="toc-level-3"> <a href="#32-kto-的损失函数">3.2 KTO 的损失函数</a> </li><li class="toc-level-3"> <a href="#33-kl-参考点的换桶小技巧">3.3 KL 参考点的”换桶”小技巧</a> </li><li class="toc-level-3"> <a href="#34-kto-接受什么形态的数据">3.4 KTO 接受什么形态的数据</a> </li><li class="toc-level-3"> <a href="#35-等价类奖励与最差情形保证">3.5 等价类奖励与最差情形保证</a> </li><li class="toc-level-2"> <a href="#4-实验设置">4. 实验设置</a> </li><li class="toc-level-3"> <a href="#41-模型矩阵">4.1 模型矩阵</a> </li><li class="toc-level-3"> <a href="#42-数据">4.2 数据</a> </li><li class="toc-level-3"> <a href="#43-基线">4.3 基线</a> </li><li class="toc-level-3"> <a href="#44-评测">4.4 评测</a> </li><li class="toc-level-3"> <a href="#45-训练与超参">4.5 训练与超参</a> </li><li class="toc-level-3"> <a href="#46-不平衡实验">4.6 不平衡实验</a> </li><li class="toc-level-2"> <a href="#5-结果与解读">5. 结果与解读</a> </li><li class="toc-level-3"> <a href="#51-大模型上-halo-显著优于非-halofigure-2">5.1 大模型上 HALO 显著优于非 HALO（Figure 2）</a> </li><li class="toc-level-3"> <a href="#52-kto-追平甚至超越-dpofigure-3table-2">5.2 KTO 追平甚至超越 DPO（Figure 3、Table 2）</a> </li><li class="toc-level-3"> <a href="#53-没有-sftkto-也能跑figure-4">5.3 没有 SFT，KTO 也能跑（Figure 4）</a> </li><li class="toc-level-3"> <a href="#54-不平衡情况下的鲁棒性figure-5">5.4 不平衡情况下的鲁棒性（Figure 5）</a> </li><li class="toc-level-3"> <a href="#55-消融证实每个设计都有用table-2-中下部">5.5 消融证实每个设计都有用（Table 2 中下部）</a> </li><li class="toc-level-3"> <a href="#56-我读完最在意的两件事">5.6 我读完最在意的两件事</a> </li><li class="toc-level-2"> <a href="#6-局限与边界条件">6. 局限与边界条件</a> </li><li class="toc-level-3"> <a href="#61-作者明确承认的">6.1 作者明确承认的</a> </li><li class="toc-level-3"> <a href="#62-我自己看到作者没正面强调的">6.2 我自己看到、作者没正面强调的</a> </li><li class="toc-level-3"> <a href="#63-什么时候不应该用-kto">6.3 什么时候不应该用 KTO</a> </li><li class="toc-level-3"> <a href="#64-什么时候-kto-是天然首选">6.4 什么时候 KTO 是天然首选</a> </li><li class="toc-level-2"> <a href="#7-复现性与工程实践">7. 复现性与工程实践</a> </li><li class="toc-level-3"> <a href="#71-代码">7.1 代码</a> </li><li class="toc-level-3"> <a href="#72-算力需求">7.2 算力需求</a> </li><li class="toc-level-3"> <a href="#73-实战建议">7.3 实战建议</a> </li><li class="toc-level-3"> <a href="#74-接到生产侧">7.4 接到生产侧</a> </li><li class="toc-level-2"> <a href="#8-横向比较kto-在偏好优化方法谱系中的位置">8. 横向比较：KTO 在偏好优化方法谱系中的位置</a> </li><li class="toc-level-3"> <a href="#81-与-dpo-的差异">8.1 与 DPO 的差异</a> </li><li class="toc-level-3"> <a href="#82-与-ipo-的差异">8.2 与 IPO 的差异</a> </li><li class="toc-level-3"> <a href="#83-与-orpo-的差异">8.3 与 ORPO 的差异</a> </li><li class="toc-level-3"> <a href="#84-与-simpo-的差异">8.4 与 SimPO 的差异</a> </li><li class="toc-level-3"> <a href="#85-与-ppo在线-rl的差异">8.5 与 PPO（在线 RL）的差异</a> </li><li class="toc-level-3"> <a href="#86-选型决策树">8.6 选型决策树</a> </li><li class="toc-level-2"> <a href="#9-后续工作与启示">9. 后续工作与启示</a> </li><li class="toc-level-3"> <a href="#91-这篇论文留给社区的几条主线">9.1 这篇论文留给社区的几条主线</a> </li><li class="toc-level-3"> <a href="#92-我自己看到的后续方向">9.2 我自己看到的后续方向</a> </li><li class="toc-level-3"> <a href="#93-我对这篇论文的整体评价">9.3 我对这篇论文的整体评价</a> </li><li class="toc-level-2"> <a href="#参考">参考</a> </li> </ul> </nav> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-05-19">May 19, 2026</time> <span class="blog-lang blog-lang-zh">中</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/RLHF/">#RLHF</a><a class="blog-post-tag-chip" href="/blog/tag/Reinforcement-Learning/">#Reinforcement Learning</a><a class="blog-post-tag-chip" href="/blog/tag/LLM-Training/">#LLM Training</a> </span> </p> <h1>KTO：把模型对齐看成「前景理论」优化 —— 阅读笔记</h1> </header> <div class="blog-post-body"> <h1 id="kto把模型对齐看成前景理论优化--阅读笔记">KTO：把模型对齐看成「前景理论」优化 —— 阅读笔记</h1>
+<p><strong>笔记日期：</strong> 2026-05-19
+<strong>笔记作者：</strong> Zhongzhu Zhou
+<strong>论文标题：</strong> <em>KTO: Model Alignment as Prospect Theoretic Optimization</em>
+<strong>作者：</strong> Kawin Ethayarajh、Winnie Xu、Niklas Muennighoff、Dan Jurafsky、Douwe Kiela（Stanford / Contextual AI）
+<strong>arXiv：</strong> 2402.01306v4，最后修订 2024-11-19；发表于 ICML 2024</p>
+<h2 id="一句话总结">一句话总结</h2>
+<p>KTO 想回答一个看上去很朴素的问题：<strong>对齐大语言模型时，我们真的非要”成对的偏好数据”不可吗？</strong></p>
+<p>到 2024 年为止，主流答案是”是”。RLHF（Christiano 那一脉）要先训一个奖励模型，输入就是成对偏好 <code>(yw ≻ yl | x)</code>；DPO 把两阶段流程压成一个交叉熵风格的损失，但仍然吃成对数据。之后流行的几乎每一种对齐目标——IPO、ORPO、SimPO——也都长一个样：一个提示配两条回答，一胜一负。</p>
+<p>KTO 从两个方向同时挑战这个共识。</p>
+<p>第一个方向是<strong>理论上的重读</strong>。作者把 DPO 和 PPO-Clip 放到 Kahneman 和 Tversky 的<strong>前景理论（prospect theory）<strong>框架下，也就是经济学里用来解释”人在面对不确定收益时如何评估风险”的那套工具。他们论证：DPO 与 PPO-Clip 在数学结构上隐含了一种</strong>人类感知价值函数</strong>——非递减、在收益侧凹、在损失侧通常更陡的曲线。作者把所有具备这种结构的损失统称为<strong>Human-Aware Losses（HALO）</strong>，并证明 DPO 和 offline PPO-Clip 都属于 HALO，而 SLiC、Conditional SFT（CSFT）这类常被对照的方法都<strong>不属于</strong> HALO。然后他们在 Pythia-1.4B 到 Llama-30B 的统一实验里指出：在 13B 之后，HALO 系列显著地、稳定地比非 HALO 系列好。</p>
+<p>第二个方向是<strong>工程上的产出</strong>。既然 DPO 之所以能赢，是因为它的损失”形状对”，那就完全可以把”成对偏好”的数据要求拿掉，只保留这种形状。作者沿着 Kahneman-Tversky 价值函数的形式直接推出一个新的 HALO，叫做 <strong>Kahneman-Tversky Optimization（KTO）</strong>。KTO 只需要<strong>二元信号</strong>：这一条 <code>(x, y)</code> 对来说，是”好的”（desirable）还是”不好的”（undesirable）？不需要成对、不需要排名、也不再去最大化”偏好的对数似然”。最关键的结论是：KTO <strong>在 1B 到 30B 全尺度区间内追平或超过 DPO</strong>，而且在 Zephyr-β-SFT + UltraFeedback 这个组合上，仅仅把 DPO 换成 KTO，GSM8K 就涨了 <strong>13.5 个百分点</strong>（40.0 → 53.5）。在 1:10 极不平衡的数据下，KTO 也能靠 <code>λD</code> 和 <code>λU</code> 两个超参把方向板回来，依然不输给在完整数据上训的 DPO。</p>
+<p>我读完最大的收获是：KTO 把”对齐”这件事重新框成了**“挑选合适的归纳偏置”**问题，而不是单纯的”用怎样的数据”问题。DPO 之所以能成功，不只是因为偏好数据信息丰富，更是因为 DPO 的损失函数刚好长成了一个 human-aware 的形状。一旦我们把这个性质单独拎出来研究，就能用更便宜的反馈数据复刻 DPO 的大部分行为。这件事对工业界其实意义不小——线上系统里随处可见的”赞 / 踩”、“有用 / 没用”按钮，比那些精细标注的偏好对要多几个数量级。KTO 把这些原本被丢弃的二元信号变成了一等公民。</p>
+<h2 id="1-前置知识">1. 前置知识</h2>
+<p>这一节梳理读 KTO 之前最好预先掌握的几块基础。我尽量把数学压到最少，但仍然要写到能直接读懂第 3 节推导的程度。</p>
+<h3 id="11-经典三阶段对齐流水线rlhf--dpo">1.1 经典三阶段对齐流水线（RLHF + DPO）</h3>
+<p>到 2024 年，指令模型的对齐流程已经基本定型为三段：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>预训练  →  监督微调（SFT）  →  偏好优化</span></span>
+<span class="line"><span>  π0           πref               πθ（已对齐）</span></span></code></pre>
+<p>第三步是”对齐真正发生”的地方，主流又分两条路线。</p>
+<p><strong>RLHF（Christiano 2017；Ouyang 2022）。</strong> 先从一份偏好对数据集 <code>D = {(x, yw, yl)}</code> 里训练奖励模型 <code>rφ(x, y)</code>。假设满足 Bradley-Terry 模型，</p>
+<p><code>p*(yw ≻ yl | x) = σ(r*(x, yw) − r*(x, yl))</code></p>
+<p><code>rφ</code> 的训练目标就是最小化偏好对的负对数似然 <code>LR(rφ) = −E[log σ(rφ(x, yw) − rφ(x, yl))]</code>。拿到 <code>rφ</code> 后，再用 PPO 优化策略 <code>πθ</code>，同时加上 KL 正则把它拉住，不让它远离参考策略 <code>πref</code>：</p>
+<p><code>E_{x∈D, y∼πθ}[rφ(x, y)] − β · KL(πθ(y|x) ∥ πref(y|x))</code></p>
+<p>这套办法能跑通，但它出名地难调：奖励作弊、分布漂移、价值网络不稳、采样速度慢、整个 RL 链路本身就工程复杂。</p>
+<p><strong>DPO（Rafailov 2023）。</strong> Rafailov 等人发现：在相同的 Bradley-Terry 假设和相同的 KL-约束 RL 目标下，最优策略其实有一个闭式重参数化：<code>r*(x, y) = β · log(π*(y|x) / πref(y|x)) + β · log Z(x)</code>。把这个表达式代回到 Bradley-Terry 的对数似然，就得到 DPO 损失。它把整个 RLHF 流程压缩成一个交叉熵风格的目标：</p>
+<p><code>LDPO = −E[log σ(β · log(πθ(yw|x)/πref(yw|x)) − β · log(πθ(yl|x)/πref(yl|x)))]</code></p>
+<p>DPO 之后迅速成为社区默认的对齐基线：稳定、容易实现、在大多数评测上能复现 RLHF 的行为，工程成本只有 RLHF 的一小部分。</p>
+<p>但 RLHF 和 DPO 都还吃<strong>成对偏好</strong>。这才是真正的瓶颈。</p>
+<h3 id="12-成对偏好为什么贵">1.2 成对偏好为什么贵</h3>
+<p>收集 <code>(x, yw, yl)</code> 三元组的过程要求标注员对同一个提示比较两条回答。这件事至少有三处难：</p>
+<ol>
+<li>标注员必须把两条回答都仔细读完。</li>
+<li>对主观、复杂的提示，不同标注员之间的”谁更好”往往不一致，且常常出现**不可传递（intransitive）**现象——A 胜 B、B 胜 C，但 C 又胜 A。一些论文给出的内部不一致率高达 ~30%。</li>
+<li><strong>大多数线上反馈天然不是成对的</strong>。真实用户会点赞、点踩、收藏、放弃，但极少给出”对同一个问题再写一条让我比较”。</li>
+</ol>
+<p>KTO 想做的就是把这层障碍移除。如果对齐可以直接消化”好 / 坏”二元标签，那么每条提示就只占用一个样本，而不是一个对，理论上数据规模直接翻倍；更重要的是，能把工业界几乎免费的反馈信号直接接进训练流程。</p>
+<h3 id="13-前景理论-60-秒速览">1.3 前景理论 60 秒速览</h3>
+<p>Kahneman 和 Tversky（1979, 1992）的前景理论是用来解释人在面对货币赌局时<strong>为什么不像经典效用最大化理论那样行为</strong>。对 KTO 来说，关键有两点：</p>
+<ul>
+<li><strong>参考点依赖。</strong> 人评估一个结果时，不是看绝对数值，而是看它相对于某个<strong>参考点 <code>z0</code></strong>（当前财富、预期、最近经历）是赚还是亏。同样得到 <code>60</code> 块，当参考点是 <code>50</code> 时令人欣喜，当参考点是 <code>80</code> 时则令人失望。</li>
+<li><strong>损失厌恶 + 边际敏感度递减。</strong> 同等大小下，损失带来的痛感比收益的快感更强（经典研究中约为 2.25 倍）；不论收益侧还是损失侧，随着幅度增大，“再多一点”带来的边际感受都在递减。Tversky-Kahneman 把这个直觉写成了一个分段函数：</li>
+</ul>
+<p><code>v(z; λ, α, z0) = (z − z0)^α    （当 z ≥ z0 时）</code>
+<code>v(z; λ, α, z0) = −λ · (z0 − z)^α    （当 z &#x3C; z0 时）</code></p>
+<p>经典实验给出的中位数参数是 <code>α ≈ 0.88</code>、<code>λ ≈ 2.25</code>。</p>
+<p>这条曲线很出名：它是一条穿过原点（<code>z = z0</code> 处）的 S 形曲线，收益侧凹，损失侧凸且更陡。KTO 在工程上为了数值稳定性会用 logistic 函数替换 <code>(z − z0)^α</code>，但<strong>整体形状——参考点依赖、收益凹、损失更陡——被完整继承</strong>。</p>
+<h3 id="14-这一切跟-llm-有什么关系">1.4 这一切跟 LLM 有什么关系？</h3>
+<p>桥梁就在于一个”<strong>隐含奖励</strong>”。任何 RLHF 风格的方法事实上都给每条生成 <code>(x, y)</code> 隐含地打了一个分数。如果 <code>πθ</code> 是对齐后的策略，<code>πref</code> 是参考策略，定义</p>
+<p><code>rθ(x, y) = β · log(πθ(y|x) / πref(y|x))</code></p>
+<p>这就是 DPO 论文里的对数比奖励。<code>πθ</code> 比 <code>πref</code> 更愿意输出 <code>y</code> 时为正，反之为负。<strong><code>rθ</code> 在 LLM 设定下的角色，跟 Kahneman-Tversky 实验里的”金额”完全对应</strong>。如果我们把它代入一个 K-T 形状的价值函数（再减去一个合适的参考点），就得到了”从人的视角看这条生成的感知价值”。这就是 HALO 定义的起点。</p>
+<h2 id="2-这篇论文到底干了什么">2. 这篇论文到底干了什么</h2>
+<p>论文的三条贡献彼此连贯。</p>
+<p><strong>(A) 一个抽象框架：HALO。</strong> 一个损失函数若能写成</p>
+<p><code>f(πθ, πref) = E_{x,y∼D}[ ax,y · v( rθ(x, y) − E_Q[rθ(x, y')] ) ] + CD</code></p>
+<p>并且满足：<code>v</code> 处处非递减、在正区间凹；<code>Q</code> 是 <code>y'</code> 的某个参考分布；<code>ax,y ∈ {−1, +1}</code> 表示该样本是”好 / 坏”；<code>CD</code> 是与数据有关的常数；那它就是一个 HALO。两个结构性要素特别重要：</p>
+<ol>
+<li><strong>奖励是”相对的”</strong>——要减掉一个在参考分布下的期望，这正对应前景理论里的参考点。</li>
+<li><strong>价值函数 <code>v</code> 在收益侧凹</strong>——这编码了”从’还行’到’好‘“比”从’好’到’非常好‘“感受更明显的人类直觉。</li>
+</ol>
+<p>作者证明（Theorem 3.5）DPO 与 offline PPO-Clip <strong>都是 HALO</strong>；CSFT、SLiC <strong>都不是</strong>，主要是因为它们没有依赖 <code>πref</code> 的参考点。</p>
+<p><strong>(B) 一个经验性主张：HALO 在大模型上系统性地胜过非 HALO。</strong> 在 Figure 2 中，作者对 Pythia-{1.4B, 2.8B, 6.9B, 12B} 与 Llama-{7B, 13B, 30B} 做了一次<strong>完全控制实验</strong>：相同数据、相同流程，只换损失。评测指标是 GPT-4-0613 判断”对齐模型 vs SFT 目标”的胜率。结论：在 7B 以下，HALO 与非 HALO 没有显著差异；从 13B 开始，HALO 显著占优（多重比较校正后 p &#x3C; 0.05），且只有 HALO 对齐的 Llama-{13B, 30B} 能跨过 50% 这条门槛。更出乎意料的是：作者所谓 “offline PPO” baseline（<strong>使用 dummy +1/-1 奖励</strong>、没有学过的奖励模型、几乎没有偏好结构）在 30B 之下竟然能匹敌 DPO。</p>
+<p>最后这一条是诱发 KTO 设计的关键观察——既然连最朴素的 HALO（dummy 奖励 + PPO 损失）都能逼近 DPO，那 DPO 的关键应该不在”偏好数据”上，而在<strong>损失自身的归纳偏置</strong>上。</p>
+<p><strong>(C) 一个新的 HALO：KTO。</strong> 沿着前景理论一路推到底，作者设计出 KTO：</p>
+<ul>
+<li>每条 <code>(x, y)</code> 只需要二元的”好 / 坏”标签；</li>
+<li>价值函数选成 logistic，在收益和损失两侧分别由 <code>λD</code> 和 <code>λU</code> 控制斜率；</li>
+<li>参考点取 <code>KL(πθ ∥ πref)</code>，并用一个”打乱微批次”的技巧避开从 <code>πθ</code> 采样的高昂代价；</li>
+<li><strong>不需要任何成对结构</strong>。</li>
+</ul>
+<p>Figure 3 显示，从 1B 到 30B Llama 全谱，SFT+KTO 与 SFT+DPO 旗鼓相当；而<strong>单独 KTO 在 7B 和 30B 上显著优于单独 DPO</strong>（p &#x3C; 0.01）。Table 2 显示，对 Zephyr-β-SFT 在 UltraFeedback 上做对齐，只把 DPO 换成 KTO，GSM8K 直接从 40.0 飙到 53.5——这是一个非常夸张的提升。Figure 5 显示，当人为把 desirable 数据砍到 10%（1:10 极不平衡），KTO 仍能匹敌全量 DPO。这种正负样本严重不平衡的场景，恰恰是 DPO 没法自然处理的。</p>
+<p>合在一起，论文的核心立场就是：<strong>正确的归纳偏置比数据格式更重要</strong>。KTO 是把这个论点贯彻到底的产物。</p>
+<h2 id="3-方法细节">3. 方法细节</h2>
+<h3 id="31-halo-的模板">3.1 HALO 的”模板”</h3>
+<p>把 HALO 的形式抽象出来看，结构很清楚：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>f(πθ, πref) =  E_{x,y∼D}[ sign(x,y) · v( implied_reward(x,y) − reference_point(x) ) ]  +  常数</span></span></code></pre>
+<p>每一块都值得拆开看。</p>
+<ul>
+<li><code>implied_reward(x, y) = β · log(πθ(y|x) / πref(y|x))</code>。这是大家熟悉的”对数比奖励”。去掉 <code>β</code> 后，就是 DPO 用的同一个量。</li>
+<li><code>reference_point(x) = E_{y'∼Q(·|x)}[ implied_reward(x, y') ]</code>。在某个参考分布 <code>Q</code> 下的期望奖励。<code>Q</code> 的选择是不同方法之间的差异点——DPO 用”配对的失败回答”作为单点估计，PPO-Clip 用”每个 token 的平均”，而 KTO 用”<code>πθ</code> 与 <code>πref</code> 之间的 KL”。</li>
+<li><code>v</code> 是价值函数。它必须非递减、在收益侧凹；但不一定要在损失侧凸——因为现实中真的有少数人在损失侧也是风险厌恶的，整体表现出处处凹。</li>
+<li><code>sign(x, y) ∈ {−1, +1}</code> 区分”该样本是希望被强化还是被压低”。</li>
+</ul>
+<p>DPO 套进这个模板：<code>v = log σ</code>、<code>Q</code> 取”配对的失败回答”（单点估计）、<code>yw</code> 的 <code>sign = +1</code>、<code>yl</code> 的 <code>sign = −1</code>。CSFT 套不进，因为它根本没有跟 <code>πref</code> 相关的参考点。</p>
+<h3 id="32-kto-的损失函数">3.2 KTO 的损失函数</h3>
+<p>KTO 把 Tversky-Kahneman 那个 <code>(z − z0)^α</code> 形式换成 logistic 函数（数值更稳）：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>rθ(x, y)  =  log(πθ(y|x) / πref(y|x))</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>z0(x)     =  KL(πθ(y'|x) ∥ πref(y'|x))     // 参考点</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>v(x, y)   =  λD · σ( β · (rθ(x, y) − z0) )       当 y 是 desirable</span></span>
+<span class="line"><span>v(x, y)   =  λU · σ( β · (z0 − rθ(x, y)) )       当 y 是 undesirable</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>LKTO(πθ, πref) = E_{x,y∼D} [ λy − v(x, y) ]</span></span></code></pre>
+<p>这个结构有三个细节值得强调。</p>
+<ol>
+<li><strong>sigmoid <code>σ</code> 提供了前景理论里的曲线形状。</strong> <code>σ</code> 在上升段是凹的（收益侧”递减敏感度”），在下降段是凸的（损失侧”递减敏感度”，但更陡），并且 <code>σ ∈ [0, 1]</code> 整体有界——这意味着 KTO 不会被”训练分布之外”的极端样本拽得太远，相对那些用无界对数似然的方法，训练更稳。</li>
+<li><strong><code>β</code> 控制风险厌恶强度。</strong> 越小的 <code>β</code>，sigmoid 在 <code>z0</code> 附近越陡，模型对参考点附近奖励变化的敏感度越高——好比”更怕亏一点”。越大的 <code>β</code> 越平缓，能容忍更大的奖励抖动。</li>
+<li><strong><code>λD</code> 和 <code>λU</code> 控制损失厌恶强度。</strong> 它们分别缩放收益与损失两侧的斜率。如果数据有 1:10 的不平衡，可以通过把 <code>λD</code> 抬到 10–15、<code>λU = 1</code> 来纠偏。论文经验性地建议：<code>λD · nD / (λU · nU) ∈ [1, 3/2]</code>，对绝大多数评测来说，“鼓励好回答”比”惩罚坏回答”更划算。</li>
+</ol>
+<h3 id="33-kl-参考点的换桶小技巧">3.3 KL 参考点的”换桶”小技巧</h3>
+<p>KTO 工程上最棘手的一处是估计 <code>z0 = KL(πθ(y'|x) ∥ πref(y'|x))</code>。最诚实的做法是从 <code>πθ</code> 采样新的 <code>y'</code>，但在 7B-30B 模型上每步都重新生成几条文本，正是 RLHF 一直在花大价钱做、DPO 一直想避免的事情。</p>
+<p>KTO 用了一个<strong>打乱微批次</strong>的妙招：与其重新采，<strong>把同一微批次里现有的回答错位配对</strong>，让样本 <code>i</code> 的提示去配对样本 <code>j ≠ i</code> 的回答。对长度为 <code>m</code> 的微批次，取 <code>j = (i + 1) mod m</code>，</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>ẑ0  =  max( 0,  (1/m) · Σ_{i&#x3C;m}  log( πθ(yj | xi) / πref(yj | xi) ) )</span></span></code></pre>
+<p>这是一个<strong>有偏但低方差</strong>的估计——<code>yj</code> 是真实的模型回答，只是被分配到了不同的提示。偏差通常是正向的（这也是为什么要 <code>max(0, ·)</code> 截断），作者论证人类大脑做参考点估计也会用”可得性启发式（availability heuristic）“，本来就不是无偏的，因此这个偏差并不致命。<strong>关键点是梯度不流过 <code>ẑ0</code></strong>：它只参与决定 sigmoid 的饱和点，不参与反传。正因为如此，KTO 才能在大模型上跑得动，不必额外为参考点付一次采样成本。</p>
+<p>有一个特殊情形：当 KTO 紧跟 SFT、且参考策略 <code>πref</code> 就是 SFT 后的模型、且 desirable 集合本身就是 SFT 训练所用样本时，<code>ẑ0 → 0</code>，公式直接简化，每个微批次还能省一次前向。当 KTO 不接 SFT、或者 SFT 和 KTO 用的不是同一份数据时，则必须显式估计 <code>ẑ0</code>。</p>
+<h3 id="34-kto-接受什么形态的数据">3.4 KTO 接受什么形态的数据</h3>
+<p>总共三种。</p>
+<ol>
+<li><strong>天生的二元反馈。</strong> 每条 <code>(x, y)</code> 自带 desirable / undesirable 标签。最干净的情形。</li>
+<li><strong>由偏好对转换。</strong> 把 <code>(x, yw, yl)</code> 拆成两条二元样本：<code>(x, yw)</code> desirable、<code>(x, yl)</code> undesirable。<code>n</code> 对偏好就变成 <code>2n</code> 条二元样本。</li>
+<li><strong>One-y-per-x。</strong> 干脆每条提示只保留 <code>yw</code> 或 <code>yl</code> 中的一条，彻底破坏配对结构。</li>
+</ol>
+<p>Table 3 在 OpenAssistant + Mistral-7B 上专门测了 one-y-per-x：数据规模直接砍掉 72%，但 KTO 的胜率依然超过 DPO 和官方 Mistral-7B-Instruct。这是我目前看过的、证明”成对结构其实没那么关键”的最强证据。</p>
+<h3 id="35-等价类奖励与最差情形保证">3.5 等价类奖励与最差情形保证</h3>
+<p>§4.4 是论文里很短但很重要的理论段落。</p>
+<p><strong>Proposition 4.1（极端奖励梯度消失）。</strong> 当 <code>rθ(x, y) → ±∞</code>，KTO 在该样本上的梯度趋于零。这与有界的 <code>σ</code> 形状价值函数一起，意味着 KTO <strong>会自动忽略</strong>那些”隐含奖励特别大、特别小”的样本——它们或者过于简单、或者很可能是噪声。现实里的偏好数据本来就含大量噪声（Hoeffler &#x26; Ariely 1999），所以这种”内建的抗噪”是优点；缺点是 KTO 可能对”难学但关键”的复杂分布欠拟合，论文给出的建议是<strong>降低 <code>β</code>、训更多 epoch</strong>。</p>
+<p><strong>Theorem 4.3（不可传递偏好下的最差情形优势）。</strong> 假设对某个 <code>(x, ya, yb)</code>，标注员里有 <code>p ∈ (0.5, 1)</code> 比例偏好 <code>ya</code>、<code>(1 − p)</code> 比例偏好 <code>yb</code>。当 <code>p</code> 足够小、<code>πref</code> 又不太对齐时，<strong>最优 DPO 策略反而可能把多数人不喜欢的 <code>yb</code> 放在更高概率上</strong>。而损失对称的 KTO（<code>λD = λU</code>）的最优策略一定会输出 <code>ya</code>。这是一个出人意料的强结论：它说明 KTO 在”嘈杂、不可传递”的真实人类反馈下，<strong>有可证明的最差情形优势</strong>。</p>
+<p>这两条理论结合起来，给出了选用 KTO 的最干净理由：<strong>真实数据本来就嘈杂、不可传递；KTO 对此类数据的鲁棒性可证比 DPO 更好。</strong> Zephyr 实验里 GSM8K 涨 13.5 个点这个结果，跟这个理论解释是一致的——UltraFeedback 本身就以”标注员意见不统一”出名。</p>
+<h2 id="4-实验设置">4. 实验设置</h2>
+<h3 id="41-模型矩阵">4.1 模型矩阵</h3>
+<ul>
+<li><strong>Pythia 系列</strong>：1.4B、2.8B、6.9B、12B。用于 §3.3 的”HALO vs 非 HALO”统一扫描。</li>
+<li><strong>Llama 系列</strong>：7B、13B、30B。同一扫描，也是 §4.3 KTO-vs-DPO 头条实验的主战场。</li>
+<li><strong>Mistral-7B 与 Zephyr-β-SFT</strong>：用于 UltraFeedback 对齐与 one-y-per-x 消融。</li>
+<li><strong>Llama-3 8B 与 Qwen2.5 3B Instruct</strong>：Table 1 给出更新一代基座模型上的推荐超参。</li>
+</ul>
+<p>跨 Pythia 与 Llama 两个家族扫描，让”HALO vs 非 HALO”这件事更加可信——结论不来自单一架构的特性。</p>
+<h3 id="42-数据">4.2 数据</h3>
+<ul>
+<li><strong>Anthropic-HH（Ganguli 2022）</strong>、<strong>OpenAssistant / OASST（Köpf 2023）</strong>、<strong>SHP（Ethayarajh 2022）</strong>：用于统一扫描。三个都是偏好数据集，但 KTO 把每条 <code>yw</code> 视为 desirable、<code>yl</code> 视为 undesirable，等于把样本数翻倍。</li>
+<li><strong>UltraFeedback（Cui 2023）</strong>：用于 KTO-vs-DPO 续作。它是 2024 年代标准的、较大较难的偏好数据集。</li>
+<li>SFT 阶段的目标序列取自 <code>{yw}</code>。</li>
+</ul>
+<h3 id="43-基线">4.3 基线</h3>
+<ul>
+<li><strong>CSFT</strong>：Conditional SFT，prefix 控制 token。最简单的非 HALO 基线。</li>
+<li><strong>SLiC</strong>：最大间隔损失 + 语言建模正则，非 HALO。</li>
+<li><strong>DPO</strong>：2024 年的最强 HALO 基线。</li>
+<li><strong>PPO (offline)</strong>：作者简化版的离线 PPO，使用 dummy +1/-1 奖励，是 HALO。</li>
+<li><strong>ORPO</strong>：较新的 reference-free 方法，专门用于不带 <code>πref</code> 的对比实验。</li>
+</ul>
+<h3 id="44-评测">4.4 评测</h3>
+<p>两条评测线并行。</p>
+<ul>
+<li><strong>GPT-4 判断的胜率</strong>（对 SFT 目标）。2024 年代主流的 LLM-as-a-judge 指标。论文在附录 D 中验证 GPT-4 与人类标注一致。</li>
+<li><strong>闭式评测</strong>：MMLU（0-shot）、GSM8K（8-shot CoT）、HumanEval（0-shot）、BBH（3-shot CoT）。完全是精确匹配或 pass@1，没有 judge 参与。</li>
+</ul>
+<p>这两类指标一起跑很关键——胜率捕捉”哪种回答更让人满意”的开放式判断，闭式评测则验证对齐改造是否还保留了硬任务能力，避免”对齐变好但能力变差”的隐形回归。</p>
+<h3 id="45-训练与超参">4.5 训练与超参</h3>
+<p>主实验都用 AdamW + 有效批大小 32，关键推荐如下（Table 1）：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>模型</th><th>方法</th><th>LR</th><th>β</th><th>λD/λU</th></tr></thead><tbody><tr><td>Llama-3 8B</td><td>SFT+KTO</td><td>5e-6</td><td>0.05</td><td>1/1</td></tr><tr><td>Llama-3 8B</td><td>直接 KTO</td><td>5e-6</td><td>0.10</td><td>1/1</td></tr><tr><td>Qwen2.5 3B Instruct</td><td>SFT+KTO</td><td>5e-6</td><td>0.10</td><td>1/1</td></tr><tr><td>Qwen2.5 3B Instruct</td><td>直接 KTO</td><td>5e-6</td><td>0.50</td><td>1/1</td></tr></tbody></table>
+<p>两点值得记住。</p>
+<ol>
+<li><strong>KTO 的学习率大约是 DPO 的 2× 到 10×</strong>。DPO 默认是 <code>5e-7</code>，KTO 推荐 <code>5e-6</code>。原因很直观：<code>rθ − z0</code> 的平均量级比 DPO 里 <code>β·log(πθ(yw|x)/πref(yw|x)) − β·log(πθ(yl|x)/πref(yl|x))</code> 要小，要在同样步数内做出非平凡更新，必须用更大的 LR 补回来。</li>
+<li><strong><code>β</code> 在”先 SFT 再 KTO”时更小（更陡、更怕亏一点）</strong>；在”直接对 base 跑 KTO”时更大。论文显式建议：post-SFT KTO 用 <code>β ∈ [0.01, 0.10]</code>，直接 KTO 用 <code>β ∈ [0.10, 1.00]</code>。</li>
+</ol>
+<h3 id="46-不平衡实验">4.6 不平衡实验</h3>
+<p>最干净的一组实验是有意制造不平衡：从 1:1 一路把 desirable 数据丢到 1:10。每一个比率下，按照 <code>λD·nD / (λU·nU) ∈ [1, 3/2]</code> 调 <code>λD</code> 和 <code>λU</code>。Figure 5 显示：<strong>只保留 10% 的 desirable 样本时，KTO 仍能匹敌甚至胜过在全量数据上训练的 DPO</strong>。这一组实验对工业部署最有意义——线上数据几乎一定是不平衡的。</p>
+<h2 id="5-结果与解读">5. 结果与解读</h2>
+<h3 id="51-大模型上-halo-显著优于非-halofigure-2">5.1 大模型上 HALO 显著优于非 HALO（Figure 2）</h3>
+<p>第一张大结果图来自统一扫描。Y 轴是相对 50% 的胜率提升，judge 是 GPT-4-0613。可看出：</p>
+<ul>
+<li>13B 以下，HALO（DPO、offline PPO）和非 HALO（CSFT、SLiC）几乎打平。</li>
+<li>从 13B 开始，HALO 显著占优；只有 HALO 对齐的 Llama-{13B, 30B} 能跨过 50% 这条门槛。</li>
+<li>即便是用 <strong>dummy +1/-1 奖励</strong>的 offline PPO，在 30B 之下也能逼近 DPO，没有任何学过的奖励模型。</li>
+</ul>
+<p>我自己的读法是：论文里隐含的”对齐相变”是真实的，而且<strong>驱动它的是损失家族，不是数据形态</strong>。小模型容量不够，谁的归纳偏置都吃不掉；大到一定规模后，模型才能真正利用 HALO 的偏置。</p>
+<h3 id="52-kto-追平甚至超越-dpofigure-3table-2">5.2 KTO 追平甚至超越 DPO（Figure 3、Table 2）</h3>
+<p>更激进的发现来自 KTO 主实验。同样数据、同样算力下：</p>
+<ul>
+<li><strong>Llama 1B–30B 全谱</strong>，KTO 与 DPO 旗鼓相当；在 7B 和 30B 上显著优于 DPO（p &#x3C; 0.01）。</li>
+<li><strong>在 Zephyr-β-SFT + UltraFeedback（Table 2 顶部）</strong> 上，KTO 在所有闭式评测上都不输甚至超过 DPO；其中 GSM8K 从 40.0 涨到 53.5，<strong>绝对提升 13.5 个百分点</strong>——对数学推理来说这是非常大的跳跃。</li>
+<li><strong>KTO + one-y-per-x（Table 3）</strong> 在 Mistral-7B + OpenAssistant 上把数据砍到 28%，胜率仍然胜过 DPO 与官方 Mistral-7B-Instruct。</li>
+</ul>
+<p>Zephyr-UltraFeedback 那组结果应该比通常被引用得更频繁。UltraFeedback 是<strong>偏好</strong>数据集；把它转成 KTO 的二元标签其实丢掉了配对结构。即便如此，KTO 在 GSM8K 上还能比 DPO 高出 13.5 个点，说明配对结构在嘈杂偏好数据上<strong>并没有真正帮上忙，甚至有时候是反过来在拖后腿</strong>。</p>
+<h3 id="53-没有-sftkto-也能跑figure-4">5.3 没有 SFT，KTO 也能跑（Figure 4）</h3>
+<p>一个有意思的发现：在 Llama-13B 和 Llama-30B 规模上，<strong>不经过 SFT 直接做 KTO</strong>也能基本追平 SFT+KTO。其它方法比如 DPO 在没有 SFT 的设置下会”崩”——开始啰嗦、自言自语、回答长度爆炸式增长。KTO 即使不接 SFT，平均回答长度也保持稳定。这对那些没有干净 SFT 数据的项目意义重大——SFT 阶段本来就贵，到了一定规模能省就省。</p>
+<h3 id="54-不平衡情况下的鲁棒性figure-5">5.4 不平衡情况下的鲁棒性（Figure 5）</h3>
+<p>这是 KTO 数据效率优势的最干净证明：把 desirable 数据丢到 10%，相应抬高 <code>λD</code>，KTO <strong>仍能匹敌在全量数据上训的 DPO</strong>。线上数据几乎必然是不平衡的——产品里”负反馈”和”正反馈”哪一头多，往往跟产品形态强相关，但很少 50:50。KTO 在这种情形下不需要架构改造，只调两个标量即可。</p>
+<h3 id="55-消融证实每个设计都有用table-2-中下部">5.5 消融证实每个设计都有用（Table 2 中下部）</h3>
+<ul>
+<li><strong>去掉参考点 <code>z0</code></strong> → BBH −3.6、GSM8K −4.0。这一去就不再是 HALO，效果立刻退化。</li>
+<li><strong>把价值函数换成处处凹的 <code>−log σ</code></strong> → BBH −9.4、GSM8K −11.0。S 形真的关键。</li>
+<li><strong>价值函数改成线性 <code>v(·) = ·</code>（风险中性）</strong> → BBH 直接崩到 6.1。前景理论的曲率不是装饰。</li>
+<li><strong>去掉 <code>πref</code></strong> → 内存友好版能跑但落后于标准 KTO。</li>
+<li><strong>β 扫描</strong>：<code>β = 0.01</code> 时 GSM8K 更好但 BBH 稍差；<code>β = 0.5</code> 时反过来。</li>
+<li><strong>λD 扫描</strong>：把 desirable 权重压到 0.5 直接让 BBH 崩；抬到 2.0 也比默认 1.0 差。</li>
+</ul>
+<p>这一组消融与前景理论故事完全吻合：去掉参考点、去掉 S 曲率、变成风险中性，每一种破坏都掉点。</p>
+<h3 id="56-我读完最在意的两件事">5.6 我读完最在意的两件事</h3>
+<p>第一件，<strong>dummy +1/-1 奖励的 offline PPO</strong>在 30B 之下追平 DPO，是全文最反直觉的一行。它是一个简洁的反证：如果”奖励学习”真的是 RLHF 的灵魂，这条 baseline 不可能跑得起来。它跑得起来，恰恰说明灵魂在别处——在损失的形状、在 KL 约束、在隐含的参考点结构。</p>
+<p>第二件，**噪声鲁棒性定理（Theorem 4.3）**应该比头条数字更被重视。它从数学上解释了 KTO 为什么应该在真实数据上比 DPO 更稳——真实数据里就是有不可传递的偏好。UltraFeedback 上 GSM8K 涨 13.5 点这件事，与这条定理是同一个故事。</p>
+<h2 id="6-局限与边界条件">6. 局限与边界条件</h2>
+<h3 id="61-作者明确承认的">6.1 作者明确承认的</h3>
+<ul>
+<li><strong>KTO 可能欠拟合。</strong> Proposition 4.1 说极端奖励处梯度为零，意味着 KTO 会”无视”那些隐含奖励大到离谱的样本——这些样本既可能是太容易、也可能是太脏。对于需要学会”低概率但关键”复杂行为的任务，这一点会影响上限。缓解办法：降 <code>β</code>、训更多 epoch。</li>
+<li><strong>参考点估计是有偏的。</strong> “打乱微批次”的 <code>ẑ0</code> 是一个正偏估计。作者类比”人类的可得性启发式”为这个偏差辩护，但仍然是已知误差来源。</li>
+<li><strong>K-T 价值函数本来是为货币赌局拟合的。</strong> 用它来近似”人对文本好坏的感知”未必合理。论文显式邀请未来研究专门为文本领域设计的价值函数与参考分布。</li>
+<li><strong>HALO 不是一统天下的最优解。</strong> 论文从未声称 KTO 是普适最优，只声称它是从一条干净理论先验里推出来的、有竞争力的 HALO。</li>
+</ul>
+<h3 id="62-我自己看到作者没正面强调的">6.2 我自己看到、作者没正面强调的</h3>
+<ul>
+<li><strong>没有原生的多轮信用分配。</strong> KTO 对一整条 <code>(x, y)</code> 打一个二元标签，长对话里好坏掺杂的多步推理都被压成”整体好”或”整体坏”。这对短回答没问题，但对长 agent rollout 信息丢失严重。后来出现的过程奖励模型（process reward models）与 step-level KTO 变体都是在补这一块。</li>
+<li><strong>不平衡纠偏其实有点临时。</strong> <code>λD·nD / (λU·nU) ∈ [1, 3/2]</code> 是经验给出的；对毒性预防、拒答鲁棒性等任务，论文承认可能需要 <code>λU·nU > λD·nD</code>，但没有从第一性原理推出指导。</li>
+<li><strong>KL 参考点只是一种选择。</strong> PPO-Clip 用 per-token 平均、DPO 用配对单样本、KTO 用 <code>KL(πθ ∥ πref)</code>。这三者都对，但谁更合适并没有定论。这本质上是 HALO 框架里的一个<strong>自由度</strong>，需要更多工作去刻画。</li>
+<li><strong>对 <code>πref</code> 质量的敏感性。</strong> 跟 DPO 一样，KTO 比较 <code>πθ</code> 与 <code>πref</code>。如果 <code>πref</code> 不好（基模太歪、SFT 太弱、分布漂移），整个对齐信号都会受影响。论文没有干净刻画这条依赖。</li>
+<li><strong>评测覆盖偏窄。</strong> GSM8K、BBH、MMLU 比较扎实，HumanEval 还行；但代码、安全、长上下文等场景没有充分覆盖。对 2024 年代”通用聊天指令模型”足够，但对更宽口径的对齐任务还需要后续工作补齐。</li>
+</ul>
+<h3 id="63-什么时候不应该用-kto">6.3 什么时候<strong>不</strong>应该用 KTO</h3>
+<ul>
+<li>偏好数据<strong>很干净、低噪、几乎不矛盾</strong>（典型的专家标注成对排序）。KTO 的噪声鲁棒性优势失去，DPO 对配对结构利用得更紧，反而可能赢。可以小规模验证集上扫一下确认。</li>
+<li>需要在长回答里做<strong>细粒度信用分配</strong>。KTO 的序列级标签粒度太粗，需要走过程奖励或 step-level 目标。</li>
+<li><strong>完全没有 <code>πref</code> 也没有 SFT</strong>，且模型尺度不大。memory-efficient 的无 <code>πref</code> KTO 变体存在，但落后于标准 KTO。</li>
+</ul>
+<h3 id="64-什么时候-kto-是天然首选">6.4 什么时候 KTO 是天然首选</h3>
+<ul>
+<li>反馈本身就是<strong>二元</strong>——线上点赞 / 点踩、有用性按钮、放弃事件等遥测信号。KTO 的最干净使用场景。</li>
+<li>数据<strong>严重不平衡</strong>（如 1:10）。靠 <code>λD / λU</code> 就能处理，不用动模型结构。</li>
+<li>怀疑标注员意见<strong>矛盾</strong>、不可传递。Theorem 4.3 直接覆盖这一情形。</li>
+</ul>
+<h2 id="7-复现性与工程实践">7. 复现性与工程实践</h2>
+<h3 id="71-代码">7.1 代码</h3>
+<p>作者在 <a href="https://github.com/ContextualAI/HALOs">github.com/ContextualAI/HALOs</a> 开源了实现，并在 HuggingFace 上发布了对齐后的检查点。PyTorch 实现，能直接接 HuggingFace <code>trl</code>。需要指出的是：<strong>KTO 现在已经是 HuggingFace TRL 库的一等公民</strong>（<code>KTOTrainer</code>），大多数生产用户其实是从 TRL 拉，而不是从原仓库拉。</p>
+<h3 id="72-算力需求">7.2 算力需求</h3>
+<p>整套实验的最大规模到 Llama-30B、有效批 32、AdamW。粗略估算（与 DPO 相当）：</p>
+<ul>
+<li><strong>1B-7B</strong>：1-4 张 H100 / A100 80GB，UltraFeedback 量级数据一个 epoch 通常几小时到一天。</li>
+<li><strong>13B</strong>：4-8 张 H100/A100，半天到一天一个 epoch。</li>
+<li><strong>30B</strong>：8+ 张 A100/H100 + FSDP，一次完整对齐通常需要几天。</li>
+</ul>
+<p>KTO 在显存占用上跟 DPO 是同一档（都要存 <code>πθ</code> 与 <code>πref</code>）。memory-efficient 不带 <code>πref</code> 的版本能省下大约一半激活内存，但要付出几个点的评测损失。</p>
+<h3 id="73-实战建议">7.3 实战建议</h3>
+<ul>
+<li><strong>直接从 Table 1 推荐的超参起步</strong>：LR <code>5e-6</code>（AdamW），post-SFT 时 <code>β = 0.05–0.10</code>，均衡数据时 <code>λD = λU = 1</code>。</li>
+<li><strong>不接 SFT 时，一定要显式估计 <code>ẑ0</code></strong>；接 SFT 且用同一份数据时，可以把 <code>ẑ0 = 0</code>。</li>
+<li><strong>训前先看类不平衡比例</strong>。如果 desirable:undesirable 远离 1:1，先试 <code>λD = nU / nD</code>（保持 <code>λU = 1</code>），再在 <code>[1, 3/2]</code> 的比值带内微调。</li>
+<li><strong>关注回答长度漂移</strong>。DPO 不接 SFT 时长度会爆炸；KTO 不会。若 KTO 训练时长度仍在涨，大概率是 <code>β</code> 偏大。</li>
+<li><strong>不要只看 judge 胜率</strong>，闭式 GSM8K / BBH 能抓到 judge 看不出来的回归。</li>
+</ul>
+<h3 id="74-接到生产侧">7.4 接到生产侧</h3>
+<p>KTO 有两个对生产特别友好的设计选择。</p>
+<ul>
+<li><strong>二元标签天然契合遥测</strong>。点赞按钮、“有用”评分、举报点击——这些原本被丢弃的二元信号都可以直接喂进训练流程，不再依赖昂贵的偏好对采集。</li>
+<li><strong>不平衡鲁棒性匹配真实分布</strong>。线上数据天然不平衡（“没反馈”远多于”有反馈”，“正向”与”负向”之比强烈取决于产品形态）。KTO 通过 <code>λD/λU</code> 直接吸收。</li>
+</ul>
+<p>当然，它仍然是<strong>离线</strong>对齐方法。在线部署需要周期性快照、<code>πref</code> 管理、漂移监控、回归测试、A/B 灰度这些标准 MLOps 流程，KTO 本身不解决这些。</p>
+<h2 id="8-横向比较kto-在偏好优化方法谱系中的位置">8. 横向比较：KTO 在偏好优化方法谱系中的位置</h2>
+<p>读完 KTO，我有必要把它跟当时主流的其它几种方法横向摆在一起看一遍。这一步对工程团队选型很重要——KTO 不是要替换所有方法，而是占据了一个独特的生态位。</p>
+<h3 id="81-与-dpo-的差异">8.1 与 DPO 的差异</h3>
+<p>最直接的对照对象当然是 DPO。两者结构上的差异其实只有三处：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>维度</th><th>DPO</th><th>KTO</th></tr></thead><tbody><tr><td>输入数据</td><td>偏好对 <code>(x, yw, yl)</code></td><td>二元标签 <code>(x, y, desirable?)</code></td></tr><tr><td>参考点</td><td>配对失败回答的单点估计</td><td><code>KL(πθ ∥ πref)</code> 的微批次估计</td></tr><tr><td>价值函数</td><td><code>log σ</code>（处处凹）</td><td><code>σ</code>（收益侧凹、损失侧凸的 S 形）</td></tr><tr><td>不平衡处理</td><td>无原生机制</td><td><code>λD</code>、<code>λU</code> 显式控制</td></tr><tr><td>噪声鲁棒性</td><td>受 Bradley-Terry 假设约束</td><td>Theorem 4.3 给出可证最差情形保证</td></tr></tbody></table>
+<p>实战层面，KTO 的代码改动其实非常小——大多数 TRL 用户从 <code>DPOTrainer</code> 切到 <code>KTOTrainer</code> 只需要换数据加载和指定 <code>desirable_mask</code>，损失计算与梯度反传的骨架完全保留。</p>
+<h3 id="82-与-ipo-的差异">8.2 与 IPO 的差异</h3>
+<p>IPO（Identity Preference Optimization, Azar 2024）也是从理论批评 DPO 出发——它指出 DPO 在偏好确定性极强（接近 1 或 0）时会过拟合。IPO 在偏好上加了一个 <code>(margin)^2</code> 正则。它仍然吃成对数据，本质上是 DPO 的一种”温和版”。KTO 走的是另一条路：完全放弃成对结构，从损失形状里找答案。我自己的判断是，IPO 在偏好数据非常干净时可能比 DPO 更稳；KTO 在数据嘈杂、不平衡、二元的真实场景下更合适。两者其实可以共存：清洁标注偏好用 IPO/DPO，线上二元遥测用 KTO。</p>
+<h3 id="83-与-orpo-的差异">8.3 与 ORPO 的差异</h3>
+<p>ORPO（Hong 2024）的诉求是<strong>完全不需要 <code>πref</code></strong>——它把”奖励差”项直接折进负对数似然的训练目标里，省掉了在显存里同时驻留两份模型权重的代价。代价是它仍然吃成对数据，并且对学习率敏感。KTO 的”内存高效 + 无 <code>πref</code>”变体在做法上和 ORPO 类似，但 Table 2 中显示 KTO 的无 <code>πref</code> 变体在 GSM8K 和 BBH 上比 ORPO 略好——理由是 KTO 仍然保留了 HALO 的价值函数曲率，而 ORPO 的损失更接近一个对称的 logistic margin。</p>
+<h3 id="84-与-simpo-的差异">8.4 与 SimPO 的差异</h3>
+<p>SimPO（Meng 2024）是另一种”去 <code>πref</code>”路线：它把”长度归一化的对数概率差”作为优化目标，思路是 DPO 的 <code>log(πθ/πref)</code> 反映的是与参考模型的相对偏移，但参考模型本身可能就有偏差，不如直接看绝对长度归一化对数概率。SimPO 在长回答上表现尤其稳定。它仍然吃成对数据。KTO 与 SimPO 最大的差别还是数据形态——SimPO 想替代的是 DPO 的”奖励参考点选择”，KTO 想替代的是”成对数据的需求”。</p>
+<h3 id="85-与-ppo在线-rl的差异">8.5 与 PPO（在线 RL）的差异</h3>
+<p>把 KTO 和经典在线 PPO 放在一起会更清楚地看出它的设计哲学。在线 PPO 必须不停从当前策略采样新回答、过奖励模型评分、然后做策略更新；它的最大问题是<strong>采样昂贵 + 训练不稳</strong>。KTO 是一个<strong>完全离线</strong>的方法，参考点也用打乱微批次的低方差估计绕开了重新采样的代价。在工程上意味着：KTO 的训练 wall-clock 大约和 SFT 同量级，远低于在线 PPO；但作为代价，它无法享受”在线探索”带来的好处。如果任务需要边采样边对齐（比如某些 reasoning RL 场景），那 GRPO/DAPO 这类在线方法仍然更合适。</p>
+<h3 id="86-选型决策树">8.6 选型决策树</h3>
+<p>最后给一个我自己用的简化决策树：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="text"><code><span class="line"><span>是否有 paired 偏好数据？</span></span>
+<span class="line"><span>├─ 是 → 数据噪声怎么样？</span></span>
+<span class="line"><span>│   ├─ 低噪、专家标注 → DPO 或 IPO</span></span>
+<span class="line"><span>│   └─ 高噪、众包 → KTO（pair 拆成二元）</span></span>
+<span class="line"><span>│</span></span>
+<span class="line"><span>└─ 否 → 是否有大量二元遥测信号？</span></span>
+<span class="line"><span>    ├─ 是 → KTO 是天然选择</span></span>
+<span class="line"><span>    └─ 否 → 先考虑收集任何形式的反馈，再回来选</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>是否能负担两份模型权重在显存？</span></span>
+<span class="line"><span>├─ 是 → 标准 KTO 或 DPO</span></span>
+<span class="line"><span>└─ 否 → 无 πref KTO / ORPO</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>是否需要在线探索（rollout-time RL）？</span></span>
+<span class="line"><span>├─ 是 → GRPO / PPO / DAPO 等在线方法</span></span>
+<span class="line"><span>└─ 否 → 离线方法（KTO / DPO / IPO）即可</span></span></code></pre>
+<h2 id="9-后续工作与启示">9. 后续工作与启示</h2>
+<h3 id="91-这篇论文留给社区的几条主线">9.1 这篇论文留给社区的几条主线</h3>
+<ul>
+<li><strong>HALO 框架可以指导新损失设计。</strong> 既然”参考点 + 凹形价值函数 + 损失敏感性”是关键三要素，那未来的损失设计就不必盲试，而可以在这个三维空间里有意识地探索。</li>
+<li><strong>二元反馈对齐是未被充分利用的金矿。</strong> KTO 把”线上点赞 / 点踩”从工业垃圾变成训练数据。这意味着对齐数据飞轮可能比社区预期得更容易转起来。</li>
+<li><strong>理论与工程双向打通。</strong> 论文用前景理论解释了 DPO 为什么好——这是过去几年偏好优化文献里少见的、把心理学一直放在视野内的工作。</li>
+</ul>
+<h3 id="92-我自己看到的后续方向">9.2 我自己看到的后续方向</h3>
+<ul>
+<li><strong>过程奖励 + KTO 的组合。</strong> 把序列级二元标签升级成步骤级二元标签（每一段推理对 / 错），再用 KTO 风格的 HALO 损失训。OpenAI 的 PRM、Math-Shepherd 这一脉的工作很自然能跟 KTO 结合。</li>
+<li><strong>非二元 HALO。</strong> 论文留下了”如何把得分 / 评级纳入 HALO”的开放问题。如果能直接吃 1-5 星打分（而不是先粗暴地二分类），数据信号会更充分。</li>
+<li><strong>多模态 KTO。</strong> 文本之外，图像 / 视频生成的对齐也常常只能拿到”喜欢 / 不喜欢”的二元反馈。把 KTO 推广到 diffusion 模型与多模态模型是一条自然的路径。</li>
+<li><strong>更精细的 <code>λD/λU</code> 调度。</strong> 论文的建议是经验性区间；动态、按训练步数 / 按样本类型调度的 <code>λD/λU</code> 也许能进一步压缩超参敏感性。</li>
+<li><strong>理论上的”最优 HALO”。</strong> 既然 HALO 是一族函数，那对给定的数据分布、给定的模型尺度，是否存在”理论最优 HALO”？这是 prospect-theoretic alignment 一脉值得长期投入的方向。</li>
+</ul>
+<h3 id="93-我对这篇论文的整体评价">9.3 我对这篇论文的整体评价</h3>
+<p>KTO 是 2024 年代偏好优化文献中我个人最推荐细读的一篇——它的<strong>理论框架（HALO）<strong>比单一方法更值得吸收，<strong>实验设计的严谨度</strong>（matched data、matched compute、跨家族扫描、显著性校正）也是同领域里少见的高水准。最让我欣赏的一点是它</strong>清楚地提出了一个反问</strong>：“偏好数据是必要的吗？” 然后在数学和实验两侧给出了一致的”不必要”答案。这种把”长期被默认为必需”的东西敲一敲、问一问的工作，往往比直接刷某个 benchmark 高几个点的工作有更长的生命力。</p>
+<p>读完 KTO，我对未来一两年内偏好优化的判断是：<strong>配对偏好数据会变得越来越奢侈，而二元 / 标量反馈会越来越中心化</strong>。KTO 不是终点，但它把方向指向了”如何更高效地把现实世界的反馈信号变成对齐信号”——这条路才刚刚开始走。</p>
+<h2 id="参考">参考</h2>
+<ol>
+<li>Ethayarajh, K. et al. <em>KTO: Model Alignment as Prospect Theoretic Optimization.</em> ICML 2024. arXiv:2402.01306。</li>
+<li>Rafailov, R. et al. <em>Direct Preference Optimization: Your Language Model is Secretly a Reward Model.</em> NeurIPS 2023. arXiv:2305.18290。</li>
+<li>Christiano, P. et al. <em>Deep Reinforcement Learning from Human Preferences.</em> NeurIPS 2017. arXiv:1706.03741。</li>
+<li>Ouyang, L. et al. <em>Training Language Models to Follow Instructions with Human Feedback.</em> NeurIPS 2022. arXiv:2203.02155。</li>
+<li>Schulman, J. et al. <em>Proximal Policy Optimization Algorithms.</em> 2017. arXiv:1707.06347。</li>
+<li>Kahneman, D. &#x26; Tversky, A. <em>Prospect Theory: An Analysis of Decision under Risk.</em> Econometrica 1979。</li>
+<li>Tversky, A. &#x26; Kahneman, D. <em>Advances in Prospect Theory: Cumulative Representation of Uncertainty.</em> Journal of Risk and Uncertainty 1992。</li>
+<li>Hong, J. et al. <em>ORPO: Monolithic Preference Optimization without Reference Model.</em> 2024. arXiv:2403.07691。</li>
+<li>Zhao, Y. et al. <em>SLiC: Sequence Likelihood Calibration.</em> 2023。</li>
+<li>Cui, G. et al. <em>UltraFeedback: Boosting Language Models with High-Quality Feedback.</em> 2023。</li>
+</ol>
+<hr>
+<p><em>笔记完成于 2026-05-19，作者 Zhongzhu Zhou。</em></p> </div> <footer class="blog-post-footer">  <nav class="blog-post-nav" aria-label="Adjacent posts"> <a class="blog-post-nav-link blog-post-nav-prev" href="/blog/2026-05-19-kto-technical-review-en/"> <span class="blog-post-nav-label">← Newer</span> <span class="blog-post-nav-title">KTO: Model Alignment as Prospect Theoretic Optimization — Technical Blog Review</span> </a> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-05-18-singlevsmultiagent-technical-review-en/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">Why Single-Agent LLMs Beat Multi-Agent Systems on Multi-Hop Reasoning — A Budget-Controlled Story</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient ML systems, LLM infrastructure, and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>
