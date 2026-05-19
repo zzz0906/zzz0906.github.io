@@ -1,0 +1,605 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>FEPLB Technical Review: Nearly Free MoE Load Balancing with the NVLink Copy Engine | Zhongzhu / Charlie</title><meta name="description" content="A detailed technical review of FEPLB, a system that uses Hopper NVLink Copy Engines to perform fine-grained MoE load balancing with little interference to normal expert-parallel training."><meta property="og:title" content="FEPLB Technical Review: Nearly Free MoE Load Balancing with the NVLink Copy Engine | Zhongzhu / Charlie"><meta property="og:description" content="A detailed technical review of FEPLB, a system that uses Hopper NVLink Copy Engines to perform fine-grained MoE load balancing with little interference to normal expert-parallel training."><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-04-29-2026-04-29-FEPLB-technical-review-en/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-04-29-2026-04-29-FEPLB-technical-review-en/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.BtdlpukG.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>116</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>33</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> <nav class="blog-post-toc" aria-label="Table of contents"> <p class="blog-post-toc-title">Contents</p> <ul> <li class="toc-level-2"> <a href="#1-One-Sentence-Summary">1. One-Sentence Summary</a> </li><li class="toc-level-2"> <a href="#2-What-the-Paper-Does">2. What the Paper Does</a> </li><li class="toc-level-2"> <a href="#3-Prerequisites-and-Background">3. Prerequisites and Background</a> </li><li class="toc-level-3"> <a href="#3-1-Mixture-of-Experts-in-Plain-Terms">3.1 Mixture-of-Experts in Plain Terms</a> </li><li class="toc-level-3"> <a href="#3-2-Expert-Parallelism">3.2 Expert Parallelism</a> </li><li class="toc-level-3"> <a href="#3-3-Why-Load-Imbalance-Hurts">3.3 Why Load Imbalance Hurts</a> </li><li class="toc-level-3"> <a href="#3-4-Grouped-GEMM">3.4 Grouped GEMM</a> </li><li class="toc-level-3"> <a href="#3-5-Hopper-NVLink-Copy-Engine">3.5 Hopper NVLink Copy Engine</a> </li><li class="toc-level-2"> <a href="#4-The-Problem-FEPLB-Targets">4. The Problem FEPLB Targets</a> </li><li class="toc-level-2"> <a href="#5-Why-Prior-Dynamic-Scheduling-Is-Hard">5. Why Prior Dynamic Scheduling Is Hard</a> </li><li class="toc-level-3"> <a href="#5-1-Tutel-and-SmartMoE">5.1 Tutel and SmartMoE</a> </li><li class="toc-level-3"> <a href="#5-2-FasterMoE">5.2 FasterMoE</a> </li><li class="toc-level-3"> <a href="#5-3-Triton-Distributed">5.3 Triton Distributed</a> </li><li class="toc-level-3"> <a href="#5-4-The-Common-Compatibility-Issue">5.4 The Common Compatibility Issue</a> </li><li class="toc-level-2"> <a href="#6-FEPLB-s-Design-Principle-Orthogonal-Dynamic-Parallelism">6. FEPLB&#39;s Design Principle: Orthogonal Dynamic Parallelism</a> </li><li class="toc-level-2"> <a href="#7-Two-Phase-Dispatch">7. Two-Phase Dispatch</a> </li><li class="toc-level-3"> <a href="#7-1-Phase-1-Preserve-the-Existing-EP-Path">7.1 Phase 1: Preserve the Existing EP Path</a> </li><li class="toc-level-3"> <a href="#7-2-Phase-2-Rebalance-Inside-the-NVLink-Domain">7.2 Phase 2: Rebalance Inside the NVLink Domain</a> </li><li class="toc-level-3"> <a href="#7-3-Why-Only-Intra-Node">7.3 Why Only Intra-Node?</a> </li><li class="toc-level-2"> <a href="#8-Static-and-Dynamic-Experts">8. Static and Dynamic Experts</a> </li><li class="toc-level-2"> <a href="#9-The-CPU-Greedy-Scheduler">9. The CPU Greedy Scheduler</a> </li><li class="toc-level-3"> <a href="#9-1-Why-Whole-Expert-Migration">9.1 Why Whole-Expert Migration?</a> </li><li class="toc-level-3"> <a href="#9-2-Scheduler-Cost">9.2 Scheduler Cost</a> </li><li class="toc-level-2"> <a href="#10-Timeline-and-Overlap-Strategy">10. Timeline and Overlap Strategy</a> </li><li class="toc-level-2"> <a href="#11-System-Architecture">11. System Architecture</a> </li><li class="toc-level-3"> <a href="#11-1-Macro-Level-Placement">11.1 Macro-Level Placement</a> </li><li class="toc-level-3"> <a href="#11-2-Micro-Level-Rebalancing">11.2 Micro-Level Rebalancing</a> </li><li class="toc-level-3"> <a href="#11-3-Memory-Management">11.3 Memory Management</a> </li><li class="toc-level-2"> <a href="#12-Experiment-Setup">12. Experiment Setup</a> </li><li class="toc-level-3"> <a href="#12-1-Hardware">12.1 Hardware</a> </li><li class="toc-level-3"> <a href="#12-2-Software">12.2 Software</a> </li><li class="toc-level-3"> <a href="#12-3-Model">12.3 Model</a> </li><li class="toc-level-3"> <a href="#12-4-Parallel-Configurations">12.4 Parallel Configurations</a> </li><li class="toc-level-3"> <a href="#12-5-Baselines">12.5 Baselines</a> </li><li class="toc-level-2"> <a href="#13-Main-Results">13. Main Results</a> </li><li class="toc-level-3"> <a href="#13-1-Per-Layer-Execution-Time">13.1 Per-Layer Execution Time</a> </li><li class="toc-level-3"> <a href="#13-2-EP-Communication-Overhead">13.2 EP Communication Overhead</a> </li><li class="toc-level-3"> <a href="#13-3-Token-Straggler">13.3 Token Straggler</a> </li><li class="toc-level-3"> <a href="#13-4-GEMM-Straggler">13.4 GEMM Straggler</a> </li><li class="toc-level-3"> <a href="#13-5-Sensitivity-to-Dynamic-Expert-Count">13.5 Sensitivity to Dynamic Expert Count</a> </li><li class="toc-level-2"> <a href="#14-Why-FEPLB-Improves-with-EP-Degree">14. Why FEPLB Improves with EP Degree</a> </li><li class="toc-level-3"> <a href="#14-1-Prediction-Gets-Harder">14.1 Prediction Gets Harder</a> </li><li class="toc-level-3"> <a href="#14-2-Whole-Expert-Migration-Gets-Finer-Relative-to-Device-Load">14.2 Whole-Expert Migration Gets Finer Relative to Device Load</a> </li><li class="toc-level-2"> <a href="#15-Correctness-and-Training-Semantics">15. Correctness and Training Semantics</a> </li><li class="toc-level-2"> <a href="#16-Limitations-and-Boundary-Conditions">16. Limitations and Boundary Conditions</a> </li><li class="toc-level-3"> <a href="#16-1-It-Requires-the-Right-Hardware-Path">16.1 It Requires the Right Hardware Path</a> </li><li class="toc-level-3"> <a href="#16-2-It-Is-Intra-Node-on-Current-H100-Clusters">16.2 It Is Intra-Node on Current H100 Clusters</a> </li><li class="toc-level-3"> <a href="#16-3-Whole-Expert-Migration-Limits-Granularity">16.3 Whole-Expert Migration Limits Granularity</a> </li><li class="toc-level-3"> <a href="#16-4-It-Needs-an-Overlap-Window">16.4 It Needs an Overlap Window</a> </li><li class="toc-level-3"> <a href="#16-5-It-Consumes-Extra-HBM">16.5 It Consumes Extra HBM</a> </li><li class="toc-level-3"> <a href="#16-6-Evaluation-Scope-Is-Focused">16.6 Evaluation Scope Is Focused</a> </li><li class="toc-level-3"> <a href="#16-7-Paper-Does-Not-Provide-Every-Reproduction-Detail">16.7 Paper Does Not Provide Every Reproduction Detail</a> </li><li class="toc-level-2"> <a href="#17-Reproducibility-Notes">17. Reproducibility Notes</a> </li><li class="toc-level-3"> <a href="#17-1-Required-Platform">17.1 Required Platform</a> </li><li class="toc-level-3"> <a href="#17-2-Required-Software-Stack">17.2 Required Software Stack</a> </li><li class="toc-level-3"> <a href="#17-3-Implementation-Checklist">17.3 Implementation Checklist</a> </li><li class="toc-level-3"> <a href="#17-4-What-to-Measure-First">17.4 What to Measure First</a> </li><li class="toc-level-2"> <a href="#18-Conceptual-Diagram-Why-the-Design-Is-Different">18. Conceptual Diagram: Why the Design Is Different</a> </li><li class="toc-level-2"> <a href="#19-Relation-to-Broader-ML-Systems-Trends">19. Relation to Broader ML Systems Trends</a> </li><li class="toc-level-2"> <a href="#20-Final-Assessment">20. Final Assessment</a> </li><li class="toc-level-3"> <a href="#What-I-Like">What I Like</a> </li><li class="toc-level-3"> <a href="#What-I-Would-Treat-Carefully">What I Would Treat Carefully</a> </li><li class="toc-level-3"> <a href="#Bottom-Line">Bottom Line</a> </li> </ul> </nav> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-04-29">April 29, 2026</time> <span class="blog-lang blog-lang-en">EN</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/Mixture-of-Experts/">#Mixture of Experts</a><a class="blog-post-tag-chip" href="/blog/tag/Distributed-Training/">#Distributed Training</a><a class="blog-post-tag-chip" href="/blog/tag/LLM-Training/">#LLM Training</a><a class="blog-post-tag-chip" href="/blog/tag/LLM-Inference/">#LLM Inference</a> </span> </p> <h1>FEPLB Technical Review: Nearly Free MoE Load Balancing with the NVLink Copy Engine</h1> </header> <div class="blog-post-body"> 
+
+      
+        <p><strong>Paper:</strong> <em>FEPLB: Exploiting Copy Engines for Nearly Free MoE Load Balancing in Distributed Training</em><br>
+<strong>Authors:</strong> Shuyao Qi, Haoyuan Liu, Shizhen Zhao, Shanghai Jiao Tong University<br>
+<strong>arXiv:</strong> 2604.19654v1, 21 Apr 2026<br>
+<strong>Review draft date:</strong> 2026-04-29<br>
+<strong>Area:</strong> Mixture-of-Experts training, distributed systems, GPU communication, load balancing</p>
+<h2 id="1-One-Sentence-Summary">1. One-Sentence Summary</h2>
+<p>FEPLB observes that Hopper GPUs have an NVLink Copy Engine that can move data between GPUs without consuming GPU SM cycles, then uses that otherwise-idle hardware to rebalance overloaded Mixture-of-Experts experts inside each NVLink node on every micro-batch.</p>
+<p>The paper's pitch is not &quot;we found a better all-to-all.&quot; It is more specific and more interesting:</p>
+<blockquote>
+<p>Keep the normal expert-parallel communication path unchanged, but add a second, intra-node rebalancing path that runs on different hardware resources.</p>
+</blockquote>
+<p>That resource separation is the main idea. If it holds, the load balancer becomes a new dynamic parallel dimension rather than another source of communication overhead.</p>
+<h2 id="2-What-the-Paper-Does">2. What the Paper Does</h2>
+<p>Mixture-of-Experts (MoE) models scale parameter count by routing each token to only a small subset of expert networks. This is efficient when the router distributes tokens evenly. In practice, the router is learned and data-dependent, so some experts receive many more tokens than others. Under expert parallelism, experts are placed across GPUs, so uneven expert popularity becomes uneven GPU work.</p>
+<p>In synchronous training, the step cannot finish until the slowest GPU finishes. The paper reports that for GLM-5 MoE layers with 128 routed experts, EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span>, and no auxiliary load-balancing loss, this imbalance wastes <strong>18.6% of GPU time per MoE layer</strong> on average.</p>
+<p>FEPLB addresses this by:</p>
+<ol>
+<li>keeping standard expert-parallel dispatch for inter-node traffic;</li>
+<li>selecting a configurable subset of experts as <strong>dynamic experts</strong>;</li>
+<li>after normal dispatch, moving dynamic experts' tokens and expert weights within the local NVLink domain;</li>
+<li>doing that movement through the <strong>NVLink Copy Engine</strong>, not through SM-consuming kernels;</li>
+<li>scheduling the movement on the CPU while static experts are already computing on the GPU.</li>
+</ol>
+<p>The reported result is a large reduction in the straggler gap:</p>
+<ul>
+<li><strong>Token straggler:</strong> reduced by <strong>51-70%</strong>.</li>
+<li><strong>GEMM straggler:</strong> reduced by <strong>50-68%</strong>.</li>
+<li><strong>EP communication overhead:</strong> below measurable noise, reported as <strong>&lt;1%</strong> for FEPLB.</li>
+</ul>
+<p>The strongest setting is the high-EP case. At PP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span>, EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span>, FEPLB reduces token straggler from <strong>6,666</strong> to <strong>2,021</strong>, while FasterMoE reduces it to <strong>4,036</strong>. That is the paper's clearest evidence that a reactive, per-micro-batch scheduler can beat predictive hot-expert replication as routing becomes sparse and volatile.</p>
+<h2 id="3-Prerequisites-and-Background">3. Prerequisites and Background</h2>
+<p>This section builds the minimum mental model needed to read the paper comfortably.</p>
+<h3 id="3-1-Mixture-of-Experts-in-Plain-Terms">3.1 Mixture-of-Experts in Plain Terms</h3>
+<p>A dense transformer feed-forward layer applies the same feed-forward network to every token. MoE replaces that one dense feed-forward network with many expert networks. A small router chooses which expert or experts process each token.</p>
+<p>A simplified MoE layer looks like this:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">input tokens</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">router: choose top-k experts for each token</span><br><span class="line">    |</span><br><span class="line">    +--&gt; token 1 -&gt; expert 7, expert 42</span><br><span class="line">    +--&gt; token 2 -&gt; expert 3, expert 7</span><br><span class="line">    +--&gt; token 3 -&gt; expert 99, expert 12</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">expert computation</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">combine expert outputs back into token order</span><br></pre></td></tr></table></figure>
+<p>The benefit is sparse activation. A model may contain hundreds of experts, but each token only activates a few. This lets model parameter count grow faster than per-token compute.</p>
+<p>The cost is routing irregularity. Since the router is learned, it may send many tokens to the same expert in a given micro-batch. That is a systems problem, not just a modeling detail.</p>
+<h3 id="3-2-Expert-Parallelism">3.2 Expert Parallelism</h3>
+<p>In expert parallelism (EP), experts are split across devices. For example, with 128 experts and EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span>, each GPU owns 16 experts.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">EP &#x3D; 8, 128 experts</span><br><span class="line"></span><br><span class="line">GPU 0: experts 0-15</span><br><span class="line">GPU 1: experts 16-31</span><br><span class="line">GPU 2: experts 32-47</span><br><span class="line">...</span><br><span class="line">GPU 7: experts 112-127</span><br></pre></td></tr></table></figure>
+<p>Every GPU may start with tokens that need experts owned by other GPUs. The system therefore performs a dispatch step: tokens are sent to the GPUs that own their selected experts. After expert computation, outputs are combined back.</p>
+<p>Modern MoE training stacks often use specialized dispatch libraries such as DeepEP rather than generic all-to-all collectives. These libraries are fast because they use custom bulk-transfer protocols. A key point in this paper is that such libraries are not naturally friendly to fine-grained staged delivery, so &quot;just pipeline the communication&quot; is not free.</p>
+<h3 id="3-3-Why-Load-Imbalance-Hurts">3.3 Why Load Imbalance Hurts</h3>
+<p>Let <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>T</mi><mi>d</mi></msub></mrow><annotation encoding="application/x-tex">T_d</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">d</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> be the number of tokens assigned to device <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi></mrow><annotation encoding="application/x-tex">d</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">d</span></span></span></span>. A simple token imbalance metric is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>S</mi><mi>T</mi></msub><mo>=</mo><munder><mrow><mi>max</mi><mo>⁡</mo></mrow><mi>d</mi></munder><msub><mi>T</mi><mi>d</mi></msub><mo>−</mo><mover accent="true"><mi>T</mi><mo>ˉ</mo></mover></mrow><annotation encoding="application/x-tex">S_T = \max_d T_d - \bar{T}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0576em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.13889em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.4354em;vertical-align:-0.7521em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.4306em;"><span style="top:-2.3479em;margin-left:0em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">d</span></span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span><span class="mop">max</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.7521em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">d</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8201em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8201em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">ˉ</span></span></span></span></span></span></span></span></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi>T</mi><mo>ˉ</mo></mover></mrow><annotation encoding="application/x-tex">\bar{T}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8201em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8201em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">ˉ</span></span></span></span></span></span></span></span></span></span> is the average token count across devices. This is the <strong>token straggler</strong> used by the paper.</p>
+<p>Likewise, let <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>G</mi><mi>d</mi></msub></mrow><annotation encoding="application/x-tex">G_d</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">G</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">d</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> be the Grouped GEMM execution time on device <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi></mrow><annotation encoding="application/x-tex">d</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal">d</span></span></span></span>. The paper defines the <strong>GEMM straggler</strong> as:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>S</mi><mi>G</mi></msub><mo>=</mo><munder><mrow><mi>max</mi><mo>⁡</mo></mrow><mi>d</mi></munder><msub><mi>G</mi><mi>d</mi></msub><mo>−</mo><mover accent="true"><mi>G</mi><mo>ˉ</mo></mover></mrow><annotation encoding="application/x-tex">S_G = \max_d G_d - \bar{G}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05764em;">S</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0576em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">G</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.4354em;vertical-align:-0.7521em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.4306em;"><span style="top:-2.3479em;margin-left:0em;"><span class="pstrut" style="height:3em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">d</span></span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span><span class="mop">max</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.7521em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">G</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">d</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8201em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8201em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">G</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">ˉ</span></span></span></span></span></span></span></span></span></span></span></p>
+<p>These metrics matter because synchronous training waits for the maximum, not the average. If GPU 3 receives far more expert work than the others, the others finish early and idle at the synchronization point.</p>
+<h3 id="3-4-Grouped-GEMM">3.4 Grouped GEMM</h3>
+<p>Each expert contains matrix multiplications. Running many small matrix multiplications separately is inefficient, so MoE systems often use <strong>Grouped GEMM</strong>, which batches many expert GEMMs into one grouped operation.</p>
+<p>This matters for FEPLB because the paper chooses to migrate whole experts rather than split one expert's tokens across many devices. Splitting tokens could make per-expert GEMM batches smaller and push computation into a less efficient memory-bound regime. Whole-expert movement is coarser, but it preserves GEMM efficiency.</p>
+<h3 id="3-5-Hopper-NVLink-Copy-Engine">3.5 Hopper NVLink Copy Engine</h3>
+<p>The paper relies on a Hopper-era hardware feature: the NVLink Copy Engine.</p>
+<p>The important distinction is between:</p>
+<ul>
+<li><strong>SMs:</strong> GPU compute cores that run kernels such as GEMM.</li>
+<li><strong>Copy Engine:</strong> a dedicated data movement engine that can move memory without consuming SM cycles.</li>
+</ul>
+<p>On the H100 SXM5 platform used in the paper, intra-node NVLink 4.0 bandwidth is reported as <strong>900 GB/s bidirectional per GPU</strong>. FEPLB uses this path for local rebalancing while normal expert computation continues on SMs.</p>
+<p>That is why the paper keeps saying &quot;nearly free&quot;: not because bytes vanish, but because the bytes move on a hardware resource that would otherwise be idle during the relevant window.</p>
+<h2 id="4-The-Problem-FEPLB-Targets">4. The Problem FEPLB Targets</h2>
+<p>The core problem is dynamic, per-micro-batch load imbalance.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">same model, same expert placement, different micro-batches</span><br><span class="line"></span><br><span class="line">micro-batch A: GPU loads &#x3D; [120, 118, 121, 119, 122, 117, 120, 123]</span><br><span class="line">              almost balanced</span><br><span class="line"></span><br><span class="line">micro-batch B: GPU loads &#x3D; [80, 91, 165, 73, 88, 177, 70, 156]</span><br><span class="line">              several GPUs wait for the hot ones</span><br></pre></td></tr></table></figure>
+<p>Static parallel planning assumes that tensor shapes and communication volumes are predictable. MoE breaks this assumption because routing depends on the actual data and on the learned router state.</p>
+<p>The paper highlights two unsatisfactory options:</p>
+<ol>
+<li><strong>Force the router to be balanced.</strong> Auxiliary load-balancing losses can make routing more uniform, but the paper argues that they constrain router expressiveness and may hurt model quality.</li>
+<li><strong>Accept the imbalance.</strong> The result is wasted synchronous training time. In the paper's GLM-5 measurement, this is the reported 18.6% average GPU-time waste per MoE layer.</li>
+</ol>
+<p>FEPLB tries a third path: preserve router freedom, then repair the resulting systems imbalance after routing decisions are known.</p>
+<h2 id="5-Why-Prior-Dynamic-Scheduling-Is-Hard">5. Why Prior Dynamic Scheduling Is Hard</h2>
+<p>The paper's critique of prior work is mainly about hidden overhead.</p>
+<h3 id="5-1-Tutel-and-SmartMoE">5.1 Tutel and SmartMoE</h3>
+<p>Tutel and SmartMoE switch among pre-defined parallel strategies or combine offline and online scheduling. The paper's concern is that these approaches partition or move expert weights across GPUs in ways that add communication. If the extra communication competes with the critical path, the load-balancing gain can be offset by the load-balancing cost.</p>
+<h3 id="5-2-FasterMoE">5.2 FasterMoE</h3>
+<p>FasterMoE uses hot-expert replication and shadow experts. This can work when hot experts are predictable. But the paper identifies two issues:</p>
+<ul>
+<li>Pipelining dispatch with compute can require staged delivery. On bulk-transfer backends such as DeepEP, staged delivery may add extra volume rather than hide latency.</li>
+<li>Splitting work into smaller expert kernels can reduce Grouped GEMM efficiency.</li>
+</ul>
+<p>In the evaluation, FasterMoE still helps, especially at low EP. But its reduction in token straggler weakens as EP grows: from 55% at EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span> to 39% at EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span>.</p>
+<h3 id="5-3-Triton-Distributed">5.3 Triton Distributed</h3>
+<p>Triton Distributed fuses computation and communication for TP-parallel MoE. The problem is resource contention: fused communication uses SM resources, reducing the SM budget available for actual expert computation. In Table 2 of the paper, Triton Distributed is much slower than the baseline in these experiments.</p>
+<h3 id="5-4-The-Common-Compatibility-Issue">5.4 The Common Compatibility Issue</h3>
+<p>DeepEP and FUSCO are designed for high-throughput bulk transfers. They are not described as supporting the staged delivery assumed by many overlap schemes. FEPLB's design avoids changing that inter-node path. It lets DeepEP do the normal EP dispatch, then performs local rebalancing through a separate copy-engine path.</p>
+<h2 id="6-FEPLB-s-Design-Principle-Orthogonal-Dynamic-Parallelism">6. FEPLB's Design Principle: Orthogonal Dynamic Parallelism</h2>
+<p>The main systems principle is <strong>resource-level separation</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th style="text-align:right">Scope in the paper</th>
+<th>Communication resource</th>
+<th>Compute/scheduling resource</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Expert Parallelism (EP)</td>
+<td style="text-align:right">Cross-device / inter-node expert dispatch</td>
+<td>RDMA / NVLink, via EP backend</td>
+<td>GPU SMs for expert compute</td>
+</tr>
+<tr>
+<td>Pipeline Parallelism (PP)</td>
+<td style="text-align:right">Cross-stage model pipeline</td>
+<td>RDMA / NVLink</td>
+<td>GPU SMs</td>
+</tr>
+<tr>
+<td>FEPLB</td>
+<td style="text-align:right">Intra-node dynamic load balancing</td>
+<td>NVLink Copy Engine</td>
+<td>CPU scheduler</td>
+</tr>
+</tbody>
+</table>
+<p>A rebalancer that uses the same NICs, same SMs, or same bulk-transfer path as EP is not orthogonal; it steals resources from the thing it is trying to improve. FEPLB's claim is that its rebalancer mostly uses otherwise-unused CPU and Copy Engine resources.</p>
+<p>A useful mental model:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">normal MoE training critical path:</span><br><span class="line">    EP dispatch -&gt; expert GEMM on SMs -&gt; combine</span><br><span class="line"></span><br><span class="line">FEPLB adds a side path:</span><br><span class="line">    CPU decides copies + NVLink CE moves weights&#x2F;tokens</span><br><span class="line"></span><br><span class="line">The side path is useful only if it finishes before the GPU needs dynamic experts.</span><br></pre></td></tr></table></figure>
+<p>This is why FEPLB divides experts into static and dynamic sets. Static expert computation creates the time window that hides the copy-engine work.</p>
+<h2 id="7-Two-Phase-Dispatch">7. Two-Phase Dispatch</h2>
+<p>Two-Phase Dispatch is the core algorithmic structure.</p>
+<pre class="mermaid" style="text-align: center;">
+            
+            flowchart TD
+    A[Router chooses experts for each token] --> B[Phase 1: standard EP dispatch]
+    B --> C1[Static expert tokens go to owning devices]
+    B --> C2[Dynamic expert tokens are collected into local NVLink domain]
+    C1 --> D1[Compute static experts on GPU SMs]
+    C2 --> D2[CPU load balancer reads dynamic token counts]
+    D2 --> E2[NVLink Copy Engine copies selected weights and tokens]
+    D1 --> F[Barrier: static compute and CE copies complete]
+    E2 --> F
+    F --> G[Compute dynamic experts with rebalanced load]
+    G --> H[Combine results back to source tokens]
+          </pre>
+<h3 id="7-1-Phase-1-Preserve-the-Existing-EP-Path">7.1 Phase 1: Preserve the Existing EP Path</h3>
+<p>Phase 1 uses the normal EP backend, such as DeepEP.</p>
+<ul>
+<li>Static expert tokens follow the unmodified EP route.</li>
+<li>Dynamic expert tokens are routed to the corresponding NVLink domain.</li>
+<li>The inter-node communication pattern is preserved.</li>
+<li>No cross-node load balancing is attempted.</li>
+</ul>
+<p>This is a conservative design. It does not ask the MoE framework to replace its high-performance dispatch layer.</p>
+<h3 id="7-2-Phase-2-Rebalance-Inside-the-NVLink-Domain">7.2 Phase 2: Rebalance Inside the NVLink Domain</h3>
+<p>After Phase 1, devices inside the local NVLink domain know the token counts for dynamic experts. FEPLB then decides whether some dynamic expert should execute on a less-loaded device.</p>
+<p>When it migrates an expert for the current micro-batch, it copies:</p>
+<ol>
+<li>the dynamic expert's weights; and</li>
+<li>the tokens assigned to that expert.</li>
+</ol>
+<p>The copy happens through the NVLink Copy Engine. The expert's mathematical semantics are unchanged: each token is still processed by the same expert weights. Only the physical device executing that expert for this micro-batch changes.</p>
+<h3 id="7-3-Why-Only-Intra-Node">7.3 Why Only Intra-Node?</h3>
+<p>The design is deliberately local. On the H100 cluster in the paper, cross-node communication goes through InfiniBand, while intra-node communication can use NVLink CE. If FEPLB tried to rebalance across nodes, it would interfere with the same inter-node resources used by EP and would lose the orthogonality argument.</p>
+<p>The paper notes that future or different topologies, such as NVIDIA GB200 NVL72 with all-to-all NVLink across 72 GPUs, could enlarge the NVLink domain. In that case, the same idea could rebalance a much larger EP group without going through the inter-node NIC path.</p>
+<h2 id="8-Static-and-Dynamic-Experts">8. Static and Dynamic Experts</h2>
+<p>FEPLB partitions each device's experts into two categories.</p>
+<table>
+<thead>
+<tr>
+<th>Expert type</th>
+<th>What happens</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Static experts</td>
+<td>Always execute on their assigned device through the normal EP path</td>
+<td>Provide stable work and create an overlap window</td>
+</tr>
+<tr>
+<td>Dynamic experts</td>
+<td>Eligible to have weights/tokens copied within the NVLink domain for this micro-batch</td>
+<td>Absorb routing imbalance reactively</td>
+</tr>
+</tbody>
+</table>
+<p>The key knob is <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi>y</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">dyn</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">d</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mord mathnormal">n</span></span></span></span>, the number of dynamic experts per device. The paper gives this example:</p>
+<ul>
+<li>128 routed experts;</li>
+<li>EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span>;</li>
+<li>each device owns <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>128</mn><mi mathvariant="normal">/</mi><mn>8</mn><mo>=</mo><mn>16</mn></mrow><annotation encoding="application/x-tex">128 / 8 = 16</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">128/8</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">16</span></span></span></span> experts;</li>
+<li>if <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi>y</mi><mi>n</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">dyn = 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">d</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span>, then 4 experts are dynamic and 12 remain static per device.</li>
+</ul>
+<p>A good way to see the design:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">GPU d owns 16 experts</span><br><span class="line"></span><br><span class="line">static:  12 experts -&gt; compute locally, always</span><br><span class="line">         create time window for CPU scheduling and CE copies</span><br><span class="line"></span><br><span class="line">dynamic:  4 experts -&gt; may be copied for this micro-batch</span><br><span class="line">         used to reduce the current imbalance</span><br></pre></td></tr></table></figure>
+<p>This split is a trade-off. More dynamic experts give the scheduler more flexibility, but fewer static experts leave less guaranteed computation time for hiding CPU scheduling and copy-engine transfers.</p>
+<p>The paper's sensitivity study finds diminishing returns. Moving from <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi>y</mi><mi>n</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">dyn=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">d</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span> to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi>y</mi><mi>n</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">dyn=4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">d</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> improves token-straggler reduction by roughly 1-3 percentage points, and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi>y</mi><mi>n</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">dyn=4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">d</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi>y</mi><mi>n</mi><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">dyn=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">d</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span> adds another 1-3 points. The authors describe <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi>y</mi><mi>n</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">dyn=4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">d</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> as a practical default.</p>
+<h2 id="9-The-CPU-Greedy-Scheduler">9. The CPU Greedy Scheduler</h2>
+<p>FEPLB's scheduler is intentionally lightweight. It runs on a dedicated CPU thread, starts after router completion, and uses the actual per-micro-batch token counts rather than relying only on prediction.</p>
+<p>The paper describes a greedy algorithm:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">repeat:</span><br><span class="line">    find the most overloaded device</span><br><span class="line">    on that device, find the busiest dynamic expert</span><br><span class="line">    if that expert has fewer than tau tokens:</span><br><span class="line">        stop or skip it</span><br><span class="line">    find the most underloaded device</span><br><span class="line">    copy the whole expert&#39;s weights and its tokens to the underloaded device</span><br><span class="line">    update the simulated per-device loads</span><br><span class="line">until no useful migration remains or dynamic-copy budget is exhausted</span><br></pre></td></tr></table></figure>
+<p>The threshold <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>τ</mi></mrow><annotation encoding="application/x-tex">\tau</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span></span></span></span> prevents copying experts whose token count is too small to justify the movement. The paper does not provide a universal numeric <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>τ</mi></mrow><annotation encoding="application/x-tex">\tau</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span></span></span></span> in the extracted text, so reproductions should treat it as an implementation/configuration parameter.</p>
+<h3 id="9-1-Why-Whole-Expert-Migration">9.1 Why Whole-Expert Migration?</h3>
+<p>A natural question is: why not split a hot expert's tokens across several GPUs?</p>
+<p>FEPLB avoids token-level splitting for two reasons given by the paper:</p>
+<ol>
+<li><strong>Grouped GEMM efficiency.</strong> Smaller per-expert batches can reduce matrix multiplication efficiency.</li>
+<li><strong>Determinism and coordination simplicity.</strong> If the scheduler migrates whole experts, each device can independently derive the same copy plan from the same routing information, without extra coordination.</li>
+</ol>
+<p>This is also the source of FEPLB's main granularity limitation. At low EP, each GPU owns many experts. Moving one whole expert changes load relatively coarsely, so FEPLB has less fine-grained control.</p>
+<h3 id="9-2-Scheduler-Cost">9.2 Scheduler Cost</h3>
+<p>The paper reports that the greedy scheduler completes in about <strong>50 microseconds on a single CPU core</strong>, which is intended to fit within the static-expert computation window.</p>
+<p>The important nuance: FEPLB is not claiming CPU scheduling is zero-cost. It is claiming that the CPU work is hidden behind GPU static-expert computation.</p>
+<h2 id="10-Timeline-and-Overlap-Strategy">10. Timeline and Overlap Strategy</h2>
+<p>The overlap is the most important engineering trick. FEPLB needs three things to happen at once:</p>
+<ol>
+<li>static experts compute on GPU SMs;</li>
+<li>the CPU scheduler decides dynamic expert migrations;</li>
+<li>the NVLink Copy Engine transfers selected weights and tokens.</li>
+</ol>
+<p>A simplified timeline:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">time ---&gt;</span><br><span class="line"></span><br><span class="line">GPU SMs:       [Phase 1 dispatch] [static expert GEMM........] [dynamic expert GEMM] [combine]</span><br><span class="line">CPU:                             [greedy load balancing plan]</span><br><span class="line">NVLink CE:                         [copy weights + tokens.....]</span><br><span class="line">critical path:  static work hides CPU + CE side work if side work finishes in time</span><br></pre></td></tr></table></figure>
+<p>The design succeeds when:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>T</mi><mrow><mi>C</mi><mi>P</mi><mi>U</mi><mtext> </mtext><mi>s</mi><mi>c</mi><mi>h</mi><mi>e</mi><mi>d</mi><mi>u</mi><mi>l</mi><mi>e</mi><mi>r</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>C</mi><mi>E</mi><mtext> </mtext><mi>c</mi><mi>o</mi><mi>p</mi><mi>i</mi><mi>e</mi><mi>s</mi></mrow></msub><mo>≤</mo><msub><mi>T</mi><mrow><mi>s</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>c</mi><mtext> </mtext><mi>e</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>t</mi><mtext> </mtext><mi>c</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi></mrow></msub></mrow><annotation encoding="application/x-tex">T_{CPU\ scheduler} + T_{CE\ copies} \leq T_{static\ expert\ compute}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.07153em;">C</span><span class="mord mathnormal mtight" style="margin-right:0.13889em;">P</span><span class="mord mathnormal mtight" style="margin-right:0.10903em;">U</span><span class="mspace mtight"><span class="mtight"> </span></span><span class="mord mathnormal mtight">sc</span><span class="mord mathnormal mtight">h</span><span class="mord mathnormal mtight">e</span><span class="mord mathnormal mtight">d</span><span class="mord mathnormal mtight">u</span><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span><span class="mord mathnormal mtight" style="margin-right:0.02778em;">er</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.07153em;">C</span><span class="mord mathnormal mtight" style="margin-right:0.05764em;">E</span><span class="mspace mtight"><span class="mtight"> </span></span><span class="mord mathnormal mtight">co</span><span class="mord mathnormal mtight">p</span><span class="mord mathnormal mtight">i</span><span class="mord mathnormal mtight">es</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≤</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">s</span><span class="mord mathnormal mtight">t</span><span class="mord mathnormal mtight">a</span><span class="mord mathnormal mtight">t</span><span class="mord mathnormal mtight">i</span><span class="mord mathnormal mtight">c</span><span class="mspace mtight"><span class="mtight"> </span></span><span class="mord mathnormal mtight">e</span><span class="mord mathnormal mtight">x</span><span class="mord mathnormal mtight">p</span><span class="mord mathnormal mtight" style="margin-right:0.02778em;">er</span><span class="mord mathnormal mtight">t</span><span class="mspace mtight"><span class="mtight"> </span></span><span class="mord mathnormal mtight">co</span><span class="mord mathnormal mtight">m</span><span class="mord mathnormal mtight">p</span><span class="mord mathnormal mtight">u</span><span class="mord mathnormal mtight">t</span><span class="mord mathnormal mtight">e</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>This inequality is not written as a formal theorem in the paper, but it is the operational condition behind the design. If the copy plan takes longer than static expert computation, the dynamic experts must wait and FEPLB is no longer free.</p>
+<h2 id="11-System-Architecture">11. System Architecture</h2>
+<p>FEPLB operates at two timescales.</p>
+<h3 id="11-1-Macro-Level-Placement">11.1 Macro-Level Placement</h3>
+<p>At a slower timescale, a Router Predictor periodically optimizes expert-to-device assignment using historical routing statistics. The paper says this is executed at checkpoint time to spread out migration cost.</p>
+<p>This part is not the per-micro-batch load balancer. It is closer to background placement hygiene: keep the default expert placement reasonable so the micro-level rebalancer does not start from a terrible layout.</p>
+<h3 id="11-2-Micro-Level-Rebalancing">11.2 Micro-Level Rebalancing</h3>
+<p>At every micro-batch, FEPLB reacts to the actual token distribution:</p>
+<ol>
+<li>router decisions are produced;</li>
+<li>Phase 1 dispatch sends static tokens normally and collects dynamic tokens;</li>
+<li>static experts begin computing;</li>
+<li>CPU scheduler computes a migration plan;</li>
+<li>NVLink CE copies chosen dynamic weights/tokens;</li>
+<li>dynamic experts compute on the rebalanced devices;</li>
+<li>outputs are combined back.</li>
+</ol>
+<pre class="mermaid" style="text-align: center;">
+            
+            flowchart LR
+    subgraph Slow_Path[Occasional macro path]
+        RPred[Router Predictor] --> Placement[Expert placement update at checkpoint time]
+    end
+
+    subgraph Fast_Path[Every micro-batch]
+        Router[Router] --> Dispatch[Phase 1 EP dispatch]
+        Dispatch --> Static[Static expert compute]
+        Dispatch --> Counts[Dynamic token counts]
+        Counts --> CPU[CPU greedy scheduler]
+        CPU --> CE[NVLink CE copies weights/tokens]
+        Static --> Dyn[Dynamic expert compute]
+        CE --> Dyn
+        Dyn --> Combine[Combine]
+    end
+          </pre>
+<h3 id="11-3-Memory-Management">11.3 Memory Management</h3>
+<p>FEPLB allocates extra buffer space for copied dynamic expert weights. The paper states the overhead as:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>extra buffer per device</mtext><mo>=</mo><mtext>max_num_dyn</mtext><mo>×</mo><msub><mi>W</mi><mrow><mi>e</mi><mi>x</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">\text{extra buffer per device} = \text{max\_num\_dyn} \times W_{expert}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord">extra buffer per device</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0044em;vertical-align:-0.31em;"></span><span class="mord text"><span class="mord">max_num_dyn</span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">e</span><span class="mord mathnormal mtight">x</span><span class="mord mathnormal mtight">p</span><span class="mord mathnormal mtight" style="margin-right:0.02778em;">er</span><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>For GLM-5, the paper gives:</p>
+<ul>
+<li>expert size: <strong>72 MiB</strong>;</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>max_num_dyn</mtext><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">\text{max\_num\_dyn}=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0044em;vertical-align:-0.31em;"></span><span class="mord text"><span class="mord">max_num_dyn</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span>;</li>
+<li>buffer size: <strong>576 MiB</strong> per device;</li>
+<li>less than <strong>0.7%</strong> of an 80 GB HBM3 GPU;</li>
+<li>reused across all MoE layers.</li>
+</ul>
+<p>That is small for H100-class training, but it is still a real hardware assumption: the target system needs spare HBM for temporary expert copies.</p>
+<h2 id="12-Experiment-Setup">12. Experiment Setup</h2>
+<p>The evaluation is per-MoE-layer, not full end-to-end model pretraining.</p>
+<h3 id="12-1-Hardware">12.1 Hardware</h3>
+<p>The paper uses:</p>
+<ul>
+<li>NVIDIA H100 SXM5 GPUs;</li>
+<li>80 GB HBM3 per GPU;</li>
+<li>NVLink 4.0 within each node;</li>
+<li>reported 900 GB/s bidirectional bandwidth per GPU for intra-node NVLink;</li>
+<li>400 Gbps InfiniBand between nodes.</li>
+</ul>
+<h3 id="12-2-Software">12.2 Software</h3>
+<p>The baseline stack is:</p>
+<ul>
+<li>Megatron-LM MoE framework;</li>
+<li>DeepEP for expert dispatch;</li>
+<li>NVIDIA Transformer Engine for mixed-precision training;</li>
+<li>multi-stream cuBLAS-based Grouped GEMM.</li>
+</ul>
+<p>FEPLB is implemented on top of this stack. The paper emphasizes that all configurations share the same communication and computation kernels, which is important for fair comparison.</p>
+<h3 id="12-3-Model">12.3 Model</h3>
+<p>The model is a reduced-layer variant of GLM-5:</p>
+<ul>
+<li>18 layers instead of the original 78;</li>
+<li>original MoE layer architecture preserved;</li>
+<li>128 routed experts;</li>
+<li>top-<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> routing;</li>
+<li>no auxiliary load-balancing loss.</li>
+</ul>
+<p>The authors argue that reducing the number of layers does not affect per-layer evaluation because FEPLB operates independently inside each MoE layer.</p>
+<h3 id="12-4-Parallel-Configurations">12.4 Parallel Configurations</h3>
+<p>The paper evaluates three PP/EP configurations:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:right">PP</th>
+<th style="text-align:right">EP</th>
+<th style="text-align:right">GPUs</th>
+<th style="text-align:right">Experts per device</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">4</td>
+<td style="text-align:right">2</td>
+<td style="text-align:right">8</td>
+<td style="text-align:right">64</td>
+</tr>
+<tr>
+<td style="text-align:right">4</td>
+<td style="text-align:right">4</td>
+<td style="text-align:right">16</td>
+<td style="text-align:right">32</td>
+</tr>
+<tr>
+<td style="text-align:right">2</td>
+<td style="text-align:right">8</td>
+<td style="text-align:right">16</td>
+<td style="text-align:right">16</td>
+</tr>
+</tbody>
+</table>
+<p>These settings are useful because they test different granularity regimes. At EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span>, each device owns many experts, so whole-expert migration is coarse. At EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span>, each device owns fewer experts, and imbalance across devices becomes more severe but more addressable by moving selected dynamic experts.</p>
+<h3 id="12-5-Baselines">12.5 Baselines</h3>
+<p>The paper compares:</p>
+<ol>
+<li><strong>Before LB:</strong> standard expert parallelism with no dynamic load balancing.</li>
+<li><strong>FasterMoE:</strong> shadow-expert replication. The paper re-implements it with SM-free NVLink CE transfers and DeepEP dispatch; unless noted, reported results use pipe <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">=1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>.</li>
+<li><strong>Triton Distributed:</strong> TP-parallel MoE using fused compute-communication kernels.</li>
+<li><strong>Tutel:</strong> adaptive switching between EP and DP modes.</li>
+<li><strong>FEPLB:</strong> Two-Phase Dispatch with NVLink CE rebalancing.</li>
+</ol>
+<p>This is a reasonably strong comparison set because it separates three strategies: predictive replication, fused communication/compute, and adaptive parallel-mode switching.</p>
+<h2 id="13-Main-Results">13. Main Results</h2>
+<h3 id="13-1-Per-Layer-Execution-Time">13.1 Per-Layer Execution Time</h3>
+<p>The paper reports forward/backward execution time per MoE layer in milliseconds.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:right">PP/EP</th>
+<th style="text-align:right">Before LB</th>
+<th style="text-align:right">FasterMoE</th>
+<th style="text-align:right">Triton Dist.</th>
+<th style="text-align:right">Tutel</th>
+<th style="text-align:right">FEPLB</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">4/2</td>
+<td style="text-align:right">8.2 / 14.9</td>
+<td style="text-align:right">7.9 / 14.0</td>
+<td style="text-align:right">13.1 / 22.8</td>
+<td style="text-align:right">8.0 / 17.1</td>
+<td style="text-align:right">7.9 / 14.4</td>
+</tr>
+<tr>
+<td style="text-align:right">4/4</td>
+<td style="text-align:right">7.3 / 13.2</td>
+<td style="text-align:right">6.9 / 12.2</td>
+<td style="text-align:right">15.3 / 24.0</td>
+<td style="text-align:right">7.2 / 15.2</td>
+<td style="text-align:right">6.8 / 12.1</td>
+</tr>
+<tr>
+<td style="text-align:right">2/8</td>
+<td style="text-align:right">6.9 / 12.5</td>
+<td style="text-align:right">6.3 / 11.1</td>
+<td style="text-align:right">22.8 / 30.0</td>
+<td style="text-align:right">6.8 / 14.5</td>
+<td style="text-align:right">6.0 / 10.6</td>
+</tr>
+</tbody>
+</table>
+<p>Key readings:</p>
+<ul>
+<li>Triton Distributed is much slower in this setup, especially as collective participation grows, because communication consumes SM resources.</li>
+<li>Tutel can match or slightly improve forward time, but it adds backward overhead.</li>
+<li>FEPLB is strongest at PP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span>, EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span>: forward time improves from <strong>6.9 ms to 6.0 ms</strong> and backward from <strong>12.5 ms to 10.6 ms</strong>.</li>
+<li>At EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span>, FEPLB is not clearly better than FasterMoE on backward time. This matches the paper's explanation that whole-expert migration is less flexible when each device owns many experts.</li>
+</ul>
+<h3 id="13-2-EP-Communication-Overhead">13.2 EP Communication Overhead</h3>
+<p>The orthogonality claim is tested by measuring dispatch and combine communication time at EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span>.</p>
+<p>The paper reports:</p>
+<ul>
+<li>FasterMoE with pipe <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span> adds up to <strong>46.8% dispatch overhead</strong> and <strong>40.2% combine overhead</strong>.</li>
+<li>FEPLB introduces <strong>no measurable overhead</strong>, reported as <strong>&lt;1%</strong>.</li>
+</ul>
+<p>This is one of the most important results because it verifies the design principle. FEPLB's load-balancing path does not perturb the EP communication path in the measured setting.</p>
+<h3 id="13-3-Token-Straggler">13.3 Token Straggler</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align:right">PP/EP</th>
+<th style="text-align:right">Before LB</th>
+<th style="text-align:right">FasterMoE</th>
+<th style="text-align:right">FEPLB</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">4/2</td>
+<td style="text-align:right">2,278</td>
+<td style="text-align:right">1,014 (-55%)</td>
+<td style="text-align:right">1,107 (-51%)</td>
+</tr>
+<tr>
+<td style="text-align:right">4/4</td>
+<td style="text-align:right">4,649</td>
+<td style="text-align:right">2,471 (-47%)</td>
+<td style="text-align:right">1,697 (-63%)</td>
+</tr>
+<tr>
+<td style="text-align:right">2/8</td>
+<td style="text-align:right">6,666</td>
+<td style="text-align:right">4,036 (-39%)</td>
+<td style="text-align:right">2,021 (-70%)</td>
+</tr>
+</tbody>
+</table>
+<p>This table shows the crossover:</p>
+<ul>
+<li>At EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span>, FasterMoE is slightly better on token count.</li>
+<li>At EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">=4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span>, FEPLB becomes clearly better.</li>
+<li>At EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span>, FEPLB's token straggler is roughly half of FasterMoE's.</li>
+</ul>
+<p>The paper's interpretation is that prediction becomes harder as EP grows and routing distributions become sparser. FEPLB is reactive: it sees the actual token distribution for the current micro-batch before deciding what to move.</p>
+<h3 id="13-4-GEMM-Straggler">13.4 GEMM Straggler</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align:right">PP/EP</th>
+<th style="text-align:right">Before LB</th>
+<th style="text-align:right">FasterMoE</th>
+<th style="text-align:right">FEPLB</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">4/2</td>
+<td style="text-align:right">0.316 ms</td>
+<td style="text-align:right">0.170 ms (-46%)</td>
+<td style="text-align:right">0.157 ms (-50%)</td>
+</tr>
+<tr>
+<td style="text-align:right">4/4</td>
+<td style="text-align:right">0.652 ms</td>
+<td style="text-align:right">0.380 ms (-42%)</td>
+<td style="text-align:right">0.247 ms (-62%)</td>
+</tr>
+<tr>
+<td style="text-align:right">2/8</td>
+<td style="text-align:right">1.110 ms</td>
+<td style="text-align:right">0.625 ms (-44%)</td>
+<td style="text-align:right">0.352 ms (-68%)</td>
+</tr>
+</tbody>
+</table>
+<p>The GEMM straggler is more directly connected to wall-clock compute waste. Here FEPLB beats FasterMoE in all three settings, including EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span>.</p>
+<p>The high-EP case is again the strongest:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mfrac><mn>0.625</mn><mn>0.352</mn></mfrac><mo>≈</mo><mn>1.8</mn></mrow><annotation encoding="application/x-tex">\frac{0.625}{0.352} \approx 1.8
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">0.352</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">0.625</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1.8</span></span></span></span></span></p>
+<p>So at EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span>, FEPLB has about <strong>1.8x lower GEMM straggler</strong> than FasterMoE.</p>
+<h3 id="13-5-Sensitivity-to-Dynamic-Expert-Count">13.5 Sensitivity to Dynamic Expert Count</h3>
+<p>The paper evaluates <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi>y</mi><mi>n</mi><mo>=</mo><mn>2</mn><mo separator="true">,</mo><mn>4</mn><mo separator="true">,</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">dyn = 2, 4, 8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">d</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8389em;vertical-align:-0.1944em;"></span><span class="mord">2</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">4</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">8</span></span></span></span>.</p>
+<p>The trend is intuitive:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi>y</mi><mi>n</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">dyn=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">d</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span> already helps because imbalance is often caused by a small number of busy experts.</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi>y</mi><mi>n</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">dyn=4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">d</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> gives a little more flexibility.</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi>y</mi><mi>n</mi><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">dyn=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">d</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span> adds only another small improvement.</li>
+</ul>
+<p>The stated gain from increasing <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi>y</mi><mi>n</mi></mrow><annotation encoding="application/x-tex">dyn</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">d</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mord mathnormal">n</span></span></span></span> is modest: around 1-3 percentage points from 2 to 4, then another 1-3 from 4 to 8. This supports <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mi>y</mi><mi>n</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">dyn=4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">d</span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> as a practical default.</p>
+<h2 id="14-Why-FEPLB-Improves-with-EP-Degree">14. Why FEPLB Improves with EP Degree</h2>
+<p>The paper's most interesting scaling behavior is that FEPLB improves as EP increases, while FasterMoE weakens.</p>
+<p>There are two reasons.</p>
+<h3 id="14-1-Prediction-Gets-Harder">14.1 Prediction Gets Harder</h3>
+<p>With higher EP, each device owns fewer experts. Token routing becomes sparser per device, and hot experts can shift more abruptly across micro-batches. A predictive scheme that guesses hot experts from history may choose the wrong replication plan.</p>
+<p>FEPLB waits until after routing for the current micro-batch. That makes it less dependent on stable expert popularity.</p>
+<h3 id="14-2-Whole-Expert-Migration-Gets-Finer-Relative-to-Device-Load">14.2 Whole-Expert Migration Gets Finer Relative to Device Load</h3>
+<p>At EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span>, each device owns 64 experts. Moving one whole expert is a coarse adjustment relative to the device's total work.</p>
+<p>At EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span>, each device owns 16 experts. Moving one dynamic expert can make a more meaningful correction, and the imbalance itself is larger. This makes the same mechanism more valuable.</p>
+<p>The design therefore has a natural sweet spot: large expert-parallel groups inside fast NVLink domains.</p>
+<h2 id="15-Correctness-and-Training-Semantics">15. Correctness and Training Semantics</h2>
+<p>FEPLB preserves forward semantics because it does not change which expert a token uses. It changes only where the expert computation runs for that micro-batch.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">without FEPLB:</span><br><span class="line">    token x -&gt; expert e on owner GPU</span><br><span class="line"></span><br><span class="line">with FEPLB:</span><br><span class="line">    token x -&gt; same expert e</span><br><span class="line">    expert e&#39;s weights are copied to another GPU for this micro-batch</span><br><span class="line">    output is combined as if expert e ran on its owner</span><br></pre></td></tr></table></figure>
+<p>This is an exact semantic transformation for the forward computation, assuming the copied weights are identical.</p>
+<p>For training, the paper reports backward execution times, so the implementation must also preserve gradient/update consistency. The extracted paper text does not fully detail the gradient accumulation protocol. A faithful implementation needs to ensure that gradients produced by temporary copied expert computation are accumulated back to the owning expert state or otherwise kept exactly consistent with the optimizer's ownership model.</p>
+<p>This is not a reason to distrust the result, but it is an important reproducibility detail. The blog reader should not walk away thinking that copying forward weights alone is a complete training implementation.</p>
+<h2 id="16-Limitations-and-Boundary-Conditions">16. Limitations and Boundary Conditions</h2>
+<p>FEPLB is clever, but its assumptions are specific.</p>
+<h3 id="16-1-It-Requires-the-Right-Hardware-Path">16.1 It Requires the Right Hardware Path</h3>
+<p>The method depends on an SM-free intra-node data movement path. The paper evaluates on H100 SXM5 GPUs with NVLink 4.0 and the NVLink Copy Engine. On hardware without comparable copy-engine behavior, the &quot;nearly free&quot; claim may not hold.</p>
+<h3 id="16-2-It-Is-Intra-Node-on-Current-H100-Clusters">16.2 It Is Intra-Node on Current H100 Clusters</h3>
+<p>FEPLB does not rebalance across InfiniBand-connected nodes. That is intentional. Cross-node rebalancing would likely interfere with EP communication and break orthogonality.</p>
+<p>This means FEPLB can only fix imbalance within the NVLink domain. If the dominant imbalance is across nodes rather than within a node, the benefit may be limited.</p>
+<h3 id="16-3-Whole-Expert-Migration-Limits-Granularity">16.3 Whole-Expert Migration Limits Granularity</h3>
+<p>Moving whole experts preserves Grouped GEMM efficiency, but it is coarse. This is why FEPLB is less dominant at EP <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.3669em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span>.</p>
+<p>A token-splitting design might improve load balance, but it would risk smaller GEMMs, more coordination, and less deterministic scheduling.</p>
+<h3 id="16-4-It-Needs-an-Overlap-Window">16.4 It Needs an Overlap Window</h3>
+<p>The CPU scheduler and Copy Engine transfers are hidden behind static expert computation. If static expert computation is too short, if too many experts are dynamic, or if copied expert weights are too large, the side path may become visible on the critical path.</p>
+<h3 id="16-5-It-Consumes-Extra-HBM">16.5 It Consumes Extra HBM</h3>
+<p>The reported GLM-5 overhead is small: 576 MiB per device for <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>max_num_dyn</mtext><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">\text{max\_num\_dyn}=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0044em;vertical-align:-0.31em;"></span><span class="mord text"><span class="mord">max_num_dyn</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span>. But larger experts, smaller-memory GPUs, or other memory-heavy optimizations could make the buffer more painful.</p>
+<h3 id="16-6-Evaluation-Scope-Is-Focused">16.6 Evaluation Scope Is Focused</h3>
+<p>The evaluation uses reduced-layer GLM-5 MoE layers and up to 16 H100 GPUs. The per-layer focus is justified for isolating the mechanism, but full training runs would be useful for checking interactions with optimizer state, activation checkpointing, pipeline bubbles, data mixtures, and long-term router drift.</p>
+<h3 id="16-7-Paper-Does-Not-Provide-Every-Reproduction-Detail">16.7 Paper Does Not Provide Every Reproduction Detail</h3>
+<p>The paper gives strong system-level detail, but some exact reproduction inputs are not visible from the extracted text:</p>
+<ul>
+<li>source code or release status;</li>
+<li>exact <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>τ</mi></mrow><annotation encoding="application/x-tex">\tau</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span></span></span></span> value;</li>
+<li>exact router predictor implementation details;</li>
+<li>routing traces or data mixture;</li>
+<li>complete backward gradient-transfer protocol;</li>
+<li>exact top-<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> value for the evaluated GLM-5 variant.</li>
+</ul>
+<p>A reimplementation is possible in principle, but exact result reproduction would require these missing details.</p>
+<h2 id="17-Reproducibility-Notes">17. Reproducibility Notes</h2>
+<p>A practical reproduction would need the following components.</p>
+<h3 id="17-1-Required-Platform">17.1 Required Platform</h3>
+<ul>
+<li>H100-class GPUs with NVLink Copy Engine behavior comparable to the paper.</li>
+<li>Multi-GPU nodes with high-bandwidth NVLink.</li>
+<li>Inter-node fabric such as 400 Gbps InfiniBand if reproducing multi-node EP configurations.</li>
+<li>Enough HBM to reserve temporary copied expert buffers.</li>
+</ul>
+<h3 id="17-2-Required-Software-Stack">17.2 Required Software Stack</h3>
+<ul>
+<li>Megatron-LM MoE or a comparable MoE training framework.</li>
+<li>DeepEP or an equivalent high-performance expert dispatch backend.</li>
+<li>Transformer Engine or equivalent mixed-precision support.</li>
+<li>Grouped GEMM implementation, such as cuBLAS grouped/multi-stream kernels.</li>
+<li>CUDA stream control that can issue copy-engine transfers without consuming SMs.</li>
+</ul>
+<h3 id="17-3-Implementation-Checklist">17.3 Implementation Checklist</h3>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">[ ] Partition experts into static and dynamic sets per device.</span><br><span class="line">[ ] Run normal EP dispatch for static experts.</span><br><span class="line">[ ] Collect dynamic expert tokens into the local NVLink domain.</span><br><span class="line">[ ] Expose per-expert token counts to the CPU scheduler.</span><br><span class="line">[ ] Implement deterministic greedy whole-expert migration.</span><br><span class="line">[ ] Enforce a minimum token threshold tau.</span><br><span class="line">[ ] Allocate max_num_dyn * W_expert temporary weight buffers.</span><br><span class="line">[ ] Use dedicated CUDA streams for CE transfers.</span><br><span class="line">[ ] Overlap CPU scheduling and CE copies with static expert GEMM.</span><br><span class="line">[ ] Compute dynamic experts after side-path completion.</span><br><span class="line">[ ] Combine outputs back to the original token owners.</span><br><span class="line">[ ] Preserve backward gradient and optimizer-state semantics.</span><br><span class="line">[ ] Measure token straggler, GEMM straggler, dispatch time, and combine time.</span><br></pre></td></tr></table></figure>
+<h3 id="17-4-What-to-Measure-First">17.4 What to Measure First</h3>
+<p>Before attempting a full model run, I would validate four small gates:</p>
+<ol>
+<li><strong>Copy/compute overlap:</strong> prove NVLink CE transfers do not slow down a concurrent Grouped GEMM.</li>
+<li><strong>Semantic equivalence:</strong> compare dense outputs and gradients with FEPLB disabled/enabled on a fixed seed.</li>
+<li><strong>Scheduler latency:</strong> confirm the CPU plan is around the paper's reported 50 microseconds or at least hidden by static computation.</li>
+<li><strong>Communication isolation:</strong> verify DeepEP dispatch/combine time remains within noise, ideally below the paper's &lt;1% overhead.</li>
+</ol>
+<p>Only after those gates pass does the full straggler experiment become meaningful.</p>
+<h2 id="18-Conceptual-Diagram-Why-the-Design-Is-Different">18. Conceptual Diagram: Why the Design Is Different</h2>
+<p>Many load-balancing systems try to hide communication under compute, but still use compute or communication resources that are on the critical path. FEPLB instead searches for an unused lane.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">Prior overlap-style idea:</span><br><span class="line"></span><br><span class="line">GPU SMs:      compute expert work + assist&#x2F;fuse communication</span><br><span class="line">Network:      EP traffic + extra balancing traffic</span><br><span class="line">Result:       improvement depends on whether overhead is truly hidden</span><br><span class="line"></span><br><span class="line">FEPLB idea:</span><br><span class="line"></span><br><span class="line">GPU SMs:      static expert GEMM, then dynamic expert GEMM</span><br><span class="line">EP network:   normal dispatch&#x2F;combine, unchanged</span><br><span class="line">NVLink CE:    local weight&#x2F;token copies</span><br><span class="line">CPU:          small greedy scheduling loop</span><br><span class="line">Result:       balancing path is mostly orthogonal to EP and PP</span><br></pre></td></tr></table></figure>
+<p>This is the main reason I find the paper compelling. The method is not just a new heuristic; it is a resource allocation argument.</p>
+<h2 id="19-Relation-to-Broader-ML-Systems-Trends">19. Relation to Broader ML Systems Trends</h2>
+<p>FEPLB fits a broader pattern in ML systems: performance gains increasingly come from using specialized hardware paths correctly, not only from reducing algorithmic FLOPs.</p>
+<p>Examples of this pattern include:</p>
+<ul>
+<li>overlapping communication with computation;</li>
+<li>exploiting asynchronous copy units;</li>
+<li>using specialized tensor cores effectively;</li>
+<li>designing memory layouts around hardware transfer engines;</li>
+<li>reducing synchronization stragglers rather than only optimizing average throughput.</li>
+</ul>
+<p>MoE makes this especially important because conditional computation introduces runtime irregularity. Static parallel plans are not enough when the router changes the amount of work each device receives on every micro-batch.</p>
+<p>FEPLB's lesson is general:</p>
+<blockquote>
+<p>Dynamic model behavior should be matched with dynamic systems behavior, but the dynamic system must use resources that are not already on the critical path.</p>
+</blockquote>
+<h2 id="20-Final-Assessment">20. Final Assessment</h2>
+<p>FEPLB is a strong systems paper because the core idea is simple, hardware-grounded, and measured against relevant baselines.</p>
+<h3 id="What-I-Like">What I Like</h3>
+<ul>
+<li>The design principle is clean: resource-level separation from EP and PP.</li>
+<li>The method preserves the existing EP backend rather than replacing it.</li>
+<li>The paper reports both token-level and GEMM-time straggler metrics.</li>
+<li>The evaluation checks communication overhead directly, which is the key failure mode for this kind of work.</li>
+<li>The high-EP results are convincing: FEPLB gets much better relative to FasterMoE as EP grows.</li>
+</ul>
+<h3 id="What-I-Would-Treat-Carefully">What I Would Treat Carefully</h3>
+<ul>
+<li>The method is tightly tied to Hopper/NVLink CE behavior.</li>
+<li>It is currently intra-node on normal H100 clusters.</li>
+<li>Whole-expert migration trades fine-grained balance for GEMM efficiency.</li>
+<li>Exact reproduction needs more implementation detail than the paper text provides.</li>
+<li>Full-training interactions are not as fully explored as per-layer performance.</li>
+</ul>
+<h3 id="Bottom-Line">Bottom Line</h3>
+<p>FEPLB is best understood as a <strong>reactive, intra-node MoE load balancer that turns the NVLink Copy Engine into a separate dynamic parallel dimension</strong>. Its value is largest when expert routing is volatile, EP degree is high, and the system has enough static expert work to hide the CPU scheduling and copy-engine transfers.</p>
+<p>For beginners reading ML systems papers, the takeaway is: the paper is not only about MoE load balancing. It is also a good example of how modern training performance depends on matching the algorithm's irregularity to the hardware's unused execution paths.</p>
+
+     </div> <footer class="blog-post-footer"> <p class="blog-post-source">
+Originally published at <a href="https://zzz0906.github.io/2026/04/29/2026-04-29-FEPLB-technical-review-en/" target="_blank" rel="noopener noreferrer">zzz0906.github.io</a>.
+</p> <nav class="blog-post-nav" aria-label="Adjacent posts"> <a class="blog-post-nav-link blog-post-nav-prev" href="/blog/2026-05-01-2026-05-01-LowRankLLMAcceleration-technical-review-en/"> <span class="blog-post-nav-label">← Newer</span> <span class="blog-post-nav-title">Low-Rank Optimization Trajectories for LLM RLVR Acceleration: A Technical Review of NExt</span> </a> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-04-27-2026-04-27-AgenticWorldModeling-technical-review-en/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">Agentic World Modeling: Foundations, Capabilities, Laws, and Beyond — Technical Review</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient ML systems, LLM infrastructure, and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>

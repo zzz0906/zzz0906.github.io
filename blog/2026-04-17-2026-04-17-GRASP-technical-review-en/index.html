@@ -1,0 +1,823 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GRASP Technical Review: Replacing Redundant LLM Layers with Adaptive Singular Parameters | Zhongzhu / Charlie</title><meta name="description" content="A detailed review of GRASP, which replaces redundant transformer layers with gradient-selected adaptive singular parameters instead of simply deleting layers or keeping only the largest singular values."><meta property="og:title" content="GRASP Technical Review: Replacing Redundant LLM Layers with Adaptive Singular Parameters | Zhongzhu / Charlie"><meta property="og:description" content="A detailed review of GRASP, which replaces redundant transformer layers with gradient-selected adaptive singular parameters instead of simply deleting layers or keeping only the largest singular values."><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-04-17-2026-04-17-GRASP-technical-review-en/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-04-17-2026-04-17-GRASP-technical-review-en/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.BtdlpukG.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>116</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>33</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> <nav class="blog-post-toc" aria-label="Table of contents"> <p class="blog-post-toc-title">Contents</p> <ul> <li class="toc-level-2"> <a href="#1-One-sentence-summary">1. One-sentence summary</a> </li><li class="toc-level-2"> <a href="#2-Why-this-paper-exists">2. Why this paper exists</a> </li><li class="toc-level-2"> <a href="#3-The-core-problem-direct-layer-pruning-is-too-blunt">3. The core problem: direct layer pruning is too blunt</a> </li><li class="toc-level-2"> <a href="#4-Background-for-readers">4. Background for readers</a> </li><li class="toc-level-3"> <a href="#4-1-Transformer-layers-and-hidden-states">4.1 Transformer layers and hidden states</a> </li><li class="toc-level-3"> <a href="#4-2-Structured-pruning-versus-unstructured-pruning">4.2 Structured pruning versus unstructured pruning</a> </li><li class="toc-level-3"> <a href="#4-3-Singular-Value-Decomposition">4.3 Singular Value Decomposition</a> </li><li class="toc-level-3"> <a href="#4-4-Gradient-based-sensitivity">4.4 Gradient-based sensitivity</a> </li><li class="toc-level-2"> <a href="#5-What-GRASP-does">5. What GRASP does</a> </li><li class="toc-level-3"> <a href="#5-1-Stage-1-choose-redundant-layers-by-hidden-state-similarity">5.1 Stage 1: choose redundant layers by hidden-state similarity</a> </li><li class="toc-level-3"> <a href="#5-2-Stage-2-replace-selected-layers-with-adaptive-singular-parameters">5.2 Stage 2: replace selected layers with adaptive singular parameters</a> </li><li class="toc-level-3"> <a href="#5-3-Why-this-is-different-from-ordinary-low-rank-SVD">5.3 Why this is different from ordinary low-rank SVD</a> </li><li class="toc-level-3"> <a href="#5-4-Why-the-replacement-remains-efficient">5.4 Why the replacement remains efficient</a> </li><li class="toc-level-2"> <a href="#6-Algorithm-in-plain-language">6. Algorithm in plain language</a> </li><li class="toc-level-2"> <a href="#7-Experimental-setup">7. Experimental setup</a> </li><li class="toc-level-3"> <a href="#7-1-Models">7.1 Models</a> </li><li class="toc-level-3"> <a href="#7-2-Baselines">7.2 Baselines</a> </li><li class="toc-level-3"> <a href="#7-3-Calibration-and-hardware">7.3 Calibration and hardware</a> </li><li class="toc-level-2"> <a href="#8-Main-result-1-training-free-structured-compression">8. Main result 1: training-free structured compression</a> </li><li class="toc-level-2"> <a href="#9-Main-result-2-post-training-compensation">9. Main result 2: post-training compensation</a> </li><li class="toc-level-2"> <a href="#10-Main-result-3-low-rank-pruning-comparison-across-compression-ratios">10. Main result 3: low-rank pruning comparison across compression ratios</a> </li><li class="toc-level-2"> <a href="#11-Efficiency-and-compression-time">11. Efficiency and compression time</a> </li><li class="toc-level-2"> <a href="#12-Ablation-studies">12. Ablation studies</a> </li><li class="toc-level-3"> <a href="#12-1-Calibration-data-choice">12.1 Calibration data choice</a> </li><li class="toc-level-3"> <a href="#12-2-Calibration-data-amount">12.2 Calibration data amount</a> </li><li class="toc-level-3"> <a href="#12-3-Retain-ratio">12.3 Retain ratio</a> </li><li class="toc-level-3"> <a href="#12-4-One-shot-versus-iterative-pruning">12.4 One-shot versus iterative pruning</a> </li><li class="toc-level-2"> <a href="#13-LongBench-and-unstructured-pruning-comparisons">13. LongBench and unstructured pruning comparisons</a> </li><li class="toc-level-3"> <a href="#13-1-LongBench">13.1 LongBench</a> </li><li class="toc-level-3"> <a href="#13-2-SparseGPT-and-Wanda">13.2 SparseGPT and Wanda</a> </li><li class="toc-level-2"> <a href="#14-Why-GRASP-works-intuitively">14. Why GRASP works, intuitively</a> </li><li class="toc-level-3"> <a href="#14-1-Redundant-layers-are-often-low-rank-in-function">14.1 Redundant layers are often low-rank in function</a> </li><li class="toc-level-3"> <a href="#14-2-Gradient-attribution-aligns-compression-with-task-loss">14.2 Gradient attribution aligns compression with task loss</a> </li><li class="toc-level-2"> <a href="#15-Limitations-and-boundary-conditions">15. Limitations and boundary conditions</a> </li><li class="toc-level-3"> <a href="#15-1-Cosine-similarity-is-a-heuristic">15.1 Cosine similarity is a heuristic</a> </li><li class="toc-level-3"> <a href="#15-2-GRASP-needs-internal-access">15.2 GRASP needs internal access</a> </li><li class="toc-level-3"> <a href="#15-3-Calibration-data-still-matters">15.3 Calibration data still matters</a> </li><li class="toc-level-3"> <a href="#15-4-The-paper’s-largest-models-are-modest-by-2026-standards">15.4 The paper’s largest models are modest by 2026 standards</a> </li><li class="toc-level-3"> <a href="#15-5-Mostly-English-centric-evaluation">15.5 Mostly English-centric evaluation</a> </li><li class="toc-level-3"> <a href="#15-6-Compression-ratio-should-be-read-carefully">15.6 Compression ratio should be read carefully</a> </li><li class="toc-level-2"> <a href="#16-Reproducibility-notes">16. Reproducibility notes</a> </li><li class="toc-level-3"> <a href="#16-1-Use-the-exact-calibration-protocol">16.1 Use the exact calibration protocol</a> </li><li class="toc-level-3"> <a href="#16-2-Separate-three-procedures">16.2 Separate three procedures</a> </li><li class="toc-level-3"> <a href="#16-3-Report-both-average-and-per-task-metrics">16.3 Report both average and per-task metrics</a> </li><li class="toc-level-3"> <a href="#16-4-Record-real-runtime-behavior">16.4 Record real runtime behavior</a> </li><li class="toc-level-3"> <a href="#16-5-Compare-with-quantization-combinations">16.5 Compare with quantization combinations</a> </li><li class="toc-level-2"> <a href="#17-Practical-takeaway-for-engineers">17. Practical takeaway for engineers</a> </li><li class="toc-level-2"> <a href="#18-My-assessment">18. My assessment</a> </li><li class="toc-level-2"> <a href="#19-Final-takeaways">19. Final takeaways</a> </li> </ul> </nav> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-04-17">April 17, 2026</time> <span class="blog-lang blog-lang-en">EN</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/LLM-Inference/">#LLM Inference</a><a class="blog-post-tag-chip" href="/blog/tag/Model-Compression/">#Model Compression</a> </span> </p> <h1>GRASP Technical Review: Replacing Redundant LLM Layers with Adaptive Singular Parameters</h1> </header> <div class="blog-post-body"> 
+
+      
+        <p><strong>Paper:</strong> <em>GRASP: Replace Redundant Layers with Adaptive Singular Parameters for Efficient Model Compression</em><br>
+<strong>Acronym:</strong> <strong>GRASP = Gradient-based Retention of Adaptive Singular Parameters</strong><br>
+<strong>Authors:</strong> Kainan Liu, Yong Zhang, Ning Cheng, Zhitao Li, Shaojun Wang, Jing Xiao<br>
+<strong>Affiliations:</strong> Ping An Technology (Shenzhen); The Hong Kong University of Science and Technology (Guangzhou)<br>
+<strong>arXiv:</strong> 2501.00339v4, dated 22 Feb 2026<br>
+<strong>Code:</strong> <a href="https://github.com/LyoAI/GRASP" target="_blank" rel="noopener noreferrer">https://github.com/LyoAI/GRASP</a></p>
+<h2 id="1-One-sentence-summary">1. One-sentence summary</h2>
+<p>GRASP is a structured LLM compression method that first finds transformer layers whose input and output hidden states are very similar, then replaces those redundant layers with a small number of singular-vector components chosen by gradient-based sensitivity rather than by singular-value magnitude alone.</p>
+<p>The important correction to keep in mind is that GRASP is not just “keep the largest SVD values.” The paper’s full name says <strong>adaptive singular parameters</strong> because a retained component is a whole singular group <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi mathvariant="normal">Φ</mi><mi>k</mi></msub><mo>=</mo><mo stretchy="false">{</mo><msub><mi>u</mi><mi>k</mi></msub><mo separator="true">,</mo><msub><mi>σ</mi><mi>k</mi></msub><mo separator="true">,</mo><msubsup><mi>v</mi><mi>k</mi><mi mathvariant="normal">⊤</mi></msubsup><mo stretchy="false">}</mo></mrow><annotation encoding="application/x-tex">\Phi_k = \{u_k, \sigma_k, v_k^\top\}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord">Φ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1322em;vertical-align:-0.2831em;"></span><span class="mopen">{</span><span class="mord"><span class="mord mathnormal">u</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-2.4169em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2831em;"><span></span></span></span></span></span></span><span class="mclose">}</span></span></span></span>, and the chosen groups are selected using gradients on a calibration set.</p>
+<h2 id="2-Why-this-paper-exists">2. Why this paper exists</h2>
+<p>Large language models are expensive because every generated token has to pass through many transformer blocks. A 7B or 13B model may look small compared with frontier models, but it is still heavy for a single GPU, edge deployment, high-throughput serving, or low-latency applications.</p>
+<p>Many compression methods attack this cost from different angles:</p>
+<ul>
+<li><strong>Quantization</strong> reduces numerical precision.</li>
+<li><strong>Unstructured pruning</strong> removes individual weights, often requiring sparse kernels to show real speedups.</li>
+<li><strong>Structured pruning</strong> removes larger structures such as layers, neurons, channels, or dimensions.</li>
+<li><strong>Low-rank compression</strong> replaces large matrices with products of smaller matrices.</li>
+<li><strong>Distillation</strong> trains a smaller model to mimic a larger model.</li>
+</ul>
+<p>GRASP sits at the intersection of <strong>layer pruning</strong> and <strong>low-rank compression</strong>. It starts from the observation used by layer-pruning methods: some transformer layers are nearly redundant. But instead of deleting a redundant layer completely, GRASP asks a more careful question:</p>
+<blockquote>
+<p>If a layer is mostly redundant, can we keep only the few internal directions that still matter?</p>
+</blockquote>
+<p>That question is the whole paper.</p>
+<h2 id="3-The-core-problem-direct-layer-pruning-is-too-blunt">3. The core problem: direct layer pruning is too blunt</h2>
+<p>A transformer layer is not always equally useful. Some layers strongly change the hidden representation; others perform a smaller adjustment. Prior work such as ShortGPT, LaCo, and LLM-Streamline exploits this by identifying layers that appear less important.</p>
+<p>The blunt option is:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Layer i input ──&gt; [full transformer layer] ──&gt; Layer i output</span><br><span class="line"></span><br><span class="line">If the layer looks redundant:</span><br><span class="line">Layer i input ──────────────────────────────&gt; Layer i output</span><br><span class="line">                   skip &#x2F; delete layer</span><br></pre></td></tr></table></figure>
+<p>This reduces latency, but it can break the model’s internal representation. A layer may be redundant in the sense that its input and output are close, while still preserving some small but important transformations. Removing it entirely can delete those transformations too.</p>
+<p>LLM-Streamline-style methods try to avoid this by replacing pruned layers with lightweight trainable modules. That is less destructive, but those modules are often randomly initialized and therefore need extra training to recover performance.</p>
+<p>GRASP proposes a middle path:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Do not keep the full redundant layer.</span><br><span class="line">Do not replace it with a random new module.</span><br><span class="line">Keep a small, data-informed low-rank part of the original layer.</span><br></pre></td></tr></table></figure>
+<h2 id="4-Background-for-readers">4. Background for readers</h2>
+<h3 id="4-1-Transformer-layers-and-hidden-states">4.1 Transformer layers and hidden states</h3>
+<p>A decoder-only LLM is a stack of transformer layers. At a high level:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">input tokens</span><br><span class="line">   ↓</span><br><span class="line">embedding</span><br><span class="line">   ↓</span><br><span class="line">Layer 1</span><br><span class="line">   ↓</span><br><span class="line">Layer 2</span><br><span class="line">   ↓</span><br><span class="line">...</span><br><span class="line">   ↓</span><br><span class="line">Layer N</span><br><span class="line">   ↓</span><br><span class="line">language-model head</span><br><span class="line">   ↓</span><br><span class="line">next-token probabilities</span><br></pre></td></tr></table></figure>
+<p>Each layer receives a hidden state and outputs a new hidden state. If <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">H_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> denotes the input hidden state of layer <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi></mrow><annotation encoding="application/x-tex">i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span></span></span></span>, and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow><annotation encoding="application/x-tex">H_{i+1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8917em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span></span></span></span> denotes the output after that layer, then the layer is doing something like:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>H</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><msub><mtext>Layer</mtext><mi>i</mi></msub><mo stretchy="false">(</mo><msub><mi>H</mi><mi>i</mi></msub><mo stretchy="false">)</mo><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">H_{i+1} = \text{Layer}_i(H_i).
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8917em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord text"><span class="mord">Layer</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2175em;"><span style="top:-2.4559em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2441em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mord">.</span></span></span></span></span></p>
+<p>A layer is “transformative” if <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow><annotation encoding="application/x-tex">H_{i+1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8917em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span></span></span></span> is meaningfully different from <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">H_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>. It is “redundant” if <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow><annotation encoding="application/x-tex">H_{i+1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8917em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span></span></span></span> is very similar to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">H_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> on representative data.</p>
+<p>This is not the same as saying the layer is useless. It means the layer’s overall transformation is small, so the layer is a good candidate for compression.</p>
+<h3 id="4-2-Structured-pruning-versus-unstructured-pruning">4.2 Structured pruning versus unstructured pruning</h3>
+<p>It helps to distinguish two styles of pruning:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>What is removed?</th>
+<th>Main benefit</th>
+<th>Main caveat</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Unstructured pruning</td>
+<td>Individual weights</td>
+<td>Can reach high sparsity</td>
+<td>Speedups require sparse hardware/kernels</td>
+</tr>
+<tr>
+<td>Structured pruning</td>
+<td>Whole layers/modules/dimensions</td>
+<td>Easier to realize latency gains</td>
+<td>More likely to disrupt representations</td>
+</tr>
+</tbody>
+</table>
+<p>GRASP is a structured method because it targets whole redundant layers, but its replacement is low-rank rather than simply deleted.</p>
+<h3 id="4-3-Singular-Value-Decomposition">4.3 Singular Value Decomposition</h3>
+<p>For a weight matrix <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mo>∈</mo><msup><mi mathvariant="double-struck">R</mi><mrow><mi>m</mi><mo>×</mo><mi>n</mi></mrow></msup></mrow><annotation encoding="application/x-tex">W \in \mathbb{R}^{m \times n}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7713em;"></span><span class="mord"><span class="mord mathbb">R</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7713em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">m</span><span class="mbin mtight">×</span><span class="mord mathnormal mtight">n</span></span></span></span></span></span></span></span></span></span></span></span>, singular value decomposition writes:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>W</mi><mo>=</mo><mi>U</mi><mi mathvariant="normal">Σ</mi><msup><mi>V</mi><mi mathvariant="normal">⊤</mi></msup><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">W = U \Sigma V^\top.
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8991em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">U</span><span class="mord">Σ</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span></span></span></span></span><span class="mord">.</span></span></span></span></span></p>
+<p>Equivalently, this can be written as a sum of rank-one components:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>W</mi><mo>=</mo><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>l</mi></munderover><msub><mi>u</mi><mi>k</mi></msub><msub><mi>σ</mi><mi>k</mi></msub><msubsup><mi>v</mi><mi>k</mi><mi mathvariant="normal">⊤</mi></msubsup><mo separator="true">,</mo><mspace width="1em"></mspace><mi>l</mi><mo>=</mo><mi>min</mi><mo>⁡</mo><mo stretchy="false">(</mo><mi>m</mi><mo separator="true">,</mo><mi>n</mi><mo stretchy="false">)</mo><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">W = \sum_{k=1}^{l} u_k \sigma_k v_k^\top, \quad l = \min(m,n).
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3.1382em;vertical-align:-1.3021em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8361em;"><span style="top:-1.8479em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.3021em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">u</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-2.453em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:1em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.01968em;">l</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">min</span><span class="mopen">(</span><span class="mord mathnormal">m</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">n</span><span class="mclose">)</span><span class="mord">.</span></span></span></span></span></p>
+<p>Here:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>u</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">u_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">u</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is the <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span>-th left singular vector,</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>v</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">v_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is the <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span>-th right singular vector,</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>σ</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">\sigma_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is the <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span>-th singular value,</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>u</mi><mi>k</mi></msub><msub><mi>σ</mi><mi>k</mi></msub><msubsup><mi>v</mi><mi>k</mi><mi mathvariant="normal">⊤</mi></msubsup></mrow><annotation encoding="application/x-tex">u_k \sigma_k v_k^\top</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.1322em;vertical-align:-0.2831em;"></span><span class="mord"><span class="mord mathnormal">u</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-2.4169em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2831em;"><span></span></span></span></span></span></span></span></span></span> is one rank-one direction in the matrix.</li>
+</ul>
+<p>Most basic SVD compression keeps the largest singular values and discards the rest:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mover accent="true"><mi>W</mi><mo stretchy="true">~</mo></mover><mtext>magnitude</mtext></msub><mo>=</mo><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>r</mi></munderover><msub><mi>u</mi><mi>k</mi></msub><msub><mi>σ</mi><mi>k</mi></msub><msubsup><mi>v</mi><mi>k</mi><mi mathvariant="normal">⊤</mi></msubsup><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">\widetilde{W}_{\text{magnitude}} = \sum_{k=1}^{r} u_k \sigma_k v_k^\top.
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.2294em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9433em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span><span class="svg-align" style="top:-3.6833em;"><span class="pstrut" style="height:3em;"></span><span style="height:0.26em;"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="0.26em" viewBox="0 0 600 260" preserveAspectRatio="none"><path d="M200 55.538c-77 0-168 73.953-177 73.953-3 0-7
+-2.175-9-5.437L2 97c-1-2-2-4-2-6 0-4 2-7 5-9l20-12C116 12 171 0 207 0c86 0
+ 114 68 191 68 78 0 168-68 177-68 4 0 7 2 9 5l12 19c1 2.175 2 4.35 2 6.525 0
+ 4.35-2 7.613-5 9.788l-19 13.05c-92 63.077-116.937 75.308-183 76.128
+-68.267.847-113-73.952-191-73.952z"></path></svg></span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">magnitude</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.9535em;vertical-align:-1.3021em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.6514em;"><span style="top:-1.8479em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.3021em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">u</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-2.453em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mord">.</span></span></span></span></span></p>
+<p>That is optimal for minimizing matrix reconstruction error under some norms, but the LLM does not care directly about matrix reconstruction error. It cares about language-model loss and downstream task performance.</p>
+<p>This distinction is central to GRASP.</p>
+<h3 id="4-4-Gradient-based-sensitivity">4.4 Gradient-based sensitivity</h3>
+<p>Suppose a parameter <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi></mrow><annotation encoding="application/x-tex">\theta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">θ</span></span></span></span> is changed or zeroed out. A first-order Taylor approximation says the loss change is roughly related to:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msup><mi>θ</mi><mi mathvariant="normal">⊤</mi></msup><msub><mi mathvariant="normal">∇</mi><mi>θ</mi></msub><mi>L</mi><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">\theta^\top \nabla_{\theta} L.
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0491em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02778em;">θ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span></span></span></span></span><span class="mord"><span class="mord">∇</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord mathnormal">L</span><span class="mord">.</span></span></span></span></span></p>
+<p>A larger value suggests the parameter is more important for the loss, at least locally around the current model.</p>
+<p>The full second-order form used as motivation in the paper is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>T</mi><mo stretchy="false">(</mo><mi>θ</mi><mo stretchy="false">)</mo><mo>=</mo><msup><mi>θ</mi><mi mathvariant="normal">⊤</mi></msup><msub><mi mathvariant="normal">∇</mi><mi>θ</mi></msub><mi>L</mi><mo>+</mo><mfrac><mn>1</mn><mn>2</mn></mfrac><msup><mi>θ</mi><mi mathvariant="normal">⊤</mi></msup><mi>H</mi><mi>θ</mi><mo>+</mo><mi>O</mi><mo stretchy="false">(</mo><mi mathvariant="normal">∥</mi><mi>θ</mi><msup><mi mathvariant="normal">∥</mi><mn>3</mn></msup><mo stretchy="false">)</mo><mo separator="true">,</mo></mrow><annotation encoding="application/x-tex">T(\theta) = \theta^\top \nabla_\theta L + \frac{1}{2}\theta^\top H\theta + O(\|\theta\|^3),
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.02778em;">θ</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0491em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02778em;">θ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span></span></span></span></span><span class="mord"><span class="mord">∇</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord mathnormal">L</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">2</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02778em;">θ</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span></span></span></span></span><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="mord mathnormal" style="margin-right:0.02778em;">θ</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.1141em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">O</span><span class="mopen">(</span><span class="mord">∥</span><span class="mord mathnormal" style="margin-right:0.02778em;">θ</span><span class="mord"><span class="mord">∥</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">3</span></span></span></span></span></span></span></span><span class="mclose">)</span><span class="mpunct">,</span></span></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>H</mi></mrow><annotation encoding="application/x-tex">H</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.08125em;">H</span></span></span></span> is the Hessian. GRASP drops the second-order term for efficiency and uses a first-order gradient attribution score.</p>
+<h2 id="5-What-GRASP-does">5. What GRASP does</h2>
+<p>The GRASP pipeline has two major stages.</p>
+<pre class="mermaid" style="text-align: center;">
+            
+            flowchart TD
+    A[Dense LLM] --> B[Small calibration set]
+    B --> C[Run forward pass]
+    C --> D[Compute hidden-state cosine similarity per layer]
+    D --> E[Select most redundant layers]
+    E --> F[For each selected layer and each attention/MLP weight matrix]
+    F --> G[SVD: W = U Sigma V^T]
+    G --> H[Run gradient attribution on singular groups]
+    H --> I[Keep top-r percent singular groups]
+    I --> J[Reconstruct low-rank replacement]
+    J --> K[Compressed GRASP model]
+    K --> L{Optional?}
+    L -->|No| M[Training-free compressed model]
+    L -->|Yes| N[Light post-training compensation]
+          </pre>
+<h3 id="5-1-Stage-1-choose-redundant-layers-by-hidden-state-similarity">5.1 Stage 1: choose redundant layers by hidden-state similarity</h3>
+<p>GRASP follows prior layer-pruning work and measures how much each layer changes the hidden state. For a transformer layer with input hidden state <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">H_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> and output hidden state <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow><annotation encoding="application/x-tex">H_{i+1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8917em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span></span></span></span>, the paper uses cosine similarity:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>cos</mi><mo>⁡</mo><mo stretchy="false">(</mo><msub><mi>H</mi><mi>i</mi></msub><mo separator="true">,</mo><msub><mi>H</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub><mo stretchy="false">)</mo><mo>=</mo><mfrac><mrow><msubsup><mi>H</mi><mi>i</mi><mi mathvariant="normal">⊤</mi></msubsup><msub><mi>H</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow><mrow><mi mathvariant="normal">∥</mi><msub><mi>H</mi><mi>i</mi></msub><msub><mi mathvariant="normal">∥</mi><mn>2</mn></msub><mi mathvariant="normal">∥</mi><msub><mi>H</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub><msub><mi mathvariant="normal">∥</mi><mn>2</mn></msub></mrow></mfrac><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">\cos(H_i, H_{i+1}) = \frac{H_i^\top H_{i+1}}{\|H_i\|_2 \|H_{i+1}\|_2}.
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mop">cos</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.4621em;vertical-align:-0.936em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.5261em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">∥</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord">∥</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord">∥</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord">∥</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-2.4413em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2587em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mord">.</span></span></span></span></span></p>
+<p>Interpretation:</p>
+<ul>
+<li>High cosine similarity means the layer output points in almost the same direction as the input.</li>
+<li>That suggests the layer performs a relatively small transformation.</li>
+<li>Layers with the highest similarity are selected as redundant candidates.</li>
+</ul>
+<p>This stage is simple and cheap: it needs a calibration set and forward activations, not full retraining.</p>
+<p>A useful mental model:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">Low similarity layer:</span><br><span class="line">H_i  ---- layer ----&gt;  H_&#123;i+1&#125;</span><br><span class="line">(direction changes a lot)</span><br><span class="line">Do not prune first.</span><br><span class="line"></span><br><span class="line">High similarity layer:</span><br><span class="line">H_i  ---- layer ----&gt;  H_&#123;i+1&#125;</span><br><span class="line">(direction barely changes)</span><br><span class="line">Candidate for GRASP replacement.</span><br></pre></td></tr></table></figure>
+<h3 id="5-2-Stage-2-replace-selected-layers-with-adaptive-singular-parameters">5.2 Stage 2: replace selected layers with adaptive singular parameters</h3>
+<p>For each selected redundant layer, GRASP looks at its weight matrices in attention and MLP modules. For a matrix <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi></mrow><annotation encoding="application/x-tex">W</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span>, it computes:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>W</mi><mo>=</mo><mi>U</mi><mi mathvariant="normal">Σ</mi><msup><mi>V</mi><mi mathvariant="normal">⊤</mi></msup><mo>=</mo><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>l</mi></munderover><msub><mi>u</mi><mi>k</mi></msub><msub><mi>σ</mi><mi>k</mi></msub><msubsup><mi>v</mi><mi>k</mi><mi mathvariant="normal">⊤</mi></msubsup><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">W = U\Sigma V^\top = \sum_{k=1}^{l} u_k \sigma_k v_k^\top.
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8991em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">U</span><span class="mord">Σ</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.22222em;">V</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3.1382em;vertical-align:-1.3021em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8361em;"><span style="top:-1.8479em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.3021em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">u</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-2.453em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mord">.</span></span></span></span></span></p>
+<p>The paper defines a singular group:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi mathvariant="normal">Φ</mi><mi>k</mi></msub><mo>=</mo><mo stretchy="false">{</mo><msub><mi>u</mi><mi>k</mi></msub><mo separator="true">,</mo><msub><mi>σ</mi><mi>k</mi></msub><mo separator="true">,</mo><msubsup><mi>v</mi><mi>k</mi><mi mathvariant="normal">⊤</mi></msubsup><mo stretchy="false">}</mo><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">\Phi_k = \{u_k, \sigma_k, v_k^\top\}.
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord">Φ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1491em;vertical-align:-0.25em;"></span><span class="mopen">{</span><span class="mord"><span class="mord mathnormal">u</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8991em;"><span style="top:-2.453em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">⊤</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.247em;"><span></span></span></span></span></span></span><span class="mclose">}</span><span class="mord">.</span></span></span></span></span></p>
+<p>Instead of retaining singular groups purely by the size of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>σ</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">\sigma_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>, GRASP assigns each group an importance score based on gradient attribution.</p>
+<p>The paper first writes the group score as:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>I</mi><mo stretchy="false">(</mo><msub><mi mathvariant="normal">Φ</mi><mi>k</mi></msub><mo stretchy="false">)</mo><mo>=</mo><mi>T</mi><mo stretchy="false">(</mo><msub><mi>σ</mi><mi>k</mi></msub><mo stretchy="false">)</mo><mo>+</mo><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>m</mi></munderover><mi>T</mi><mo stretchy="false">(</mo><msub><mi>u</mi><mrow><mi>k</mi><mo separator="true">,</mo><mi>i</mi></mrow></msub><mo stretchy="false">)</mo><mo>+</mo><munderover><mo>∑</mo><mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover><mi>T</mi><mo stretchy="false">(</mo><msub><mi>v</mi><mrow><mi>k</mi><mo separator="true">,</mo><mi>j</mi></mrow></msub><mo stretchy="false">)</mo><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">I(\Phi_k) = T(\sigma_k) + \sum_{i=1}^{m} T(u_{k,i}) + \sum_{j=1}^{n} T(v_{k,j}).
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.07847em;">I</span><span class="mopen">(</span><span class="mord"><span class="mord">Φ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.9291em;vertical-align:-1.2777em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.6514em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">m</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.2777em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">u</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight">i</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:3.0652em;vertical-align:-1.4138em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.6514em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">n</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.4138em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mord">.</span></span></span></span></span></p>
+<p>Then, using the first-order approximation, it becomes:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>I</mi><mo stretchy="false">(</mo><msub><mi mathvariant="normal">Φ</mi><mi>k</mi></msub><mo stretchy="false">)</mo><mo>=</mo><msub><mi>σ</mi><mi>k</mi></msub><mfrac><mrow><mi mathvariant="normal">∂</mi><mi>L</mi></mrow><mrow><mi mathvariant="normal">∂</mi><msub><mi>σ</mi><mi>k</mi></msub></mrow></mfrac><mo>+</mo><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>m</mi></munderover><msub><mi>u</mi><mrow><mi>k</mi><mo separator="true">,</mo><mi>i</mi></mrow></msub><mfrac><mrow><mi mathvariant="normal">∂</mi><mi>L</mi></mrow><mrow><mi mathvariant="normal">∂</mi><msub><mi>u</mi><mrow><mi>k</mi><mo separator="true">,</mo><mi>i</mi></mrow></msub></mrow></mfrac><mo>+</mo><munderover><mo>∑</mo><mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover><msub><mi>v</mi><mrow><mi>k</mi><mo separator="true">,</mo><mi>j</mi></mrow></msub><mfrac><mrow><mi mathvariant="normal">∂</mi><mi>L</mi></mrow><mrow><mi mathvariant="normal">∂</mi><msub><mi>v</mi><mrow><mi>k</mi><mo separator="true">,</mo><mi>j</mi></mrow></msub></mrow></mfrac><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">I(\Phi_k) =
+\sigma_k \frac{\partial L}{\partial \sigma_k}
++ \sum_{i=1}^{m} u_{k,i}\frac{\partial L}{\partial u_{k,i}}
++ \sum_{j=1}^{n} v_{k,j}\frac{\partial L}{\partial v_{k,j}}.
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.07847em;">I</span><span class="mopen">(</span><span class="mord"><span class="mord">Φ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.2074em;vertical-align:-0.836em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3714em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord" style="margin-right:0.05556em;">∂</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord" style="margin-right:0.05556em;">∂</span><span class="mord mathnormal">L</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.836em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.9291em;vertical-align:-1.2777em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.6514em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">m</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.2777em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">u</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight">i</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3714em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord" style="margin-right:0.05556em;">∂</span><span class="mord"><span class="mord mathnormal">u</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight">i</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord" style="margin-right:0.05556em;">∂</span><span class="mord mathnormal">L</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.9721em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:3.0652em;vertical-align:-1.4138em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.6514em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">n</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.4138em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3714em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord" style="margin-right:0.05556em;">∂</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span><span class="mpunct mtight">,</span><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord" style="margin-right:0.05556em;">∂</span><span class="mord mathnormal">L</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.9721em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mord">.</span></span></span></span></span></p>
+<p>The loss is the usual language-modeling objective:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>L</mi><mo>=</mo><mo>−</mo><munder><mo>∑</mo><mi>t</mi></munder><mi>log</mi><mo>⁡</mo><mi>P</mi><mo stretchy="false">(</mo><msub><mi>y</mi><mi>t</mi></msub><mo>∣</mo><msub><mi>x</mi><mrow><mo>≤</mo><mi>t</mi></mrow></msub><mo stretchy="false">)</mo><mi mathvariant="normal">.</mi></mrow><annotation encoding="application/x-tex">L = -\sum_t \log P(y_t \mid x_{\leq t}).
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">L</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.3em;vertical-align:-1.25em;"></span><span class="mord">−</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.9em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.25em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">lo<span style="margin-right:0.01389em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2952em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mrel mtight">≤</span><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2452em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mord">.</span></span></span></span></span></p>
+<p>After scoring all singular groups, GRASP keeps the top <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mi mathvariant="normal">%</mi></mrow><annotation encoding="application/x-tex">r\%</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8056em;vertical-align:-0.0556em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="mord">%</span></span></span></span> groups and reconstructs the matrix from them.</p>
+<h3 id="5-3-Why-this-is-different-from-ordinary-low-rank-SVD">5.3 Why this is different from ordinary low-rank SVD</h3>
+<p>Ordinary truncated SVD would keep singular groups in this order:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Keep by magnitude:</span><br><span class="line">σ1, σ2, σ3, σ4, ...</span><br></pre></td></tr></table></figure>
+<p>GRASP can keep a non-contiguous set:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Keep by loss sensitivity:</span><br><span class="line">Φ2, Φ5, Φ9, Φ11, ...</span><br></pre></td></tr></table></figure>
+<p>That matters because the paper’s Figure 2 shows that larger singular values are not always the most important for downstream performance. A smaller singular direction can carry task-relevant information.</p>
+<p>Conceptually:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Magnitude view:</span><br><span class="line">&quot;Big singular value &#x3D; important.&quot;</span><br><span class="line"></span><br><span class="line">GRASP view:</span><br><span class="line">&quot;A singular group is important if removing it changes the language-model loss.&quot;</span><br></pre></td></tr></table></figure>
+<h3 id="5-4-Why-the-replacement-remains-efficient">5.4 Why the replacement remains efficient</h3>
+<p>A full matrix uses all singular groups. GRASP uses only a small retained subset inside selected redundant layers. If the layer is truly redundant and low-rank, the retained directions should preserve most of the layer’s useful effect while discarding a large amount of parameter mass.</p>
+<p>The paper’s ablation finds that increasing the retain ratio from 0% to 10% gives a sharp accuracy improvement, while gains largely saturate after 10%. This is why the paper typically uses a 10% retain ratio.</p>
+<p>A key nuance: <strong>retain ratio</strong> and <strong>overall compression ratio</strong> are not the same number. The retain ratio is the fraction of singular groups kept inside selected matrices. The overall model compression ratio also depends on how many layers are selected. In Table 6, when replacing 8 redundant layers of LLaMA2-7B, retain ratios of 0%, 5%, 10%, 15%, and 20% correspond to overall compression ratios of 24.0%, 22.8%, 21.6%, 20.4%, and 19.2%.</p>
+<p>So when the paper says “20% compression ratio,” read it as roughly a 20% structured compression setting, not “only 20% of the original model remains.”</p>
+<h2 id="6-Algorithm-in-plain-language">6. Algorithm in plain language</h2>
+<p>The paper’s algorithm can be restated as:</p>
+<ol>
+<li>Choose a small calibration dataset, usually WikiText-2 in the experiments.</li>
+<li>Run the model and collect layer input/output hidden states.</li>
+<li>Compute cosine similarity for every layer.</li>
+<li>Select the top-<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>L</mi></mrow><annotation encoding="application/x-tex">L</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">L</span></span></span></span> most similar layers as redundant.</li>
+<li>Process selected redundant layers in reverse order, from later redundant layers backward.</li>
+<li>For each selected layer:
+<ul>
+<li>for each attention and MLP weight matrix,</li>
+<li>decompose <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi></mrow><annotation encoding="application/x-tex">W</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">W</span></span></span></span> with SVD,</li>
+<li>compute gradient-based importance for every singular group,</li>
+<li>keep the top <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mi mathvariant="normal">%</mi></mrow><annotation encoding="application/x-tex">r\%</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8056em;vertical-align:-0.0556em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="mord">%</span></span></span></span> groups,</li>
+<li>reconstruct the replacement matrix.</li>
+</ul>
+</li>
+<li>Return the compressed model.</li>
+<li>Optionally run lightweight post-training compensation.</li>
+</ol>
+<p>The reverse-order detail matters because later layers are closer to the output distribution. The paper also studies one-shot versus iterative pruning and finds similar accuracy, with one-shot being faster.</p>
+<pre class="mermaid" style="text-align: center;">
+            
+            flowchart LR
+    A[Layer similarity ranking] --> B[Top-L redundant layers]
+    B --> C[Reverse-order processing]
+    C --> D[SVD per selected matrix]
+    D --> E[Gradient score per singular group]
+    E --> F[Keep top-r percent]
+    F --> G[Low-rank layer replacement]
+          </pre>
+<h2 id="7-Experimental-setup">7. Experimental setup</h2>
+<p>The paper evaluates GRASP across several settings. The most important setup details are:</p>
+<h3 id="7-1-Models">7.1 Models</h3>
+<p>The evaluated model families are LLaMA and Mistral. The paper reports experiments on:</p>
+<ul>
+<li>LLaMA-7B</li>
+<li>LLaMA2-7B</li>
+<li>LLaMA2-13B</li>
+<li>LLaMA3.1-8B-Instruct</li>
+<li>Mistral-7B</li>
+</ul>
+<h3 id="7-2-Baselines">7.2 Baselines</h3>
+<p>The baselines include three groups:</p>
+<p><strong>Layer-pruning baselines</strong></p>
+<ul>
+<li>ShortGPT</li>
+<li>LaCo</li>
+<li>LLM-Streamline</li>
+</ul>
+<p><strong>Module/structured pruning baselines</strong></p>
+<ul>
+<li>LLMPruner</li>
+<li>SliceGPT</li>
+</ul>
+<p><strong>Low-rank pruning baselines</strong></p>
+<ul>
+<li>FWSVD</li>
+<li>ASVD</li>
+<li>SVD-LLM</li>
+</ul>
+<p>The appendix also compares with unstructured 2:4 sparsity methods SparseGPT and Wanda.</p>
+<h3 id="7-3-Calibration-and-hardware">7.3 Calibration and hardware</h3>
+<p>The main implementation details reported in the paper:</p>
+<ul>
+<li>512 randomly sampled WikiText-2 examples are used as the calibration set in the main comparisons.</li>
+<li>Experiments are run on NVIDIA A100-SXM4 80GB GPUs.</li>
+<li>Zero-shot commonsense evaluations use the LM-Evaluation-Harness framework.</li>
+<li>The post-training compensation setup uses Alpaca for one epoch, batch size 32, AdamW, learning rate <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>3</mn><mo>×</mo><msup><mn>10</mn><mrow><mo>−</mo><mn>4</mn></mrow></msup></mrow><annotation encoding="application/x-tex">3\times 10^{-4}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">3</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord">1</span><span class="mord"><span class="mord">0</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">4</span></span></span></span></span></span></span></span></span></span></span></span>, maximum length 256, and mixed precision on a single A100.</li>
+</ul>
+<p>The appendix lists LoRA-style hyperparameters for compensation: rank 256, alpha 16, dropout 0.05, and target modules including <code>q_proj</code>, <code>k_proj</code>, <code>v_proj</code>, <code>o_proj</code>, <code>up_proj</code>, <code>down_proj</code>, and <code>gate_proj</code>.</p>
+<h2 id="8-Main-result-1-training-free-structured-compression">8. Main result 1: training-free structured compression</h2>
+<p>The first main comparison evaluates LLaMA3.1-8B-Instruct under a 20% compression setting without post-training compensation.</p>
+<p>Benchmarks:</p>
+<ul>
+<li>OpenBookQA</li>
+<li>ARC-easy</li>
+<li>WinoGrande</li>
+<li>HellaSwag</li>
+<li>ARC-challenge</li>
+<li>PIQA</li>
+<li>MathQA</li>
+</ul>
+<p>The paper reports average zero-shot accuracy:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th style="text-align:right">Average</th>
+<th style="text-align:right">Retained dense performance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Dense</td>
+<td style="text-align:right">0.60</td>
+<td style="text-align:right">100.0%</td>
+</tr>
+<tr>
+<td>LaCo</td>
+<td style="text-align:right">0.42</td>
+<td style="text-align:right">70.9%</td>
+</tr>
+<tr>
+<td>ShortGPT</td>
+<td style="text-align:right">0.44</td>
+<td style="text-align:right">74.1%</td>
+</tr>
+<tr>
+<td>SliceGPT</td>
+<td style="text-align:right">0.35</td>
+<td style="text-align:right">57.7%</td>
+</tr>
+<tr>
+<td>GRASP</td>
+<td style="text-align:right">0.47</td>
+<td style="text-align:right">78.6%</td>
+</tr>
+</tbody>
+</table>
+<p>Important reading:</p>
+<ul>
+<li>GRASP is best among the listed structured-pruning baselines in this no-compensation table.</li>
+<li>It does not preserve 90% of dense performance in this specific table; it preserves 78.6% of dense average accuracy.</li>
+<li>The stronger “around 90%” claim is better supported in the low-rank comparison with post-training compensation at 20%, where GRASP* reaches 91.3% on LLaMA-7B in Table 3.</li>
+</ul>
+<p>This distinction matters because paper abstracts often summarize across experiments, while a technical review should keep each table separate.</p>
+<h2 id="9-Main-result-2-post-training-compensation">9. Main result 2: post-training compensation</h2>
+<p>The next comparison compresses LLaMA2-7B under a 25% compression ratio and allows post-training compensation.</p>
+<p>The evaluation uses OpenCompass in PPL mode and reports accuracy on:</p>
+<ul>
+<li>C3</li>
+<li>CMNLI</li>
+<li>CHID</li>
+<li>BoolQ</li>
+<li>WSC</li>
+<li>CoQA</li>
+<li>HellaSwag</li>
+<li>PIQA</li>
+<li>Race-M</li>
+<li>Race-H</li>
+<li>MMLU</li>
+<li>CMMLU</li>
+</ul>
+<p>Average results:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th style="text-align:right">Average</th>
+<th style="text-align:right">Retained dense performance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Dense</td>
+<td style="text-align:right">49.2</td>
+<td style="text-align:right">100.0%</td>
+</tr>
+<tr>
+<td>LLMPruner*</td>
+<td style="text-align:right">38.4</td>
+<td style="text-align:right">78.1%</td>
+</tr>
+<tr>
+<td>SliceGPT*</td>
+<td style="text-align:right">38.4</td>
+<td style="text-align:right">78.0%</td>
+</tr>
+<tr>
+<td>LaCo*</td>
+<td style="text-align:right">40.3</td>
+<td style="text-align:right">82.0%</td>
+</tr>
+<tr>
+<td>ShortGPT*</td>
+<td style="text-align:right">44.0</td>
+<td style="text-align:right">89.4%</td>
+</tr>
+<tr>
+<td>LLM-Streamline-FFN*</td>
+<td style="text-align:right">45.8</td>
+<td style="text-align:right">93.1%</td>
+</tr>
+<tr>
+<td>LLM-Streamline-Layer*</td>
+<td style="text-align:right">45.2</td>
+<td style="text-align:right">92.0%</td>
+</tr>
+<tr>
+<td>GRASP</td>
+<td style="text-align:right">46.7</td>
+<td style="text-align:right">94.9%</td>
+</tr>
+</tbody>
+</table>
+<p>The asterisked baseline numbers are reported from Chen et al. (2024), according to the paper.</p>
+<p>The result supports the paper’s central claim: retaining original singular components gives the compressed model a better starting point than replacing layers with newly initialized modules.</p>
+<h2 id="10-Main-result-3-low-rank-pruning-comparison-across-compression-ratios">10. Main result 3: low-rank pruning comparison across compression ratios</h2>
+<p>The paper also compares GRASP with low-rank pruning baselines on LLaMA-7B across 20% to 50% compression ratios. Benchmarks include seven commonsense reasoning datasets plus GSM8K.</p>
+<p>Condensed average results:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:right">Compression ratio</th>
+<th>Method</th>
+<th style="text-align:right">Average</th>
+<th style="text-align:right">Retained dense performance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">20%</td>
+<td>FWSVD</td>
+<td style="text-align:right">0.28</td>
+<td style="text-align:right">60.8%</td>
+</tr>
+<tr>
+<td style="text-align:right">20%</td>
+<td>ASVD</td>
+<td style="text-align:right">0.38</td>
+<td style="text-align:right">82.6%</td>
+</tr>
+<tr>
+<td style="text-align:right">20%</td>
+<td>SVD-LLM</td>
+<td style="text-align:right">0.39</td>
+<td style="text-align:right">84.7%</td>
+</tr>
+<tr>
+<td style="text-align:right">20%</td>
+<td>GRASP</td>
+<td style="text-align:right">0.39</td>
+<td style="text-align:right">84.7%</td>
+</tr>
+<tr>
+<td style="text-align:right">20%</td>
+<td>GRASP*</td>
+<td style="text-align:right">0.42</td>
+<td style="text-align:right">91.3%</td>
+</tr>
+<tr>
+<td style="text-align:right">30%</td>
+<td>SVD-LLM</td>
+<td style="text-align:right">0.35</td>
+<td style="text-align:right">76.1%</td>
+</tr>
+<tr>
+<td style="text-align:right">30%</td>
+<td>GRASP</td>
+<td style="text-align:right">0.35</td>
+<td style="text-align:right">76.1%</td>
+</tr>
+<tr>
+<td style="text-align:right">30%</td>
+<td>GRASP*</td>
+<td style="text-align:right">0.40</td>
+<td style="text-align:right">87.0%</td>
+</tr>
+<tr>
+<td style="text-align:right">40%</td>
+<td>SVD-LLM</td>
+<td style="text-align:right">0.33</td>
+<td style="text-align:right">71.7%</td>
+</tr>
+<tr>
+<td style="text-align:right">40%</td>
+<td>GRASP</td>
+<td style="text-align:right">0.32</td>
+<td style="text-align:right">69.6%</td>
+</tr>
+<tr>
+<td style="text-align:right">40%</td>
+<td>GRASP*</td>
+<td style="text-align:right">0.38</td>
+<td style="text-align:right">82.6%</td>
+</tr>
+<tr>
+<td style="text-align:right">50%</td>
+<td>SVD-LLM</td>
+<td style="text-align:right">0.29</td>
+<td style="text-align:right">63.0%</td>
+</tr>
+<tr>
+<td style="text-align:right">50%</td>
+<td>GRASP</td>
+<td style="text-align:right">0.28</td>
+<td style="text-align:right">60.9%</td>
+</tr>
+<tr>
+<td style="text-align:right">50%</td>
+<td>GRASP*</td>
+<td style="text-align:right">0.32</td>
+<td style="text-align:right">69.6%</td>
+</tr>
+</tbody>
+</table>
+<p>Here <code>GRASP*</code> denotes the version with post-training compensation.</p>
+<p>This table gives a more nuanced picture:</p>
+<ul>
+<li>Training-free GRASP is very competitive with SVD-LLM.</li>
+<li>With lightweight compensation, GRASP becomes clearly stronger in these reported averages.</li>
+<li>At aggressive 50% compression, performance drops substantially even with compensation, which is an important boundary condition.</li>
+</ul>
+<h2 id="11-Efficiency-and-compression-time">11. Efficiency and compression time</h2>
+<p>The paper measures generation throughput for LLaMA2-7B and its GRASP-compressed version under a 25% compression ratio on a single A100 GPU. The figure reports that GRASP improves throughput and is comparable to direct layer removal.</p>
+<p>This is plausible because the retained singular components are very low-rank and only exist in selected redundant layers. The paper emphasizes that the extra retained parameters add negligible inference overhead relative to keeping the full layers.</p>
+<p>Compression-time table for LLaMA2-7B at 25% compression on one A100:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th style="text-align:right">Pruning time (h)</th>
+<th style="text-align:right">Compensation time (h)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LaCo</td>
+<td style="text-align:right">0.05</td>
+<td style="text-align:right">1.20</td>
+</tr>
+<tr>
+<td>SliceGPT</td>
+<td style="text-align:right">0.60</td>
+<td style="text-align:right">0.76</td>
+</tr>
+<tr>
+<td>LLM-Streamline</td>
+<td style="text-align:right">0.03</td>
+<td style="text-align:right">0.70</td>
+</tr>
+<tr>
+<td>GRASP</td>
+<td style="text-align:right">0.16</td>
+<td style="text-align:right">none</td>
+</tr>
+<tr>
+<td>GRASP*</td>
+<td style="text-align:right">0.16</td>
+<td style="text-align:right">0.66</td>
+</tr>
+</tbody>
+</table>
+<p>The fair interpretation is:</p>
+<ul>
+<li>GRASP is not the fastest pruning step by wall-clock time.</li>
+<li>It is still practical at this scale.</li>
+<li>In its training-free form, it avoids compensation time entirely.</li>
+<li>With compensation, its total cost is comparable to other post-training methods while achieving strong accuracy.</li>
+</ul>
+<h2 id="12-Ablation-studies">12. Ablation studies</h2>
+<h3 id="12-1-Calibration-data-choice">12.1 Calibration data choice</h3>
+<p>GRASP uses a calibration set for hidden-state similarity and gradient attribution. The paper tests whether the method is sensitive to this choice.</p>
+<p>For LLaMA3.1-8B-Instruct under 20% compression:</p>
+<table>
+<thead>
+<tr>
+<th>Calibration data</th>
+<th style="text-align:right">WikiText-2 PPL ↓</th>
+<th style="text-align:right">PTB PPL ↓</th>
+<th style="text-align:right">Average accuracy ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>WikiText-2, 512 samples</td>
+<td style="text-align:right">37.86</td>
+<td style="text-align:right">63.97</td>
+<td style="text-align:right">47.12</td>
+</tr>
+<tr>
+<td>C4, 512 samples</td>
+<td style="text-align:right">40.54</td>
+<td style="text-align:right">71.42</td>
+<td style="text-align:right">46.17</td>
+</tr>
+</tbody>
+</table>
+<p>The average downstream accuracy changes by less than one point in this table, which supports the robustness claim.</p>
+<h3 id="12-2-Calibration-data-amount">12.2 Calibration data amount</h3>
+<p>The paper also varies the number of WikiText-2 samples:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:right">Calibration samples</th>
+<th style="text-align:right">Average accuracy ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">64</td>
+<td style="text-align:right">47.06</td>
+</tr>
+<tr>
+<td style="text-align:right">128</td>
+<td style="text-align:right">46.93</td>
+</tr>
+<tr>
+<td style="text-align:right">256</td>
+<td style="text-align:right">46.67</td>
+</tr>
+<tr>
+<td style="text-align:right">512</td>
+<td style="text-align:right">47.12</td>
+</tr>
+</tbody>
+</table>
+<p>This is one of the more deployment-friendly results. It suggests that GRASP does not need a huge calibration set to rank singular groups reasonably well.</p>
+<h3 id="12-3-Retain-ratio">12.3 Retain ratio</h3>
+<p>For LLaMA2-7B, the paper replaces 8 redundant layers and varies the retain ratio:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:right">Retain ratio</th>
+<th style="text-align:right">Overall compression ratio</th>
+<th style="text-align:right">Average accuracy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right">0%</td>
+<td style="text-align:right">24.0%</td>
+<td style="text-align:right">41.1</td>
+</tr>
+<tr>
+<td style="text-align:right">5%</td>
+<td style="text-align:right">22.8%</td>
+<td style="text-align:right">44.8</td>
+</tr>
+<tr>
+<td style="text-align:right">10%</td>
+<td style="text-align:right">21.6%</td>
+<td style="text-align:right">45.5</td>
+</tr>
+<tr>
+<td style="text-align:right">15%</td>
+<td style="text-align:right">20.4%</td>
+<td style="text-align:right">45.5</td>
+</tr>
+<tr>
+<td style="text-align:right">20%</td>
+<td style="text-align:right">19.2%</td>
+<td style="text-align:right">45.8</td>
+</tr>
+</tbody>
+</table>
+<p>The key point: 10% is a practical inflection point. Keeping no singular parameters is essentially layer removal; keeping 10% recovers much of the damage; beyond that, returns are smaller.</p>
+<h3 id="12-4-One-shot-versus-iterative-pruning">12.4 One-shot versus iterative pruning</h3>
+<p>For LLaMA3.1-8B-Instruct under 20% compression:</p>
+<table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th style="text-align:right">WikiText-2 PPL ↓</th>
+<th style="text-align:right">PTB PPL ↓</th>
+<th style="text-align:right">Average accuracy ↑</th>
+<th style="text-align:right">Compression time (h)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>One-shot</td>
+<td style="text-align:right">37.86</td>
+<td style="text-align:right">63.97</td>
+<td style="text-align:right">47.12</td>
+<td style="text-align:right">0.16</td>
+</tr>
+<tr>
+<td>Iterative</td>
+<td style="text-align:right">38.39</td>
+<td style="text-align:right">72.18</td>
+<td style="text-align:right">47.13</td>
+<td style="text-align:right">0.22</td>
+</tr>
+</tbody>
+</table>
+<p>Accuracy is almost identical, while one-shot is faster. This supports using the simpler one-shot procedure in practice.</p>
+<h2 id="13-LongBench-and-unstructured-pruning-comparisons">13. LongBench and unstructured pruning comparisons</h2>
+<p>The appendix includes two useful extra comparisons.</p>
+<h3 id="13-1-LongBench">13.1 LongBench</h3>
+<p>For LLaMA3.1-8B-Instruct under 20% compression, the LongBench average is:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th style="text-align:right">LongBench average</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Dense LLaMA3.1-8B-Instruct</td>
+<td style="text-align:right">26.09</td>
+</tr>
+<tr>
+<td>GRASP</td>
+<td style="text-align:right">26.26</td>
+</tr>
+</tbody>
+</table>
+<p>Individual LongBench tasks vary: GRASP improves on some subtasks and drops on others. The average being similar is encouraging, but it should not be over-read as universal long-context superiority. It shows that the compression did not obviously collapse long-form evaluation in the reported setting.</p>
+<h3 id="13-2-SparseGPT-and-Wanda">13.2 SparseGPT and Wanda</h3>
+<p>The paper compares 2:4 unstructured sparsity methods with GRASP:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Compression/sparsity setting</th>
+<th style="text-align:right">Average</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Dense</td>
+<td>none</td>
+<td style="text-align:right">53.38</td>
+</tr>
+<tr>
+<td>SparseGPT</td>
+<td>2:4 sparsity</td>
+<td style="text-align:right">46.28</td>
+</tr>
+<tr>
+<td>Wanda</td>
+<td>2:4 sparsity</td>
+<td style="text-align:right">45.16</td>
+</tr>
+<tr>
+<td>GRASP</td>
+<td>20% structured compression</td>
+<td style="text-align:right">45.27</td>
+</tr>
+<tr>
+<td>GRASP*</td>
+<td>20% structured compression + compensation</td>
+<td style="text-align:right">50.01</td>
+</tr>
+</tbody>
+</table>
+<p>This comparison is useful but not perfectly apples-to-apples. Unstructured sparsity and structured low-rank layer replacement stress the hardware and runtime system differently. The practical winner depends on whether the deployment stack has efficient sparse kernels.</p>
+<h2 id="14-Why-GRASP-works-intuitively">14. Why GRASP works, intuitively</h2>
+<p>The paper’s explanation has two parts.</p>
+<h3 id="14-1-Redundant-layers-are-often-low-rank-in-function">14.1 Redundant layers are often low-rank in function</h3>
+<p>If a layer barely changes its hidden state, its effective transformation may live in a smaller subspace. A full dense layer is overkill for such a transformation.</p>
+<p>The method therefore tries to preserve the subspace directions that matter most.</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Full redundant layer:</span><br><span class="line">[ many directions: useful + nearly useless + noisy&#x2F;redundant ]</span><br><span class="line"></span><br><span class="line">GRASP replacement:</span><br><span class="line">[ a few gradient-selected useful directions ]</span><br></pre></td></tr></table></figure>
+<h3 id="14-2-Gradient-attribution-aligns-compression-with-task-loss">14.2 Gradient attribution aligns compression with task loss</h3>
+<p>Magnitude-based SVD answers:</p>
+<blockquote>
+<p>Which components best reconstruct the weight matrix?</p>
+</blockquote>
+<p>GRASP answers:</p>
+<blockquote>
+<p>Which components most affect the language-model loss on calibration data?</p>
+</blockquote>
+<p>Those are related but not identical questions. For model compression, the second question is usually closer to what we care about.</p>
+<h2 id="15-Limitations-and-boundary-conditions">15. Limitations and boundary conditions</h2>
+<p>The paper lists several limitations, and there are a few practical caveats worth making explicit.</p>
+<h3 id="15-1-Cosine-similarity-is-a-heuristic">15.1 Cosine similarity is a heuristic</h3>
+<p>GRASP assumes that if <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">H_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>H</mi><mrow><mi>i</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow><annotation encoding="application/x-tex">H_{i+1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8917em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0813em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span></span></span></span> are close, the layer is redundant. This is useful but incomplete. A layer could make a small directional change that matters for rare tokens, long-context behavior, multilingual tasks, or safety behavior.</p>
+<p>The cosine score is a good candidate-selection heuristic, not a proof that the layer is dispensable.</p>
+<h3 id="15-2-GRASP-needs-internal-access">15.2 GRASP needs internal access</h3>
+<p>The method needs:</p>
+<ul>
+<li>hidden states for layer similarity,</li>
+<li>gradients for singular-group attribution,</li>
+<li>access to model weights for SVD and replacement.</li>
+</ul>
+<p>So it is not suitable for strict black-box API-only models.</p>
+<h3 id="15-3-Calibration-data-still-matters">15.3 Calibration data still matters</h3>
+<p>The ablation suggests GRASP is not very sensitive to WikiText-2 versus C4 or to sample counts between 64 and 512. But a calibration set is still a proxy for deployment traffic. If your target domain is legal, medical, code, multilingual chat, or tool-use traces, generic WikiText-2 may miss important directions.</p>
+<p>A practical deployment should calibrate on data close to the target workload when possible.</p>
+<h3 id="15-4-The-paper’s-largest-models-are-modest-by-2026-standards">15.4 The paper’s largest models are modest by 2026 standards</h3>
+<p>The reported main model sizes go up to 13B, with LLaMA3.1-8B-Instruct and Mistral-7B included. That is useful, but it does not automatically prove the same behavior on 70B-scale, MoE, very long-context, or heavily instruction-tuned production models.</p>
+<h3 id="15-5-Mostly-English-centric-evaluation">15.5 Mostly English-centric evaluation</h3>
+<p>The paper states that experiments are primarily English-language tasks. Multilingual robustness remains future work.</p>
+<h3 id="15-6-Compression-ratio-should-be-read-carefully">15.6 Compression ratio should be read carefully</h3>
+<p>Because GRASP selects layers and then chooses a retain ratio within selected matrices, “20% compression” is not simply one universal architecture-independent setting. It depends on:</p>
+<ul>
+<li>how many layers are selected,</li>
+<li>which matrices in those layers are replaced,</li>
+<li>the singular-group retain ratio,</li>
+<li>implementation details for storing and executing low-rank modules.</li>
+</ul>
+<h2 id="16-Reproducibility-notes">16. Reproducibility notes</h2>
+<p>If I were reproducing this paper, I would track the following details carefully.</p>
+<h3 id="16-1-Use-the-exact-calibration-protocol">16.1 Use the exact calibration protocol</h3>
+<p>The main comparison uses 512 WikiText-2 samples. The ablation also tests C4 and smaller sample counts. Because layer selection and gradient attribution both depend on calibration data, the sample choice should be logged.</p>
+<h3 id="16-2-Separate-three-procedures">16.2 Separate three procedures</h3>
+<p>Do not mix these up:</p>
+<ol>
+<li><strong>Layer selection:</strong> forward pass, cosine similarity of hidden states.</li>
+<li><strong>Singular-group attribution:</strong> SVD plus backward pass for gradient scores.</li>
+<li><strong>Post-training compensation:</strong> optional training after compression.</li>
+</ol>
+<p>GRASP can be discussed as training-free only when step 3 is skipped. Computing gradients for attribution is not post-training optimization.</p>
+<h3 id="16-3-Report-both-average-and-per-task-metrics">16.3 Report both average and per-task metrics</h3>
+<p>Averages can hide large task variation. For example, a method might preserve PIQA but damage MathQA or GSM8K. The paper reports per-task numbers, and a faithful reproduction should too.</p>
+<h3 id="16-4-Record-real-runtime-behavior">16.4 Record real runtime behavior</h3>
+<p>The method is designed for structured speedups, but actual throughput depends on the implementation of low-rank replacement modules. A reproduction should report:</p>
+<ul>
+<li>model size on disk,</li>
+<li>GPU memory usage,</li>
+<li>prefill throughput,</li>
+<li>decode throughput,</li>
+<li>latency at realistic batch sizes,</li>
+<li>whether low-rank modules are fused or executed as separate kernels.</li>
+</ul>
+<h3 id="16-5-Compare-with-quantization-combinations">16.5 Compare with quantization combinations</h3>
+<p>The paper focuses on pruning/low-rank compression. In real deployment, GRASP would likely be combined with quantization. That combined setting is important but not the main focus of the reported experiments.</p>
+<h2 id="17-Practical-takeaway-for-engineers">17. Practical takeaway for engineers</h2>
+<p>GRASP is most attractive when:</p>
+<ul>
+<li>you can access model weights and gradients,</li>
+<li>you want structured compression rather than sparse weights,</li>
+<li>you can afford a small calibration pass,</li>
+<li>you want a training-free compressed model or only lightweight recovery training,</li>
+<li>target latency benefits from removing or replacing whole layers.</li>
+</ul>
+<p>It is less attractive when:</p>
+<ul>
+<li>the model is only available through an API,</li>
+<li>the deployment stack cannot efficiently run the low-rank replacements,</li>
+<li>target behavior is far from the calibration distribution,</li>
+<li>you need strong guarantees on multilingual, safety, or rare-domain behavior.</li>
+</ul>
+<h2 id="18-My-assessment">18. My assessment</h2>
+<p>GRASP is a sensible and technically clean idea: it improves layer pruning by refusing to treat “redundant” as “worthless.” The strongest part of the paper is the combination of two signals:</p>
+<ol>
+<li>hidden-state similarity for finding where compression is plausible, and</li>
+<li>gradient attribution for deciding what low-rank structure to keep.</li>
+</ol>
+<p>That combination is more convincing than either direct layer deletion or magnitude-only SVD.</p>
+<p>The main caveat is that the method still depends on heuristics and calibration data. It is a practical compression recipe, not a theoretical guarantee that the selected layers are universally redundant. The experiments are broad enough to be interesting, especially across LLaMA and Mistral models, but I would still want deployment-domain calibration and real serving benchmarks before trusting it in production.</p>
+<h2 id="19-Final-takeaways">19. Final takeaways</h2>
+<ul>
+<li>GRASP means <strong>Gradient-based Retention of Adaptive Singular Parameters</strong>.</li>
+<li>It compresses LLMs by replacing redundant layers, not merely deleting them.</li>
+<li>Redundant layers are selected using hidden-state cosine similarity.</li>
+<li>Each selected weight matrix is decomposed by SVD.</li>
+<li>Singular groups are retained by gradient-based loss sensitivity, not by magnitude alone.</li>
+<li>A 10% singular-group retain ratio is the paper’s practical default because returns saturate after that point.</li>
+<li>Training-free GRASP is competitive; GRASP with light compensation is stronger.</li>
+<li>The best reported numbers show strong retention of dense performance, but the exact percentage depends on the table, model, task set, and whether compensation is used.</li>
+<li>Limitations include heuristic layer selection, need for internal gradients, calibration dependence, model-scale boundaries, and mostly English evaluation.</li>
+</ul>
+
+     </div> <footer class="blog-post-footer"> <p class="blog-post-source">
+Originally published at <a href="https://zzz0906.github.io/2026/04/17/2026-04-17-GRASP-technical-review-en/" target="_blank" rel="noopener noreferrer">zzz0906.github.io</a>.
+</p> <nav class="blog-post-nav" aria-label="Adjacent posts"> <a class="blog-post-nav-link blog-post-nav-prev" href="/blog/2026-04-19-2026-04-19-SpecGuard-阅读笔记-zh/"> <span class="blog-post-nav-label">← Newer</span> <span class="blog-post-nav-title">SpecGuard：用于多步推理的验证感知推测解码</span> </a> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-04-16-2026-04-16-PipeDream-technical-review-en/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">PipeDream: Turning Pipeline Parallelism into a Practical Training System — Deep Technical Review</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient ML systems, LLM infrastructure, and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>

@@ -1,0 +1,540 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Zero Sum SVD: A Global, Loss-Aware Rank Budget for LLM Compression | Zhongzhu / Charlie</title><meta name="description" content="A detailed technical review of Zero Sum SVD, which replaces per-layer rank optimization with a global, signed loss-sensitivity heap and a greedy zero-sum rule, letting heterogeneous per-layer ranks fall out of one scalar conservation law."><meta property="og:title" content="Zero Sum SVD: A Global, Loss-Aware Rank Budget for LLM Compression | Zhongzhu / Charlie"><meta property="og:description" content="A detailed technical review of Zero Sum SVD, which replaces per-layer rank optimization with a global, signed loss-sensitivity heap and a greedy zero-sum rule, letting heterogeneous per-layer ranks fall out of one scalar conservation law."><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-05-15-2026-05-15-ZeroSumSVD-technical-review-en/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-05-15-2026-05-15-ZeroSumSVD-technical-review-en/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.BtdlpukG.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>116</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>33</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> <nav class="blog-post-toc" aria-label="Table of contents"> <p class="blog-post-toc-title">Contents</p> <ul> <li class="toc-level-2"> <a href="#Short-answer">Short answer</a> </li><li class="toc-level-2"> <a href="#1-Prerequisites">1. Prerequisites</a> </li><li class="toc-level-3"> <a href="#1-1-Singular-Value-Decomposition-in-one-paragraph">1.1 Singular Value Decomposition in one paragraph</a> </li><li class="toc-level-3"> <a href="#1-2-Why-direct-SVD-of-W-is-insufficient">1.2 Why direct SVD of W is insufficient</a> </li><li class="toc-level-3"> <a href="#1-3-Whitening">1.3 Whitening</a> </li><li class="toc-level-3"> <a href="#1-4-Calibration-loss">1.4 Calibration loss</a> </li><li class="toc-level-3"> <a href="#1-5-Fisher-importance-and-its-limitations">1.5 Fisher importance and its limitations</a> </li><li class="toc-level-3"> <a href="#1-6-Post-training-compression">1.6 Post-training compression</a> </li><li class="toc-level-3"> <a href="#1-7-Heterogeneous-rank-allocation">1.7 Heterogeneous rank allocation</a> </li><li class="toc-level-3"> <a href="#1-8-First-order-Taylor-expansion-of-the-loss">1.8 First-order Taylor expansion of the loss</a> </li><li class="toc-level-2"> <a href="#2-Method">2. Method</a> </li><li class="toc-level-3"> <a href="#2-1-Pipeline-overview">2.1 Pipeline overview</a> </li><li class="toc-level-3"> <a href="#2-2-Computing-per-σ-sensitivity">2.2 Computing per-σ sensitivity</a> </li><li class="toc-level-3"> <a href="#2-3-The-zero-sum-selection-rule">2.3 The zero-sum selection rule</a> </li><li class="toc-level-3"> <a href="#2-4-One-step-correction-with-re-truncation">2.4 One-step correction with re-truncation</a> </li><li class="toc-level-3"> <a href="#2-5-Storage-remapping-and-HQ">2.5 Storage remapping and HQ</a> </li><li class="toc-level-3"> <a href="#2-6-Engineering-choices">2.6 Engineering choices</a> </li><li class="toc-level-3"> <a href="#2-7-Pseudocode-and-complexity">2.7 Pseudocode and complexity</a> </li><li class="toc-level-3"> <a href="#2-8-Engineering-comparison-with-Dobi-SVD">2.8 Engineering comparison with Dobi-SVD</a> </li><li class="toc-level-2"> <a href="#3-5b-A-deeper-read-of-the-catastrophic-ablation">3.5b A deeper read of the catastrophic ablation</a> </li><li class="toc-level-2"> <a href="#4-3-Practical-deployment-notes">4.3 Practical deployment notes</a> </li><li class="toc-level-2"> <a href="#3-Experiments">3. Experiments</a> </li><li class="toc-level-3"> <a href="#3-1-Main-table-Table-1-LLaMA-7B-maintenance-ratios-0-8-0-6-0-4">3.1 Main table (Table 1, LLaMA-7B, maintenance ratios 0.8 / 0.6 / 0.4)</a> </li><li class="toc-level-3"> <a href="#3-2-Against-Dip-SVD-Table-2-30-pruning">3.2 Against Dip-SVD (Table 2, 30% pruning)</a> </li><li class="toc-level-3"> <a href="#3-3-Against-structured-pruning-Tables-3-4">3.3 Against structured pruning (Tables 3 &amp; 4)</a> </li><li class="toc-level-3"> <a href="#3-4-Cross-model-scaling-Table-5-20-pruning">3.4 Cross-model scaling (Table 5, 20% pruning)</a> </li><li class="toc-level-3"> <a href="#3-5-Ablation-σ-selection-strategies-Table-6">3.5 Ablation: σ selection strategies (Table 6)</a> </li><li class="toc-level-3"> <a href="#3-6-Inference-efficiency-Table-7">3.6 Inference efficiency (Table 7)</a> </li><li class="toc-level-3"> <a href="#3-7-Truncation-time-Table-8">3.7 Truncation time (Table 8)</a> </li><li class="toc-level-2"> <a href="#4-Discussion">4. Discussion</a> </li><li class="toc-level-3"> <a href="#4-1-What-could-break">4.1 What could break</a> </li><li class="toc-level-3"> <a href="#4-2-Where-I-would-push-next">4.2 Where I would push next</a> </li><li class="toc-level-2"> <a href="#5-Limitations-and-reproducibility">5. Limitations and reproducibility</a> </li><li class="toc-level-3"> <a href="#5-1-Limitations">5.1 Limitations</a> </li><li class="toc-level-3"> <a href="#5-2-Reproducibility">5.2 Reproducibility</a> </li><li class="toc-level-2"> <a href="#References">References</a> </li> </ul> </nav> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-05-15">May 15, 2026</time> <span class="blog-lang blog-lang-en">EN</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/Model-Compression/">#Model Compression</a><a class="blog-post-tag-chip" href="/blog/tag/Quantization/">#Quantization</a><a class="blog-post-tag-chip" href="/blog/tag/Reasoning/">#Reasoning</a><a class="blog-post-tag-chip" href="/blog/tag/Distributed-Training/">#Distributed Training</a><a class="blog-post-tag-chip" href="/blog/tag/LLM-Training/">#LLM Training</a><a class="blog-post-tag-chip" href="/blog/tag/SVD-&amp;-Low-Rank/">#SVD &amp; Low-Rank</a> </span> </p> <h1>Zero Sum SVD: A Global, Loss-Aware Rank Budget for LLM Compression</h1> </header> <div class="blog-post-body"> 
+
+      
+        <p><strong>Review date:</strong> 2026-05-15
+<strong>Reviewer:</strong> Zhongzhu Zhou
+<strong>Paper:</strong> <em>Zero Sum SVD: Balancing Loss Sensitivity for Low Rank LLM Compression</em>
+<strong>Authors:</strong> Ali Abbasi, Chayne Thrash, Haoran Qin, Shansita Sharma, Sepehr Seifi, Soheil Kolouri (Department of Computer Science, Vanderbilt University)
+<strong>arXiv:</strong> 2602.02848v1, 2026-02-02
+<strong>Status:</strong> Preprint. Code at <a href="https://github.com/mint-vu/Zero-Sum-SVD" target="_blank" rel="noopener noreferrer">https://github.com/mint-vu/Zero-Sum-SVD</a>.</p>
+<h2 id="Short-answer">Short answer</h2>
+<p>This paper revisits a question that I find every SVD-based LLM compression paper ducks one way or another: <strong>given a target global parameter budget, how do you decide how many singular values to keep in each layer?</strong></p>
+<p>Two conventional answers dominate the literature:</p>
+<ul>
+<li>Homogeneous allocation: pick one global ratio ρ and apply it everywhere (SVD-LLM, ASVD).</li>
+<li>Per-layer optimization: treat the truncation rank as a continuous variable and optimize it with backpropagation (Dobi-SVD).</li>
+</ul>
+<p>Zero Sum SVD (ZS-SVD) is the third answer. It does <strong>not</strong> optimize per-layer ranks at all. Instead, it pools every singular value across the entire model into one global heap, scores each one with a <em>signed</em> first-order loss sensitivity ∆Lᵢ ≈ −σᵢ · gσ,ᵢ, and applies a greedy &quot;zero-sum&quot; rule that picks the next component so the running sum of predicted loss changes stays close to zero. Heterogeneous per-layer ranks fall out automatically.</p>
+<p>In one paragraph: ZS-SVD computes the whitened weight A = W·S (where S is the Cholesky factor of the activation covariance), takes its SVD A = UΣVᵀ, computes a calibration-loss gradient H = ∇_W L · S⁻ᵀ in the whitened parameterization, and uses ∆Lᵢ = −σᵢ · uᵢᵀ H vᵢ as a first-order estimate of how much L would change if we set σᵢ ← 0. Then it greedily picks the next singular value to prune such that the cumulative drift s = Σ ∆Lⱼ oscillates around zero. Each layer must still prune its own σ's in ascending order to preserve the local optimality of truncated SVD in whitened coordinates. An optional one-step &quot;truncate–correct–re-truncate&quot; cycle further closes the loss gap by leveraging the empirical low-rankness of LLM gradients near pretrained solutions.</p>
+<p>Across LLaMA-7B / 2-7B / 13B / 30B, Vicuna-7B, and OPT-6.7B on WikiText2 / PTB / C4 perplexity and seven zero-shot reasoning tasks, ZS-SVD beats ASVD, SVD-LLM, Dobi-SVD, Dip-SVD, plus LLM-Pruner / SliceGPT / Wanda-sp / FLAP structured pruning, often by wide margins. At 0.4 maintenance ratio on LLaMA-7B with Dobi-SVD-style remapping or HQ (half-prune + quantize), it pushes WikiText2 PPL from a baseline of 5.68 to 6.73—a regime where vanilla SVD-LLM blows up to 53.74. Throughput improves up to 5.86× over uncompressed on RTX A5000 at 60% compression, and end-to-end truncation time is 15.9 min on LLaMA-7B versus 19.25 h for Dobi-SVD.</p>
+<p>The most interesting structural insight, in my reading, is the substitution of a combinatorial rank-allocation problem with a single scalar conservation law (s ≈ 0). That kind of &quot;swap optimization for a feasibility constraint&quot; pattern is rare in the LLM compression literature but extremely common in numerical optimization and control theory, and I think it generalizes.</p>
+<h2 id="1-Prerequisites">1. Prerequisites</h2>
+<p>This section is for readers who have trained transformers but have not internalized the SVD-compression line of work. I cover SVD, whitening, activation reconstruction, calibration loss, Fisher importance, and heterogeneous rank allocation. Skip ahead if you have read SVD-LLM (ICLR 2025).</p>
+<h3 id="1-1-Singular-Value-Decomposition-in-one-paragraph">1.1 Singular Value Decomposition in one paragraph</h3>
+<p>Every real m×n matrix A admits a factorization A = U Σ Vᵀ with U ∈ ℝ^{m×m} and V ∈ ℝ^{n×n} orthogonal and Σ ∈ ℝ^{m×n} diagonal with non-negative entries σ₁ ≥ σ₂ ≥ … ≥ 0. The rank-k truncation Aₖ = Uₖ Σₖ Vₖᵀ retains only the top-k singular triplets and is, by the Eckart–Young–Mirsky theorem, the best rank-k approximation of A in the Frobenius norm. Storage-wise, a rank-k factorization of W ∈ ℝ^{m×n} stores k(m+n) parameters instead of mn, which becomes a saving when k ≤ mn / (m+n).</p>
+<h3 id="1-2-Why-direct-SVD-of-W-is-insufficient">1.2 Why direct SVD of W is insufficient</h3>
+<p>The naive recipe—SVD the weight, drop small σ's—is wrong for LLMs because W is used inside the product W·X. A direction with a small singular value in weight space can still be a high-energy direction along the empirical activation distribution; truncating it inflicts large activation reconstruction error. SVD-based LLM compression therefore folds activation statistics into the factorization.</p>
+<h3 id="1-3-Whitening">1.3 Whitening</h3>
+<p>Estimate the activation covariance C = X·Xᵀ ∈ ℝ^{n×n} from a small calibration set, and find S satisfying S·Sᵀ = C (typically the Cholesky factor of C + λI for numerical stability). Define the whitened weight A = W·S. The key identity (Theorem 3.1 in the paper) is</p>
+<p>‖W X − W' X‖²_F = tr[(W − W') C (W − W')ᵀ] = ‖(W − W') S‖²_F.</p>
+<p>So minimizing activation reconstruction error in input space is equivalent to minimizing a Frobenius error in whitened weight space. By Eckart–Young, the optimal rank-k approximation in whitened space is the top-k SVD of A, mapped back via S⁻¹. This is the algebraic foundation underlying ASVD, SVD-LLM, Dobi-SVD, and now ZS-SVD.</p>
+<h3 id="1-4-Calibration-loss">1.4 Calibration loss</h3>
+<p>Activation reconstruction is a <strong>local</strong> objective: it only controls the error at one layer's output. The end-to-end objective is the language modeling loss L on a calibration set (the paper uses 256 sequences of length 2048 from WikiText2). Truncating a σᵢ can interact non-trivially with downstream layers, so a small ‖W X − W' X‖ does not imply a small ΔL. The ZS-SVD contribution is to bridge this gap with a per-σ first-order estimate of ΔL.</p>
+<h3 id="1-5-Fisher-importance-and-its-limitations">1.5 Fisher importance and its limitations</h3>
+<p>Older SVD-compression work (FWSVD, Dip-SVD) uses the Fisher information F as a parameter-importance proxy. Fisher importance is a <em>second-order</em> quantity (it's the diagonal of the Hessian under MLE); high curvature in a direction means the parameter is loss-sensitive. The drawback is that Fisher-based weighting yields a heuristic per-matrix score rather than a per-singular-value score; it cannot directly answer &quot;should I prune σ₂ in layer 4 or σ_17 in layer 12 first?&quot; ZS-SVD trades the second-order Fisher view for a first-order, signed, per-σ score, then enforces global coherence with the zero-sum rule.</p>
+<h3 id="1-6-Post-training-compression">1.6 Post-training compression</h3>
+<p>ZS-SVD is post-training: no retraining, no fine-tuning, only a one-shot calibration on a small dataset. This makes it compatible with any published checkpoint and orthogonal to quantization, distillation, and pruning—they can be stacked.</p>
+<h3 id="1-7-Heterogeneous-rank-allocation">1.7 Heterogeneous rank allocation</h3>
+<p>The six matrices in a transformer block (q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj) differ in their loss sensitivity. <em>Heterogeneous</em> rank allocation gives each its own rank under a global budget, in contrast to <em>homogeneous</em> allocation (one ratio for all). Heterogeneous is empirically better but harder to compute: it requires either a combinatorial search (intractable) or a continuous relaxation (Dobi-SVD), or—as ZS-SVD shows—a clever feasibility rule that side-steps optimization.</p>
+<h3 id="1-8-First-order-Taylor-expansion-of-the-loss">1.8 First-order Taylor expansion of the loss</h3>
+<p>The core algebraic move of the paper. For any small ∆W,</p>
+<p>L(W + ∆W) ≈ L(W) + ⟨∇_W L, ∆W⟩.</p>
+<p>Setting σᵢ to zero corresponds to ∆A = −σᵢ uᵢ vᵢᵀ in whitened space, which back-translates to ∆W = ∆A · S⁻¹. Plug in:</p>
+<p>∆Lᵢ ≈ ⟨∇_W L, ∆A · S⁻¹⟩ = ⟨∇_W L · S⁻ᵀ, ∆A⟩ = −σᵢ uᵢᵀ H vᵢ,</p>
+<p>with H ≜ ∇_W L · S⁻ᵀ. Importantly, ∆Lᵢ is <em>signed</em>: σᵢ ≥ 0 but uᵢᵀ H vᵢ can be positive or negative. <strong>Some singular values, when pruned, are predicted to <em>decrease</em> the loss.</strong> This sign asymmetry is what the zero-sum selection exploits.</p>
+<h2 id="2-Method">2. Method</h2>
+<h3 id="2-1-Pipeline-overview">2.1 Pipeline overview</h3>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">Pretrained LLM weights &#123;W_ℓ&#125;</span><br><span class="line">        │</span><br><span class="line">        ├── Per-layer Cholesky        →  S_ℓ</span><br><span class="line">        ├── Per-layer whitened SVD    →  A_ℓ &#x3D; W_ℓ S_ℓ &#x3D; U_ℓ Σ_ℓ V_ℓᵀ</span><br><span class="line">        ├── One full backward pass    →  G_ℓ &#x3D; ∇_&#123;W_ℓ&#125; L</span><br><span class="line">        └── Per-σ score               →  ∆L_&#123;ℓ,i&#125; &#x3D; −σ_&#123;ℓ,i&#125; · u_&#123;ℓ,i&#125;ᵀ (G_ℓ S_ℓ⁻ᵀ) v_&#123;ℓ,i&#125;</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">Global greedy with two heaps (Q⁺ for ∆L ≥ 0, Q⁻ for ∆L &lt; 0)</span><br><span class="line">Pop from Q⁺ when s ≤ 0; from Q⁻ when s &gt; 0.</span><br><span class="line">Each layer respects internal ascending σ order.</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">Final per-layer ranks k_ℓ.</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">(Optional) Truncate–correct–re-truncate (×1, ×5, ×10).</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">Compressed weights &#123;W&#39;_ℓ&#125;.</span><br></pre></td></tr></table></figure>
+<h3 id="2-2-Computing-per-σ-sensitivity">2.2 Computing per-σ sensitivity</h3>
+<p>For each layer ℓ:</p>
+<ol>
+<li>Compute the activation second moment C_ℓ = X_ℓ X_ℓᵀ on the calibration set.</li>
+<li>Cholesky-decompose C_ℓ + λI to get S_ℓ (lower-triangular, so S_ℓ⁻ᵀ is cheap).</li>
+<li>Form A_ℓ = W_ℓ S_ℓ and run SVD to get U_ℓ Σ_ℓ V_ℓᵀ.</li>
+<li>Run one full backward pass over the calibration mini-batch to obtain G_ℓ = ∇_{W_ℓ} L.</li>
+<li>Form H_ℓ = G_ℓ S_ℓ⁻ᵀ.</li>
+<li>For each retained σ_{ℓ,i}, compute the scalar gσ,i = uᵢᵀ H_ℓ vᵢ and store ∆L_{ℓ,i} = −σ_{ℓ,i} · gσ,i.</li>
+</ol>
+<p>Steps 1–3 are the same cost SVD-LLM already pays. Step 4 is one backward pass on a 256×2048 mini-batch. Steps 5–6 are O(k·n²) per layer in the worst case but trivially batched. The end-to-end measurement on LLaMA-7B is 15.9 min vs 7.9 min for SVD-LLM and 19.25 h for Dobi-SVD. ZS-SVD basically buys &quot;Dobi-SVD-grade accuracy at SVD-LLM-grade runtime.&quot;</p>
+<h3 id="2-3-The-zero-sum-selection-rule">2.3 The zero-sum selection rule</h3>
+<p>Maintain s = Σ_{j∈D} ∆Lⱼ where D is the set of currently pruned components. The selection rule is</p>
+<ul>
+<li>if s ≤ 0, prefer Q⁺ (a component with ∆Lᵢ ≥ 0, predicted to <em>increase</em> loss);</li>
+<li>if s &gt; 0, prefer Q⁻ (a component with ∆Lᵢ &lt; 0, predicted to <em>decrease</em> loss).</li>
+</ul>
+<p>Within each heap, candidates are keyed by |∆Lᵢ| in ascending order, so the next pop is the one with the smallest predicted magnitude on the chosen sign. The intuition is: never let the cumulative predicted drift wander far from zero, so that the first-order Taylor expansion remains valid; pick the <em>smallest</em> available impact in the corrective direction to minimize the perturbation magnitude.</p>
+<p>Crucially, each layer must internally prune in ascending σ order—you cannot skip ahead within a layer. This is a hard constraint, not a soft preference. The reason is that the Eckart–Young optimality of truncated SVD in whitened space relies on dropping the smallest σ's; if you allow within-layer reordering, the whitened-space reconstruction error is no longer minimized, and the predicted ∆Lᵢ values (computed under the assumption of dropping σᵢ from the current truncation point) become inconsistent. The ablation in Table 6 confirms this: drop the constraint and PPL explodes by orders of magnitude across all selection strategies.</p>
+<h3 id="2-4-One-step-correction-with-re-truncation">2.4 One-step correction with re-truncation</h3>
+<p>After global truncation, let W'_k be the current rank-k factorization and ∆W = W − W'_k be the truncation residual. The paper proposes a single projected gradient step:</p>
+<p>∆W' = (⟨g, ∆W⟩ / ⟨g, g⟩) · g, where g = ∇_W L(W'_k).</p>
+<p>This is the minimum-Frobenius-norm perturbation of W'_k that matches the first-order loss change predicted by moving back to W. Because rank(∆W') = rank(g) and gradients near a pretrained solution are empirically low-rank, the updated W'_k + ∆W' has rank at most k + rank(g), which is small. Re-truncating back to rank k therefore incurs a small projection error.</p>
+<p>Figure 3 of the paper validates the gradient-low-rank assumption on LLaMA-2-7B: at 20% compression, the effective-rank ratio k_{0.95}(G) / k_{0.95}(W') is in the range 0.001–0.4 across layers 1, 16, 32, with most modules near 0.05. Empirically, repeating the truncate–correct–re-truncate cycle 1, 5, or 10 times monotonically lowers perplexity, with the largest gains at aggressive compression ratios (0.4 → ZS-SVD 10× achieves PPL 18.49 vs ZS-SVD-1× at 26.92).</p>
+<h3 id="2-5-Storage-remapping-and-HQ">2.5 Storage remapping and HQ</h3>
+<p>The parameter ratio ρ = k(m+n) / mn used in vanilla SVD compression saturates before full rank: ρ = 1 corresponds to k = mn/(m+n) &lt; min(m, n). This is awkward for high-retention regimes. Following Dobi-SVD, ZS-SVD also reports a <em>remapped</em> variant where ρ̃ = k / rank(W) is in 1-to-1 correspondence with k. Storage is realized via a packed format: assuming m ≥ n, an 8-bit copy of Vₖ is packed into the first n rows of Uₖ, yielding a footprint of k · max(m, n). Each pruned σ saves 2m bytes ≈ max(m, n) fp16-equivalent parameters, which ZS-SVD plugs into its budget accounting.</p>
+<p>For aggressive ≥50% compression, the paper proposes <strong>HQ (Half-prune + Quantize)</strong>: instead of remapping, prune to half the target ratio and uniformly halve the bit-width of all target parameters (e.g., fp16 → fp8). Total footprint matches, but perplexity is much better in the high-compression regime. At 0.4 maintenance on LLaMA-7B, ZS-SVD† (HQ) achieves PPL 6.73—a 7.3% loss drop vs the uncompressed baseline.</p>
+<h3 id="2-6-Engineering-choices">2.6 Engineering choices</h3>
+<ul>
+<li>Calibration: 256 sequences × 2048 tokens from WikiText2 (same as SVD-LLM).</li>
+<li>Compressed matrices: q/k/v/o + MLP linears only; embeddings and LayerNorm untouched.</li>
+<li>Hardware: NVIDIA RTX PRO 6000 Blackwell Max-Q 96 GB for all timing measurements.</li>
+<li>Single-pass: one backward pass, one Cholesky per layer, one SVD per layer. No iterative optimization on rank itself.</li>
+</ul>
+<h3 id="2-7-Pseudocode-and-complexity">2.7 Pseudocode and complexity</h3>
+<p>The full procedure compresses neatly into one pseudocode block:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line">def zs_svd(model, calib_loader, target_budget):</span><br><span class="line">    layers &#x3D; list(model.linear_layers())</span><br><span class="line">    # 1. Whitened SVD per layer</span><br><span class="line">    S, A, U, Σ, V &#x3D; [], [], [], [], []</span><br><span class="line">    for ℓ in layers:</span><br><span class="line">        C_ℓ &#x3D; activation_covariance(ℓ, calib_loader)</span><br><span class="line">        S_ℓ &#x3D; cholesky(C_ℓ + λI)</span><br><span class="line">        A_ℓ &#x3D; ℓ.W @ S_ℓ</span><br><span class="line">        U_ℓ, Σ_ℓ, V_ℓ &#x3D; svd(A_ℓ)</span><br><span class="line">        S.append(S_ℓ); A.append(A_ℓ); U.append(U_ℓ); Σ.append(Σ_ℓ); V.append(V_ℓ)</span><br><span class="line"></span><br><span class="line">    # 2. One backward pass for all gradients</span><br><span class="line">    L &#x3D; calibration_loss(model, calib_loader)</span><br><span class="line">    G &#x3D; backward(L)</span><br><span class="line"></span><br><span class="line">    # 3. Per-σ first-order loss change</span><br><span class="line">    ΔL &#x3D; &#123;&#125;</span><br><span class="line">    for ℓ in layers:</span><br><span class="line">        H_ℓ &#x3D; G[ℓ] @ inv(S[ℓ].T)</span><br><span class="line">        for i in range(rank(A[ℓ])):</span><br><span class="line">            ΔL[(ℓ, i)] &#x3D; -Σ[ℓ][i] * (U[ℓ][:, i].T @ H_ℓ @ V[ℓ][:, i])</span><br><span class="line"></span><br><span class="line">    # 4. Two-heap zero-sum greedy</span><br><span class="line">    Q_pos &#x3D; MinHeap(key&#x3D;lambda x: abs(ΔL[x]))   # ΔL ≥ 0</span><br><span class="line">    Q_neg &#x3D; MinHeap(key&#x3D;lambda x: abs(ΔL[x]))   # ΔL &lt; 0</span><br><span class="line">    cursor &#x3D; &#123;ℓ: rank(A[ℓ]) - 1 for ℓ in layers&#125;  # smallest σ still present</span><br><span class="line">    for ℓ in layers:</span><br><span class="line">        i &#x3D; cursor[ℓ]</span><br><span class="line">        (Q_pos if ΔL[(ℓ, i)] &gt;&#x3D; 0 else Q_neg).push((ℓ, i))</span><br><span class="line"></span><br><span class="line">    s &#x3D; 0</span><br><span class="line">    removed &#x3D; set()</span><br><span class="line">    while saved_params(removed) &lt; target_budget:</span><br><span class="line">        prefer &#x3D; Q_pos if s &lt;&#x3D; 0 else Q_neg</span><br><span class="line">        if not prefer: prefer &#x3D; Q_neg if prefer is Q_pos else Q_pos</span><br><span class="line">        (ℓ, i) &#x3D; prefer.pop()</span><br><span class="line">        s +&#x3D; ΔL[(ℓ, i)]</span><br><span class="line">        removed.add((ℓ, i))</span><br><span class="line">        cursor[ℓ] -&#x3D; 1</span><br><span class="line">        if cursor[ℓ] &gt;&#x3D; 0:</span><br><span class="line">            j &#x3D; cursor[ℓ]</span><br><span class="line">            (Q_pos if ΔL[(ℓ, j)] &gt;&#x3D; 0 else Q_neg).push((ℓ, j))</span><br><span class="line"></span><br><span class="line">    # 5. Build compressed factors</span><br><span class="line">    for ℓ in layers:</span><br><span class="line">        keep &#x3D; sorted(&#123;i for i in range(rank(A[ℓ])) if (ℓ, i) not in removed&#125;)</span><br><span class="line">        Uk, Σk, Vk &#x3D; U[ℓ][:, keep], diag(Σ[ℓ][keep]), V[ℓ][:, keep]</span><br><span class="line">        ℓ.W_u &#x3D; Uk @ sqrt(Σk)</span><br><span class="line">        ℓ.W_v &#x3D; sqrt(Σk) @ Vk.T @ inv(S[ℓ])</span><br></pre></td></tr></table></figure>
+<p>Per-step complexity:</p>
+<ul>
+<li>Cholesky: O(n³) per layer. For LLaMA-7B with hidden = 4096, ≈ 7×10¹⁰ flops.</li>
+<li>SVD: O(m·n²); randomized variants drop to O(m·n·k).</li>
+<li>Backward: one full forward + backward over the 256×2048 calibration batch—same order as a regular training step.</li>
+<li>uᵢᵀ H vᵢ inner products: O(m·n) per σ, but easily batched as a single matmul per layer.</li>
+<li>Heap operations: O(N log N) over N ≈ 10⁷ total σ's in a 7B model—milliseconds.</li>
+</ul>
+<p>So the wall-clock budget is dominated by SVD + backward, which is the same order as SVD-LLM. The 2× factor versus SVD-LLM comes from the extra backward pass and the per-σ scoring; everything else is identical.</p>
+<h3 id="2-8-Engineering-comparison-with-Dobi-SVD">2.8 Engineering comparison with Dobi-SVD</h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Dobi-SVD</th>
+<th>ZS-SVD</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Rank decision</td>
+<td>Backprop optimization</td>
+<td>Global greedy + zero-sum drift</td>
+</tr>
+<tr>
+<td>Iterations</td>
+<td>Thousands of differentiable SVD steps</td>
+<td>1 backward + 1 heap greedy</td>
+</tr>
+<tr>
+<td>Peak memory</td>
+<td>High (IPCA backprop)</td>
+<td>Moderate (one backward + one SVD)</td>
+</tr>
+<tr>
+<td>LLaMA-7B end-to-end time</td>
+<td>19.25 hours</td>
+<td>15.9 minutes</td>
+</tr>
+<tr>
+<td>Accuracy ceiling</td>
+<td>High</td>
+<td>Slightly higher</td>
+</tr>
+<tr>
+<td>Interpretability</td>
+<td>Black-box optimization</td>
+<td>First-order expansion + conservation law</td>
+</tr>
+</tbody>
+</table>
+<p>The practical win of ZS-SVD is not &quot;fewer flops&quot;—it's <em>removing a long optimization loop entirely</em>. From a deployment engineer's perspective, you take a published checkpoint, run a 15-minute job, and out comes a usable compressed model with no extra training data. That is qualitatively different from Dobi-SVD's &quot;spin up a fine-tune-shaped workflow for a day.&quot;</p>
+<h2 id="3-5b-A-deeper-read-of-the-catastrophic-ablation">3.5b A deeper read of the catastrophic ablation</h2>
+<p>I want to spend an extra paragraph on the &quot;Most negative ∆L&quot; entry in Table 6, because it reveals the operative engineering intuition behind ZS-SVD's design.</p>
+<p>Imagine you are at W₀ and you do a Taylor expansion L(W₀ + ∆W) ≈ L(W₀) + ⟨g, ∆W⟩. This linear approximation is valid only within some neighborhood R (the linear regime). Once ‖∆W‖ exits R, higher-order terms dominate and the linear prediction becomes meaningless.</p>
+<p>&quot;Most negative ∆L&quot; greedily pushes s further negative at every step—each decision adds a perturbation in roughly the same direction. The cumulative ‖∆W‖ grows like O(t), so after enough steps you leave R, and the predicted &quot;we keep lowering loss&quot; is decoupled from reality. Hence PPL of 160594.</p>
+<p>Zero-sum picks alternating signs, producing a <em>random-walk</em>-like trajectory in parameter space. After t steps, expected ‖∆W‖ scales like O(√t), not O(t). On a 7B model with millions of σ's, this difference is many orders of magnitude—enough to keep cumulative perturbation inside R and the linear approximation valid throughout the run. This is the entire reason ZS-SVD works.</p>
+<p>There is a clean name for this design pattern in numerical optimization: <strong>conservation-based step control</strong>. It appears in stochastic optimal control and simulated annealing, but to my knowledge ZS-SVD is the first LLM compression method to use it explicitly. I expect the pattern to spread—any compression decision that can be linearized around the current operating point and that has a signed per-decision sensitivity should benefit from the same trick.</p>
+<h2 id="4-3-Practical-deployment-notes">4.3 Practical deployment notes</h2>
+<p>For practitioners considering ZS-SVD in production, a few notes from reading the paper carefully:</p>
+<ul>
+<li><strong>What to recompute when the calibration data changes.</strong> Only the gradient pass and the per-σ scores need to be redone; the whitening and SVD factorizations are reusable. This means you can amortize most of the cost across multiple target compression ratios.</li>
+<li><strong>Choosing the budget.</strong> The paper's experiments suggest that without HQ or remapping, ZS-SVD is reliable down to 0.6 maintenance. Below that, plan on combining with quantization.</li>
+<li><strong>Memory during compression.</strong> Holding U, Σ, V for every linear layer is non-trivial on a 7B model—roughly 2× the model's parameter footprint. The 30B experiments would not fit in 80 GB without streaming.</li>
+<li><strong>What to skip.</strong> Embedding layers, LayerNorm, and the LM head should not go through ZS-SVD. The paper restricts to attention projections and MLP linears, which is the right default.</li>
+<li><strong>Calibration set size.</strong> 256 × 2048 = ~500K tokens is enough for stable C and G estimates. Going much smaller is risky; going larger has diminishing returns.</li>
+</ul>
+<h2 id="3-Experiments">3. Experiments</h2>
+<h3 id="3-1-Main-table-Table-1-LLaMA-7B-maintenance-ratios-0-8-0-6-0-4">3.1 Main table (Table 1, LLaMA-7B, maintenance ratios 0.8 / 0.6 / 0.4)</h3>
+<table>
+<thead>
+<tr>
+<th>Ratio</th>
+<th>Method</th>
+<th>WikiText2 PPL</th>
+<th>Avg Acc</th>
+<th>Drop</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1.0</td>
+<td>Baseline</td>
+<td>5.68</td>
+<td>0.55</td>
+<td>0.0%</td>
+</tr>
+<tr>
+<td>0.8</td>
+<td>ASVD</td>
+<td>11.14</td>
+<td>0.43</td>
+<td>21.8%</td>
+</tr>
+<tr>
+<td>0.8</td>
+<td>SVD-LLM</td>
+<td>7.94</td>
+<td>0.44</td>
+<td>20.0%</td>
+</tr>
+<tr>
+<td>0.8</td>
+<td>Dobi-SVD</td>
+<td>8.54</td>
+<td>0.46</td>
+<td>16.4%</td>
+</tr>
+<tr>
+<td>0.8</td>
+<td><strong>ZS-SVD</strong></td>
+<td><strong>6.74</strong></td>
+<td><strong>0.50</strong></td>
+<td><strong>9.1%</strong></td>
+</tr>
+<tr>
+<td>0.8</td>
+<td>ZS-SVD 5×</td>
+<td>6.43</td>
+<td>0.51</td>
+<td>7.3%</td>
+</tr>
+<tr>
+<td>0.8</td>
+<td>ZS-SVD* (remap)</td>
+<td><strong>5.90</strong></td>
+<td><strong>0.54</strong></td>
+<td><strong>1.8%</strong></td>
+</tr>
+<tr>
+<td>0.6</td>
+<td>SVD-LLM</td>
+<td>13.11</td>
+<td>0.37</td>
+<td>32.7%</td>
+</tr>
+<tr>
+<td>0.6</td>
+<td>Dobi-SVD</td>
+<td>13.54</td>
+<td>0.38</td>
+<td>30.9%</td>
+</tr>
+<tr>
+<td>0.6</td>
+<td>ZS-SVD 5×</td>
+<td><strong>9.45</strong></td>
+<td>0.42</td>
+<td>23.6%</td>
+</tr>
+<tr>
+<td>0.6</td>
+<td>ZS-SVD* (remap)</td>
+<td><strong>6.96</strong></td>
+<td><strong>0.50</strong></td>
+<td><strong>9.1%</strong></td>
+</tr>
+<tr>
+<td>0.4</td>
+<td>SVD-LLM</td>
+<td>53.74</td>
+<td>0.31</td>
+<td>43.6%</td>
+</tr>
+<tr>
+<td>0.4</td>
+<td>Dobi-SVD</td>
+<td>46.18</td>
+<td>0.32</td>
+<td>41.8%</td>
+</tr>
+<tr>
+<td>0.4</td>
+<td>ZS-SVD 10×</td>
+<td>18.49</td>
+<td>0.35</td>
+<td>36.4%</td>
+</tr>
+<tr>
+<td>0.4</td>
+<td>ZS-SVD† (HQ)</td>
+<td><strong>6.73</strong></td>
+<td><strong>0.51</strong></td>
+<td><strong>7.3%</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Three patterns stand out:</p>
+<ol>
+<li>Even without remapping, vanilla ZS-SVD beats SVD-LLM and Dobi-SVD across the board. The zero-sum rule alone is doing meaningful work.</li>
+<li>Remapping flattens the loss curve substantially because the packed storage format permits retention of more rank at the same byte budget.</li>
+<li>HQ dominates at extreme compression. Stacking moderate SVD with uniform half-precision is more stable than aggressive pure-SVD truncation. This is a useful operational lesson independent of ZS-SVD itself: in the deep-compression regime, mixing modalities beats maxing one out.</li>
+</ol>
+<h3 id="3-2-Against-Dip-SVD-Table-2-30-pruning">3.2 Against Dip-SVD (Table 2, 30% pruning)</h3>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Method</th>
+<th>W2 PPL</th>
+<th>PTB</th>
+<th>C4</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LLaMA-7B</td>
+<td>ASVD</td>
+<td>95.3</td>
+<td>200.9</td>
+<td>86.3</td>
+</tr>
+<tr>
+<td>LLaMA-7B</td>
+<td>FWSVD</td>
+<td>33.0</td>
+<td>53.6</td>
+<td>38.2</td>
+</tr>
+<tr>
+<td>LLaMA-7B</td>
+<td>SVD-LLM</td>
+<td>9.5</td>
+<td>29.0</td>
+<td>26.4</td>
+</tr>
+<tr>
+<td>LLaMA-7B</td>
+<td>Dip-SVD</td>
+<td>9.4</td>
+<td>22.3</td>
+<td>19.9</td>
+</tr>
+<tr>
+<td>LLaMA-7B</td>
+<td><strong>ZS-SVD</strong></td>
+<td><strong>8.2</strong></td>
+<td><strong>19.6</strong></td>
+<td><strong>16.8</strong></td>
+</tr>
+<tr>
+<td>Vicuna-7B</td>
+<td>SVD-LLM</td>
+<td>12.4</td>
+<td>124.5</td>
+<td>39.5</td>
+</tr>
+<tr>
+<td>Vicuna-7B</td>
+<td>Dip-SVD</td>
+<td>12.1</td>
+<td>81.1</td>
+<td>28.8</td>
+</tr>
+<tr>
+<td>Vicuna-7B</td>
+<td><strong>ZS-SVD</strong></td>
+<td><strong>10.2</strong></td>
+<td><strong>48.0</strong></td>
+<td><strong>21.8</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Dip-SVD is the closest competitor in spirit—it also uses gradient information to weight matrices, but via a heuristic Fisher-style per-matrix score. ZS-SVD's per-σ first-order score is strictly more granular and the gap is concrete: 20–40% PPL improvements on PTB / C4.</p>
+<h3 id="3-3-Against-structured-pruning-Tables-3-4">3.3 Against structured pruning (Tables 3 &amp; 4)</h3>
+<p>On LLaMA-2-7B at 0.6 maintenance, ZS-SVD averages 0.45 vs LLM-Pruner 0.48, SliceGPT 0.51, Bonsai 0.53, Wanda-sp 0.50. With remapping (ZS-SVD*), ZS-SVD reaches 0.57, on par with or ahead of all structured baselines. At 0.4 with HQ, ZS-SVD† averages 0.59—exceeding every structured pruning method tested.</p>
+<p>On LLaMA-13B at 0.8, ZS-SVD* averages 0.70, matching the uncompressed baseline. This is the regime where SVD-based methods historically lose ground to structured pruning because preserving the full attention/MLP structure matters for accuracy at moderate compression.</p>
+<h3 id="3-4-Cross-model-scaling-Table-5-20-pruning">3.4 Cross-model scaling (Table 5, 20% pruning)</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>OPT-6.7B PPL / Acc</th>
+<th>Vicuna-7B PPL / Acc</th>
+<th>LLaMA-30B PPL / Acc</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Original</td>
+<td>10.86 / 0.52</td>
+<td>6.78 / 0.56</td>
+<td>4.10 / 0.61</td>
+</tr>
+<tr>
+<td>ASVD</td>
+<td>82.00 / 0.32</td>
+<td>16.23 / 0.33</td>
+<td>6.74 / 0.44</td>
+</tr>
+<tr>
+<td>SVD-LLM</td>
+<td>16.04 / 0.41</td>
+<td>8.41 / 0.51</td>
+<td>6.61 / 0.54</td>
+</tr>
+<tr>
+<td><strong>ZS-SVD</strong></td>
+<td><strong>11.40 / 0.51</strong></td>
+<td><strong>8.08 / 0.53</strong></td>
+<td><strong>4.83 / 0.59</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The scaling story is clean: LLaMA-30B compresses essentially losslessly at 20% (drop of 0.02 average accuracy, PPL inflation by 0.73). I find this the most compelling result in the paper. SVD-based methods historically struggle at scale because errors compound through depth; the zero-sum rule's global drift constraint seems to inoculate against compounding.</p>
+<h3 id="3-5-Ablation-σ-selection-strategies-Table-6">3.5 Ablation: σ selection strategies (Table 6)</h3>
+<table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th>Per-W σ sort</th>
+<th>Ratio 0.4 PPL</th>
+<th>Ratio 0.6 PPL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Most negative ∆L</td>
+<td>✗</td>
+<td>160594</td>
+<td>373585</td>
+</tr>
+<tr>
+<td>Magnitude of ∆L</td>
+<td>✗</td>
+<td>341.3</td>
+<td>88.7</td>
+</tr>
+<tr>
+<td>Most negative ∆L</td>
+<td>✓</td>
+<td>182452</td>
+<td>369350</td>
+</tr>
+<tr>
+<td>Magnitude of ∆L</td>
+<td>✓</td>
+<td>51.8</td>
+<td>12.0</td>
+</tr>
+<tr>
+<td>Magnitude of σ</td>
+<td>✓</td>
+<td>803599</td>
+<td>32750</td>
+</tr>
+<tr>
+<td><strong>Zero-sum ∆L (ZS-SVD)</strong></td>
+<td>✓</td>
+<td><strong>45.2</strong></td>
+<td><strong>11.4</strong></td>
+</tr>
+</tbody>
+</table>
+<p>This is the most informative table in the paper. Three takeaways:</p>
+<ol>
+<li><strong>&quot;Greedily minimize ∆L&quot; is catastrophic.</strong> Always picking the most-negative ∆L (predicted to reduce loss the most) blows up. This is because first-order expansions are only valid in a small neighborhood; once the cumulative drift grows, the linear model is no longer predictive. The zero-sum rule's contribution is to <strong>keep the operating point inside the validity region of the Taylor expansion</strong> by alternating signs.</li>
+<li><strong>Per-W ordering is mandatory.</strong> Drop it and every strategy fails. The local Eckart–Young property is non-negotiable.</li>
+<li><strong>Pure |σ| is also wrong.</strong> Ignoring the loss landscape and only looking at whitened-space magnitudes misses the cross-layer error propagation through nonlinearities.</li>
+</ol>
+<p>These three facts together pin down why the design is the way it is.</p>
+<h3 id="3-6-Inference-efficiency-Table-7">3.6 Inference efficiency (Table 7)</h3>
+<p>On RTX A5000, ZS-SVD at 60% compression delivers 762.34 tokens/s vs 130.03 for the uncompressed baseline (5.86×), while consuming less peak memory than uncompressed. On the memory-limited Titan Xp (12 GB), where uncompressed requires CPU offloading, ZS-SVD at 60% achieves 2.61× over the offloaded baseline and has lower peak memory than Dobi-SVD. These wins are hardware-agnostic—pure BLAS, no custom kernels.</p>
+<h3 id="3-7-Truncation-time-Table-8">3.7 Truncation time (Table 8)</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Time</th>
+<th>LLaMA-7B WikiText2 PPL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SVD-LLM</td>
+<td>7.9 min</td>
+<td>53.74</td>
+</tr>
+<tr>
+<td>Dobi-SVD</td>
+<td>19.25 hr</td>
+<td>46.18</td>
+</tr>
+<tr>
+<td><strong>ZS-SVD</strong></td>
+<td><strong>15.9 min</strong></td>
+<td><strong>45.17</strong></td>
+</tr>
+</tbody>
+</table>
+<p>This is the practical headline. ZS-SVD pays roughly 2× SVD-LLM's time but achieves Dobi-SVD-grade or better accuracy, and skips the 73× time penalty of Dobi-SVD's continuous rank optimization.</p>
+<h2 id="4-Discussion">4. Discussion</h2>
+<p>Where does this paper sit in the LLM compression taxonomy?</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">LLM compression</span><br><span class="line">   ├── Quantization (PTQ &#x2F; QAT) → GPTQ, AWQ, SmoothQuant, QuIP, SpinQuant</span><br><span class="line">   ├── Structured pruning       → LLM-Pruner, SliceGPT, Wanda, FLAP</span><br><span class="line">   └── Low-rank factorization (SVD-based)</span><br><span class="line">         ├── No activation info: FWSVD (Fisher-weighted)</span><br><span class="line">         ├── Local activation reconstruction: ASVD, SVD-LLM (whitened)</span><br><span class="line">         ├── Loss-aware via heuristic: Dip-SVD (per-matrix Fisher)</span><br><span class="line">         ├── Loss-aware via differentiable optimization: Dobi-SVD</span><br><span class="line">         └── Loss-aware via global greedy + zero-sum drift: ZS-SVD  ← here</span><br></pre></td></tr></table></figure>
+<p>ZS-SVD's contribution is the <strong>substitution of a combinatorial rank-allocation problem with a scalar conservation rule</strong>. There is precedent for this in numerical optimization (e.g., dual control of sum constraints, lazy regime in NTK analyses) and even in distributed systems (e.g., balanced communication in PowerSGD), but I am not aware of a direct analog in LLM compression. The fact that this substitution works as well as it does is non-trivial—the ablations show that small variants of the rule (greedy negative-∆L, |σ|-only, etc.) all fail dramatically.</p>
+<p>I would highlight three structural properties that make the rule succeed:</p>
+<ol>
+<li><strong>The signed nature of ∆Lᵢ.</strong> Some singular values are predicted to <em>reduce</em> the loss when pruned. Without this sign information, you cannot define a zero-sum rule at all.</li>
+<li><strong>The per-layer σ ordering constraint.</strong> This preserves the Eckart–Young optimality that the whitened-space SVD provides locally. Without it, the global rule becomes incoherent.</li>
+<li><strong>The reliance on first-order validity.</strong> The rule works precisely because s stays near zero, which keeps cumulative drift inside the Taylor expansion's validity region.</li>
+</ol>
+<p>If you drop any of these three, the method falls apart. This makes ZS-SVD a tight, brittle construction in a good way: it's not a bag of tricks; it's three locked-together design choices.</p>
+<h3 id="4-1-What-could-break">4.1 What could break</h3>
+<ul>
+<li><strong>Calibration data distribution shift.</strong> All ∆Lᵢ values are computed on WikiText2. If your deployment is on code, dialogue, or non-English text, the signs may flip. The paper does not study cross-domain robustness, which I see as the most important open question.</li>
+<li><strong>Compounding past the linear regime at very aggressive ratios.</strong> At 0.4 maintenance, vanilla ZS-SVD already loses significantly to the HQ variant. The first-order assumption is being stretched, and the zero-sum rule cannot fix that on its own.</li>
+<li><strong>Interaction with quantization is empirical.</strong> HQ and remapping work, but the paper does not solve the joint allocation problem (per-layer rank × per-layer bit-width). This is explicitly flagged as future work.</li>
+<li><strong>Gradient low-rankness is an assumption.</strong> Figure 3 supports it on LLaMA-2-7B, but the spread (0.001 to 0.4 across layers) is wide. For models trained differently—particularly those with low-rank adapters merged in, or aggressive distillation—this could shift.</li>
+</ul>
+<h3 id="4-2-Where-I-would-push-next">4.2 Where I would push next</h3>
+<ul>
+<li>Apply the same global-zero-sum machinery to structured pruning. The signed first-order ∆L is well-defined for any parameter group, not just singular values. &quot;Zero-Sum Pruning&quot; could replace per-layer importance scoring with a global drift-controlled greedy.</li>
+<li>Joint (rank, bit-width) allocation. Both are integer-valued per-layer budgets; both admit first-order sensitivity scoring; the natural extension is a 2D heap with a zero-sum rule across both axes.</li>
+<li>A multi-task calibration variant: average ∆Lᵢ across several calibration sets to control distribution-shift risk.</li>
+</ul>
+<h2 id="5-Limitations-and-reproducibility">5. Limitations and reproducibility</h2>
+<h3 id="5-1-Limitations">5.1 Limitations</h3>
+<ul>
+<li>Calibration distribution dependence (see 4.1).</li>
+<li>First-order validity stretched at ratio ≤ 0.4 without quantization stacking.</li>
+<li>The truncate–correct–re-truncate cycle assumes gradient low-rankness; the assumption can fail in some training regimes.</li>
+<li>Uniform treatment of attention vs MLP matrices; no head-wise or expert-wise structure exploited.</li>
+<li>No discussion of interaction with KV-cache compression, which is a closely related downstream concern.</li>
+</ul>
+<h3 id="5-2-Reproducibility">5.2 Reproducibility</h3>
+<ul>
+<li>Code: <a href="https://github.com/mint-vu/Zero-Sum-SVD" target="_blank" rel="noopener noreferrer">https://github.com/mint-vu/Zero-Sum-SVD</a> (referenced in the abstract).</li>
+<li>Calibration: 256 × 2048 WikiText2 sequences, identical to SVD-LLM.</li>
+<li>Evaluation: lm-eval-harness, standard splits of OpenBookQA, ARC-E/C, WinoGrande, HellaSwag, PIQA, MathQA.</li>
+<li>Models: LLaMA-7B / 2-7B / 13B / 30B, Vicuna-7B, OPT-6.7B—all open checkpoints.</li>
+<li>Hardware: a single 96 GB RTX PRO 6000 Blackwell Max-Q. A 7B–13B reproduction should fit on a standard 80 GB A100; 30B may need light offloading.</li>
+<li>Timing comparison is on the same hardware as SVD-LLM and Dobi-SVD, which is unusual rigor in this subfield.</li>
+</ul>
+<p>Overall this is well above average reproducibility for compression papers. My recommended next-step replication: try ZS-SVD on a non-English calibration set (e.g., the multilingual subset of C4) and report the sign-flip rate of ∆Lᵢ relative to the WikiText2 calibration. That single experiment would resolve much of the open distribution-shift question.</p>
+<h2 id="References">References</h2>
+<ul>
+<li>Abbasi et al., <em>Zero Sum SVD: Balancing Loss Sensitivity for Low Rank LLM Compression</em>, arXiv 2602.02848v1 (2026).</li>
+<li>Wang et al., <em>SVD-LLM: Truncation-aware Singular Value Decomposition for Large Language Model Compression</em>, ICLR 2025.</li>
+<li>Qinsi et al., <em>Dobi-SVD: Differentiable SVD for LLM Compression and Some New Perspectives</em>, ICLR 2025.</li>
+<li>Yuan et al., <em>ASVD: Activation-aware Singular Value Decomposition for Compressing LLMs</em>, arXiv 2312.05821 (2025).</li>
+<li>Ding et al., <em>Dip-SVD: Dual-importance Protected SVD for Efficient LLM Compression</em>, arXiv 2506.20353 (2025).</li>
+<li>Hsu et al., <em>Language Model Compression with Weighted Low-Rank Factorization (FWSVD)</em>, ICLR 2022.</li>
+<li>Hu et al., <em>LoRA: Low-Rank Adaptation of Large Language Models</em>, ICLR 2022.</li>
+<li>Zhao et al., <em>GaLore: Memory-Efficient LLM Training by Gradient Low-Rank Projection</em>, ICML 2024.</li>
+<li>Balzano et al., <em>An Overview of Low-Rank Structures in the Training and Adaptation of Large Models</em>, arXiv 2503.19859 (2025).</li>
+<li>Frantar et al., <em>OPTQ: Accurate Quantization for Generative Pre-trained Transformers (GPTQ)</em>, ICLR 2023.</li>
+<li>Sun et al., <em>A Simple and Effective Pruning Approach for Large Language Models (Wanda)</em>, ICLR 2024.</li>
+</ul>
+
+     </div> <footer class="blog-post-footer"> <p class="blog-post-source">
+Originally published at <a href="https://zzz0906.github.io/2026/05/15/2026-05-15-ZeroSumSVD-technical-review-en/" target="_blank" rel="noopener noreferrer">zzz0906.github.io</a>.
+</p> <nav class="blog-post-nav" aria-label="Adjacent posts"> <a class="blog-post-nav-link blog-post-nav-prev" href="/blog/2026-05-15-2026-05-15-ZeroSumSVD-阅读笔记-zh/"> <span class="blog-post-nav-label">← Newer</span> <span class="blog-post-nav-title">Zero Sum SVD：用「损失零和」做全局奇异值预算分配的 LLM 压缩方法</span> </a> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-05-14-2026-05-14-DisagMoE-阅读笔记-zh/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">DisagMoE：用解耦 Attention 和 FFN 打通 MoE 训练的 all-to-all 瓶颈</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient ML systems, LLM infrastructure, and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>

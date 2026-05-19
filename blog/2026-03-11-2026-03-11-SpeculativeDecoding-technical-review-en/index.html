@@ -1,0 +1,382 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Speculative Decoding: Making LLM Inference 2-3× Faster Without Losing a Single Token | Zhongzhu / Charlie</title><meta name="description" content="A technical review of Speculative Decoding, analyzing how using a smaller draft model to propose tokens and a larger model to verify them achieves 2-3x inference speedup with mathematically identical output distributions."><meta property="og:title" content="Speculative Decoding: Making LLM Inference 2-3× Faster Without Losing a Single Token | Zhongzhu / Charlie"><meta property="og:description" content="A technical review of Speculative Decoding, analyzing how using a smaller draft model to propose tokens and a larger model to verify them achieves 2-3x inference speedup with mathematically identical output distributions."><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-03-11-2026-03-11-SpeculativeDecoding-technical-review-en/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-03-11-2026-03-11-SpeculativeDecoding-technical-review-en/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.BtdlpukG.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>116</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>33</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> <nav class="blog-post-toc" aria-label="Table of contents"> <p class="blog-post-toc-title">Contents</p> <ul> <li class="toc-level-2"> <a href="#TL-DR-1-minute-version">TL;DR (1-minute version)</a> </li><li class="toc-level-2"> <a href="#Abstract">Abstract</a> </li><li class="toc-level-2"> <a href="#1-Prerequisites-What-to-Know-Before-Reading-This-Paper">1. Prerequisites: What to Know Before Reading This Paper</a> </li><li class="toc-level-3"> <a href="#1-1-Autoregressive-decoding-and-why-it-is-slow">1.1 Autoregressive decoding and why it is slow</a> </li><li class="toc-level-3"> <a href="#1-2-Sampling-exactness-and-distribution-preservation">1.2 Sampling, exactness, and distribution preservation</a> </li><li class="toc-level-3"> <a href="#1-3-Rejection-sampling-intuition-plain-language">1.3 Rejection sampling intuition (plain-language)</a> </li><li class="toc-level-3"> <a href="#1-4-KV-cache-and-serving-bottlenecks">1.4 KV cache and serving bottlenecks</a> </li><li class="toc-level-2"> <a href="#2-What-This-Paper-Does-The-Core-Idea">2. What This Paper Does (The Core Idea)</a> </li><li class="toc-level-3"> <a href="#Why-this-is-different-from-approximate-acceleration">Why this is different from approximate acceleration</a> </li><li class="toc-level-3"> <a href="#Figure-level-intuition-as-commonly-shown-in-speculative-decoding-papers">Figure-level intuition (as commonly shown in speculative decoding papers)</a> </li><li class="toc-level-2"> <a href="#3-Method-Details">3. Method Details</a> </li><li class="toc-level-3"> <a href="#3-1-Draft-generation-phase">3.1 Draft generation phase</a> </li><li class="toc-level-3"> <a href="#3-2-Parallel-verification-by-target-model">3.2 Parallel verification by target model</a> </li><li class="toc-level-3"> <a href="#3-3-First-rejection-correction-and-residual-sampling">3.3 First-rejection correction and residual sampling</a> </li><li class="toc-level-3"> <a href="#3-4-Exactness-argument-practitioner-friendly-explanation">3.4 Exactness argument (practitioner-friendly explanation)</a> </li><li class="toc-level-3"> <a href="#3-5-Throughput-model-and-speed-intuition">3.5 Throughput model and speed intuition</a> </li><li class="toc-level-3"> <a href="#3-6-Practical-knobs-teams-can-tune">3.6 Practical knobs teams can tune</a> </li><li class="toc-level-2"> <a href="#4-Experiment-Setup">4. Experiment Setup</a> </li><li class="toc-level-3"> <a href="#4-1-Models-and-pairings">4.1 Models and pairings</a> </li><li class="toc-level-3"> <a href="#4-2-Baselines">4.2 Baselines</a> </li><li class="toc-level-3"> <a href="#4-3-Metrics">4.3 Metrics</a> </li><li class="toc-level-3"> <a href="#4-4-Hardware-and-implementation-factors">4.4 Hardware and implementation factors</a> </li><li class="toc-level-3"> <a href="#4-5-Figure-table-reading-guide">4.5 Figure/table reading guide</a> </li><li class="toc-level-2"> <a href="#5-Results-Analysis">5. Results &amp; Analysis</a> </li><li class="toc-level-3"> <a href="#5-1-Speedup-is-real-but-conditional">5.1 Speedup is real, but conditional</a> </li><li class="toc-level-3"> <a href="#5-2-Exactness-is-the-strategic-advantage">5.2 Exactness is the strategic advantage</a> </li><li class="toc-level-3"> <a href="#5-3-Acceptance-dynamics-explain-almost-everything">5.3 Acceptance dynamics explain almost everything</a> </li><li class="toc-level-3"> <a href="#5-4-Interaction-with-temperature-and-nucleus-sampling">5.4 Interaction with temperature and nucleus sampling</a> </li><li class="toc-level-3"> <a href="#5-5-Systems-level-implications-beyond-this-paper">5.5 Systems-level implications beyond this paper</a> </li><li class="toc-level-3"> <a href="#5-6-Failure-pattern-analysis-my-practical-perspective">5.6 Failure-pattern analysis (my practical perspective)</a> </li><li class="toc-level-2"> <a href="#6-Limitations-Boundary-Conditions">6. Limitations &amp; Boundary Conditions</a> </li><li class="toc-level-3"> <a href="#6-1-Draft-dependence">6.1 Draft dependence</a> </li><li class="toc-level-3"> <a href="#6-2-Additional-serving-complexity">6.2 Additional serving complexity</a> </li><li class="toc-level-3"> <a href="#6-3-Memory-pressure-and-kernel-complexity">6.3 Memory pressure and kernel complexity</a> </li><li class="toc-level-3"> <a href="#6-4-Extreme-sampling-regimes">6.4 Extreme sampling regimes</a> </li><li class="toc-level-3"> <a href="#6-5-Proof-assumptions-vs-production-details">6.5 Proof assumptions vs production details</a> </li><li class="toc-level-3"> <a href="#6-6-Fairness-and-safety-side-note">6.6 Fairness and safety side note</a> </li><li class="toc-level-2"> <a href="#7-Reproducibility-Practical-Notes">7. Reproducibility &amp; Practical Notes</a> </li><li class="toc-level-3"> <a href="#7-1-Can-we-reproduce-from-paper-alone">7.1 Can we reproduce from paper alone?</a> </li><li class="toc-level-3"> <a href="#7-2-Production-rollout-checklist-my-recommended-plan">7.2 Production rollout checklist (my recommended plan)</a> </li><li class="toc-level-3"> <a href="#7-3-Suggested-observability-metrics">7.3 Suggested observability metrics</a> </li><li class="toc-level-3"> <a href="#7-4-Capacity-planning-for-beginners">7.4 Capacity planning for beginners</a> </li><li class="toc-level-3"> <a href="#7-5-Security-compliance-angle">7.5 Security/compliance angle</a> </li><li class="toc-level-3"> <a href="#7-6-My-bottom-line-practitioner-verdict">7.6 My bottom-line practitioner verdict</a> </li><li class="toc-level-2"> <a href="#Appendix-A-Intuitive-analogy">Appendix A: Intuitive analogy</a> </li><li class="toc-level-2"> <a href="#Appendix-B-Implementation-anti-patterns-I-have-seen">Appendix B: Implementation anti-patterns I have seen</a> </li><li class="toc-level-2"> <a href="#References">References</a> </li> </ul> </nav> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-03-11">March 11, 2026</time> <span class="blog-lang blog-lang-en">EN</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/Speculative-Decoding/">#Speculative Decoding</a><a class="blog-post-tag-chip" href="/blog/tag/LLM-Inference/">#LLM Inference</a> </span> </p> <h1>Speculative Decoding: Making LLM Inference 2-3× Faster Without Losing a Single Token</h1> </header> <div class="blog-post-body"> 
+
+      
+        <p><strong>Author: zhongzhu zhou</strong><br>
+Paper: <em>Fast Inference from Transformers via Speculative Decoding</em> (ICML 2023 Oral)<br>
+ArXiv: <a href="https://arxiv.org/abs/2211.17192" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/2211.17192</a></p>
+<h2 id="TL-DR-1-minute-version">TL;DR (1-minute version)</h2>
+<p>Speculative decoding is a way to make large language model (LLM) inference faster <strong>without changing the final output distribution</strong> of the target model. The key trick is simple but powerful: use a much smaller, faster draft model to “guess” several future tokens, then ask the large target model to verify those guesses in one parallel pass. If a guessed token is valid under a mathematically correct acceptance rule, keep it; if not, correct at the first mismatch and continue.</p>
+<a id="more"></a>
+<p>In practice, this can significantly reduce wall-clock latency and increase throughput because we replace many expensive sequential target-model forward passes with fewer batched checks. The paper reports meaningful speedups (often around 2× and sometimes higher) while preserving exactness.</p>
+<p>Why this matters for beginners and practitioners:</p>
+<ol>
+<li>It is one of the cleanest examples of an algorithm that improves serving performance <strong>without retraining the big model</strong>.</li>
+<li>It shows how probability theory (rejection sampling style correction) can unlock systems-level gains.</li>
+<li>It became a foundation for many later “draft-and-verify” generation systems.</li>
+</ol>
+<p><strong>Estimated reading time:</strong> 25–35 minutes.</p>
+<h2 id="Abstract">Abstract</h2>
+<p>I see this paper as a bridge between theory and production inference engineering. The authors ask a practical question: “Can we decode with fewer expensive steps on the big model, but still sample exactly from that big model?” Their answer is yes, through speculative decoding.</p>
+<p>The method combines two ideas: (1) a small model quickly proposes a short token block, and (2) the target model evaluates that block in parallel and uses an acceptance-correction rule to preserve exactness. This makes the algorithm fast while avoiding approximation drift in output quality distribution.</p>
+<p>To me, the most important contribution is not just speedup numbers; it is the <strong>exactness guarantee under acceleration</strong>. That property makes speculative decoding attractive in production where teams care deeply about both latency and behavior consistency.</p>
+<h2 id="1-Prerequisites-What-to-Know-Before-Reading-This-Paper">1. Prerequisites: What to Know Before Reading This Paper</h2>
+<h3 id="1-1-Autoregressive-decoding-and-why-it-is-slow">1.1 Autoregressive decoding and why it is slow</h3>
+<p>Most decoder-only LLMs generate text one token at a time:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex">
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>P(x_{1:T}) = \prod_{t=1}^{T} P(x_t \mid x_{&lt;t})</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex"></annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>At each step, we run a forward pass, get a distribution over vocabulary, sample/select one token, append, and repeat. This is inherently sequential because token <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">x_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is needed before computing <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow><annotation encoding="application/x-tex">x_{t+1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6389em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span></span></span></span>.</p>
+<p>For beginners, here is the practical implication:</p>
+<ul>
+<li>Training can be highly parallelized.</li>
+<li>Inference (decoding) is often bottlenecked by sequential dependence.</li>
+<li>Even if GPU is powerful, each next-token step forces synchronization and memory movement.</li>
+</ul>
+<p>So when users complain “model is slow,” the root cause is often decoding seriality, not pure FLOPs shortage.</p>
+<h3 id="1-2-Sampling-exactness-and-distribution-preservation">1.2 Sampling, exactness, and distribution preservation</h3>
+<p>In generation, we do not just want any fast text—we want text sampled from a target distribution (after optional temperature/top-k/top-p transforms). If we modify decoding naively, we may shift distribution and change behavior.</p>
+<p>This paper’s core promise is:</p>
+<ul>
+<li>We can accelerate,</li>
+<li>while still generating from the same target model distribution.</li>
+</ul>
+<p>That “same distribution” claim is extremely important in high-stakes workflows (evaluation reproducibility, safety tuning stability, product consistency).</p>
+<h3 id="1-3-Rejection-sampling-intuition-plain-language">1.3 Rejection sampling intuition (plain-language)</h3>
+<p>Rejection sampling is like this:</p>
+<ol>
+<li>Use an easy proposal distribution <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi></mrow><annotation encoding="application/x-tex">q</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">q</span></span></span></span> to draw candidates.</li>
+<li>Accept candidate with probability related to target/proposal ratio.</li>
+<li>If rejected, redraw from a corrected residual distribution.</li>
+</ol>
+<p>If done correctly, accepted outputs follow target distribution <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi></mrow><annotation encoding="application/x-tex">p</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">p</span></span></span></span>, even though proposals came from <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi></mrow><annotation encoding="application/x-tex">q</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">q</span></span></span></span>.</p>
+<p>Speculative decoding is essentially a sequential-and-parallel hybrid form of this idea at token level.</p>
+<h3 id="1-4-KV-cache-and-serving-bottlenecks">1.4 KV cache and serving bottlenecks</h3>
+<p>Modern transformer inference heavily uses KV cache: each new token appends key-value states so future attention can reuse old states. This reduces recomputation but still keeps generation token-serial.</p>
+<p>Speculative decoding helps because a block verification pass amortizes expensive target-model interactions, improving effective token-per-target-step efficiency.</p>
+<h2 id="2-What-This-Paper-Does-The-Core-Idea">2. What This Paper Does (The Core Idea)</h2>
+<p>The method runs two models:</p>
+<ul>
+<li><strong>Draft model</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>M</mi><mi>d</mi></msub></mrow><annotation encoding="application/x-tex">M_d</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">d</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>: small and fast; proposes <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> future tokens.</li>
+<li><strong>Target model</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>M</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">M_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10903em;">M</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>: large and accurate; verifies proposals in one pass.</li>
+</ul>
+<p>Pipeline for one iteration:</p>
+<ol>
+<li>Conditioned on current prefix, draft model generates tokens <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mover accent="true"><mi>x</mi><mo>^</mo></mover><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mover accent="true"><mi>x</mi><mo>^</mo></mover><mrow><mi>t</mi><mo>+</mo><mi>k</mi></mrow></msub></mrow><annotation encoding="application/x-tex">\hat{x}_{t+1}, \ldots, \hat{x}_{t+k}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9028em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6944em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">x</span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.2222em;"><span class="mord">^</span></span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6944em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">x</span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.2222em;"><span class="mord">^</span></span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">+</span><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span></span></span></span>.</li>
+<li>Target model evaluates probabilities for these positions in parallel.</li>
+<li>For each proposed token, perform acceptance test using target-vs-draft probability ratio.</li>
+<li>Accept a prefix of proposed tokens until first rejection.</li>
+<li>At rejection point, sample one corrected token from residual distribution and continue.</li>
+</ol>
+<p>I like this design because it directly attacks the expensive component: number of large-model decode steps. Instead of forcing target model to do one-step-at-a-time for all tokens, we let small model do speculative lookahead.</p>
+<h3 id="Why-this-is-different-from-approximate-acceleration">Why this is different from approximate acceleration</h3>
+<p>Many speedup techniques trade quality or alter output statistics. Speculative decoding is different: it preserves exact target distribution under the algorithm’s correction rule. That means you can drop it into existing generation systems with much lower semantic risk.</p>
+<h3 id="Figure-level-intuition-as-commonly-shown-in-speculative-decoding-papers">Figure-level intuition (as commonly shown in speculative decoding papers)</h3>
+<p>When you see the core diagram, read it as:</p>
+<ul>
+<li>bottom lane = fast draft trajectory,</li>
+<li>top lane = expensive verifier,</li>
+<li>acceptance boundary = where verifier disagrees.</li>
+</ul>
+<p>The system gains speed whenever multiple consecutive draft tokens are accepted before first rejection.</p>
+<h2 id="3-Method-Details">3. Method Details</h2>
+<h3 id="3-1-Draft-generation-phase">3.1 Draft generation phase</h3>
+<p>At prefix <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>x</mi><mrow><mn>1</mn><mo>:</mo><mi>t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">x_{1:t}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span><span class="mrel mtight">:</span><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>, draft model samples/proposes <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> tokens sequentially:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mover accent="true"><mi>x</mi><mo>^</mo></mover><mrow><mi>t</mi><mo>+</mo><mi>i</mi></mrow></msub><mo>∼</mo><msub><mi>q</mi><mi>i</mi></msub><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo><mo>=</mo><msub><mi>P</mi><mi>d</mi></msub><mo stretchy="false">(</mo><mo>⋅</mo><mo>∣</mo><msub><mi>x</mi><mrow><mn>1</mn><mo>:</mo><mi>t</mi></mrow></msub><mo separator="true">,</mo><msub><mover accent="true"><mi>x</mi><mo>^</mo></mover><mrow><mi>t</mi><mo>+</mo><mn>1</mn><mo>:</mo><mi>t</mi><mo>+</mo><mi>i</mi><mo>−</mo><mn>1</mn></mrow></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\hat{x}_{t+i} \sim q_i(\cdot) = P_d(\cdot \mid x_{1:t}, \hat{x}_{t+1:t+i-1})
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9028em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6944em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">x</span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.2222em;"><span class="mord">^</span></span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">+</span><span class="mord mathnormal mtight">i</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∼</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">d</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord">⋅</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">1</span><span class="mrel mtight">:</span><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6944em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">x</span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.2222em;"><span class="mord">^</span></span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">+</span><span class="mord mtight">1</span><span class="mrel mtight">:</span><span class="mord mathnormal mtight">t</span><span class="mbin mtight">+</span><span class="mord mathnormal mtight">i</span><span class="mbin mtight">−</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span></span></p>
+<p>Why this helps:</p>
+<ul>
+<li>Draft model is smaller, so each step is cheap.</li>
+<li>We get a block candidate quickly.</li>
+</ul>
+<p>Engineering note:</p>
+<ul>
+<li>In serving stacks, draft model can be quantized aggressively or even distilled specifically for domain prompts.</li>
+<li>If draft is too weak, acceptance rate drops and speedup shrinks.</li>
+<li>If draft is too large, drafting cost eats benefits.</li>
+</ul>
+<p>So there is a practical optimization problem: choose draft size for best end-to-end latency.</p>
+<h3 id="3-2-Parallel-verification-by-target-model">3.2 Parallel verification by target model</h3>
+<p>Given full proposed block, target model computes position-wise conditional probabilities for that block. This is where parallelism appears: one pass can score multiple speculative positions.</p>
+<p>Denote target probability for proposed token at position $i$ as $p_i = P_t(\hat{x}_{t+i}\mid \text{proper context})$, and draft probability as $q_i$.
+</p>
+<p>Acceptance for each position is based on ratio <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>p</mi><mi>i</mi></msub><mi mathvariant="normal">/</mi><msub><mi>q</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">p_i/q_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">p</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord">/</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> (clipped at 1):</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex">
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>a_i = \min\left(1, \frac{p_i}{q_i}\right)</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex"></annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>Accept with probability <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">a_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>. Continue until first rejection.</p>
+<p>Why this is elegant:</p>
+<ul>
+<li>If draft overestimates a token compared with target, acceptance is reduced.</li>
+<li>If draft underestimates, acceptance can be 1.</li>
+<li>The correction is local yet globally distribution-preserving.</li>
+</ul>
+<h3 id="3-3-First-rejection-correction-and-residual-sampling">3.3 First-rejection correction and residual sampling</h3>
+<p>Suppose first rejection occurs at position <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>j</mi></mrow><annotation encoding="application/x-tex">j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.854em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.05724em;">j</span></span></span></span>. Then we must sample a corrected token from residual distribution:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>r</mi><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo><mo>∝</mo><msub><mrow><mo fence="true">[</mo><msub><mi>p</mi><mi>j</mi></msub><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo><mo>−</mo><msub><mi>q</mi><mi>j</mi></msub><mo stretchy="false">(</mo><mo>⋅</mo><mo stretchy="false">)</mo><mo fence="true">]</mo></mrow><mo>+</mo></msub></mrow><annotation encoding="application/x-tex">r(\cdot) \propto \left[p_j(\cdot) - q_j(\cdot)\right]_+
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∝</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1441em;vertical-align:-0.3941em;"></span><span class="minner"><span class="minner"><span class="mopen delimcenter" style="top:0em;">[</span><span class="mord"><span class="mord mathnormal">p</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord">⋅</span><span class="mclose">)</span><span class="mclose delimcenter" style="top:0em;">]</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.0725em;"><span style="top:-2.3642em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">+</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3941em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>(where $[z]_+ = \max(z,0)$).
+</p>
+<p>This residual step is the heart of exactness. Intuition:</p>
+<ul>
+<li>Accepted proposals already account for overlap between <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi></mrow><annotation encoding="application/x-tex">p</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">p</span></span></span></span> and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi></mrow><annotation encoding="application/x-tex">q</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">q</span></span></span></span>.</li>
+<li>Residual covers the part target wants but draft did not justify.</li>
+</ul>
+<p>After emitting corrected token at rejection point, algorithm restarts from new prefix.</p>
+<h3 id="3-4-Exactness-argument-practitioner-friendly-explanation">3.4 Exactness argument (practitioner-friendly explanation)</h3>
+<p>The proof idea is a telescoping composition of accept/reject events such that for each position, total probability mass assigned to each token equals target model mass.</p>
+<p>You can think of mass decomposition:</p>
+<ol>
+<li>shared mass handled via accepted draft samples,</li>
+<li>leftover mass handled via residual correction.</li>
+</ol>
+<p>As long as acceptance and residual are implemented exactly, resulting sample sequence is distributed as target model output.</p>
+<h3 id="3-5-Throughput-model-and-speed-intuition">3.5 Throughput model and speed intuition</h3>
+<p>Let:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>C</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">C_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>: cost of one target-model verification pass,</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>C</mi><mi>d</mi></msub></mrow><annotation encoding="application/x-tex">C_d</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">d</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>: total cost for generating <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> draft tokens,</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi></mrow><annotation encoding="application/x-tex">A</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">A</span></span></span></span>: expected accepted tokens per iteration.</li>
+</ul>
+<p>Very rough tokens-per-cost scales like:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex">
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>\text{efficiency} \sim \frac{A}{C_t + C_d}</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex"></annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>Baseline autoregressive target-only decoding has efficiency roughly <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mi mathvariant="normal">/</mi><msub><mi>C</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">1/C_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1/</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>. Speedup needs:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi><mo>&gt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">A &gt; 1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7224em;vertical-align:-0.0391em;"></span><span class="mord mathnormal">A</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">&gt;</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>, and</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>C</mi><mi>d</mi></msub></mrow><annotation encoding="application/x-tex">C_d</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">d</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> not too large.</li>
+</ul>
+<p>Hence acceptance rate is king. This directly motivates better draft alignment strategies.</p>
+<h3 id="3-6-Practical-knobs-teams-can-tune">3.6 Practical knobs teams can tune</h3>
+<ol>
+<li>
+<p><strong>Speculation length <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span></strong></p>
+<ul>
+<li>Larger <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span>: more potential gain, but higher mismatch chance.</li>
+<li>Smaller <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span>: safer acceptance, lower upside.</li>
+</ul>
+</li>
+<li>
+<p><strong>Draft-target pairing</strong></p>
+<ul>
+<li>Same tokenizer strongly preferred.</li>
+<li>Domain mismatch hurts acceptance sharply.</li>
+</ul>
+</li>
+<li>
+<p><strong>Sampling policy compatibility</strong></p>
+<ul>
+<li>Temperature/top-p settings affect token entropy and acceptance.</li>
+<li>Higher entropy typically reduces acceptance consistency.</li>
+</ul>
+</li>
+<li>
+<p><strong>Batching regime</strong></p>
+<ul>
+<li>Benefit differs between single-stream latency optimization and high-throughput multi-stream serving.</li>
+</ul>
+</li>
+</ol>
+<h2 id="4-Experiment-Setup">4. Experiment Setup</h2>
+<p>The paper evaluates speculative decoding across language generation tasks and model pairs to quantify speedups and exactness behavior.</p>
+<h3 id="4-1-Models-and-pairings">4.1 Models and pairings</h3>
+<p>Typical setup uses a larger target transformer and a smaller draft transformer. Key variable is scale gap:</p>
+<ul>
+<li>too small draft may be inaccurate,</li>
+<li>too large draft may be expensive.</li>
+</ul>
+<p>Best regime tends to be “cheap but not random” draft.</p>
+<h3 id="4-2-Baselines">4.2 Baselines</h3>
+<p>Core baseline is standard autoregressive decoding on target model alone. Some analyses also compare with other acceleration or batching variants, but the central claim is speedup relative to exact target sampling.</p>
+<h3 id="4-3-Metrics">4.3 Metrics</h3>
+<p>Main metrics:</p>
+<ol>
+<li><strong>Wall-clock speedup</strong> (tokens/s or latency reduction).</li>
+<li><strong>Acceptance-related statistics</strong> (accepted prefix length, rejection location distribution).</li>
+<li><strong>Output distribution fidelity</strong> (theoretical exactness + empirical checks).</li>
+</ol>
+<h3 id="4-4-Hardware-and-implementation-factors">4.4 Hardware and implementation factors</h3>
+<p>Important for reproducibility:</p>
+<ul>
+<li>GPU memory bandwidth and kernel efficiency matter heavily.</li>
+<li>Framework-level overhead (Python dispatch, synchronization) can distort practical gains.</li>
+<li>KV cache handling and tensor shape packing affect verification efficiency.</li>
+</ul>
+<h3 id="4-5-Figure-table-reading-guide">4.5 Figure/table reading guide</h3>
+<p>When reading experimental tables in this paper family, inspect in this order:</p>
+<ol>
+<li>Draft/target size ratio,</li>
+<li>Speculation length <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span>,</li>
+<li>Acceptance rate,</li>
+<li>Final speedup.</li>
+</ol>
+<p>If speedup is lower than expected, usually one of these is off:</p>
+<ul>
+<li>draft mismatch too high,</li>
+<li>speculation too aggressive,</li>
+<li>serving stack overhead dominates.</li>
+</ul>
+<h2 id="5-Results-Analysis">5. Results &amp; Analysis</h2>
+<h3 id="5-1-Speedup-is-real-but-conditional">5.1 Speedup is real, but conditional</h3>
+<p>The headline result is substantial inference acceleration (often around 2×, with some settings higher). My interpretation:</p>
+<ul>
+<li>This is not a free lunch.</li>
+<li>Gains come from statistical alignment between draft and target plus systems implementation quality.</li>
+</ul>
+<p>In well-paired regimes, accepted-token chunks are long enough to amortize target passes. In weak-pair regimes, frequent rejections collapse gains.</p>
+<h3 id="5-2-Exactness-is-the-strategic-advantage">5.2 Exactness is the strategic advantage</h3>
+<p>Even if an approximate method might sometimes be slightly faster, speculative decoding’s exactness can be more valuable long-term:</p>
+<ul>
+<li>fewer surprises in A/B tests,</li>
+<li>easier safety/compliance argumentation,</li>
+<li>no silent drift in generation policy.</li>
+</ul>
+<p>For product teams, this means lower integration risk.</p>
+<h3 id="5-3-Acceptance-dynamics-explain-almost-everything">5.3 Acceptance dynamics explain almost everything</h3>
+<p>From a control perspective, acceptance rate is the key state variable. It captures:</p>
+<ul>
+<li>draft quality,</li>
+<li>entropy of current generation context,</li>
+<li>compatibility with decoding hyperparameters.</li>
+</ul>
+<p>I recommend monitoring:</p>
+<ul>
+<li>average accepted tokens per step,</li>
+<li>rejection depth histogram,</li>
+<li>per-domain acceptance (code vs dialogue vs summarization).</li>
+</ul>
+<p>This helps decide whether to tune draft model, adjust <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span>, or route traffic adaptively.</p>
+<h3 id="5-4-Interaction-with-temperature-and-nucleus-sampling">5.4 Interaction with temperature and nucleus sampling</h3>
+<p>In higher-temperature settings, next-token uncertainty increases. Draft guesses become less aligned with target probable mass, so acceptance may fall. This means speculative decoding often shines most in deterministic or moderately stochastic generation regimes.</p>
+<p>For beginner readers: randomness and speedup are often in tension here. You can still use both, but need careful calibration.</p>
+<h3 id="5-5-Systems-level-implications-beyond-this-paper">5.5 Systems-level implications beyond this paper</h3>
+<p>This paper influenced later verification-style acceleration families:</p>
+<ul>
+<li>multi-level drafting,</li>
+<li>tree/speculative branching,</li>
+<li>dynamic speculation length policies,</li>
+<li>hardware-aware scheduling for verifier kernels.</li>
+</ul>
+<p>So I view it as foundational—not merely one isolated trick.</p>
+<h3 id="5-6-Failure-pattern-analysis-my-practical-perspective">5.6 Failure-pattern analysis (my practical perspective)</h3>
+<p>Common degradation patterns:</p>
+<ol>
+<li><strong>Domain shift</strong>: draft trained on generic corpus, production prompts are code-heavy/legal-medical.</li>
+<li><strong>Tokenizer mismatch edge-cases</strong>: nontrivial token boundary differences break assumptions.</li>
+<li><strong>Long-context instability</strong>: acceptance drops in highly constrained long-context generations.</li>
+<li><strong>Tool-use constrained outputs</strong>: JSON/XML strict format can cause repeated local mismatches.</li>
+</ol>
+<p>Mitigation tactics:</p>
+<ul>
+<li>domain-adapt draft,</li>
+<li>adaptive <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> by confidence,</li>
+<li>fallback thresholds to target-only decoding,</li>
+<li>route strict-format requests to conservative profiles.</li>
+</ul>
+<h2 id="6-Limitations-Boundary-Conditions">6. Limitations &amp; Boundary Conditions</h2>
+<h3 id="6-1-Draft-dependence">6.1 Draft dependence</h3>
+<p>If draft model is poor, speculative decoding may offer little or negative gains after overhead. So this is not universally guaranteed acceleration.</p>
+<h3 id="6-2-Additional-serving-complexity">6.2 Additional serving complexity</h3>
+<p>Compared with plain decoding, you now maintain two models plus acceptance/correction logic. Operational complexity increases:</p>
+<ul>
+<li>model lifecycle management,</li>
+<li>monitoring and alerting on acceptance health,</li>
+<li>debugging two-model interactions.</li>
+</ul>
+<h3 id="6-3-Memory-pressure-and-kernel-complexity">6.3 Memory pressure and kernel complexity</h3>
+<p>Running two models can increase memory pressure. On constrained GPUs, this may reduce concurrency or force smaller batch sizes, offsetting benefits.</p>
+<h3 id="6-4-Extreme-sampling-regimes">6.4 Extreme sampling regimes</h3>
+<p>Very high-entropy decoding can reduce acceptance too much, making speculative mode less effective.</p>
+<h3 id="6-5-Proof-assumptions-vs-production-details">6.5 Proof assumptions vs production details</h3>
+<p>The theoretical guarantee assumes exact implementation of probability calculations and sampling steps. Numerical shortcuts, precision issues, or heuristic hacks can silently break exactness.</p>
+<p>I strongly recommend building explicit invariance tests in CI for inference kernels.</p>
+<h3 id="6-6-Fairness-and-safety-side-note">6.6 Fairness and safety side note</h3>
+<p>Even with exactness relative to target model, if target model itself has harmful biases, speculative decoding does not fix that. It is a speed method, not an alignment method.</p>
+<h2 id="7-Reproducibility-Practical-Notes">7. Reproducibility &amp; Practical Notes</h2>
+<h3 id="7-1-Can-we-reproduce-from-paper-alone">7.1 Can we reproduce from paper alone?</h3>
+<p>Conceptually yes, but high-performance reproduction requires careful systems engineering. A naive implementation may fail to realize headline speedups.</p>
+<h3 id="7-2-Production-rollout-checklist-my-recommended-plan">7.2 Production rollout checklist (my recommended plan)</h3>
+<p><strong>Phase A: Offline validation</strong></p>
+<ol>
+<li>Implement exact acceptance + residual sampling with unit tests.</li>
+<li>Verify token distribution equivalence on fixed prompts and seeds (statistical tests).</li>
+<li>Profile latency decomposition: draft time, verify time, correction overhead.</li>
+</ol>
+<p><strong>Phase B: Shadow traffic</strong></p>
+<ol>
+<li>Run speculative mode in shadow behind target-only serving.</li>
+<li>Compare latency percentiles, acceptance metrics, and output equivalence diagnostics.</li>
+<li>Trigger fallback when acceptance drops below threshold.</li>
+</ol>
+<p><strong>Phase C: Controlled rollout</strong></p>
+<ol>
+<li>Start with low-entropy workloads (summaries, deterministic transforms).</li>
+<li>Enable dynamic <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> policy.</li>
+<li>Expand gradually to broader tasks.</li>
+</ol>
+<h3 id="7-3-Suggested-observability-metrics">7.3 Suggested observability metrics</h3>
+<p>At minimum:</p>
+<ul>
+<li>accepted_tokens_per_iteration,</li>
+<li>rejection_position_histogram,</li>
+<li>speculative_speedup_ratio,</li>
+<li>fallback_rate,</li>
+<li>verifier_gpu_utilization,</li>
+<li>end-to-end p50/p95 latency.</li>
+</ul>
+<p>Without these, teams are flying blind.</p>
+<h3 id="7-4-Capacity-planning-for-beginners">7.4 Capacity planning for beginners</h3>
+<p>Rule-of-thumb guidance:</p>
+<ul>
+<li>If your target model inference is clearly the bottleneck and you can host a small draft model nearby, speculative decoding is worth trial.</li>
+<li>If your bottleneck is network, tokenization, or downstream tool latency, gains may be limited.</li>
+</ul>
+<h3 id="7-5-Security-compliance-angle">7.5 Security/compliance angle</h3>
+<p>Because distribution is preserved, auditing becomes simpler: behavior differences are less likely to come from decoding approximation drift. This can matter for enterprise governance reviews.</p>
+<h3 id="7-6-My-bottom-line-practitioner-verdict">7.6 My bottom-line practitioner verdict</h3>
+<p>I would recommend speculative decoding in production if:</p>
+<ol>
+<li>you can afford operational complexity of two-model serving,</li>
+<li>you implement exactness-critical components rigorously,</li>
+<li>your measured acceptance rates are healthy in real traffic.</li>
+</ol>
+<p>For many LLM systems, this paper’s method is one of the highest ROI inference optimizations available before model architecture changes.</p>
+<h2 id="Appendix-A-Intuitive-analogy">Appendix A: Intuitive analogy</h2>
+<p>Imagine a senior lawyer (target model) and a trained junior assistant (draft model) writing a contract.</p>
+<ul>
+<li>Junior drafts several clauses quickly.</li>
+<li>Senior reviews in one pass.</li>
+<li>Correct clauses are kept.</li>
+<li>First problematic clause is rewritten by senior.</li>
+</ul>
+<p>You get senior-level quality, but faster throughput than having senior write every line from scratch. That is speculative decoding in human terms.</p>
+<h2 id="Appendix-B-Implementation-anti-patterns-I-have-seen">Appendix B: Implementation anti-patterns I have seen</h2>
+<ol>
+<li>Using different post-processing transforms on draft and target logits.</li>
+<li>Ignoring numerical stability in ratio computation.</li>
+<li>Mixing sampling seeds in a way that breaks reproducibility checks.</li>
+<li>Overly large <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span></span></span></span> with no adaptive control.</li>
+<li>Not instrumenting rejection causes.</li>
+</ol>
+<p>Each of these can erase expected gains.</p>
+<h2 id="References">References</h2>
+<ol>
+<li>Leviathan, Y., Kalman, M., &amp; Matias, Y. (2023). <em>Fast Inference from Transformers via Speculative Decoding</em>. ICML 2023.</li>
+<li>Vaswani, A. et al. (2017). <em>Attention Is All You Need</em>.</li>
+<li>Kwon, W. et al. (2023). <em>vLLM: Efficient Memory Management for Large Language Model Serving with PagedAttention</em>.</li>
+<li>Dao, T. et al. (2022). <em>FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness</em>.</li>
+<li>Pope, R. et al. (2022). <em>Efficiently Scaling Transformer Inference</em> (related systems context).</li>
+</ol>
+<hr>
+<p><em>Review written on 2026-03-11.</em></p>
+
+     </div> <footer class="blog-post-footer"> <p class="blog-post-source">
+Originally published at <a href="https://zzz0906.github.io/2026/03/11/2026-03-11-SpeculativeDecoding-technical-review-en/" target="_blank" rel="noopener noreferrer">zzz0906.github.io</a>.
+</p> <nav class="blog-post-nav" aria-label="Adjacent posts"> <a class="blog-post-nav-link blog-post-nav-prev" href="/blog/2026-03-12-2026-03-12-PaRO-technical-review-en/"> <span class="blog-post-nav-label">← Newer</span> <span class="blog-post-nav-title">PaRO: Smarter Partitioning for Distributed Training — Beyond ZeRO&#39;s One-Size-Fits-All</span> </a> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-03-10-2026-03-10-InstructGPT-technical-review-en/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">InstructGPT: The RLHF Recipe That Turned GPT-3 Into a Helpful Assistant</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient ML systems, LLM infrastructure, and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>

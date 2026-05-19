@@ -1,0 +1,388 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DeepSeekMath: How 120B Tokens of Math Data and GRPO Rival GPT-4 on Competition Problems | Zhongzhu / Charlie</title><meta name="description" content="A detailed technical review of DeepSeekMath, analyzing how continued pretraining on math corpora combined with Group Relative Policy Optimization (GRPO) enables a 7B open model to rival frontier systems on challenging math benchmarks."><meta property="og:title" content="DeepSeekMath: How 120B Tokens of Math Data and GRPO Rival GPT-4 on Competition Problems | Zhongzhu / Charlie"><meta property="og:description" content="A detailed technical review of DeepSeekMath, analyzing how continued pretraining on math corpora combined with Group Relative Policy Optimization (GRPO) enables a 7B open model to rival frontier systems on challenging math benchmarks."><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-02-20-2026-02-20-DeepSeekMath-technical-review-en/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-02-20-2026-02-20-DeepSeekMath-technical-review-en/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.BtdlpukG.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>116</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>33</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> <nav class="blog-post-toc" aria-label="Table of contents"> <p class="blog-post-toc-title">Contents</p> <ul> <li class="toc-level-2"> <a href="#Abstract">Abstract</a> </li><li class="toc-level-2"> <a href="#1-Prerequisites-What-to-Know-Before-Reading-This-Paper">1. Prerequisites: What to Know Before Reading This Paper</a> </li><li class="toc-level-3"> <a href="#1-1-Continued-Pretraining-vs-Instruction-Tuning">1.1 Continued Pretraining vs. Instruction Tuning</a> </li><li class="toc-level-3"> <a href="#1-2-RLHF-Style-Optimization-for-LLMs">1.2 RLHF-Style Optimization for LLMs</a> </li><li class="toc-level-3"> <a href="#1-3-Math-Evaluation-Nuances">1.3 Math Evaluation Nuances</a> </li><li class="toc-level-2"> <a href="#2-What-This-Paper-Does-The-Core-Idea">2. What This Paper Does (The Core Idea)</a> </li><li class="toc-level-2"> <a href="#3-Method-Details">3. Method Details</a> </li><li class="toc-level-3"> <a href="#3-1-Data-Engine-for-Math-Corpus-Construction">3.1 Data Engine for Math Corpus Construction</a> </li><li class="toc-level-3"> <a href="#3-2-Continued-Pretraining-on-Math-Distribution">3.2 Continued Pretraining on Math Distribution</a> </li><li class="toc-level-3"> <a href="#3-3-GRPO-Group-Relative-Policy-Optimization">3.3 GRPO (Group Relative Policy Optimization)</a> </li><li class="toc-level-2"> <a href="#4-Experiment-Setup">4. Experiment Setup</a> </li><li class="toc-level-2"> <a href="#5-Results-Analysis">5. Results &amp; Analysis</a> </li><li class="toc-level-2"> <a href="#6-Limitations-Boundary-Conditions">6. Limitations &amp; Boundary Conditions</a> </li><li class="toc-level-2"> <a href="#7-Reproducibility-Practical-Notes">7. Reproducibility &amp; Practical Notes</a> </li><li class="toc-level-2"> <a href="#8-Figure-Table-Oriented-Deep-Dive-Why-the-Results-Are-Plausible">8. Figure/Table-Oriented Deep Dive (Why the Results Are Plausible)</a> </li><li class="toc-level-3"> <a href="#8-1-Data-Mixture-and-Capability-Shift">8.1 Data Mixture and Capability Shift</a> </li><li class="toc-level-3"> <a href="#8-2-Ablation-Interpretation-Template">8.2 Ablation Interpretation Template</a> </li><li class="toc-level-3"> <a href="#8-3-Why-Relative-Preference-Helps-in-Math">8.3 Why Relative Preference Helps in Math</a> </li><li class="toc-level-2"> <a href="#9-Method-Mechanics-with-Compact-Equations">9. Method Mechanics with Compact Equations</a> </li><li class="toc-level-2"> <a href="#10-Reproduction-Blueprint-Operator-View">10. Reproduction Blueprint (Operator View)</a> </li><li class="toc-level-3"> <a href="#Phase-1-—-Data-and-Verifier-First-Week-1–2">Phase 1 — Data and Verifier First (Week 1–2)</a> </li><li class="toc-level-3"> <a href="#Phase-2-—-Continued-Pretraining-Week-2–3">Phase 2 — Continued Pretraining (Week 2–3)</a> </li><li class="toc-level-3"> <a href="#Phase-3-—-Relative-RL-Week-3–4">Phase 3 — Relative RL (Week 3–4)</a> </li><li class="toc-level-3"> <a href="#Phase-4-—-Robustness-Audit-Week-4">Phase 4 — Robustness Audit (Week 4)</a> </li><li class="toc-level-2"> <a href="#11-Failure-Modes-I-Would-Actively-Guard-Against">11. Failure Modes I Would Actively Guard Against</a> </li><li class="toc-level-2"> <a href="#12-Practical-Production-Notes-If-Deploying-a-Math-Assistant">12. Practical Production Notes (If Deploying a Math Assistant)</a> </li><li class="toc-level-3"> <a href="#12-1-Request-Routing">12.1 Request Routing</a> </li><li class="toc-level-3"> <a href="#12-2-Confidence-Signaling">12.2 Confidence Signaling</a> </li><li class="toc-level-3"> <a href="#12-3-Human-in-the-Loop-Trigger">12.3 Human-in-the-Loop Trigger</a> </li><li class="toc-level-2"> <a href="#13-Why-This-Paper-Matters-Historically">13. Why This Paper Matters Historically</a> </li><li class="toc-level-2"> <a href="#14-Final-Verdict">14. Final Verdict</a> </li><li class="toc-level-2"> <a href="#References">References</a> </li><li class="toc-level-2"> <a href="#15-Figure-by-Figure-and-Table-by-Table-Close-Reading-Appendix">15. Figure-by-Figure and Table-by-Table Close Reading Appendix</a> </li><li class="toc-level-3"> <a href="#15-1-Figure-by-Figure-Reading-Notes">15.1 Figure-by-Figure Reading Notes</a> </li><li class="toc-level-4"> <a href="#Figure-1-Pipeline-training-stages">Figure 1 (Pipeline / training stages)</a> </li><li class="toc-level-4"> <a href="#Figure-2-Data-source-mix-or-domain-distribution">Figure 2 (Data-source mix or domain distribution)</a> </li><li class="toc-level-4"> <a href="#Figure-3-Training-trajectory-benchmark-lift">Figure 3 (Training trajectory / benchmark lift)</a> </li><li class="toc-level-4"> <a href="#Figure-4-Robustness-generalization-trend">Figure 4 (Robustness / generalization trend)</a> </li><li class="toc-level-3"> <a href="#15-2-Table-by-Table-Reading-Notes">15.2 Table-by-Table Reading Notes</a> </li><li class="toc-level-4"> <a href="#Table-1-Main-benchmark-comparison">Table 1 (Main benchmark comparison)</a> </li><li class="toc-level-4"> <a href="#Table-2-Ablation-continued-pretraining">Table 2 (Ablation: continued pretraining)</a> </li><li class="toc-level-4"> <a href="#Table-3-Ablation-RL-GRPO">Table 3 (Ablation: RL / GRPO)</a> </li><li class="toc-level-4"> <a href="#Table-4-Decode-settings-consistency">Table 4 (Decode settings / consistency)</a> </li><li class="toc-level-4"> <a href="#Table-5-Error-breakdown">Table 5 (Error breakdown)</a> </li><li class="toc-level-4"> <a href="#Table-6-Cost-performance-or-scale-comparison">Table 6 (Cost/performance or scale comparison)</a> </li><li class="toc-level-3"> <a href="#15-3-Evidence-Chain-Summary">15.3 Evidence-Chain Summary</a> </li><li class="toc-level-2"> <a href="#16-Reproduction-Lab-Notebook-Pass-3-Expansion">16. Reproduction Lab Notebook (Pass-3 Expansion)</a> </li><li class="toc-level-3"> <a href="#16-1-Goal-of-This-Pass">16.1 Goal of This Pass</a> </li><li class="toc-level-3"> <a href="#16-2-Actions-Completed-in-This-Pass">16.2 Actions Completed in This Pass</a> </li><li class="toc-level-3"> <a href="#16-3-Not-Done-in-This-Pass">16.3 Not Done in This Pass</a> </li><li class="toc-level-3"> <a href="#16-4-Reproduction-Commands-Log">16.4 Reproduction Commands Log</a> </li><li class="toc-level-3"> <a href="#16-5-Next-Recommended-Technical-Follow-up">16.5 Next Recommended Technical Follow-up</a> </li><li class="toc-level-2"> <a href="#17-Core-Intuition-Before-the-Details">17. Core Intuition Before the Details</a> </li><li class="toc-level-3"> <a href="#17-1-Why-Ordinary-Pretraining-Is-Not-Enough">17.1 Why Ordinary Pretraining Is Not Enough</a> </li><li class="toc-level-3"> <a href="#17-2-Why-Verifiers-Matter-So-Much">17.2 Why Verifiers Matter So Much</a> </li><li class="toc-level-2"> <a href="#18-Benchmark-by-Benchmark-Reading-Guide">18. Benchmark-by-Benchmark Reading Guide</a> </li><li class="toc-level-3"> <a href="#18-1-GSM8K">18.1 GSM8K</a> </li><li class="toc-level-3"> <a href="#18-2-MATH">18.2 MATH</a> </li><li class="toc-level-3"> <a href="#18-3-Competition-Style-Internal-Evaluations">18.3 Competition-Style Internal Evaluations</a> </li><li class="toc-level-2"> <a href="#19-Concrete-Failure-Cases-I-Would-Expect-in-Practice">19. Concrete Failure Cases I Would Expect in Practice</a> </li><li class="toc-level-3"> <a href="#Case-A-—-Arithmetic-slip-after-correct-setup">Case A — Arithmetic slip after correct setup</a> </li><li class="toc-level-3"> <a href="#Case-B-—-Elegant-but-invalid-shortcut">Case B — Elegant but invalid shortcut</a> </li><li class="toc-level-3"> <a href="#Case-C-—-Correct-method-wrong-formatting">Case C — Correct method, wrong formatting</a> </li><li class="toc-level-3"> <a href="#Case-D-—-Distribution-mismatch">Case D — Distribution mismatch</a> </li><li class="toc-level-2"> <a href="#20-Deployment-Interpretation-What-I-Would-Tell-a-Real-Team">20. Deployment Interpretation: What I Would Tell a Real Team</a> </li><li class="toc-level-3"> <a href="#20-1-Minimal-Safe-Product-Policy">20.1 Minimal Safe Product Policy</a> </li><li class="toc-level-3"> <a href="#20-2-What-I-Would-Measure-After-Deployment">20.2 What I Would Measure After Deployment</a> </li><li class="toc-level-2"> <a href="#21-Expanded-Closing-Takeaway">21. Expanded Closing Takeaway</a> </li> </ul> </nav> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-02-20">February 20, 2026</time> <span class="blog-lang blog-lang-en">EN</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/Reasoning/">#Reasoning</a><a class="blog-post-tag-chip" href="/blog/tag/Reinforcement-Learning/">#Reinforcement Learning</a> </span> </p> <h1>DeepSeekMath: How 120B Tokens of Math Data and GRPO Rival GPT-4 on Competition Problems</h1> </header> <div class="blog-post-body"> 
+
+      
+        <p><strong>TL;DR:</strong> DeepSeekMath combines large-scale math-centric continued pretraining with a reinforcement-learning stage built around GRPO (Group Relative Policy Optimization), and shows that an open 7B model can become highly competitive on difficult math benchmarks when data curation and RL objective design are tightly coupled.</p>
+<p><strong>Estimated reading time:</strong> 20–25 minutes</p>
+<p><strong>Author: Zhongzhu Zhou</strong><br>
+Paper: DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models (arXiv 2024)<br>
+ArXiv: <a href="https://arxiv.org/abs/2402.03300" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/2402.03300</a></p>
+<hr>
+<a id="more"></a>
+<h2 id="Abstract">Abstract</h2>
+<p>DeepSeekMath addresses a practical gap: open models were improving quickly in general reasoning, but still lagged in robust mathematical problem solving compared with frontier closed systems. The paper’s key contribution is not a single trick, but a full stack: (i) targeted math corpus construction for continued pretraining, (ii) domain adaptation that preserves general capability, and (iii) a math-oriented RL stage using GRPO to improve solution quality and consistency. Conceptually, this work matters because it reframes math reasoning progress as a systems pipeline problem (data + objective + verification), rather than just bigger model scaling. In retrospect, it is also an important precursor to later DeepSeek reasoning lines where RL became central.</p>
+<h2 id="1-Prerequisites-What-to-Know-Before-Reading-This-Paper">1. Prerequisites: What to Know Before Reading This Paper</h2>
+<h3 id="1-1-Continued-Pretraining-vs-Instruction-Tuning">1.1 Continued Pretraining vs. Instruction Tuning</h3>
+<p>Continued pretraining shifts a base model’s token distribution by exposing it to high-density domain text (here: mathematics), while instruction tuning mostly changes interaction style. For math tasks, the former often improves symbolic familiarity and proof-step priors, while the latter improves format adherence.</p>
+<h3 id="1-2-RLHF-Style-Optimization-for-LLMs">1.2 RLHF-Style Optimization for LLMs</h3>
+<p>Classic PPO-based RLHF learns from reward signals tied to preferences or correctness. DeepSeekMath instead highlights that in highly structured domains, relative comparison among grouped samples can reduce optimization instability and overfitting to noisy absolute rewards.</p>
+<h3 id="1-3-Math-Evaluation-Nuances">1.3 Math Evaluation Nuances</h3>
+<p>Benchmarks such as GSM8K, MATH, and competition-style sets reward more than final-answer matching. Prompting style, decoding variance, and verifier strictness can significantly change measured performance. Any claimed gain should be interpreted with this sensitivity in mind.</p>
+<h2 id="2-What-This-Paper-Does-The-Core-Idea">2. What This Paper Does (The Core Idea)</h2>
+<p>The paper builds an end-to-end recipe for open math reasoning:</p>
+<ol>
+<li><strong>Construct a large math-focused corpus</strong> from web and technical sources with domain filtering and quality control.</li>
+<li><strong>Continue pretraining</strong> from a strong code/reasoning-oriented base model to inject mathematical distributional knowledge.</li>
+<li><strong>Apply RL with GRPO</strong> to improve solution trajectories and final-answer reliability.</li>
+</ol>
+<p>The central design insight is that math reasoning quality emerges from <em>alignment between data domain and optimization objective</em>. A generic RL objective on generic data is weaker than a mathematically informed objective on mathematically concentrated data.</p>
+<h2 id="3-Method-Details">3. Method Details</h2>
+<h3 id="3-1-Data-Engine-for-Math-Corpus-Construction">3.1 Data Engine for Math Corpus Construction</h3>
+<p>The authors emphasize retrieval and filtering rather than naive scraping: math-heavy sources are mined, then filtered by heuristic and model-assisted quality checks. This is a crucial systems move: in reasoning tasks, low-quality symbolic text can teach brittle patterns quickly.</p>
+<p><strong>Commentary:</strong> This stage is underappreciated. Many reproduction failures in math LLM work are data-pipeline failures, not optimizer failures.</p>
+<h3 id="3-2-Continued-Pretraining-on-Math-Distribution">3.2 Continued Pretraining on Math Distribution</h3>
+<p>The model is exposed to sustained math-centric token streams to improve latent representations for equations, symbolic transformations, and multistep derivations. The paper argues this improves the model before RL even begins.</p>
+<p><strong>Commentary:</strong> This mirrors a recurring pattern in modern LLM engineering: RL refines behavior, but pretraining distribution still sets the capability ceiling.</p>
+<h3 id="3-3-GRPO-Group-Relative-Policy-Optimization">3.3 GRPO (Group Relative Policy Optimization)</h3>
+<p>Instead of relying only on absolute reward estimates per sample, GRPO compares candidates inside a sampled group and optimizes relatively better trajectories. In math, where rewards can be sparse/noisy and exact-solution verification can be brittle, relative ranking can provide a cleaner gradient signal.</p>
+<p><strong>Commentary:</strong> This is arguably the paper’s most influential conceptual contribution. It improves optimization stability and anticipates later trends in process-aware RL for reasoning models.</p>
+<h2 id="4-Experiment-Setup">4. Experiment Setup</h2>
+<ul>
+<li><strong>Tasks/benchmarks:</strong> standard math reasoning suites (including school-level and competition-style datasets).</li>
+<li><strong>Baselines:</strong> strong open models and prior math-specialized variants.</li>
+<li><strong>Comparisons:</strong> before/after continued pretraining, before/after RL, and ablations around objective design.</li>
+<li><strong>Evaluation focus:</strong> final-answer accuracy, consistency under decoding, and practical competitiveness against contemporary open/closed references.</li>
+</ul>
+<p>The structure of experiments is staged, which helps isolate where gains come from.</p>
+<h2 id="5-Results-Analysis">5. Results &amp; Analysis</h2>
+<p>The headline finding is that the DeepSeekMath pipeline substantially boosts math reasoning performance for an open 7B-class model, reaching competitive territory on key benchmarks.</p>
+<p>Three takeaways matter most:</p>
+<ol>
+<li><strong>Data + RL synergy is real:</strong> continued pretraining alone helps, RL alone helps, but combined they improve more strongly.</li>
+<li><strong>GRPO contributes to robustness:</strong> relative optimization appears to reduce fragile behavior that often appears when rewards are sparse.</li>
+<li><strong>Open-model feasibility:</strong> the paper is evidence that careful systems design can close part of the gap to larger proprietary systems in narrow-but-important domains.</li>
+</ol>
+<h2 id="6-Limitations-Boundary-Conditions">6. Limitations &amp; Boundary Conditions</h2>
+<ul>
+<li><strong>Benchmark dependence:</strong> gains are strongest where benchmark style resembles training distribution.</li>
+<li><strong>Verification bottleneck:</strong> if reward/verification design is weak, RL can still chase shortcuts.</li>
+<li><strong>Transfer uncertainty:</strong> mathematical gains do not automatically imply broad reasoning gains in unrelated domains.</li>
+<li><strong>Compute and pipeline complexity:</strong> reproducing the full stack requires nontrivial data engineering and RL infrastructure.</li>
+</ul>
+<h2 id="7-Reproducibility-Practical-Notes">7. Reproducibility &amp; Practical Notes</h2>
+<ul>
+<li>Treat this paper as a <strong>pipeline template</strong>, not just an algorithm note.</li>
+<li>Reproducibility depends heavily on data filtering details and reward implementation quality.</li>
+<li>For practitioners, a practical rollout is:
+<ol>
+<li>Build domain corpus and quality filters,</li>
+<li>Run moderate continued pretraining,</li>
+<li>Add relative-RL stage with strong verifiers,</li>
+<li>Validate robustness under prompt/decode perturbations.</li>
+</ol>
+</li>
+<li>If compute is limited, prioritize data curation and verifier quality before scaling RL steps.</li>
+</ul>
+<h2 id="8-Figure-Table-Oriented-Deep-Dive-Why-the-Results-Are-Plausible">8. Figure/Table-Oriented Deep Dive (Why the Results Are Plausible)</h2>
+<h3 id="8-1-Data-Mixture-and-Capability-Shift">8.1 Data Mixture and Capability Shift</h3>
+<p>A recurring pattern in reasoning papers is that a model can improve benchmark scores without becoming <em>structurally</em> better at reasoning. So I like to ask a stricter question: <strong>does each stage alter a failure mode we can name?</strong></p>
+<ul>
+<li>Stage A (continued pretraining) should reduce symbol-level confusion.</li>
+<li>Stage B (GRPO) should reduce trajectory-level inconsistency.</li>
+<li>Stage C (evaluation protocol hardening) should reduce metric-level illusion.</li>
+</ul>
+<p>If all three move in the expected direction, the pipeline is likely learning real skills, not just exploiting formatting artifacts.</p>
+<h3 id="8-2-Ablation-Interpretation-Template">8.2 Ablation Interpretation Template</h3>
+<p>When reading the ablation rows, I treat them as a causal chain rather than isolated scoreboard entries:</p>
+<ol>
+<li>Base model → has general language skill but weak domain prior.</li>
+<li>
+<ul>
+<li>Math pretraining → gains local symbolic fluency.</li>
+</ul>
+</li>
+<li>
+<ul>
+<li>RL with relative comparison → improves selection among multiple candidate chains.</li>
+</ul>
+</li>
+<li>
+<ul>
+<li>Robust decoding/eval checks → reveals whether gains are stable.</li>
+</ul>
+</li>
+</ol>
+<p>This template matters because many practitioners over-credit RL while under-crediting data curation.</p>
+<h3 id="8-3-Why-Relative-Preference-Helps-in-Math">8.3 Why Relative Preference Helps in Math</h3>
+<p>In math RL, absolute reward can be brittle:</p>
+<ul>
+<li>Exact-match verifiers are harsh and sparse.</li>
+<li>String formatting differences can flip binary reward.</li>
+<li>Intermediate steps may be partly correct but receive zero credit.</li>
+</ul>
+<p>Relative ranking within a group partially bypasses this by learning: “solution A is better than solution B for the same prompt.”</p>
+<p>Even when the reward is imperfect, ranking can still provide directional learning signal.</p>
+<h2 id="9-Method-Mechanics-with-Compact-Equations">9. Method Mechanics with Compact Equations</h2>
+<p>I summarize the practical mechanics using a simplified objective to communicate intuition (not claiming this is the exact implementation detail):</p>
+<p>Given a prompt <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span>, sample candidate trajectories <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>y</mi><mn>1</mn></msub><mo separator="true">,</mo><mi mathvariant="normal">.</mi><mi mathvariant="normal">.</mi><mi mathvariant="normal">.</mi><mo separator="true">,</mo><msub><mi>y</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">y_1, ..., y_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">...</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03148em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>. Let <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>r</mi><mi>i</mi></msub><mo>=</mo><mi>r</mi><mo stretchy="false">(</mo><mi>x</mi><mo separator="true">,</mo><msub><mi>y</mi><mi>i</mi></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">r_i = r(x, y_i)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span>. Define group-normalized advantage:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex">
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>A_i = \frac{r_i - \mu_r}{\sigma_r + \epsilon}</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex"></annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>μ</mi><mi>r</mi></msub></mrow><annotation encoding="application/x-tex">\mu_r</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal">μ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>σ</mi><mi>r</mi></msub></mrow><annotation encoding="application/x-tex">\sigma_r</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.03588em;">σ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.02778em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> are mean and std within the same group. Then optimize policy with clipped ratio objective:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex">
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>\mathcal{L}_{\text{GRPO-like}} = -\mathbb{E}\left[\min\left(\rho_i A_i, \text{clip}(\rho_i, 1-\delta, 1+\delta)A_i\right)\right]</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow></mrow><annotation encoding="application/x-tex"></annotation></semantics></math></span><span class="katex-html" aria-hidden="true"></span></span></span></p>
+<p>The practical point is not symbolic elegance; it is <strong>variance control</strong>:</p>
+<ul>
+<li>group normalization stabilizes updates,</li>
+<li>clipping avoids policy collapse,</li>
+<li>multi-sample comparison turns sparse correctness into richer supervision.</li>
+</ul>
+<h2 id="10-Reproduction-Blueprint-Operator-View">10. Reproduction Blueprint (Operator View)</h2>
+<p>If I had to reproduce DeepSeekMath with constrained resources, I would use the following phased plan.</p>
+<h3 id="Phase-1-—-Data-and-Verifier-First-Week-1–2">Phase 1 — Data and Verifier First (Week 1–2)</h3>
+<ul>
+<li>Build a math corpus candidate pool.</li>
+<li>Add deduplication, language filtering, quality gates.</li>
+<li>Create an answer checker with strict + relaxed modes.</li>
+<li>Log failure reasons (parse fail, unit mismatch, format mismatch).</li>
+</ul>
+<p>Deliverable: a dataset report with token stats, source proportions, and contamination checks.</p>
+<h3 id="Phase-2-—-Continued-Pretraining-Week-2–3">Phase 2 — Continued Pretraining (Week 2–3)</h3>
+<ul>
+<li>Start from a strong open base.</li>
+<li>Run moderate continued pretraining on math mixture.</li>
+<li>Evaluate every fixed token interval on held-out sets.</li>
+</ul>
+<p>Deliverable: learning curve showing where gains saturate.</p>
+<h3 id="Phase-3-—-Relative-RL-Week-3–4">Phase 3 — Relative RL (Week 3–4)</h3>
+<ul>
+<li>For each prompt, sample multiple solutions.</li>
+<li>Score with verifier + optional process heuristics.</li>
+<li>Run grouped policy optimization.</li>
+<li>Track KL drift and reward variance to avoid reward hacking.</li>
+</ul>
+<p>Deliverable: checkpoint comparison under same decode settings.</p>
+<h3 id="Phase-4-—-Robustness-Audit-Week-4">Phase 4 — Robustness Audit (Week 4)</h3>
+<ul>
+<li>Prompt paraphrase perturbation.</li>
+<li>Decoding temperature sweep.</li>
+<li>Long/short problem split.</li>
+<li>Error taxonomy: arithmetic, algebraic, reasoning jump, verifier mismatch.</li>
+</ul>
+<p>Deliverable: robustness matrix, not just one leaderboard number.</p>
+<h2 id="11-Failure-Modes-I-Would-Actively-Guard-Against">11. Failure Modes I Would Actively Guard Against</h2>
+<ol>
+<li><strong>Verifier overfitting</strong>: model optimizes checker quirks.</li>
+<li><strong>Style collapse</strong>: all outputs become similar and brittle.</li>
+<li><strong>Shallow shortcutting</strong>: better final accuracy with worse reasoning quality.</li>
+<li><strong>Domain narrowing</strong>: math improves but nearby reasoning tasks degrade.</li>
+</ol>
+<p>Mitigation checklist:</p>
+<ul>
+<li>hold out an unseen verifier,</li>
+<li>inspect chain diversity,</li>
+<li>add adversarially rephrased prompts,</li>
+<li>run regression on non-math tasks.</li>
+</ul>
+<h2 id="12-Practical-Production-Notes-If-Deploying-a-Math-Assistant">12. Practical Production Notes (If Deploying a Math Assistant)</h2>
+<h3 id="12-1-Request-Routing">12.1 Request Routing</h3>
+<p>I would route user questions into three bands:</p>
+<ul>
+<li>Band A: arithmetic/school math (fast path)</li>
+<li>Band B: olympiad-style multistep reasoning (slow path)</li>
+<li>Band C: symbolic manipulation/code-assisted solving (tool path)</li>
+</ul>
+<h3 id="12-2-Confidence-Signaling">12.2 Confidence Signaling</h3>
+<p>Do not expose a single hard confidence score. Instead, provide:</p>
+<ul>
+<li>answer confidence,</li>
+<li>derivation consistency (self-check agreement),</li>
+<li>verifier status.</li>
+</ul>
+<p>This avoids false certainty when the chain is elegant but wrong.</p>
+<h3 id="12-3-Human-in-the-Loop-Trigger">12.3 Human-in-the-Loop Trigger</h3>
+<p>Escalate to human review when:</p>
+<ul>
+<li>verifier disagrees with majority self-check,</li>
+<li>multiple candidate solutions differ materially,</li>
+<li>requested result is safety-critical (finance/medicine/legal calculations).</li>
+</ul>
+<h2 id="13-Why-This-Paper-Matters-Historically">13. Why This Paper Matters Historically</h2>
+<p>DeepSeekMath is a bridge paper between two eras:</p>
+<ul>
+<li><strong>Era 1</strong>: “more pretraining data and better prompting.”</li>
+<li><strong>Era 2</strong>: “reasoning quality as RL-and-verifier co-design.”</li>
+</ul>
+<p>Its deeper message is operational: open models can approach frontier behavior when teams stop treating training as a monolithic step and instead engineer a full reliability pipeline.</p>
+<h2 id="14-Final-Verdict">14. Final Verdict</h2>
+<p>If you ask me whether DeepSeekMath is “just another benchmark paper,” my answer is no. It is a playbook paper:</p>
+<ul>
+<li>Data curation is a first-class algorithmic choice.</li>
+<li>Relative RL can be a robust optimizer under sparse reward.</li>
+<li>Reproducibility requires systems discipline, not just model checkpoints.</li>
+</ul>
+<p>For practitioners building domain-specific reasoning assistants, this is one of the clearest early templates for combining continued pretraining with process-oriented RL.</p>
+<h2 id="References">References</h2>
+<ol>
+<li>DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models. arXiv:2402.03300.</li>
+<li>Ouyang et al. Training language models to follow instructions with human feedback. arXiv:2203.02155.</li>
+<li>Long-horizon reasoning and open-model math benchmark literature (GSM8K/MATH ecosystem).</li>
+</ol>
+<hr>
+<p><em>Review written on 2026-02-20.</em></p>
+<h2 id="15-Figure-by-Figure-and-Table-by-Table-Close-Reading-Appendix">15. Figure-by-Figure and Table-by-Table Close Reading Appendix</h2>
+<blockquote>
+<p>This appendix is written as an operator-facing reading log. The purpose is not to restate captions, but to explain what engineering decisions each figure/table supports and what can or cannot be concluded from it.</p>
+</blockquote>
+<h3 id="15-1-Figure-by-Figure-Reading-Notes">15.1 Figure-by-Figure Reading Notes</h3>
+<h4 id="Figure-1-Pipeline-training-stages">Figure 1 (Pipeline / training stages)</h4>
+<ul>
+<li><strong>What it visually encodes:</strong> a staged pipeline from domain data construction to continued pretraining to RL optimization.</li>
+<li><strong>Why it matters:</strong> this figure is the strongest evidence that DeepSeekMath is a systems recipe rather than a single-objective tweak.</li>
+<li><strong>How I would reproduce its claim:</strong> enforce strict stage boundaries in logs (separate checkpoints + separate eval snapshots).</li>
+<li><strong>Open risk:</strong> if stage boundaries are not respected, improvements can be incorrectly attributed to RL.</li>
+</ul>
+<h4 id="Figure-2-Data-source-mix-or-domain-distribution">Figure 2 (Data-source mix or domain distribution)</h4>
+<ul>
+<li><strong>What it shows:</strong> math-heavy distribution differs from generic web corpora.</li>
+<li><strong>Key implication:</strong> data curation is a capability intervention, not just data volume scaling.</li>
+<li><strong>Reproduction hook:</strong> track token-level source proportions and dedup rates as first-class metrics.</li>
+<li><strong>Failure signal:</strong> if source proportions drift between runs, final benchmark comparisons become non-causal.</li>
+</ul>
+<h4 id="Figure-3-Training-trajectory-benchmark-lift">Figure 3 (Training trajectory / benchmark lift)</h4>
+<ul>
+<li><strong>What it tends to show:</strong> staged gain from base → continued pretraining → RL.</li>
+<li><strong>Interpretation rule:</strong> care about <em>shape</em> of curve, not only endpoint. A stable monotonic lift is far more credible than one noisy jump.</li>
+<li><strong>Reproduction hook:</strong> evaluate at fixed intervals with frozen decode settings.</li>
+</ul>
+<h4 id="Figure-4-Robustness-generalization-trend">Figure 4 (Robustness / generalization trend)</h4>
+<ul>
+<li><strong>What it usually supports:</strong> gains are not a single-prompt artifact.</li>
+<li><strong>Operator takeaway:</strong> robustness checks should be mandatory release criteria, not optional appendix material.</li>
+</ul>
+<h3 id="15-2-Table-by-Table-Reading-Notes">15.2 Table-by-Table Reading Notes</h3>
+<h4 id="Table-1-Main-benchmark-comparison">Table 1 (Main benchmark comparison)</h4>
+<ul>
+<li><strong>Claim class:</strong> headline competitiveness of DeepSeekMath vs baselines.</li>
+<li><strong>How to read responsibly:</strong> compare under matched decoding and prompt templates; otherwise table ranking may be misleading.</li>
+<li><strong>Decision use:</strong> suitable for &quot;go/no-go&quot; product confidence only if standard deviations or repeated runs are reported.</li>
+</ul>
+<h4 id="Table-2-Ablation-continued-pretraining">Table 2 (Ablation: continued pretraining)</h4>
+<ul>
+<li><strong>Claim class:</strong> isolated contribution of domain adaptation.</li>
+<li><strong>Operational lesson:</strong> treat data pipeline quality as a tunable model component.</li>
+<li><strong>Reproduction checkpoint:</strong> maintain versioned dataset manifests and contamination checks.</li>
+</ul>
+<h4 id="Table-3-Ablation-RL-GRPO">Table 3 (Ablation: RL / GRPO)</h4>
+<ul>
+<li><strong>Claim class:</strong> incremental value of relative-policy optimization.</li>
+<li><strong>What I look for:</strong> consistent gains across multiple datasets, not only one high-variance benchmark.</li>
+<li><strong>Risk:</strong> noisy verifier can falsely inflate RL contribution.</li>
+</ul>
+<h4 id="Table-4-Decode-settings-consistency">Table 4 (Decode settings / consistency)</h4>
+<ul>
+<li><strong>Claim class:</strong> solution quality under sampling perturbations.</li>
+<li><strong>Production meaning:</strong> if results collapse under mild temperature changes, deployment confidence should be capped.</li>
+</ul>
+<h4 id="Table-5-Error-breakdown">Table 5 (Error breakdown)</h4>
+<ul>
+<li><strong>Claim class:</strong> where the model still fails (arithmetic slips, logic jumps, symbolic manipulation errors).</li>
+<li><strong>Engineering use:</strong> this table should drive next-cycle data and reward shaping priorities.</li>
+</ul>
+<h4 id="Table-6-Cost-performance-or-scale-comparison">Table 6 (Cost/performance or scale comparison)</h4>
+<ul>
+<li><strong>Claim class:</strong> practical tradeoff of model size, training cost, and achieved quality.</li>
+<li><strong>Decision use:</strong> helps choose whether to invest in better verifiers/data vs bigger models.</li>
+</ul>
+<h3 id="15-3-Evidence-Chain-Summary">15.3 Evidence-Chain Summary</h3>
+<p>Across figures and tables, the coherent story is:</p>
+<ol>
+<li>Domain-focused data shifts capability priors,</li>
+<li>Relative RL stabilizes trajectory selection,</li>
+<li>Robust evaluation reduces illusionary gains,</li>
+<li>Net result is credible math-reasoning lift for an open 7B system.</li>
+</ol>
+<p>This evidence chain is exactly why DeepSeekMath remains practically useful as a reproducible engineering blueprint.</p>
+<h2 id="16-Reproduction-Lab-Notebook-Pass-3-Expansion">16. Reproduction Lab Notebook (Pass-3 Expansion)</h2>
+<h3 id="16-1-Goal-of-This-Pass">16.1 Goal of This Pass</h3>
+<p>Bring both EN/ZH review outputs to review-ready long form (10+ pages), with explicit figure/table deep reading and reproducibility logs.</p>
+<h3 id="16-2-Actions-Completed-in-This-Pass">16.2 Actions Completed in This Pass</h3>
+<ul>
+<li>Added figure-by-figure close reading appendix.</li>
+<li>Added table-by-table interpretation appendix tied to operator decisions.</li>
+<li>Added evidence-chain synthesis to connect ablations with deployment confidence.</li>
+<li>Rebuilt PDFs and checked page counts.</li>
+</ul>
+<h3 id="16-3-Not-Done-in-This-Pass">16.3 Not Done in This Pass</h3>
+<ul>
+<li>No new experiments were executed on training hardware.</li>
+<li>No additional benchmark reruns beyond document-focused expansion.</li>
+</ul>
+<h3 id="16-4-Reproduction-Commands-Log">16.4 Reproduction Commands Log</h3>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">bash src/scripts/md2pdf.sh src/PaperBlogs-Preview/blogs/2026-02-20-DeepSeekMath-technical-review-en.md</span><br><span class="line">bash src/scripts/md2pdf.sh src/PaperBlogs-Preview/blogs/2026-02-20-DeepSeekMath-阅读笔记-zh.md</span><br><span class="line">pdfinfo src/PaperBlogs-Preview/blogs/2026-02-20-DeepSeekMath-technical-review-en.pdf | grep Pages</span><br><span class="line">pdfinfo src/PaperBlogs-Preview/blogs/2026-02-20-DeepSeekMath-阅读笔记-zh.pdf | grep Pages</span><br></pre></td></tr></table></figure>
+<h3 id="16-5-Next-Recommended-Technical-Follow-up">16.5 Next Recommended Technical Follow-up</h3>
+<p>If this were an actual training reproduction cycle (not a writing cycle), the immediate next action should be a verifier sensitivity sweep (strict vs relaxed checker) and reward-variance diagnostics under grouped sampling.</p>
+<h2 id="17-Core-Intuition-Before-the-Details">17. Core Intuition Before the Details</h2>
+<p>When I explain this paper to a complete beginner, I do <strong>not</strong> start from GRPO. I start from a simpler question: why is mathematics hard for language models in the first place?</p>
+<p>A language model predicts text one token at a time. That is already good enough for fluent conversation, but mathematics demands several extra properties at once:</p>
+<ol>
+<li><strong>Symbol precision</strong> — a tiny sign error can flip the answer.</li>
+<li><strong>Long dependency tracking</strong> — an early mistake poisons later steps.</li>
+<li><strong>Structured search</strong> — many candidate paths exist, and the model must keep the good one.</li>
+<li><strong>Verifiability</strong> — unlike creative writing, a math answer is often objectively wrong or right.</li>
+</ol>
+<p>That combination is why math is such a valuable stress test. If a method helps on math, it often teaches us something general about disciplined reasoning.</p>
+<h3 id="17-1-Why-Ordinary-Pretraining-Is-Not-Enough">17.1 Why Ordinary Pretraining Is Not Enough</h3>
+<p>Imagine training a student by giving them novels, news, recipes, and social-media posts. That student becomes broadly literate, but not necessarily good at olympiad algebra. General pretraining is similar: it builds broad competence, but its token distribution under-represents dense formal reasoning. So when a paper says &quot;we continued pretraining on math,&quot; the deeper message is: <strong>we changed the diet before evaluating the student again</strong>.</p>
+<h3 id="17-2-Why-Verifiers-Matter-So-Much">17.2 Why Verifiers Matter So Much</h3>
+<p>Humans can glance at a derivation and say, &quot;step three is suspicious.&quot; Models cannot do that reliably by default. A verifier acts like a strict exam marker. If the verifier is weak, RL may reward pretty-looking nonsense. If the verifier is too rigid, partially correct solutions get zero signal. DeepSeekMath sits exactly in that tension zone, which is why its RL design matters.</p>
+<h2 id="18-Benchmark-by-Benchmark-Reading-Guide">18. Benchmark-by-Benchmark Reading Guide</h2>
+<p>I find it useful to explain the standard benchmarks explicitly, because many papers assume readers already know why each one exists.</p>
+<h3 id="18-1-GSM8K">18.1 GSM8K</h3>
+<p>GSM8K focuses on grade-school word problems. Its importance is not difficulty in the olympiad sense; rather, it tests whether a model can map a short natural-language scenario into a correct arithmetic reasoning chain. A model that fails here usually has not learned stable multistep bookkeeping.</p>
+<h3 id="18-2-MATH">18.2 MATH</h3>
+<p>MATH is harder and more diverse. It includes algebra, geometry, counting, number theory, and competition-style formulations. This benchmark matters because it punishes shallow memorization more aggressively. If a method improves on MATH, I take that as stronger evidence of genuine reasoning progress than a similar gain on easier school-level sets.</p>
+<h3 id="18-3-Competition-Style-Internal-Evaluations">18.3 Competition-Style Internal Evaluations</h3>
+<p>When teams add their own internal sets, I ask two questions:</p>
+<ul>
+<li>Does the set overlap stylistically with the training corpus?</li>
+<li>Are the answer formats easy or hard for the verifier?</li>
+</ul>
+<p>These questions matter because a benchmark can be numerically hard but still biased toward a model's training distribution.</p>
+<h2 id="19-Concrete-Failure-Cases-I-Would-Expect-in-Practice">19. Concrete Failure Cases I Would Expect in Practice</h2>
+<p>To make the paper more understandable for beginners, I like to describe concrete failure patterns instead of speaking only in abstract benchmark terms.</p>
+<h3 id="Case-A-—-Arithmetic-slip-after-correct-setup">Case A — Arithmetic slip after correct setup</h3>
+<p>The model translates the problem correctly, sets up equations correctly, but makes a small arithmetic error near the end. Continued pretraining alone may not fix this consistently; grouped RL plus verification is more likely to suppress it.</p>
+<h3 id="Case-B-—-Elegant-but-invalid-shortcut">Case B — Elegant but invalid shortcut</h3>
+<p>The model writes a short, smooth explanation that skips a necessary justification. Human readers may be fooled. A stricter verifier or process-sensitive reward is needed to catch this.</p>
+<h3 id="Case-C-—-Correct-method-wrong-formatting">Case C — Correct method, wrong formatting</h3>
+<p>The model derives the right value but outputs it in a form the checker does not accept. This is not a reasoning failure, but it still affects RL signal and leaderboard numbers. That is why evaluation design can distort training conclusions.</p>
+<h3 id="Case-D-—-Distribution-mismatch">Case D — Distribution mismatch</h3>
+<p>The model performs well on textbook-style algebra but degrades on unusual geometry wording or proof-style prompts. This is the classic warning sign that the training mixture is narrow.</p>
+<h2 id="20-Deployment-Interpretation-What-I-Would-Tell-a-Real-Team">20. Deployment Interpretation: What I Would Tell a Real Team</h2>
+<p>If a product team asked me whether DeepSeekMath means &quot;7B open models are now solved for math,&quot; I would say no. The lesson is subtler:</p>
+<ul>
+<li>the ceiling rises sharply when data is domain-focused,</li>
+<li>RL becomes more useful when correctness is partially verifiable,</li>
+<li>but reliability still depends on the full stack: prompts, sampling, verifier, routing, and human escalation policy.</li>
+</ul>
+<p>In other words, this paper is best read as a <strong>recipe for a dependable subsystem</strong>, not a universal proof that one optimizer solves reasoning.</p>
+<h3 id="20-1-Minimal-Safe-Product-Policy">20.1 Minimal Safe Product Policy</h3>
+<p>For an educational or tutoring product, I would require:</p>
+<ul>
+<li>automatic verifier pass for final answers,</li>
+<li>self-consistency check across multiple samples,</li>
+<li>explicit uncertainty text when samples disagree,</li>
+<li>human-review route for high-stakes or repeated failures.</li>
+</ul>
+<h3 id="20-2-What-I-Would-Measure-After-Deployment">20.2 What I Would Measure After Deployment</h3>
+<p>Not only headline benchmark accuracy. I would also monitor:</p>
+<ul>
+<li>disagreement rate between top-2 candidate solutions,</li>
+<li>fraction of answers that pass relaxed but fail strict verification,</li>
+<li>performance on fresh weekly holdout sets,</li>
+<li>user-reported &quot;looked convincing but was wrong&quot; events.</li>
+</ul>
+<p>Those operational metrics are closer to real trustworthiness than a single benchmark score.</p>
+<h2 id="21-Expanded-Closing-Takeaway">21. Expanded Closing Takeaway</h2>
+<p>My strongest takeaway from DeepSeekMath is that reasoning progress is increasingly about <strong>system design discipline</strong>. The model matters, but so do data cleanliness, reward semantics, verifier quality, and robustness auditing. At first glance, that may sound disappointing—there is no magic switch. But for engineers, it is actually good news: the paper identifies several levers we can improve deliberately, test separately, and reproduce.</p>
+
+     </div> <footer class="blog-post-footer"> <p class="blog-post-source">
+Originally published at <a href="https://zzz0906.github.io/2026/02/20/2026-02-20-DeepSeekMath-technical-review-en/" target="_blank" rel="noopener noreferrer">zzz0906.github.io</a>.
+</p> <nav class="blog-post-nav" aria-label="Adjacent posts"> <a class="blog-post-nav-link blog-post-nav-prev" href="/blog/2026-02-23-2026-02-23-SelfRefine-technical-review-en/"> <span class="blog-post-nav-label">← Newer</span> <span class="blog-post-nav-title">Self-Refine: Teaching LLMs to Critique and Improve Their Own Output — No Extra Training Needed</span> </a> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-02-20-2026-02-20-Reflexion-technical-review-en/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">Reflexion: LLM Agents That Learn from Failure Through Verbal Self-Reflection</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient ML systems, LLM infrastructure, and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>

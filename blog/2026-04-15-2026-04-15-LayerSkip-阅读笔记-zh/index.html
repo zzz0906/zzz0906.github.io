@@ -1,0 +1,537 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>LayerSkip：让大模型“提前退出 + 自校验推理”成为可部署方案——深度阅读笔记 | Zhongzhu / Charlie</title><meta name="description" content="1. 为什么这篇论文值得认真读 如果要我用一句最朴素的话概括这篇论文： 它让同一个大模型“先用前几层快速猜，再用后几层批量核对修正”，从而在不引入第二个草稿模型的情况下实现明显加速。 这件事看起来像“推理技巧”，但本质上是训练与部署的联合设计。 今天大模型推理的核心痛点是： 每生成一个 token，通常都要走完整网络深度； 自回归导致串行瓶颈，无法像训练时那样大规模并行； 延迟和成本都很高； 多模型 speculative decoding 虽然有效，但显存与工程复杂度上去了。 LayerSkip 的价值在于它不是简单“后处理加速补丁”，而是三步联动： 训练阶段让模型早层更有预测能力； 推理阶段允许早退层先草拟 token； 用同一模型剩余深层做校验修正，并复用缓存减少额外开销。 论文给出的代表性速度收益是： CNN/DM 最高 2.16×； coding 最高 1.82×； TOPv2 最高 2.0×。 如果你是系统工程师，这篇论文最重要的不是“2.16×这个数字”，而是它提出了一个更有长期价值的问题： 我们能不能在训练时就把“可加速推理”写进模型能力结构里，而不是等部署时硬抠？ 这是一个方向性问题。LayerSkip 给出了一个可行答案。"><meta property="og:title" content="LayerSkip：让大模型“提前退出 + 自校验推理”成为可部署方案——深度阅读笔记 | Zhongzhu / Charlie"><meta property="og:description" content="1. 为什么这篇论文值得认真读 如果要我用一句最朴素的话概括这篇论文： 它让同一个大模型“先用前几层快速猜，再用后几层批量核对修正”，从而在不引入第二个草稿模型的情况下实现明显加速。 这件事看起来像“推理技巧”，但本质上是训练与部署的联合设计。 今天大模型推理的核心痛点是： 每生成一个 token，通常都要走完整网络深度； 自回归导致串行瓶颈，无法像训练时那样大规模并行； 延迟和成本都很高； 多模型 speculative decoding 虽然有效，但显存与工程复杂度上去了。 LayerSkip 的价值在于它不是简单“后处理加速补丁”，而是三步联动： 训练阶段让模型早层更有预测能力； 推理阶段允许早退层先草拟 token； 用同一模型剩余深层做校验修正，并复用缓存减少额外开销。 论文给出的代表性速度收益是： CNN/DM 最高 2.16×； coding 最高 1.82×； TOPv2 最高 2.0×。 如果你是系统工程师，这篇论文最重要的不是“2.16×这个数字”，而是它提出了一个更有长期价值的问题： 我们能不能在训练时就把“可加速推理”写进模型能力结构里，而不是等部署时硬抠？ 这是一个方向性问题。LayerSkip 给出了一个可行答案。"><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-04-15-2026-04-15-LayerSkip-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-04-15-2026-04-15-LayerSkip-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.BtdlpukG.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>116</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>33</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> <nav class="blog-post-toc" aria-label="Table of contents"> <p class="blog-post-toc-title">Contents</p> <ul> <li class="toc-level-2"> <a href="#1-为什么这篇论文值得认真读">1. 为什么这篇论文值得认真读</a> </li><li class="toc-level-2"> <a href="#2-前置知识：理解这篇论文前需要知道什么">2. 前置知识：理解这篇论文前需要知道什么</a> </li><li class="toc-level-3"> <a href="#2-1-为什么大模型推理这么贵">2.1 为什么大模型推理这么贵</a> </li><li class="toc-level-3"> <a href="#2-2-什么是自回归解码">2.2 什么是自回归解码</a> </li><li class="toc-level-3"> <a href="#2-3-什么是-speculative-decoding（猜测式解码）">2.3 什么是 speculative decoding（猜测式解码）</a> </li><li class="toc-level-3"> <a href="#2-4-什么叫-early-exit（提前退出）">2.4 什么叫 early exit（提前退出）</a> </li><li class="toc-level-3"> <a href="#2-5-KV-Cache-到底在做什么">2.5 KV Cache 到底在做什么</a> </li><li class="toc-level-3"> <a href="#2-6-延迟、吞吐、显存占用不是一回事">2.6 延迟、吞吐、显存占用不是一回事</a> </li><li class="toc-level-2"> <a href="#3-论文要解决的核心问题（精确定义）">3. 论文要解决的核心问题（精确定义）</a> </li><li class="toc-level-3"> <a href="#子问题-A：中间层默认不擅长直接解码">子问题 A：中间层默认不擅长直接解码</a> </li><li class="toc-level-3"> <a href="#子问题-B：默认模型把太多“决定性计算”放在深层">子问题 B：默认模型把太多“决定性计算”放在深层</a> </li><li class="toc-level-3"> <a href="#子问题-C：两模型-speculative-decoding-的部署成本高">子问题 C：两模型 speculative decoding 的部署成本高</a> </li><li class="toc-level-2"> <a href="#4-一段话看懂-LayerSkip">4. 一段话看懂 LayerSkip</a> </li><li class="toc-level-2"> <a href="#5-Figure-1-全流程拆解：训练—推理—校验">5. Figure 1 全流程拆解：训练—推理—校验</a> </li><li class="toc-level-2"> <a href="#6-Figure-2-全流程拆解：为什么作者相信“早层有价值”">6. Figure 2 全流程拆解：为什么作者相信“早层有价值”</a> </li><li class="toc-level-2"> <a href="#7-方法第一部分：Layer-Dropout（分层随机跳层训练）">7. 方法第一部分：Layer Dropout（分层随机跳层训练）</a> </li><li class="toc-level-3"> <a href="#7-1-直觉">7.1 直觉</a> </li><li class="toc-level-3"> <a href="#7-2-公式">7.2 公式</a> </li><li class="toc-level-3"> <a href="#7-3-为什么越深层-dropout-越大">7.3 为什么越深层 dropout 越大</a> </li><li class="toc-level-3"> <a href="#7-4-为什么从零预训练要用时间课程">7.4 为什么从零预训练要用时间课程</a> </li><li class="toc-level-2"> <a href="#8-方法第二部分：Early-Exit-Loss（共享-LM-Head）">8. 方法第二部分：Early Exit Loss（共享 LM Head）</a> </li><li class="toc-level-3"> <a href="#8-1-为什么中间层直接解码会差">8.1 为什么中间层直接解码会差</a> </li><li class="toc-level-3"> <a href="#8-2-总损失函数怎么构建">8.2 总损失函数怎么构建</a> </li><li class="toc-level-3"> <a href="#8-3-轮转课程-vs-渐进课程">8.3 轮转课程 vs 渐进课程</a> </li><li class="toc-level-3"> <a href="#8-4-共享-LM-Head-的工程价值">8.4 共享 LM Head 的工程价值</a> </li><li class="toc-level-2"> <a href="#9-推理第一部分：纯-Early-Exit">9. 推理第一部分：纯 Early Exit</a> </li><li class="toc-level-2"> <a href="#10-推理第二部分：Self-Speculative-Decoding">10. 推理第二部分：Self-Speculative Decoding</a> </li><li class="toc-level-3"> <a href="#10-1-Self-Drafting（自草拟）">10.1 Self-Drafting（自草拟）</a> </li><li class="toc-level-3"> <a href="#10-2-Self-Verification（自校验）">10.2 Self-Verification（自校验）</a> </li><li class="toc-level-3"> <a href="#10-3-KVQ-Cache-复用">10.3 KVQ Cache 复用</a> </li><li class="toc-level-3"> <a href="#10-4-与传统-Draft-Verify-的关键差异">10.4 与传统 Draft&amp;Verify 的关键差异</a> </li><li class="toc-level-2"> <a href="#11-实验设置">11. 实验设置</a> </li><li class="toc-level-3"> <a href="#11-1-四类训练范式">11.1 四类训练范式</a> </li><li class="toc-level-3"> <a href="#11-2-模型规模与硬件">11.2 模型规模与硬件</a> </li><li class="toc-level-3"> <a href="#11-3-任务与指标">11.3 任务与指标</a> </li><li class="toc-level-2"> <a href="#12-结果解读（带具体数字）">12. 结果解读（带具体数字）</a> </li><li class="toc-level-3"> <a href="#12-1-早层可用性显著提升">12.1 早层可用性显著提升</a> </li><li class="toc-level-3"> <a href="#12-2-Continual-pretraining-结果">12.2 Continual pretraining 结果</a> </li><li class="toc-level-3"> <a href="#12-3-从零预训练结果">12.3 从零预训练结果</a> </li><li class="toc-level-3"> <a href="#12-4-代码任务微调结果">12.4 代码任务微调结果</a> </li><li class="toc-level-3"> <a href="#12-5-TOPv2-任务微调结果">12.5 TOPv2 任务微调结果</a> </li><li class="toc-level-3"> <a href="#12-6-CPU-结果与缓存复用消融">12.6 CPU 结果与缓存复用消融</a> </li><li class="toc-level-2"> <a href="#13-图表证据逐项复盘">13. 图表证据逐项复盘</a> </li><li class="toc-level-3"> <a href="#Figure-1">Figure 1</a> </li><li class="toc-level-3"> <a href="#Figure-2">Figure 2</a> </li><li class="toc-level-3"> <a href="#Figure-3">Figure 3</a> </li><li class="toc-level-3"> <a href="#Figure-4">Figure 4</a> </li><li class="toc-level-3"> <a href="#Figure-5">Figure 5</a> </li><li class="toc-level-3"> <a href="#Figure-6-8-10">Figure 6 / 8 / 10</a> </li><li class="toc-level-3"> <a href="#Figure-7-9">Figure 7 / 9</a> </li><li class="toc-level-3"> <a href="#Figure-11">Figure 11</a> </li><li class="toc-level-3"> <a href="#Figure-12">Figure 12</a> </li><li class="toc-level-2"> <a href="#14-这篇论文真正强在哪里">14. 这篇论文真正强在哪里</a> </li><li class="toc-level-3"> <a href="#优点-1：训练-推理协同设计">优点 1：训练-推理协同设计</a> </li><li class="toc-level-3"> <a href="#优点-2：单模型自推测，内存更友好">优点 2：单模型自推测，内存更友好</a> </li><li class="toc-level-3"> <a href="#优点-3：共享-LM-head，工程落地成本低">优点 3：共享 LM head，工程落地成本低</a> </li><li class="toc-level-3"> <a href="#优点-4：评估覆盖广">优点 4：评估覆盖广</a> </li><li class="toc-level-3"> <a href="#优点-5：有系统侧实证">优点 5：有系统侧实证</a> </li><li class="toc-level-3"> <a href="#优点-6：揭示了深层依赖的训练动力学">优点 6：揭示了深层依赖的训练动力学</a> </li><li class="toc-level-2"> <a href="#15-局限性与边界条件">15. 局限性与边界条件</a> </li><li class="toc-level-3"> <a href="#局限-1：不是即插即用">局限 1：不是即插即用</a> </li><li class="toc-level-3"> <a href="#局限-2：超参变多">局限 2：超参变多</a> </li><li class="toc-level-3"> <a href="#局限-3：最后层精度有回退风险">局限 3：最后层精度有回退风险</a> </li><li class="toc-level-3"> <a href="#局限-4：固定退出层并不最优">局限 4：固定退出层并不最优</a> </li><li class="toc-level-3"> <a href="#局限-5：不同任务收益差异明显">局限 5：不同任务收益差异明显</a> </li><li class="toc-level-3"> <a href="#局限-6：从零训练要调学习率">局限 6：从零训练要调学习率</a> </li><li class="toc-level-3"> <a href="#局限-7：acceptance-决定最终收益">局限 7：acceptance 决定最终收益</a> </li><li class="toc-level-2"> <a href="#16-可复现性评估">16. 可复现性评估</a> </li><li class="toc-level-3"> <a href="#有利因素">有利因素</a> </li><li class="toc-level-3"> <a href="#复现难点">复现难点</a> </li><li class="toc-level-3"> <a href="#实操建议">实操建议</a> </li><li class="toc-level-2"> <a href="#17-如果我在-2026-年继续做这条线，会怎么推进">17. 如果我在 2026 年继续做这条线，会怎么推进</a> </li><li class="toc-level-3"> <a href="#方向-1：动态-per-token-退出层">方向 1：动态 per-token 退出层</a> </li><li class="toc-level-3"> <a href="#方向-2：与量化联合">方向 2：与量化联合</a> </li><li class="toc-level-3"> <a href="#方向-3：与现代服务引擎融合">方向 3：与现代服务引擎融合</a> </li><li class="toc-level-3"> <a href="#方向-4：中层蒸馏增强">方向 4：中层蒸馏增强</a> </li><li class="toc-level-3"> <a href="#方向-5：按请求类型自适应策略">方向 5：按请求类型自适应策略</a> </li><li class="toc-level-2"> <a href="#18-工程落地启发（可执行）">18. 工程落地启发（可执行）</a> </li><li class="toc-level-2"> <a href="#19-总结结论">19. 总结结论</a> </li><li class="toc-level-2"> <a href="#20-参考文献">20. 参考文献</a> </li><li class="toc-level-2"> <a href="#21-附录-A：常见问答">21. 附录 A：常见问答</a> </li><li class="toc-level-3"> <a href="#Q1：这是不是“删层剪枝”？">Q1：这是不是“删层剪枝”？</a> </li><li class="toc-level-3"> <a href="#Q2：这和量化是不是一回事？">Q2：这和量化是不是一回事？</a> </li><li class="toc-level-3"> <a href="#Q3：为什么不用第二个小模型做草稿？">Q3：为什么不用第二个小模型做草稿？</a> </li><li class="toc-level-3"> <a href="#Q4：是不是只-early-exit-就够了？">Q4：是不是只 early exit 就够了？</a> </li><li class="toc-level-3"> <a href="#Q5：我先看哪几张图最有效？">Q5：我先看哪几张图最有效？</a> </li><li class="toc-level-3"> <a href="#Q6：最值得工程团队学到的一点是什么？">Q6：最值得工程团队学到的一点是什么？</a> </li><li class="toc-level-2"> <a href="#22-附录-B：证据清单">22. 附录 B：证据清单</a> </li> </ul> </nav> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-04-15">April 15, 2026</time> <span class="blog-lang blog-lang-zh">中</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/LLM-Inference/">#LLM Inference</a><a class="blog-post-tag-chip" href="/blog/tag/Speculative-Decoding/">#Speculative Decoding</a> </span> </p> <h1>LayerSkip：让大模型“提前退出 + 自校验推理”成为可部署方案——深度阅读笔记</h1> </header> <div class="blog-post-body"> 
+
+      
+        <h2 id="1-为什么这篇论文值得认真读">1. 为什么这篇论文值得认真读</h2>
+<p>如果要我用一句最朴素的话概括这篇论文：</p>
+<blockquote>
+<p>它让同一个大模型“先用前几层快速猜，再用后几层批量核对修正”，从而在不引入第二个草稿模型的情况下实现明显加速。</p>
+</blockquote>
+<p>这件事看起来像“推理技巧”，但本质上是<strong>训练与部署的联合设计</strong>。</p>
+<p>今天大模型推理的核心痛点是：</p>
+<ul>
+<li>每生成一个 token，通常都要走完整网络深度；</li>
+<li>自回归导致串行瓶颈，无法像训练时那样大规模并行；</li>
+<li>延迟和成本都很高；</li>
+<li>多模型 speculative decoding 虽然有效，但显存与工程复杂度上去了。</li>
+</ul>
+<p>LayerSkip 的价值在于它不是简单“后处理加速补丁”，而是三步联动：</p>
+<ol>
+<li>训练阶段让模型早层更有预测能力；</li>
+<li>推理阶段允许早退层先草拟 token；</li>
+<li>用同一模型剩余深层做校验修正，并复用缓存减少额外开销。</li>
+</ol>
+<p>论文给出的代表性速度收益是：</p>
+<ul>
+<li>CNN/DM 最高 <strong>2.16×</strong>；</li>
+<li>coding 最高 <strong>1.82×</strong>；</li>
+<li>TOPv2 最高 <strong>2.0×</strong>。</li>
+</ul>
+<p>如果你是系统工程师，这篇论文最重要的不是“2.16×这个数字”，而是它提出了一个更有长期价值的问题：</p>
+<blockquote>
+<p>我们能不能在训练时就把“可加速推理”写进模型能力结构里，而不是等部署时硬抠？</p>
+</blockquote>
+<p>这是一个方向性问题。LayerSkip 给出了一个可行答案。</p>
+<hr>
+<a id="more"></a>
+<h2 id="2-前置知识：理解这篇论文前需要知道什么">2. 前置知识：理解这篇论文前需要知道什么</h2>
+<p>这一节我按“懂一点电脑、但没做过大模型”的标准讲。</p>
+<h3 id="2-1-为什么大模型推理这么贵">2.1 为什么大模型推理这么贵</h3>
+<p>大模型像一个很长的流水线。每一层都要做大量矩阵运算。</p>
+<p>你让它写一句话，它不是一次性写完，而是一个词一个词往外吐。每吐一个词，通常都要把整个深网络再跑一遍。</p>
+<p>所以成本来源不是单点，而是“三重叠加”：</p>
+<ul>
+<li>模型层数深；</li>
+<li>序列越来越长；</li>
+<li>生成是串行过程。</li>
+</ul>
+<p>这就是为什么大家都在研究“每个 token 少算一点”。</p>
+<h3 id="2-2-什么是自回归解码">2.2 什么是自回归解码</h3>
+<p>自回归就是：</p>
+<ul>
+<li>先预测第一个 token；</li>
+<li>把它拼回输入；</li>
+<li>再预测下一个；</li>
+<li>反复进行。</li>
+</ul>
+<p>它的优点是稳定、泛化好；缺点是慢。</p>
+<h3 id="2-3-什么是-speculative-decoding（猜测式解码）">2.3 什么是 speculative decoding（猜测式解码）</h3>
+<p>经典 speculative decoding 一般是两模型：</p>
+<ul>
+<li>小草稿模型先猜一串 token；</li>
+<li>大模型并行验证这串 token；</li>
+<li>能接受的就直接收下，冲突处再修正。</li>
+</ul>
+<p>好处：通常比“每个 token 都让大模型慢慢写”更快。<br>
+代价：你要维护两套模型和缓存，显存与工程复杂度都上升。</p>
+<h3 id="2-4-什么叫-early-exit（提前退出）">2.4 什么叫 early exit（提前退出）</h3>
+<p>大模型有很多层。提前退出就是“走到中间某一层就不往后走了，直接解码”。</p>
+<p>直觉上会更快，因为少算了很多层。</p>
+<p>问题是：普通模型训练时只关心最后一层输出，中间层并不一定“会答题”，所以早退常常会掉质。</p>
+<h3 id="2-5-KV-Cache-到底在做什么">2.5 KV Cache 到底在做什么</h3>
+<p>KV Cache 是注意力机制的历史缓存。</p>
+<p>你每生成一个新 token，不需要把前面所有 token 的键值再重算，可以直接拿缓存复用。</p>
+<p>在工程上它非常关键：</p>
+<ul>
+<li>决定了很多显存消耗；</li>
+<li>决定了推理速度上限；</li>
+<li>也是多模型 speculative decoding 复杂化的主要来源之一。</li>
+</ul>
+<h3 id="2-6-延迟、吞吐、显存占用不是一回事">2.6 延迟、吞吐、显存占用不是一回事</h3>
+<p>这三个指标经常被混着讲：</p>
+<ul>
+<li><strong>延迟（Latency）</strong>：一条请求多久完成；</li>
+<li><strong>吞吐（Throughput）</strong>：单位时间处理多少 token/请求；</li>
+<li><strong>显存/内存占用（Memory Footprint）</strong>：部署要多少资源。</li>
+</ul>
+<p>某个方法可能提速但显存更大；也可能显存友好但延迟一般。LayerSkip 的优势在于它尝试同时兼顾“速度 + 单模型内存友好”。</p>
+<h2 id="3-论文要解决的核心问题（精确定义）">3. 论文要解决的核心问题（精确定义）</h2>
+<p>本文的问题可以严谨写成：</p>
+<blockquote>
+<p>标准大模型解码每 token 走全层，延迟高。纯 early exit 虽快但常掉质。传统 speculative decoding 能保质提速，但通常需要额外 draft 模型与更大内存/工程复杂度。能否通过训练改造，让同一模型早层做 draft、晚层做 verify，并利用缓存复用实现高效推理？</p>
+</blockquote>
+<p>拆成三个子问题：</p>
+<h3 id="子问题-A：中间层默认不擅长直接解码">子问题 A：中间层默认不擅长直接解码</h3>
+<p>没有专门训练时，中间层输出不是“可直接当最终答案”的表示。</p>
+<h3 id="子问题-B：默认模型把太多“决定性计算”放在深层">子问题 B：默认模型把太多“决定性计算”放在深层</h3>
+<p>即便某些 token 早就能猜对，模型也往往还是走到很后面才稳定输出。</p>
+<h3 id="子问题-C：两模型-speculative-decoding-的部署成本高">子问题 C：两模型 speculative decoding 的部署成本高</h3>
+<p>两模型意味着：</p>
+<ul>
+<li>两套权重、</li>
+<li>两套缓存逻辑、</li>
+<li>更复杂服务编排。</li>
+</ul>
+<p>LayerSkip 的目标是：单模型里把这三件事一起解决。</p>
+<h2 id="4-一段话看懂-LayerSkip">4. 一段话看懂 LayerSkip</h2>
+<p>LayerSkip 的核心是“训练和推理一起改”：</p>
+<ul>
+<li>训练时对层做结构化 dropout（浅层小、深层大），逼模型别过度依赖后层；</li>
+<li>同时加 early exit loss，让同一个 LM head 学会从多层表示解码；</li>
+<li>推理时先在前 E 层自回归草拟，再用后 L-E 层并行核对修正；</li>
+<li>由于 draft 和 verify 共用同一模型前缀层，缓存可复用（KVQ cache），显存与延迟压力更可控。</li>
+</ul>
+<p>一句话：<strong>把“深度”从固定成本变成可调度资源。</strong></p>
+<h2 id="5-Figure-1-全流程拆解：训练—推理—校验">5. Figure 1 全流程拆解：训练—推理—校验</h2>
+<p>Figure 1 是整篇论文最关键的总图。</p>
+<p>它明确给出三段式闭环：</p>
+<ol>
+<li>训练（layer dropout + early exit loss）；</li>
+<li>早退推理（前 E 层就出 token）；</li>
+<li>自校验推理（后层验证并纠正）。</li>
+</ol>
+<p>我很喜欢这张图的原因是：它不是在讲一个小技巧，而是在讲一个<strong>端到端可运行系统</strong>。</p>
+<p>很多论文只说“我有个模型结构想法”，但不告诉你如何落到服务。LayerSkip 这点做得很好：</p>
+<ul>
+<li>训练目标直接面向推理可加速；</li>
+<li>推理算法又回头利用训练塑造出的早层能力；</li>
+<li>最后通过缓存复用把系统成本打下来。</li>
+</ul>
+<p>这才是“工程论文”该有的闭环。</p>
+<h2 id="6-Figure-2-全流程拆解：为什么作者相信“早层有价值”">6. Figure 2 全流程拆解：为什么作者相信“早层有价值”</h2>
+<p>Figure 2 用了一个 HumanEval 的代码补全样例，逐层观察 token 预测变化。</p>
+<p>作者看到几个关键现象：</p>
+<ol>
+<li>很早层预测通常不靠谱；</li>
+<li>后层逐渐收敛到最终 token；</li>
+<li>有些 token 在最终层之前就已经预测正确；</li>
+<li>中间层会“犹豫/反复改主意”。</li>
+</ol>
+<p>论文里给了一个非常具体的数字：在示例中，平均一个 token 需要 <strong>23.45/32</strong> 层才稳定。</p>
+<p>这意味着什么？</p>
+<ul>
+<li>哪怕你有完美“何时退出”判定器，默认模型也只能省一部分算力（大约 26% 上限）；</li>
+<li>想更大幅提速，必须让模型本身变得“更早可判定”。</li>
+</ul>
+<p>这就是 LayerSkip 的训练改造动机：</p>
+<blockquote>
+<p>不是只做退出策略，而是让模型学会“早点把该算明白的事算明白”。</p>
+</blockquote>
+<p>作者还指出一个很有趣现象：看似简单 token（比如 for 循环开头）在默认模型里也经常需要走完全部层。这种“浅层能力浪费”正是可优化空间。</p>
+<h2 id="7-方法第一部分：Layer-Dropout（分层随机跳层训练）">7. 方法第一部分：Layer Dropout（分层随机跳层训练）</h2>
+<h3 id="7-1-直觉">7.1 直觉</h3>
+<p>普通 dropout 是“神经元级随机失活”。LayerSkip 的 layer dropout 是“层级随机跳过”。</p>
+<p>关键不是“跳层”本身，而是跳层概率设计：</p>
+<ul>
+<li>浅层掉得少；</li>
+<li>深层掉得多。</li>
+</ul>
+<p>这等于在训练时持续给模型施压：</p>
+<blockquote>
+<p>后层可能不在，你必须在前层把信息组织得更可用。</p>
+</blockquote>
+<h3 id="7-2-公式">7.2 公式</h3>
+<p>论文把第 <code>l</code> 层在训练步 <code>t</code> 的更新写为：</p>
+<p>$ x_{l+1,t}=x_{l,t}+M(p_{l,t})f_l(x_{l,t}) $</p>
+<p>其中 <code>M(p)</code> 是伯努利门，按概率关闭该层贡献。</p>
+<p>每层 dropout 概率：</p>
+<p>$ p_{l,t}=S(t)D(l)p_{max} $</p>
+<ul>
+<li><code>pmax</code>：最大 dropout 强度；</li>
+<li><code>D(l)</code>：层深度缩放；</li>
+<li><code>S(t)</code>：时间课程缩放。</li>
+</ul>
+<p>作者采用“深层指数增大”的 <code>D(l)</code>，使最后层 dropout 最大。</p>
+<h3 id="7-3-为什么越深层-dropout-越大">7.3 为什么越深层 dropout 越大</h3>
+<p>如果你各层一视同仁地 dropout，只能得到一般正则化效果，不会定向提升“早层可解码性”。</p>
+<p>LayerSkip 的目标非常明确：推理时希望前几层能先给出可用草稿。所以训练也要朝这个方向施压。</p>
+<p>附录 Figure 12 也给了支持：在平均 dropout 相同的前提下，指数型层间分配比常数分配训练损失更优。这说明它不是拍脑袋。</p>
+<h3 id="7-4-为什么从零预训练要用时间课程">7.4 为什么从零预训练要用时间课程</h3>
+<p>论文区分两类场景：</p>
+<ul>
+<li>从已有模型继续训练/微调：<code>S(t)=1</code> 即可；</li>
+<li>从零预训练：需要时间课程（逐步增强），否则训练不稳或效果差。</li>
+</ul>
+<p>这是很实用的经验结论。因为随机初始化时网络还没形成稳定特征，太早强推结构化丢层容易把优化搞崩。</p>
+<h2 id="8-方法第二部分：Early-Exit-Loss（共享-LM-Head）">8. 方法第二部分：Early Exit Loss（共享 LM Head）</h2>
+<h3 id="8-1-为什么中间层直接解码会差">8.1 为什么中间层直接解码会差</h3>
+<p>标准 LM head 主要被训练去读最后层表示。中间层表示即便“有信息”，也未必能被同一个头直接映射成正确 token。</p>
+<p>所以 early exit 需要专门训练信号。</p>
+<h3 id="8-2-总损失函数怎么构建">8.2 总损失函数怎么构建</h3>
+<p>论文把总损失写成多层 CE 的加权和：</p>
+<p>$ J(X,Y,t)=\sum_{l=0}^{L-1}\tilde e(t,l)J_{CE}(g(x_{l+1}),Y) $</p>
+<p>这里 <code>\tilde e(t,l)</code> 由两部分决定：</p>
+<ul>
+<li>课程掩码 <code>C(t,l)</code>（当前步启用哪些层的早退监督）；</li>
+<li>层权重 <code>e(l)</code>（后层权重更大）。</li>
+</ul>
+<p>论文里后层惩罚更重，目的是避免“只顾早层，最后层退化太多”。</p>
+<p>这个平衡是合理的。</p>
+<h3 id="8-3-轮转课程-vs-渐进课程">8.3 轮转课程 vs 渐进课程</h3>
+<p>作者给了两种早退损失课程：</p>
+<ul>
+<li><strong>Rotational（轮转）</strong>：每步只激活部分层的退出监督，循环覆盖全层；</li>
+<li><strong>Gradual（渐进）</strong>：逐步从后往前打开更多层监督。</li>
+</ul>
+<p>为什么需要课程？</p>
+<p>因为“所有层、每步都监督”会带来两个问题：</p>
+<ol>
+<li>训练太慢；</li>
+<li>最后层准确率可能下降。</li>
+</ol>
+<p>这点很工程现实，不是学术花活。</p>
+<h3 id="8-4-共享-LM-Head-的工程价值">8.4 共享 LM Head 的工程价值</h3>
+<p>很多早退工作会给每层挂单独 head。LayerSkip 选择“全层共用一个 LM head”。</p>
+<p>优点非常直接：</p>
+<ul>
+<li>参数更少；</li>
+<li>训练显存更省；</li>
+<li>推理逻辑更简单；</li>
+<li>部署维护成本更低。</li>
+</ul>
+<p>我认为这是这篇论文最“可上线”的设计决策之一。</p>
+<h2 id="9-推理第一部分：纯-Early-Exit">9. 推理第一部分：纯 Early Exit</h2>
+<p>最基础模式很简单：</p>
+<ul>
+<li>每个 token 只跑前 E 层；</li>
+<li>直接接 LM head 解码。</li>
+</ul>
+<p>Figure 4 给出成本对比：</p>
+<ul>
+<li>标准推理：每 token 约 L 层成本；</li>
+<li>早退推理：每 token 约 E 层成本（E&lt;L）。</li>
+</ul>
+<p>但纯早退的问题同样明显：层数越浅越快，质量通常掉得越多。尤其是生成任务，错误会累积。</p>
+<p>所以 LayerSkip 的真正落地点不是“纯早退”，而是“早退 + 自校验”。</p>
+<h2 id="10-推理第二部分：Self-Speculative-Decoding">10. 推理第二部分：Self-Speculative Decoding</h2>
+<h3 id="10-1-Self-Drafting（自草拟）">10.1 Self-Drafting（自草拟）</h3>
+<p>第一步，使用同一模型前 E 层自回归生成 d 个 draft token。</p>
+<p>这里没有外部 draft 模型。等价于“同一个模型的浅层子网”当草稿器。</p>
+<h3 id="10-2-Self-Verification（自校验）">10.2 Self-Verification（自校验）</h3>
+<p>第二步，用剩余 L-E 层对 draft 序列做并行验证：</p>
+<ul>
+<li>逐位比对 draft 与 verify；</li>
+<li>接受最长一致前缀；</li>
+<li>在分歧点采用验证结果纠正。</li>
+</ul>
+<p>这和传统 speculative 的逻辑一致，但全部在同一模型里完成。</p>
+<h3 id="10-3-KVQ-Cache-复用">10.3 KVQ Cache 复用</h3>
+<p>这是论文系统贡献核心之一。</p>
+<p>因为 draft 与 verify 共享同一模型前缀层顺序，作者实现了：</p>
+<ul>
+<li><strong>Single KV Cache</strong>：前缀层 KV 可直接复用；</li>
+<li><strong>Exit Query Cache</strong>：保存退出层查询信息，让验证阶段继续后层计算时少做重复工作。</li>
+</ul>
+<p>两者合并为 KVQ cache。<br>
+这不是小优化，而是决定“单模型方案是否真的省”的关键。</p>
+<h3 id="10-4-与传统-Draft-Verify-的关键差异">10.4 与传统 Draft&amp;Verify 的关键差异</h3>
+<p>相较于两模型 speculative：</p>
+<ul>
+<li>LayerSkip 只需要一个模型；</li>
+<li>显存占用更友好；</li>
+<li>前缀计算与缓存可复用更自然；</li>
+<li>但前提是你得按 LayerSkip 训练过。</li>
+</ul>
+<p>相较于“跳过中间块”的自推测方法，LayerSkip 强调顺序一致前缀带来的复用优势。</p>
+<h2 id="11-实验设置">11. 实验设置</h2>
+<h3 id="11-1-四类训练范式">11.1 四类训练范式</h3>
+<p>论文不是单场景验证，而是覆盖了四个训练范式：</p>
+<ol>
+<li><strong>Continual pretraining</strong>：在预训练模型上继续训练（含 Llama2 7B/13B，后续还测了 Llama3 8B、Llama3.2 1B）；</li>
+<li><strong>Pretraining from scratch</strong>：从零训练 1.5B 与 7B；</li>
+<li><strong>Code finetuning</strong>：Llama1 7B 在代码域继续微调；</li>
+<li><strong>Task-specific finetuning</strong>：在 TOPv2 上任务微调。</li>
+</ol>
+<p>这个覆盖面是加分项，说明方法不只是某个特定设置下的“巧合”。</p>
+<h3 id="11-2-模型规模与硬件">11.2 模型规模与硬件</h3>
+<p>附录给出较完整配置。涉及：</p>
+<ul>
+<li>1.5B / 7B / 13B，24~40 层；</li>
+<li>A100 30GB / 80GB 与 H100；</li>
+<li>多组 batch、步数、学习率配置。</li>
+</ul>
+<p>这说明实验投入是严肃的，不是玩具级。</p>
+<h3 id="11-3-任务与指标">11.3 任务与指标</h3>
+<p>评估覆盖分类任务与生成任务：</p>
+<ul>
+<li>分类类：BoolQ、PIQA、SIQA、HellaSwag、RACE、MMLU 等；</li>
+<li>生成类：NQ、TriviaQA、GSM8K、MATH、HumanEval、MBPP；</li>
+<li>生成系统指标：CNN/DM、XSUM、TOPv2 的 EM/ROUGE、速度与 acceptance。</li>
+</ul>
+<p>指标组合是合理的，因为“是否可部署”不能只看准确率，也必须看 speedup 和时延。</p>
+<h2 id="12-结果解读（带具体数字）">12. 结果解读（带具体数字）</h2>
+<h3 id="12-1-早层可用性显著提升">12.1 早层可用性显著提升</h3>
+<p>Figure 6 / Figure 8 / Figure 10 的共同趋势是：</p>
+<ul>
+<li>baseline 早退到中层后，很多生成任务快速崩；</li>
+<li>LayerSkip（尤其 LD+EE）显著抬升中层可用性；</li>
+<li>最后层通常只轻微回退或接近持平（参数调得合适时）。</li>
+</ul>
+<p>论文还强调了一个现象：</p>
+<ul>
+<li>分类任务早层看起来“没那么糟”；</li>
+<li>生成任务更容易累积错误，所以更能体现 LayerSkip 价值。</li>
+</ul>
+<p>举个文中点名例子：Llama2 7B 的 NaturalQuestions 在 baseline 中层可从 25.1% 掉到 0%；LayerSkip 同条件下可回到约 4%。</p>
+<h3 id="12-2-Continual-pretraining-结果">12.2 Continual pretraining 结果</h3>
+<p>Table 3 给出较核心的生成加速结果。</p>
+<p>在 CNN/DM 上：</p>
+<ul>
+<li>Llama2 7B：Self-Spec 可到 <strong>1.86×</strong>，ROUGE-2 基本保持（0.079→0.078）；</li>
+<li>Llama2 13B：Self-Spec 可到 <strong>1.81×</strong>，ROUGE-2 基本保持（0.098→0.098）。</li>
+</ul>
+<p>在 XSUM 上：</p>
+<ul>
+<li>Llama2 7B：约 <strong>1.54×</strong>；</li>
+<li>Llama2 13B：约 <strong>1.34×</strong>；</li>
+<li>ROUGE-2 行为总体接近 autoregressive。</li>
+</ul>
+<p>在同表 coding 相关设置下，也出现 1.6×~1.8× 级别收益，同时保持较好的质量。</p>
+<p>作者还与 prior Draft&amp;Verify 对比：</p>
+<ul>
+<li>CNN/DM 上他们更快（文中对比给出约 1.81× vs 1.56× 量级）；</li>
+<li>XSUM 上略慢（约 1.34× vs 1.48×）。</li>
+</ul>
+<p>这很真实，说明它不是“全场景无脑碾压”，而是整体上有竞争力。</p>
+<h3 id="12-3-从零预训练结果">12.3 从零预训练结果</h3>
+<p>Table 4 报告从零训练 26B tokens 的结果：</p>
+<ul>
+<li>1.5B 模型在 CNN/DM 上 Self-Spec 约 <strong>1.76×</strong>；</li>
+<li>7B 模型在同设定达到论文 headline <strong>2.16×</strong>。</li>
+</ul>
+<p>这一组结果对我来说价值很高：说明“推理友好深度结构”可以在预训练阶段被塑造，而不是只能后期修补。</p>
+<h3 id="12-4-代码任务微调结果">12.4 代码任务微调结果</h3>
+<p>Table 5 是我很关注的一表，因为代码任务对 token 错误非常敏感。</p>
+<p>基线 autoregressive 在该设置下约 <strong>85.9%</strong>。</p>
+<p>纯 early exit 的质量-速度权衡明显：</p>
+<ul>
+<li>E=18：约 83.3%；</li>
+<li>E=12：约 79.4%；</li>
+<li>E=6：约 62.9%；</li>
+</ul>
+<p>层越浅越快，但掉得也越多。</p>
+<p>Self-Spec 的意义是把质量拉回来：</p>
+<ul>
+<li>文中总结为“可在几乎不掉质量下拿到明显加速”；</li>
+<li>速度可达 <strong>1.82×</strong> 量级。</li>
+</ul>
+<h3 id="12-5-TOPv2-任务微调结果">12.5 TOPv2 任务微调结果</h3>
+<p>TOPv2 是严格 exact match 任务，容错很低。</p>
+<p>论文报告 Self-Spec acceptance（不同退出层）：</p>
+<ul>
+<li>E=6：<strong>76.0%</strong>；</li>
+<li>E=12：约 <strong>97.2% / 97.6%</strong>（文中与表格呈现有轻微写法差异，量级一致）；</li>
+<li>E=18：<strong>98.9%</strong>；</li>
+</ul>
+<p>并达到 <strong>2.0×</strong> 速度提升。</p>
+<p>这说明在结构化任务上，验证环节可以高效“兜底”。</p>
+<h3 id="12-6-CPU-结果与缓存复用消融">12.6 CPU 结果与缓存复用消融</h3>
+<p>附录 Table 11 给了 CPU 上 TOPv2 的实测，非常有参考价值：</p>
+<ul>
+<li>Autoregressive：EM <strong>85.39</strong>，约 <strong>165 ms/token</strong>；</li>
+<li>Early Exit（E=6）：可快到 <strong>44 ms/token</strong>，但 EM 掉到 <strong>29.8</strong>；</li>
+<li>Self-Spec（E=6）：EM <strong>82.9</strong>，约 <strong>87 ms/token</strong>；</li>
+<li>Self-Spec（E=12）：EM <strong>82.9</strong>，约 <strong>104 ms/token</strong>；</li>
+<li>Self-Spec（E=18）：EM <strong>82.9</strong>，约 <strong>134 ms/token</strong>。</li>
+</ul>
+<p>这组数据非常清楚地证明：</p>
+<ul>
+<li>纯早退快但太伤质量；</li>
+<li>自校验把质量拉回，同时仍显著快于全量自回归。</li>
+</ul>
+<p>再看 Table 7（KVQ 复用消融）：</p>
+<ul>
+<li>作者报告在不同任务上可节省约 <strong>9–20 ms/token</strong>。</li>
+</ul>
+<p>这证明 KVQ 不是“概念加分项”，而是有实测收益。</p>
+<h2 id="13-图表证据逐项复盘">13. 图表证据逐项复盘</h2>
+<h3 id="Figure-1">Figure 1</h3>
+<p>给出完整 pipeline，是全篇路标图。</p>
+<h3 id="Figure-2">Figure 2</h3>
+<p>给出逐层 token 演化证据，证明“默认模型早层潜力不足但并非全无可能”。</p>
+<h3 id="Figure-3">Figure 3</h3>
+<p>把训练视为“共享权重多深度子模型集合”，这个视角很重要。</p>
+<h3 id="Figure-4">Figure 4</h3>
+<p>直观对比 L vs E 的 token 成本。</p>
+<h3 id="Figure-5">Figure 5</h3>
+<p>解释三种解码路径（自回归、传统 speculative、self-spec）的计算与复用差异。</p>
+<h3 id="Figure-6-8-10">Figure 6 / 8 / 10</h3>
+<p>给出不同训练范式下 early-exit 曲线，支持“方法可迁移”。</p>
+<h3 id="Figure-7-9">Figure 7 / 9</h3>
+<p>展示文本样例，直观看到 pure early-exit 的错误如何被 verify 修复。</p>
+<h3 id="Figure-11">Figure 11</h3>
+<p>非常关键：随着训练 token 增加，最后层 PPL 下降是正常的，但中层 PPL 在默认训练下可能显著变差；EE/LD 能缓解。这是方法合理性的强证据。</p>
+<h3 id="Figure-12">Figure 12</h3>
+<p>指数型层 dropout 配置优于常数型配置（在相同平均 dropout 下）。</p>
+<h2 id="14-这篇论文真正强在哪里">14. 这篇论文真正强在哪里</h2>
+<p>我认为有六个硬优点。</p>
+<h3 id="优点-1：训练-推理协同设计">优点 1：训练-推理协同设计</h3>
+<p>不是只改推理，不是只改训练，而是两端耦合优化。</p>
+<h3 id="优点-2：单模型自推测，内存更友好">优点 2：单模型自推测，内存更友好</h3>
+<p>相比两模型 speculative，部署复杂度与显存压力更可控。</p>
+<h3 id="优点-3：共享-LM-head，工程落地成本低">优点 3：共享 LM head，工程落地成本低</h3>
+<p>不需要给每层挂独立 head，维护与服务更简单。</p>
+<h3 id="优点-4：评估覆盖广">优点 4：评估覆盖广</h3>
+<p>continual、scratch、domain finetune、task finetune 都测了。</p>
+<h3 id="优点-5：有系统侧实证">优点 5：有系统侧实证</h3>
+<p>CPU 结果 + KVQ 复用消融，使结论更“工程可信”。</p>
+<h3 id="优点-6：揭示了深层依赖的训练动力学">优点 6：揭示了深层依赖的训练动力学</h3>
+<p>Figure 11 不只是加速结果，而是对“为什么默认模型中层难用”给出实证线索。</p>
+<h2 id="15-局限性与边界条件">15. 局限性与边界条件</h2>
+<p>论文也坦诚写了不足，我补充展开如下。</p>
+<h3 id="局限-1：不是即插即用">局限 1：不是即插即用</h3>
+<p>要取得最好效果，通常需要按 LayerSkip 配方训练/微调过。</p>
+<h3 id="局限-2：超参变多">局限 2：超参变多</h3>
+<p><code>pmax</code>、<code>escale</code>、<code>R</code>、<code>E</code>、<code>d</code> 都要调。调不好会影响最后层质量或收益。</p>
+<h3 id="局限-3：最后层精度有回退风险">局限 3：最后层精度有回退风险</h3>
+<p>论文多处提到若设置不当会掉最后层表现。</p>
+<h3 id="局限-4：固定退出层并不最优">局限 4：固定退出层并不最优</h3>
+<p>不同 token 难度不同，固定 E 是工程简化，不是理论最优。</p>
+<h3 id="局限-5：不同任务收益差异明显">局限 5：不同任务收益差异明显</h3>
+<p>不是所有任务都能拿到同样加速比。</p>
+<h3 id="局限-6：从零训练要调学习率">局限 6：从零训练要调学习率</h3>
+<p>论文强调了这一点，说明落地成本并非零。</p>
+<h3 id="局限-7：acceptance-决定最终收益">局限 7：acceptance 决定最终收益</h3>
+<p>草拟质量不够高时，verify 回滚频繁，收益会被吞掉。</p>
+<h2 id="16-可复现性评估">16. 可复现性评估</h2>
+<p>我给这篇论文的可复现性评价是：<strong>中上（有代码，有配置，但工程细节仍需经验）</strong>。</p>
+<h3 id="有利因素">有利因素</h3>
+<ul>
+<li>开源代码与 checkpoint；</li>
+<li>附录有训练配置、学习率与架构表；</li>
+<li>指标定义和任务分类相对清晰；</li>
+<li>给了 self-spec 伪代码。</li>
+</ul>
+<h3 id="复现难点">复现难点</h3>
+<ul>
+<li>规模实验资源成本不低；</li>
+<li>cache 复用实现细节对框架敏感；</li>
+<li>不同硬件/内核下速度数字会波动；</li>
+<li>超参调优需要服务侧观测闭环。</li>
+</ul>
+<h3 id="实操建议">实操建议</h3>
+<p>若你要复现，不建议直接上最大配置。建议：</p>
+<ol>
+<li>先在 task-specific finetune 规模跑通；</li>
+<li>做 E 与 d 的网格扫描；</li>
+<li>同时看 acceptance、质量、时延三维曲线；</li>
+<li>再引入 KVQ 复用对照；</li>
+<li>最后再扩到更大模型。</li>
+</ol>
+<h2 id="17-如果我在-2026-年继续做这条线，会怎么推进">17. 如果我在 2026 年继续做这条线，会怎么推进</h2>
+<p>我会优先做五件事。</p>
+<h3 id="方向-1：动态-per-token-退出层">方向 1：动态 per-token 退出层</h3>
+<p>当前固定 E 过于粗粒度。可以根据 token 置信度或 draft-verify 分歧信号动态决定深度。</p>
+<h3 id="方向-2：与量化联合">方向 2：与量化联合</h3>
+<p>LayerSkip（减有效深度）与量化（减数值成本）是互补关系，理论上可叠加。</p>
+<h3 id="方向-3：与现代服务引擎融合">方向 3：与现代服务引擎融合</h3>
+<p>在 vLLM 类分页缓存框架中验证 KVQ 复用收益是否稳定可复现。</p>
+<h3 id="方向-4：中层蒸馏增强">方向 4：中层蒸馏增强</h3>
+<p>在现有 EE 基础上加中层 logits/hidden 蒸馏，可能进一步提高 acceptance。</p>
+<h3 id="方向-5：按请求类型自适应策略">方向 5：按请求类型自适应策略</h3>
+<p>低风险请求走激进早退，高风险请求提高 E 或降低 d，实现质量-成本分级服务。</p>
+<h2 id="18-工程落地启发（可执行）">18. 工程落地启发（可执行）</h2>
+<p>给做推理系统的同学，我提 8 条可直接落地的建议。</p>
+<ol>
+<li><strong>把深度当成调度资源，而不是固定结构。</strong></li>
+<li><strong>训练目标要提前为推理优化让路。</strong></li>
+<li><strong>单模型方案优先评估缓存复用潜力。</strong></li>
+<li><strong>一定要单独评估生成任务，不要只看分类任务。</strong></li>
+<li><strong>早退单独使用风险大，尽量配验证环节。</strong></li>
+<li><strong>acceptance 是核心线上指标，必须持续监控。</strong></li>
+<li><strong>质量回归要重点盯最后层与中层分化趋势。</strong></li>
+<li><strong>CPU 场景也值得测，很多边缘部署更看重它。</strong></li>
+</ol>
+<h2 id="19-总结结论">19. 总结结论</h2>
+<p>我的最终判断：</p>
+<blockquote>
+<p>LayerSkip 是一篇“思路正确、工程意识强、证据比较扎实”的推理效率论文。它真正有价值的地方，不是某个孤立加速数字，而是把训练阶段改造成可服务化友好结构，让同一模型完成“草拟 + 校验 + 缓存复用”的闭环。</p>
+</blockquote>
+<p>它不是无代价方案：</p>
+<ul>
+<li>需要额外训练/微调；</li>
+<li>需要调参；</li>
+<li>不同任务收益不同。</li>
+</ul>
+<p>但它很可能是未来“训练-部署联合优化”路线中的一个重要基线。</p>
+<p>如果你关注 Efficient ML，尤其是“怎样在不显著牺牲质量下把推理做快”，这篇论文值得你认真读、认真复现。</p>
+<h2 id="20-参考文献">20. 参考文献</h2>
+<ol>
+<li>Elhoushi et al. LayerSkip: Enabling Early Exit Inference and Self-Speculative Decoding. ACL 2024.</li>
+<li>Leviathan et al. Fast Inference from Transformers via Speculative Decoding. 2023.</li>
+<li>Fan et al. Reducing Transformer Depth on Demand with Structured Dropout. 2020.</li>
+<li>Schuster et al. Confident Adaptive Language Modeling. 2022.</li>
+<li>Zhang et al. Draft &amp; Verify / Self-speculative decoding related work. 2023.</li>
+</ol>
+<h2 id="21-附录-A：常见问答">21. 附录 A：常见问答</h2>
+<h3 id="Q1：这是不是“删层剪枝”？">Q1：这是不是“删层剪枝”？</h3>
+<p>不完全是。它不是把层永久删掉，而是推理时先用前层快速生成，再让后层验证修正。模型结构本身还在。</p>
+<h3 id="Q2：这和量化是不是一回事？">Q2：这和量化是不是一回事？</h3>
+<p>不是。量化是“每次计算更便宜”；LayerSkip 是“很多 token 少走几层 + 校验修正”。</p>
+<h3 id="Q3：为什么不用第二个小模型做草稿？">Q3：为什么不用第二个小模型做草稿？</h3>
+<p>可以用。传统 speculative 就这么做。LayerSkip 的优势是单模型缓存复用更自然、内存更友好。</p>
+<h3 id="Q4：是不是只-early-exit-就够了？">Q4：是不是只 early exit 就够了？</h3>
+<p>通常不够。纯 early exit 质量容易掉。self-verify 才是可部署关键。</p>
+<h3 id="Q5：我先看哪几张图最有效？">Q5：我先看哪几张图最有效？</h3>
+<p>建议顺序：</p>
+<ol>
+<li>Figure 1（总流程）</li>
+<li>Figure 2（动机）</li>
+<li>Figure 5（self-spec 机制）</li>
+<li>Figure 6/8/10（主结果）</li>
+<li>Figure 11（训练动力学）</li>
+</ol>
+<h3 id="Q6：最值得工程团队学到的一点是什么？">Q6：最值得工程团队学到的一点是什么？</h3>
+<p>训练要为服务场景服务。不是训练结束再“补丁式”提速，而是从训练时就塑造可加速结构。</p>
+<h2 id="22-附录-B：证据清单">22. 附录 B：证据清单</h2>
+<ul>
+<li><strong>问题定义完整：</strong> 是（速度、质量、内存/复杂度三者兼顾）。</li>
+<li><strong>前置知识完整：</strong> 是（自回归、早退、speculative、缓存）。</li>
+<li><strong>方法讲清：</strong> 是（LD、EE、Self-Spec、KVQ）。</li>
+<li><strong>公式覆盖：</strong> 是（层 dropout 概率、总损失、课程机制）。</li>
+<li><strong>关键图讨论：</strong> Figure 1/2/3/4/5/6/8/10/11/12。</li>
+<li><strong>关键表讨论：</strong> Table 3/4/5/7/11 + Table 6 的 acceptance 核心结论。</li>
+<li><strong>具体数字：</strong> 是（23.45/32、2.16×、1.82×、2.0×、CPU ms/token、acceptance）。</li>
+<li><strong>局限性：</strong> 是（需改训练、调参复杂、固定 E 非最优等）。</li>
+<li><strong>可复现性：</strong> 是（代码可用，附录配置较全，仍有工程门槛）。</li>
+<li><strong>工程启发：</strong> 是（深度调度、缓存复用、acceptance 监控、分级策略）。</li>
+</ul>
+<hr>
+<p><em>笔记写于 2026-04-15。</em></p>
+
+     </div> <footer class="blog-post-footer"> <p class="blog-post-source">
+Originally published at <a href="https://zzz0906.github.io/2026/04/15/2026-04-15-LayerSkip-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/" target="_blank" rel="noopener noreferrer">zzz0906.github.io</a>.
+</p> <nav class="blog-post-nav" aria-label="Adjacent posts"> <a class="blog-post-nav-link blog-post-nav-prev" href="/blog/2026-04-16-2026-04-16-PipeDream-阅读笔记-zh/"> <span class="blog-post-nav-label">← Newer</span> <span class="blog-post-nav-title">PipeDream：把 Pipeline Parallelism 做成真正可训练系统——深度阅读笔记</span> </a> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-04-15-2026-04-15-LayerSkip-technical-review-en/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">LayerSkip: Enabling Early Exit Inference and Self-Speculative Decoding — Deep Technical Review</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient ML systems, LLM infrastructure, and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>

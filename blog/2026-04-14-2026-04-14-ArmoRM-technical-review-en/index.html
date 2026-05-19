@@ -1,0 +1,756 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Interpretable Preferences via Multi-Objective Reward Modeling and Mixture-of-Experts — Deep Technical Review | Zhongzhu / Charlie</title><meta name="description" content="1. Why this paper matters If I explain this paper to a non-specialist in one sentence: The paper tries to make reward models less like mysterious black boxes and more like structured judges that can say, in effect, “I value helpfulness this much, safety this much, and verbosity this much for this prompt.” That is a very important problem. In modern RLHF pipelines, the reward model is often the quiet center of power. People talk more about PPO, DPO, rejection sampling, or the final chatbot behavior, but the reward model is the component that decides what counts as “good.” If that judge is biased, the whole pipeline can drift in a strange direction. A classic example is verbosity bias: the reward model gives higher scores to longer answers, the policy learns to write longer answers, humans then receive bloated, repetitive, not-actually-better outputs. So the question is not merely “can we train a reward model?” We already can. The deeper question is: Can we build a reward model whose internal preferences are more interpretable, more controllable, and less vulnerable to hidden shortcuts? This paper answers with a fairly elegant design: predict multiple human-readable reward dimensions first, then learn a prompt-dependent gating network that decides how to combine them, while explicitly correcting for verbosity correlation. Even though the paper is short, the design idea is rich. It touches several central issues in alignment: how to represent human preference, how to keep reward models from becoming opaque hacks, how to move beyond simple pairwise wins/losses, how to separate “what is being judged” from “how those judgments are combined.” I think this makes the paper more important than its page count suggests."><meta property="og:title" content="Interpretable Preferences via Multi-Objective Reward Modeling and Mixture-of-Experts — Deep Technical Review | Zhongzhu / Charlie"><meta property="og:description" content="1. Why this paper matters If I explain this paper to a non-specialist in one sentence: The paper tries to make reward models less like mysterious black boxes and more like structured judges that can say, in effect, “I value helpfulness this much, safety this much, and verbosity this much for this prompt.” That is a very important problem. In modern RLHF pipelines, the reward model is often the quiet center of power. People talk more about PPO, DPO, rejection sampling, or the final chatbot behavior, but the reward model is the component that decides what counts as “good.” If that judge is biased, the whole pipeline can drift in a strange direction. A classic example is verbosity bias: the reward model gives higher scores to longer answers, the policy learns to write longer answers, humans then receive bloated, repetitive, not-actually-better outputs. So the question is not merely “can we train a reward model?” We already can. The deeper question is: Can we build a reward model whose internal preferences are more interpretable, more controllable, and less vulnerable to hidden shortcuts? This paper answers with a fairly elegant design: predict multiple human-readable reward dimensions first, then learn a prompt-dependent gating network that decides how to combine them, while explicitly correcting for verbosity correlation. Even though the paper is short, the design idea is rich. It touches several central issues in alignment: how to represent human preference, how to keep reward models from becoming opaque hacks, how to move beyond simple pairwise wins/losses, how to separate “what is being judged” from “how those judgments are combined.” I think this makes the paper more important than its page count suggests."><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-04-14-2026-04-14-ArmoRM-technical-review-en/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-04-14-2026-04-14-ArmoRM-technical-review-en/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.BtdlpukG.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>116</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>33</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> <nav class="blog-post-toc" aria-label="Table of contents"> <p class="blog-post-toc-title">Contents</p> <ul> <li class="toc-level-2"> <a href="#1-Why-this-paper-matters">1. Why this paper matters</a> </li><li class="toc-level-2"> <a href="#2-Prerequisites-What-you-need-to-know-first">2. Prerequisites: What you need to know first</a> </li><li class="toc-level-3"> <a href="#2-1-What-RLHF-is-trying-to-do">2.1 What RLHF is trying to do</a> </li><li class="toc-level-3"> <a href="#2-2-What-a-reward-model-is">2.2 What a reward model is</a> </li><li class="toc-level-3"> <a href="#2-3-Why-pairwise-preference-models-are-limited">2.3 Why pairwise preference models are limited</a> </li><li class="toc-level-3"> <a href="#2-4-Relative-ratings-vs-absolute-ratings">2.4 Relative ratings vs absolute ratings</a> </li><li class="toc-level-3"> <a href="#2-5-Why-interpretability-matters-in-alignment">2.5 Why interpretability matters in alignment</a> </li><li class="toc-level-3"> <a href="#2-6-What-mixture-of-experts-means-here">2.6 What mixture-of-experts means here</a> </li><li class="toc-level-3"> <a href="#2-7-What-verbosity-bias-is">2.7 What verbosity bias is</a> </li><li class="toc-level-3"> <a href="#2-8-What-RewardBench-measures">2.8 What RewardBench measures</a> </li><li class="toc-level-2"> <a href="#3-The-exact-problem-this-paper-tries-to-solve">3. The exact problem this paper tries to solve</a> </li><li class="toc-level-3"> <a href="#Problem-A-information-loss-from-binarization">Problem A: information loss from binarization</a> </li><li class="toc-level-3"> <a href="#Problem-B-fixed-linear-weights-are-too-rigid">Problem B: fixed linear weights are too rigid</a> </li><li class="toc-level-3"> <a href="#Problem-C-hidden-reward-biases">Problem C: hidden reward biases</a> </li><li class="toc-level-2"> <a href="#4-Core-idea-in-one-paragraph">4. Core idea in one paragraph</a> </li><li class="toc-level-2"> <a href="#5-Figure-1-explained-slowly-the-whole-architecture">5. Figure 1 explained slowly: the whole architecture</a> </li><li class="toc-level-3"> <a href="#5-1-Backbone">5.1 Backbone</a> </li><li class="toc-level-3"> <a href="#5-2-Multi-objective-regression-layer">5.2 Multi-objective regression layer</a> </li><li class="toc-level-3"> <a href="#5-3-Gating-layer">5.3 Gating layer</a> </li><li class="toc-level-3"> <a href="#5-4-Why-I-like-this-figure">5.4 Why I like this figure</a> </li><li class="toc-level-2"> <a href="#6-Stage-1-ArmoRM-as-a-multi-objective-reward-model">6. Stage 1: ArmoRM as a multi-objective reward model</a> </li><li class="toc-level-3"> <a href="#6-1-Inputs-and-outputs">6.1 Inputs and outputs</a> </li><li class="toc-level-3"> <a href="#6-2-Why-regression-instead-of-Bradley-Terry-directly">6.2 Why regression instead of Bradley-Terry directly</a> </li><li class="toc-level-3"> <a href="#6-3-What-information-is-preserved-by-absolute-ratings">6.3 What information is preserved by absolute ratings</a> </li><li class="toc-level-3"> <a href="#6-4-What-I-think-is-technically-clever-here">6.4 What I think is technically clever here</a> </li><li class="toc-level-2"> <a href="#7-Stage-2-MoE-scalarization-of-reward-objectives">7. Stage 2: MoE scalarization of reward objectives</a> </li><li class="toc-level-3"> <a href="#7-1-Why-fixed-weights-are-not-enough">7.1 Why fixed weights are not enough</a> </li><li class="toc-level-3"> <a href="#7-2-The-gating-network">7.2 The gating network</a> </li><li class="toc-level-3"> <a href="#7-3-How-pairwise-supervision-comes-back-in-stage-2">7.3 How pairwise supervision comes back in stage 2</a> </li><li class="toc-level-3"> <a href="#7-4-Why-prompt-conditioned-gating-is-more-than-a-cosmetic-trick">7.4 Why prompt-conditioned gating is more than a cosmetic trick</a> </li><li class="toc-level-2"> <a href="#8-Verbosity-debiasing-a-small-detail-with-big-consequences">8. Verbosity debiasing: a small detail with big consequences</a> </li><li class="toc-level-3"> <a href="#8-1-It-names-the-nuisance-factor-explicitly">8.1 It names the nuisance factor explicitly</a> </li><li class="toc-level-3"> <a href="#8-2-It-keeps-the-architecture-simple">8.2 It keeps the architecture simple</a> </li><li class="toc-level-3"> <a href="#8-3-It-acknowledges-that-interpretability-without-debiasing-is-not-enough">8.3 It acknowledges that interpretability without debiasing is not enough</a> </li><li class="toc-level-3"> <a href="#8-4-A-practical-interpretation">8.4 A practical interpretation</a> </li><li class="toc-level-3"> <a href="#8-5-A-limitation-of-the-idea">8.5 A limitation of the idea</a> </li><li class="toc-level-2"> <a href="#9-Training-data-and-objective-inventory">9. Training data and objective inventory</a> </li><li class="toc-level-3"> <a href="#9-1-Multi-objective-stage-19-objectives-from-8-datasets">9.1 Multi-objective stage: 19 objectives from 8 datasets</a> </li><li class="toc-level-3"> <a href="#9-2-Pairwise-MoE-stage-10-preference-datasets">9.2 Pairwise MoE stage: 10 preference datasets</a> </li><li class="toc-level-3"> <a href="#9-3-Data-preprocessing-choices">9.3 Data preprocessing choices</a> </li><li class="toc-level-2"> <a href="#10-Implementation-choices-and-engineering-efficiency">10. Implementation choices and engineering efficiency</a> </li><li class="toc-level-3"> <a href="#10-1-Backbone-initialization">10.1 Backbone initialization</a> </li><li class="toc-level-3"> <a href="#10-2-ArmoRM-stage-is-cheap">10.2 ArmoRM stage is cheap</a> </li><li class="toc-level-3"> <a href="#10-3-MoE-stage-is-also-lightweight">10.3 MoE stage is also lightweight</a> </li><li class="toc-level-3"> <a href="#10-4-Why-this-matters">10.4 Why this matters</a> </li><li class="toc-level-2"> <a href="#11-Evaluation-setup-and-baselines">11. Evaluation setup and baselines</a> </li><li class="toc-level-3"> <a href="#11-1-Categories">11.1 Categories</a> </li><li class="toc-level-3"> <a href="#11-2-Baselines-in-Table-1">11.2 Baselines in Table 1</a> </li><li class="toc-level-3"> <a href="#11-3-Why-the-benchmark-choice-is-appropriate">11.3 Why the benchmark choice is appropriate</a> </li><li class="toc-level-2"> <a href="#12-Main-results-with-concrete-numbers">12. Main results with concrete numbers</a> </li><li class="toc-level-3"> <a href="#12-1-Overall-RewardBench-score">12.1 Overall RewardBench score</a> </li><li class="toc-level-3"> <a href="#12-2-Category-breakdown">12.2 Category breakdown</a> </li><li class="toc-level-4"> <a href="#Chat">Chat</a> </li><li class="toc-level-4"> <a href="#Chat-Hard">Chat Hard</a> </li><li class="toc-level-4"> <a href="#Safety">Safety</a> </li><li class="toc-level-4"> <a href="#Reasoning">Reasoning</a> </li><li class="toc-level-4"> <a href="#Prior-Sets">Prior Sets</a> </li><li class="toc-level-3"> <a href="#12-3-Why-beating-GPT-4-judges-matters">12.3 Why beating GPT-4 judges matters</a> </li><li class="toc-level-2"> <a href="#13-What-is-genuinely-strong-in-this-paper">13. What is genuinely strong in this paper</a> </li><li class="toc-level-3"> <a href="#Strength-1-it-uses-richer-supervision-instead-of-wasting-it">Strength 1: it uses richer supervision instead of wasting it</a> </li><li class="toc-level-3"> <a href="#Strength-2-it-separates-“measurement”-from-“aggregation”">Strength 2: it separates “measurement” from “aggregation”</a> </li><li class="toc-level-3"> <a href="#Strength-3-it-directly-addresses-a-real-reward-model-pathology">Strength 3: it directly addresses a real reward-model pathology</a> </li><li class="toc-level-3"> <a href="#Strength-4-the-compute-bill-is-surprisingly-modest">Strength 4: the compute bill is surprisingly modest</a> </li><li class="toc-level-3"> <a href="#Strength-5-the-result-is-parameter-efficient-not-just-absolutely-strong">Strength 5: the result is parameter-efficient, not just absolutely strong</a> </li><li class="toc-level-3"> <a href="#Strength-6-the-paper-is-conceptually-clean">Strength 6: the paper is conceptually clean</a> </li><li class="toc-level-2"> <a href="#14-Limitations-and-boundary-conditions">14. Limitations and boundary conditions</a> </li><li class="toc-level-3"> <a href="#14-1-It-is-only-as-interpretable-as-the-objective-vocabulary">14.1 It is only as interpretable as the objective vocabulary</a> </li><li class="toc-level-3"> <a href="#14-2-Correlation-removal-is-not-causal-debiasing">14.2 Correlation removal is not causal debiasing</a> </li><li class="toc-level-3"> <a href="#14-3-The-gating-network-only-sees-prompt-features">14.3 The gating network only sees prompt features</a> </li><li class="toc-level-3"> <a href="#14-4-The-evidence-is-benchmark-centric">14.4 The evidence is benchmark-centric</a> </li><li class="toc-level-3"> <a href="#14-5-The-paper-is-light-on-ablations-in-the-main-text">14.5 The paper is light on ablations in the main text</a> </li><li class="toc-level-3"> <a href="#14-6-The-benchmark-has-category-trade-offs">14.6 The benchmark has category trade-offs</a> </li><li class="toc-level-2"> <a href="#15-Reproducibility-notes">15. Reproducibility notes</a> </li><li class="toc-level-3"> <a href="#15-1-Helpful-reproducibility-points">15.1 Helpful reproducibility points</a> </li><li class="toc-level-3"> <a href="#15-2-Practical-reconstruction-path">15.2 Practical reconstruction path</a> </li><li class="toc-level-3"> <a href="#15-3-Hard-parts-in-practice">15.3 Hard parts in practice</a> </li><li class="toc-level-3"> <a href="#15-4-Code-release">15.4 Code release</a> </li><li class="toc-level-2"> <a href="#16-What-I-would-do-if-I-were-extending-this-work-today">16. What I would do if I were extending this work today</a> </li><li class="toc-level-3"> <a href="#16-1-Add-downstream-RLHF-policy-evidence">16.1 Add downstream RLHF policy evidence</a> </li><li class="toc-level-3"> <a href="#16-2-Expand-the-objective-vocabulary">16.2 Expand the objective vocabulary</a> </li><li class="toc-level-3"> <a href="#16-3-Learn-uncertainty-over-objective-weights">16.3 Learn uncertainty over objective weights</a> </li><li class="toc-level-3"> <a href="#16-4-Study-response-aware-gating">16.4 Study response-aware gating</a> </li><li class="toc-level-3"> <a href="#16-5-Move-from-correlation-correction-to-stronger-debiasing-methods">16.5 Move from correlation correction to stronger debiasing methods</a> </li><li class="toc-level-2"> <a href="#17-Practical-lessons-for-RLHF-engineers">17. Practical lessons for RLHF engineers</a> </li><li class="toc-level-3"> <a href="#Lesson-1-do-not-throw-away-signal-you-already-paid-to-collect">Lesson 1: do not throw away signal you already paid to collect</a> </li><li class="toc-level-3"> <a href="#Lesson-2-a-reward-model-should-expose-dimensions-not-just-one-opaque-number">Lesson 2: a reward model should expose dimensions, not just one opaque number</a> </li><li class="toc-level-3"> <a href="#Lesson-3-scalarization-should-be-context-sensitive">Lesson 3: scalarization should be context-sensitive</a> </li><li class="toc-level-3"> <a href="#Lesson-4-nuisance-variables-like-verbosity-deserve-explicit-treatment">Lesson 4: nuisance variables like verbosity deserve explicit treatment</a> </li><li class="toc-level-3"> <a href="#Lesson-5-lightweight-structure-can-beat-brute-force-scale">Lesson 5: lightweight structure can beat brute-force scale</a> </li><li class="toc-level-3"> <a href="#Lesson-6-benchmark-gains-should-be-read-category-by-category">Lesson 6: benchmark gains should be read category by category</a> </li><li class="toc-level-3"> <a href="#Lesson-7-interpretability-is-not-only-for-philosophy-it-is-also-for-operations">Lesson 7: interpretability is not only for philosophy; it is also for operations</a> </li><li class="toc-level-2"> <a href="#18-Final-verdict">18. Final verdict</a> </li><li class="toc-level-3"> <a href="#What-the-paper-convincingly-shows">What the paper convincingly shows</a> </li><li class="toc-level-3"> <a href="#What-the-paper-does-not-yet-prove">What the paper does not yet prove</a> </li><li class="toc-level-2"> <a href="#19-References">19. References</a> </li><li class="toc-level-2"> <a href="#20-Appendix-A-beginner-FAQ">20. Appendix A: beginner FAQ</a> </li><li class="toc-level-2"> <a href="#21-Appendix-B-evidence-checklist">21. Appendix B: evidence checklist</a> </li> </ul> </nav> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-04-14">April 14, 2026</time> <span class="blog-lang blog-lang-en">EN</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/Mixture-of-Experts/">#Mixture of Experts</a><a class="blog-post-tag-chip" href="/blog/tag/RLHF/">#RLHF</a> </span> </p> <h1>Interpretable Preferences via Multi-Objective Reward Modeling and Mixture-of-Experts — Deep Technical Review</h1> </header> <div class="blog-post-body"> 
+
+      
+        <h2 id="1-Why-this-paper-matters">1. Why this paper matters</h2>
+<p>If I explain this paper to a non-specialist in one sentence:</p>
+<blockquote>
+<p>The paper tries to make reward models less like mysterious black boxes and more like structured judges that can say, in effect, “I value helpfulness this much, safety this much, and verbosity this much for this prompt.”</p>
+</blockquote>
+<p>That is a very important problem.</p>
+<p>In modern RLHF pipelines, the reward model is often the quiet center of power. People talk more about PPO, DPO, rejection sampling, or the final chatbot behavior, but the reward model is the component that decides what counts as “good.” If that judge is biased, the whole pipeline can drift in a strange direction.</p>
+<p>A classic example is <strong>verbosity bias</strong>:</p>
+<ul>
+<li>the reward model gives higher scores to longer answers,</li>
+<li>the policy learns to write longer answers,</li>
+<li>humans then receive bloated, repetitive, not-actually-better outputs.</li>
+</ul>
+<p>So the question is not merely “can we train a reward model?” We already can.</p>
+<p>The deeper question is:</p>
+<blockquote>
+<p>Can we build a reward model whose internal preferences are more interpretable, more controllable, and less vulnerable to hidden shortcuts?</p>
+</blockquote>
+<p>This paper answers with a fairly elegant design:</p>
+<ol>
+<li>predict <strong>multiple human-readable reward dimensions</strong> first,</li>
+<li>then learn a <strong>prompt-dependent gating network</strong> that decides how to combine them,</li>
+<li>while explicitly correcting for verbosity correlation.</li>
+</ol>
+<p>Even though the paper is short, the design idea is rich. It touches several central issues in alignment:</p>
+<ul>
+<li>how to represent human preference,</li>
+<li>how to keep reward models from becoming opaque hacks,</li>
+<li>how to move beyond simple pairwise wins/losses,</li>
+<li>how to separate “what is being judged” from “how those judgments are combined.”</li>
+</ul>
+<p>I think this makes the paper more important than its page count suggests.</p>
+<hr>
+<a id="more"></a>
+<h2 id="2-Prerequisites-What-you-need-to-know-first">2. Prerequisites: What you need to know first</h2>
+<p>This section is deliberately written for readers who know almost nothing about RLHF.</p>
+<h3 id="2-1-What-RLHF-is-trying-to-do">2.1 What RLHF is trying to do</h3>
+<p>RLHF means <strong>Reinforcement Learning from Human Feedback</strong>.</p>
+<p>The broad goal is simple:</p>
+<ul>
+<li>a base language model can generate many possible answers,</li>
+<li>humans prefer some answers over others,</li>
+<li>we want the model to learn that preference structure.</li>
+</ul>
+<p>A common RLHF pipeline has three stages:</p>
+<ol>
+<li>collect comparison data,</li>
+<li>train a reward model to imitate those preferences,</li>
+<li>optimize a policy model to get higher reward.</li>
+</ol>
+<p>So the reward model acts like a learned judge standing between human preference data and policy improvement.</p>
+<h3 id="2-2-What-a-reward-model-is">2.2 What a reward model is</h3>
+<p>A reward model takes something like:</p>
+<ul>
+<li>prompt <code>x</code></li>
+<li>candidate response <code>y</code></li>
+</ul>
+<p>and outputs a score such as:</p>
+<ul>
+<li>“this answer is probably good”</li>
+<li>“this answer is better than that other answer”</li>
+</ul>
+<p>In many real pipelines, this score is not shown to end users, but it strongly shapes what the final aligned assistant learns to say.</p>
+<p>That is why reward models matter so much. They are hidden, but influential.</p>
+<h3 id="2-3-Why-pairwise-preference-models-are-limited">2.3 Why pairwise preference models are limited</h3>
+<p>The classic setup says:</p>
+<ul>
+<li>given two responses A and B to the same prompt,</li>
+<li>humans prefer A over B,</li>
+<li>train the model to score A higher than B.</li>
+</ul>
+<p>This is useful, but it compresses a lot of information into a binary comparison.</p>
+<p>It does <strong>not</strong> directly tell us:</p>
+<ul>
+<li>Was A more truthful?</li>
+<li>Was B safer but less helpful?</li>
+<li>Did A win only because it was longer?</li>
+<li>Was the difference huge or tiny?</li>
+</ul>
+<p>That missing structure is exactly what this paper tries to recover.</p>
+<h3 id="2-4-Relative-ratings-vs-absolute-ratings">2.4 Relative ratings vs absolute ratings</h3>
+<p>The paper makes a very important distinction.</p>
+<p><strong>Relative rating:</strong></p>
+<ul>
+<li>“A is better than B.”</li>
+</ul>
+<p><strong>Absolute rating:</strong></p>
+<ul>
+<li>“This response scores 4/5 on helpfulness.”</li>
+<li>“This response scores 2/5 on truthfulness.”</li>
+<li>“This response scores 5/5 on verbosity.”</li>
+</ul>
+<p>Absolute ratings keep much more detail.</p>
+<p>The paper gives a great intuition: a pair with scores <code>1:5</code> and a pair with scores <code>2:3</code> may both become the same binary label after binarization, even though the gap is much larger in the first case. That is wasted signal.</p>
+<h3 id="2-5-Why-interpretability-matters-in-alignment">2.5 Why interpretability matters in alignment</h3>
+<p>If a reward model is black-box, then when it gives a high score we do not really know why.</p>
+<p>That is dangerous because:</p>
+<ul>
+<li>the model may exploit superficial patterns,</li>
+<li>humans may think the system is aligned when it is not,</li>
+<li>failure modes are harder to diagnose,</li>
+<li>reward hacking becomes easier.</li>
+</ul>
+<p>Interpretability here does <strong>not</strong> mean perfect human-understandable reasoning in the philosophical sense. It means something more practical:</p>
+<ul>
+<li>decompose preference into understandable objectives,</li>
+<li>expose how those objectives are weighted,</li>
+<li>let humans inspect and possibly steer the weighting.</li>
+</ul>
+<h3 id="2-6-What-mixture-of-experts-means-here">2.6 What mixture-of-experts means here</h3>
+<p>Many readers hear “MoE” and think of giant sparse transformer layers. That is <strong>not</strong> what this paper is doing.</p>
+<p>Here, MoE is much simpler.</p>
+<p>The model predicts several reward dimensions, and a small gating network chooses how much each dimension should matter for this prompt.</p>
+<p>So the “experts” are not separate giant subnetworks. The “experts” are the <strong>reward objectives</strong> themselves.</p>
+<p>This is conceptually closer to:</p>
+<ul>
+<li>“for a safety-sensitive prompt, increase the safety weight,”</li>
+<li>“for a math-help prompt, focus more on correctness and helpfulness.”</li>
+</ul>
+<h3 id="2-7-What-verbosity-bias-is">2.7 What verbosity bias is</h3>
+<p>Verbosity bias means a reward model gives too much credit to longer responses.</p>
+<p>This is bad because longer is not always better.</p>
+<p>A longer answer may be:</p>
+<ul>
+<li>more repetitive,</li>
+<li>less precise,</li>
+<li>less honest,</li>
+<li>more annoying.</li>
+</ul>
+<p>But if the reward model confuses length with quality, policy optimization will amplify that confusion.</p>
+<p>The paper explicitly attacks this issue by subtracting a verbosity-related penalty from each objective.</p>
+<h3 id="2-8-What-RewardBench-measures">2.8 What RewardBench measures</h3>
+<p>RewardBench is a benchmark for evaluating reward models for language modeling.</p>
+<p>In this paper it includes:</p>
+<ul>
+<li>Chat</li>
+<li>Chat Hard</li>
+<li>Safety</li>
+<li>Reasoning</li>
+<li>Prior Sets</li>
+</ul>
+<p>The overall score is a weighted average, with the four main categories having weight 1.0 and Prior Sets having weight 0.5.</p>
+<p>So when the paper reports one overall number, that number is not arbitrary. It summarizes several kinds of preference-judgment behavior.</p>
+<h2 id="3-The-exact-problem-this-paper-tries-to-solve">3. The exact problem this paper tries to solve</h2>
+<p>The paper’s target can be stated precisely like this:</p>
+<blockquote>
+<p>Standard reward models in RLHF are strong enough to be useful, but too opaque and too coarse. Can we replace a black-box scalar preference score with a more interpretable multi-objective representation, then learn a context-sensitive way to combine those objectives into a final reward?</p>
+</blockquote>
+<p>There are three sub-problems inside this question.</p>
+<h3 id="Problem-A-information-loss-from-binarization">Problem A: information loss from binarization</h3>
+<p>Many high-quality datasets contain rich objective-level ratings, but standard reward modeling often throws them away and keeps only binary pairwise preferences.</p>
+<h3 id="Problem-B-fixed-linear-weights-are-too-rigid">Problem B: fixed linear weights are too rigid</h3>
+<p>If you always combine objectives with the same coefficients, you ignore the fact that different prompts need different judgment priorities.</p>
+<h3 id="Problem-C-hidden-reward-biases">Problem C: hidden reward biases</h3>
+<p>Even if you predict multiple objectives, they may all still correlate with a nuisance factor like verbosity.</p>
+<p>The paper’s full proposal is therefore:</p>
+<ol>
+<li>learn fine-grained objective scores,</li>
+<li>adaptively combine them per prompt,</li>
+<li>explicitly remove verbosity correlation.</li>
+</ol>
+<p>That is the full story.</p>
+<h2 id="4-Core-idea-in-one-paragraph">4. Core idea in one paragraph</h2>
+<p>The paper proposes a two-stage reward model.</p>
+<p>In <strong>stage 1</strong>, a frozen Llama-3 8B backbone plus a learned linear head predicts a vector of human-readable reward objectives, such as helpfulness, correctness, coherence, complexity, verbosity, safety, and others from multiple datasets.</p>
+<p>In <strong>stage 2</strong>, a small prompt-conditioned MLP outputs non-negative mixture weights over those objectives, so that the final scalar reward depends on the prompt. Before combining objectives, the paper subtracts a verbosity-related penalty from each objective so that the final decision is less entangled with “longer answer = better answer.” The result is a reward model that is more structured, more interpretable, and empirically much stronger than a standard 8B Bradley-Terry baseline on RewardBench.</p>
+<h2 id="5-Figure-1-explained-slowly-the-whole-architecture">5. Figure 1 explained slowly: the whole architecture</h2>
+<p>Figure 1 is the most important visual in the paper.</p>
+<p>It shows three conceptual blocks:</p>
+<ol>
+<li><strong>LLM backbone</strong></li>
+<li><strong>Regression layer for multiple reward objectives</strong></li>
+<li><strong>Gating layer that mixes objectives into one final score</strong></li>
+</ol>
+<p>Let me unpack that slowly.</p>
+<h3 id="5-1-Backbone">5.1 Backbone</h3>
+<p>The model uses a decoder-only LLM backbone, specifically Llama-3 8B.</p>
+<p>A prompt and response are concatenated and passed through the decoder. The hidden state of the last token from the final decoder layer is used as the representation of the prompt-response pair.</p>
+<p>This already tells us something important: the paper is not building a radically new architecture from scratch. It is reusing a strong LLM representation and placing a structured reward head on top.</p>
+<h3 id="5-2-Multi-objective-regression-layer">5.2 Multi-objective regression layer</h3>
+<p>Instead of outputting one scalar score immediately, the model outputs multiple reward dimensions.</p>
+<p>The figure’s example includes dimensions like:</p>
+<ul>
+<li>helpfulness</li>
+<li>correctness</li>
+<li>coherence</li>
+<li>complexity</li>
+<li>verbosity</li>
+</ul>
+<p>This is the interpretability move. Rather than saying “score = 8.7” with no explanation, the model first produces something like a profile of reasons.</p>
+<h3 id="5-3-Gating-layer">5.3 Gating layer</h3>
+<p>Then a gating layer assigns weights to the objectives. In the figure’s toy example, some objectives are heavily weighted, some receive zero weight, and verbosity can even contribute negatively after correction.</p>
+<p>This is the controllability move. Different prompts may justify different trade-offs.</p>
+<h3 id="5-4-Why-I-like-this-figure">5.4 Why I like this figure</h3>
+<p>The figure makes the paper’s design unusually legible.</p>
+<p>A lot of reward-model papers hide the most important idea inside training equations or implementation details. Here, the whole point is visible in one diagram:</p>
+<blockquote>
+<p>reward dimensions first, prompt-aware combination second.</p>
+</blockquote>
+<p>That separation is the conceptual contribution.</p>
+<h2 id="6-Stage-1-ArmoRM-as-a-multi-objective-reward-model">6. Stage 1: ArmoRM as a multi-objective reward model</h2>
+<h3 id="6-1-Inputs-and-outputs">6.1 Inputs and outputs</h3>
+<p>Each training example consists of:</p>
+<ul>
+<li>prompt <code>x</code></li>
+<li>response <code>y</code></li>
+<li>objective vector <code>r ∈ R^k</code></li>
+</ul>
+<p>Each dimension in <code>r</code> corresponds to a meaningful reward objective, such as helpfulness or truthfulness.</p>
+<p>The model computes a feature vector from the concatenated prompt and response, then applies a linear regression head to predict all objectives at once.</p>
+<p>The paper writes the regression objective as minimizing squared error between predicted objective vector and target objective vector.</p>
+<p>In plain English:</p>
+<blockquote>
+<p>“For this prompt-response pair, predict all the rubric-like scores directly.”</p>
+</blockquote>
+<h3 id="6-2-Why-regression-instead-of-Bradley-Terry-directly">6.2 Why regression instead of Bradley-Terry directly</h3>
+<p>This is a key paper insight.</p>
+<p>Bradley-Terry style reward modeling is good at learning “chosen beats rejected.” But if the original annotation source already contains richer scores, Bradley-Terry throws part of that away.</p>
+<p>Regression on absolute ratings preserves:</p>
+<ul>
+<li>score magnitude,</li>
+<li>objective-level decomposition,</li>
+<li>differences between small and large preference gaps.</li>
+</ul>
+<p>That is a cleaner use of the data.</p>
+<h3 id="6-3-What-information-is-preserved-by-absolute-ratings">6.3 What information is preserved by absolute ratings</h3>
+<p>The paper’s 1:5 vs 2:3 example is excellent.</p>
+<p>Both pairs might collapse to the same binary label in standard pairwise training, but the human meaning is different:</p>
+<ul>
+<li>1:5 means one response is much better,</li>
+<li>2:3 means the difference is mild.</li>
+</ul>
+<p>If your training objective ignores that distinction, your reward signal becomes blurrier than the data source actually allows.</p>
+<h3 id="6-4-What-I-think-is-technically-clever-here">6.4 What I think is technically clever here</h3>
+<p>The authors do not overcomplicate stage 1.</p>
+<p>They do <strong>linear probing</strong> on top of a frozen backbone.</p>
+<p>That sounds almost too simple, but it is actually a strong engineering choice:</p>
+<ul>
+<li>it is cheap,</li>
+<li>it reduces instability,</li>
+<li>it keeps the main representational burden on a strong pretrained backbone,</li>
+<li>it isolates the effect of objective decomposition.</li>
+</ul>
+<p>Sometimes papers impress people with complexity. Here the impressive part is restraint.</p>
+<h2 id="7-Stage-2-MoE-scalarization-of-reward-objectives">7. Stage 2: MoE scalarization of reward objectives</h2>
+<p>Once the model can predict a vector of objectives, we still need a single scalar reward for ranking responses.</p>
+<p>That is where stage 2 comes in.</p>
+<h3 id="7-1-Why-fixed-weights-are-not-enough">7.1 Why fixed weights are not enough</h3>
+<p>Suppose you always compute:</p>
+<ul>
+<li>40% helpfulness</li>
+<li>30% correctness</li>
+<li>20% safety</li>
+<li>10% verbosity penalty</li>
+</ul>
+<p>That may be okay on average, but it is obviously not ideal across all prompts.</p>
+<p>For example:</p>
+<ul>
+<li>A jailbreak-like or risky prompt should emphasize safety more.</li>
+<li>A math tutoring prompt should emphasize correctness and reasoning.</li>
+<li>A creative writing prompt might tolerate different trade-offs.</li>
+</ul>
+<p>So the paper argues that scalarization should be <strong>context-sensitive</strong>.</p>
+<p>I strongly agree with that intuition.</p>
+<h3 id="7-2-The-gating-network">7.2 The gating network</h3>
+<p>The gating layer is a shallow MLP that takes the prompt feature <code>f_theta(x)</code> and outputs a vector of non-negative coefficients that sum to 1 via softmax.</p>
+<p>This means:</p>
+<ul>
+<li>the prompt decides how much each objective matters,</li>
+<li>the response objective vector supplies the content being judged,</li>
+<li>the final reward is the weighted sum of debiased objective values.</li>
+</ul>
+<p>In equation form, the scalar reward is:</p>
+<p><code>R = g_phi(f_theta(x))^T r'</code></p>
+<p>where <code>r'</code> is the debiased objective vector.</p>
+<p>This is very interpretable compared with a monolithic scalar head.</p>
+<h3 id="7-3-How-pairwise-supervision-comes-back-in-stage-2">7.3 How pairwise supervision comes back in stage 2</h3>
+<p>The interesting part is that stage 1 uses regression on absolute ratings, while stage 2 returns to pairwise learning.</p>
+<p>The paper freezes the backbone and regression head, then trains only the gating layer with Bradley-Terry loss over chosen/rejected pairs.</p>
+<p>That is a neat division of labor:</p>
+<ul>
+<li>stage 1 learns “what the objectives are,”</li>
+<li>stage 2 learns “how to trade them off in ranking.”</li>
+</ul>
+<p>I like this design because it mirrors how a human evaluator often works:</p>
+<ol>
+<li>first assess multiple qualities,</li>
+<li>then make a final preference judgment.</li>
+</ol>
+<h3 id="7-4-Why-prompt-conditioned-gating-is-more-than-a-cosmetic-trick">7.4 Why prompt-conditioned gating is more than a cosmetic trick</h3>
+<p>One could dismiss the gating layer as “just a weighted average.” I think that would be a mistake.</p>
+<p>A fixed weighted average assumes human preference aggregation is globally constant.</p>
+<p>The paper’s core bet is that this is false.</p>
+<p>Human preference is conditional on context. A reward model should reflect that.</p>
+<p>This is not just mathematically nicer. It is philosophically closer to real evaluation.</p>
+<h2 id="8-Verbosity-debiasing-a-small-detail-with-big-consequences">8. Verbosity debiasing: a small detail with big consequences</h2>
+<p>This may be the most practically important part of the paper.</p>
+<p>The authors note that many reward objectives correlate strongly with verbosity. If the gating coefficients are constrained to be non-negative, then the final score may inherit the same length bias even when we think we are using “interpretable” objectives.</p>
+<p>To fix that, they modify each objective:</p>
+<p><code>r_i' &lt;- r_i - lambda_i * r_verbose</code></p>
+<p>and choose <code>lambda_i</code> so that the corrected objective is uncorrelated with verbosity under a reference distribution, using Spearman correlation on UltraFeedback.</p>
+<p>This is elegant for several reasons.</p>
+<h3 id="8-1-It-names-the-nuisance-factor-explicitly">8.1 It names the nuisance factor explicitly</h3>
+<p>Many papers complain about reward hacking abstractly. This one chooses a concrete, common nuisance variable and corrects for it.</p>
+<h3 id="8-2-It-keeps-the-architecture-simple">8.2 It keeps the architecture simple</h3>
+<p>They do not add an adversarial network or complicated causal machinery. They just perform a correction before scalarization.</p>
+<h3 id="8-3-It-acknowledges-that-interpretability-without-debiasing-is-not-enough">8.3 It acknowledges that interpretability without debiasing is not enough</h3>
+<p>If your interpretable objectives are all secretly length-correlated, then your “explanation” layer may still be misleading.</p>
+<h3 id="8-4-A-practical-interpretation">8.4 A practical interpretation</h3>
+<p>In simpler words, the paper is saying:</p>
+<blockquote>
+<p>“Before I combine criteria, I want to discount the part of each criterion that can be explained merely by response length.”</p>
+</blockquote>
+<p>That is a very reasonable thing to do.</p>
+<h3 id="8-5-A-limitation-of-the-idea">8.5 A limitation of the idea</h3>
+<p>Of course, removing correlation is not the same as removing causality or all downstream bias. The correction is only as good as:</p>
+<ul>
+<li>the reference distribution,</li>
+<li>the chosen correlation metric,</li>
+<li>the assumption that verbosity is the key nuisance variable.</li>
+</ul>
+<p>So I would treat this as a smart first defense, not a complete solution.</p>
+<h2 id="9-Training-data-and-objective-inventory">9. Training data and objective inventory</h2>
+<p>The appendix is important here because it shows how broad the objective set is.</p>
+<h3 id="9-1-Multi-objective-stage-19-objectives-from-8-datasets">9.1 Multi-objective stage: 19 objectives from 8 datasets</h3>
+<p>The paper states that ArmoRM uses <strong>19 objectives</strong> from <strong>8 datasets</strong>.</p>
+<p>Key sources include:</p>
+<ul>
+<li><strong>HelpSteer</strong> (35k examples)
+<ul>
+<li>helpfulness</li>
+<li>correctness</li>
+<li>coherence</li>
+<li>complexity</li>
+<li>verbosity</li>
+</ul>
+</li>
+<li><strong>UltraFeedback</strong> (240k examples)
+<ul>
+<li>overall score</li>
+<li>instruction following</li>
+<li>truthfulness</li>
+<li>honesty</li>
+<li>helpfulness</li>
+</ul>
+</li>
+<li><strong>BeaverTails-30k</strong> (30k examples)
+<ul>
+<li>is-safe</li>
+</ul>
+</li>
+<li><strong>CodeUltraFeedback</strong> (50k examples)
+<ul>
+<li>code complexity</li>
+<li>code style</li>
+<li>code explanation</li>
+<li>code instruction-following</li>
+<li>code readability</li>
+</ul>
+</li>
+<li><strong>Prometheus</strong> (200k examples)
+<ul>
+<li>prometheus-score</li>
+</ul>
+</li>
+<li><strong>Argilla-Capybara2</strong> (15k examples)
+<ul>
+<li>overall quality</li>
+</ul>
+</li>
+<li><strong>Argilla-OpenOrca</strong> (13k examples)
+<ul>
+<li>judge-lm</li>
+</ul>
+</li>
+<li><strong>Argilla-Math-Preference</strong> (2.4k examples)
+<ul>
+<li>shares instruction-following style signal with UltraFeedback</li>
+</ul>
+</li>
+</ul>
+<p>This list is valuable because it shows the model is not learning from a single narrow annotation source.</p>
+<h3 id="9-2-Pairwise-MoE-stage-10-preference-datasets">9.2 Pairwise MoE stage: 10 preference datasets</h3>
+<p>The gating layer is trained on 10 pairwise preference datasets, including:</p>
+<ul>
+<li>HelpSteer (37k pairs)</li>
+<li>UltraFeedback (340k pairs)</li>
+<li>SHP (93k pairs)</li>
+<li>HH-RLHF (157k pairs)</li>
+<li>PKU-SafeRLHF-30K</li>
+<li>Argilla-Capybara (15k pairs)</li>
+<li>Argilla-Math-Preferences (2.4k pairs)</li>
+<li>CodeUltraFeedback (50k pairs)</li>
+<li>PRM-Phase-2 (80k pairs)</li>
+<li>Prometheus2-Preference-Collection (200k pairs)</li>
+</ul>
+<p>That is a fairly broad supervision base.</p>
+<h3 id="9-3-Data-preprocessing-choices">9.3 Data preprocessing choices</h3>
+<p>The appendix also notes several practical decisions:</p>
+<ul>
+<li>rating scales are normalized to <code>[0, 1]</code>,</li>
+<li>True/False safety labels become 1/0,</li>
+<li>similar objectives from different datasets are kept separate,</li>
+<li>missing labels are ignored dimension-wise during regression.</li>
+</ul>
+<p>These choices may sound mundane, but they matter a lot. Multi-dataset reward modeling often fails in the boring data plumbing stage, not in the glamorous modeling stage.</p>
+<h2 id="10-Implementation-choices-and-engineering-efficiency">10. Implementation choices and engineering efficiency</h2>
+<p>One of the most attractive parts of this paper is how efficient the training setup is.</p>
+<h3 id="10-1-Backbone-initialization">10.1 Backbone initialization</h3>
+<p>They use a Llama-3 8B reward-model backbone initialized from a Bradley-Terry RM trained by Dong et al. (2024).</p>
+<p>So this is not “from scratch.” It is a structured improvement over an already trained 8B RM.</p>
+<h3 id="10-2-ArmoRM-stage-is-cheap">10.2 ArmoRM stage is cheap</h3>
+<p>The paper says that in the multi-objective stage they keep the backbone frozen, save features locally, and train the linear regression layer on CPU using Scikit-learn.</p>
+<p>That is a remarkable engineering detail.</p>
+<p>It means the multi-objective upgrade is not presented as a giant expensive post-training pipeline. Much of the value comes from reorganizing the supervision rather than brute-force retraining.</p>
+<h3 id="10-3-MoE-stage-is-also-lightweight">10.3 MoE stage is also lightweight</h3>
+<p>For the gating layer:</p>
+<ul>
+<li>architecture: ReLU MLP</li>
+<li>3 hidden layers</li>
+<li>1024 hidden units</li>
+<li>optimizer: AdamW</li>
+<li>learning rate: 0.001</li>
+<li>steps: 10,000</li>
+<li>batch size: 1024</li>
+<li>scheduler: cosine decay</li>
+<li>hardware: single NVIDIA A6000 GPU</li>
+</ul>
+<p>That is quite modest by LLM standards.</p>
+<h3 id="10-4-Why-this-matters">10.4 Why this matters</h3>
+<p>The results become more impressive because the extra structure is cheap. If the paper required 10x compute, the appeal would be different. Instead, it suggests a relatively low-cost way to get a much better reward model from the same underlying backbone family.</p>
+<h2 id="11-Evaluation-setup-and-baselines">11. Evaluation setup and baselines</h2>
+<p>The main evaluation is RewardBench.</p>
+<h3 id="11-1-Categories">11.1 Categories</h3>
+<p>RewardBench here has:</p>
+<ul>
+<li>Chat</li>
+<li>Chat Hard</li>
+<li>Safety</li>
+<li>Reasoning</li>
+<li>Prior Sets</li>
+</ul>
+<p>The first four categories each have weight 1.0. Prior Sets has weight 0.5 in the overall weighted score.</p>
+<h3 id="11-2-Baselines-in-Table-1">11.2 Baselines in Table 1</h3>
+<p>The paper compares against:</p>
+<ul>
+<li>HelpSteer2 RM, Nemotron-4 340B</li>
+<li>HelpSteer2 RM, Llama-3 70B</li>
+<li>Preference Model, Llama-3 8B</li>
+<li>LLM-as-a-judge, GPT-4 Turbo</li>
+<li>LLM-as-a-judge, GPT-4o</li>
+<li>Bradley-Terry, Llama-3 8B</li>
+<li>Bradley-Terry, Yi-34B</li>
+</ul>
+<p>This is a good baseline set because it covers:</p>
+<ul>
+<li>giant reward models,</li>
+<li>larger same-family reward models,</li>
+<li>pairwise preference models,</li>
+<li>judge-model approaches,</li>
+<li>standard Bradley-Terry baselines.</li>
+</ul>
+<h3 id="11-3-Why-the-benchmark-choice-is-appropriate">11.3 Why the benchmark choice is appropriate</h3>
+<p>Since the paper is about reward modeling quality, not general generation, RewardBench is the right primary test. It directly measures whether the reward model ranks responses in ways closer to preference labels.</p>
+<h2 id="12-Main-results-with-concrete-numbers">12. Main results with concrete numbers</h2>
+<p>This is where the paper earns attention.</p>
+<h3 id="12-1-Overall-RewardBench-score">12.1 Overall RewardBench score</h3>
+<p>From Table 1:</p>
+<ul>
+<li><strong>ArmoRM + MoE (Llama-3 8B): 89.0</strong></li>
+<li>HelpSteer2 RM (Nemotron-4 340B): 89.3</li>
+<li>HelpSteer2 RM (Llama-3 70B): 86.3</li>
+<li>Preference Model (Llama-3 8B): 85.7</li>
+<li>LLM-as-a-judge (GPT-4 Turbo): 84.2</li>
+<li>LLM-as-a-judge (GPT-4o): 83.3</li>
+<li>Bradley-Terry (Llama-3 8B): 83.6</li>
+<li>Bradley-Terry (Yi-34B): 81.4</li>
+</ul>
+<p>This is the headline:</p>
+<ul>
+<li>the proposed 8B model improves over the 8B Bradley-Terry baseline by <strong>5.4 points</strong>,</li>
+<li>beats GPT-4 Turbo judge setup by <strong>4.8 points</strong>,</li>
+<li>beats GPT-4o judge setup by <strong>5.7 points</strong>,</li>
+<li>and comes within <strong>0.3 points</strong> of a <strong>340B</strong> reward model.</li>
+</ul>
+<p>That is extremely strong parameter efficiency.</p>
+<h3 id="12-2-Category-breakdown">12.2 Category breakdown</h3>
+<p>Table 1 also shows something more nuanced.</p>
+<h4 id="Chat">Chat</h4>
+<ul>
+<li>ArmoRM + MoE: <strong>96.9</strong></li>
+<li>Bradley-Terry Llama-3 8B: <strong>99.4</strong></li>
+<li>Preference Model Llama-3 8B: <strong>98.3</strong></li>
+</ul>
+<p>So the proposed model is <strong>not</strong> best on easy chat.</p>
+<p>That is worth emphasizing. This is not a paper where every number improves. The gains come from harder and more meaningful categories.</p>
+<h4 id="Chat-Hard">Chat Hard</h4>
+<ul>
+<li>ArmoRM + MoE: <strong>76.8</strong></li>
+<li>Bradley-Terry Llama-3 8B: <strong>65.1</strong></li>
+<li>Preference Model Llama-3 8B: <strong>65.8</strong></li>
+<li>GPT-4 Turbo judge: <strong>74.3</strong></li>
+<li>Nemotron-4 340B: <strong>87.1</strong></li>
+</ul>
+<p>This is a major gain over the 8B baselines and even beats GPT-4 Turbo judge, though it still trails the huge 340B model.</p>
+<h4 id="Safety">Safety</h4>
+<ul>
+<li>ArmoRM + MoE: <strong>92.2</strong></li>
+<li>Bradley-Terry Llama-3 8B: <strong>87.8</strong></li>
+<li>Preference Model Llama-3 8B: <strong>89.7</strong></li>
+<li>GPT-4 Turbo judge: <strong>87.2</strong></li>
+</ul>
+<p>This is a clear improvement.</p>
+<h4 id="Reasoning">Reasoning</h4>
+<ul>
+<li>ArmoRM + MoE: <strong>97.3</strong></li>
+<li>Bradley-Terry Llama-3 8B: <strong>86.4</strong></li>
+<li>Preference Model Llama-3 8B: <strong>94.7</strong></li>
+<li>GPT-4 Turbo judge: <strong>86.9</strong></li>
+<li>Nemotron-4 340B: <strong>93.7</strong></li>
+</ul>
+<p>This is perhaps the most striking category. The paper’s model is <strong>best in the table</strong> on reasoning.</p>
+<p>That suggests the multi-objective decomposition may be particularly beneficial when evaluation requires more than shallow stylistic preference.</p>
+<h4 id="Prior-Sets">Prior Sets</h4>
+<ul>
+<li>ArmoRM + MoE: <strong>74.3</strong></li>
+<li>Bradley-Terry Llama-3 8B: <strong>74.9</strong></li>
+<li>Preference Model Llama-3 8B: <strong>74.6</strong></li>
+</ul>
+<p>This category is basically flat to slightly worse than some baselines.</p>
+<p>Again, the paper is strongest when judged honestly rather than as “improves everything everywhere.”</p>
+<h3 id="12-3-Why-beating-GPT-4-judges-matters">12.3 Why beating GPT-4 judges matters</h3>
+<p>A lot of people casually assume that LLM-as-a-judge with a strong frontier model is the obvious gold standard.</p>
+<p>This table says: not so fast.</p>
+<p>A specialized, structured 8B reward model can outperform GPT-4-based judge setups on RewardBench. That matters because:</p>
+<ul>
+<li>it can be cheaper,</li>
+<li>more controllable,</li>
+<li>easier to deploy at scale,</li>
+<li>more auditable if objective weights are exposed.</li>
+</ul>
+<p>That is a strong practical takeaway.</p>
+<h2 id="13-What-is-genuinely-strong-in-this-paper">13. What is genuinely strong in this paper</h2>
+<h3 id="Strength-1-it-uses-richer-supervision-instead-of-wasting-it">Strength 1: it uses richer supervision instead of wasting it</h3>
+<p>If the annotation source already contains multiple criteria, collapsing them immediately into pairwise wins/losses is a lossy design. The paper fixes that.</p>
+<h3 id="Strength-2-it-separates-“measurement”-from-“aggregation”">Strength 2: it separates “measurement” from “aggregation”</h3>
+<p>This is the most elegant design choice in the paper.</p>
+<ul>
+<li>Stage 1 measures several qualities.</li>
+<li>Stage 2 decides how to aggregate them.</li>
+</ul>
+<p>This separation makes the model easier to inspect and reason about.</p>
+<h3 id="Strength-3-it-directly-addresses-a-real-reward-model-pathology">Strength 3: it directly addresses a real reward-model pathology</h3>
+<p>Verbosity bias is not hypothetical. It is a common, annoying, practical failure mode. The paper names it and corrects for it.</p>
+<h3 id="Strength-4-the-compute-bill-is-surprisingly-modest">Strength 4: the compute bill is surprisingly modest</h3>
+<p>Linear probing on frozen features plus a small gating MLP on one A6000 GPU is a very attractive story.</p>
+<h3 id="Strength-5-the-result-is-parameter-efficient-not-just-absolutely-strong">Strength 5: the result is parameter-efficient, not just absolutely strong</h3>
+<p>Coming within 0.3 points of a 340B model with an 8B model is exactly the kind of efficiency result engineers care about.</p>
+<h3 id="Strength-6-the-paper-is-conceptually-clean">Strength 6: the paper is conceptually clean</h3>
+<p>Even when I disagree with parts of a paper, I like papers whose main idea can be summarized cleanly. This paper qualifies.</p>
+<h2 id="14-Limitations-and-boundary-conditions">14. Limitations and boundary conditions</h2>
+<p>The paper is smart, but it definitely does not solve reward modeling completely.</p>
+<h3 id="14-1-It-is-only-as-interpretable-as-the-objective-vocabulary">14.1 It is only as interpretable as the objective vocabulary</h3>
+<p>If the objective list misses an important latent factor, the decomposition can still be incomplete.</p>
+<p>For example, if there is no clean objective for:</p>
+<ul>
+<li>non-manipulativeness,</li>
+<li>epistemic humility,</li>
+<li>calibration,</li>
+<li>concise sufficiency,</li>
+</ul>
+<p>then the model may still compress those concerns into rough proxies.</p>
+<h3 id="14-2-Correlation-removal-is-not-causal-debiasing">14.2 Correlation removal is not causal debiasing</h3>
+<p>Making objectives uncorrelated with verbosity on one reference dataset does not prove the model is truly free from length bias everywhere.</p>
+<p>Distribution shift can break such corrections.</p>
+<h3 id="14-3-The-gating-network-only-sees-prompt-features">14.3 The gating network only sees prompt features</h3>
+<p>This is an interesting design trade-off.</p>
+<p>The paper conditions the gating coefficients on the prompt, not on the full prompt-response pair. That is efficient and intuitive, but it may also be limiting.</p>
+<p>In some cases, the ideal weighting may depend on what the response actually did.</p>
+<h3 id="14-4-The-evidence-is-benchmark-centric">14.4 The evidence is benchmark-centric</h3>
+<p>The main quantitative claim rests on RewardBench. That is fine, but I would want more:</p>
+<ul>
+<li>human interpretability studies,</li>
+<li>ablations on actual RLHF downstream policy training,</li>
+<li>explicit reward-hacking stress tests.</li>
+</ul>
+<h3 id="14-5-The-paper-is-light-on-ablations-in-the-main-text">14.5 The paper is light on ablations in the main text</h3>
+<p>For a short paper this is understandable, but as a technical reader I still want more detail on:</p>
+<ul>
+<li>ArmoRM without MoE,</li>
+<li>MoE without verbosity correction,</li>
+<li>different reference distributions for decorrelation,</li>
+<li>different backbone sizes,</li>
+<li>prompt-only gating vs prompt-response gating.</li>
+</ul>
+<h3 id="14-6-The-benchmark-has-category-trade-offs">14.6 The benchmark has category trade-offs</h3>
+<p>The model improves overall score, but not every category. Chat and Prior Sets are not obvious universal wins.</p>
+<p>That suggests the design may shift evaluation focus toward harder categories at some cost on easier ones.</p>
+<h2 id="15-Reproducibility-notes">15. Reproducibility notes</h2>
+<p>This paper is fairly reproducible by modern standards.</p>
+<h3 id="15-1-Helpful-reproducibility-points">15.1 Helpful reproducibility points</h3>
+<p>The paper gives:</p>
+<ul>
+<li>the exact base architecture family (Llama-3 8B),</li>
+<li>the overall two-stage design,</li>
+<li>the core equations,</li>
+<li>the gating MLP size,</li>
+<li>optimizer and learning rate,</li>
+<li>batch size and steps,</li>
+<li>hardware for the MoE stage,</li>
+<li>the objective datasets and many data counts.</li>
+</ul>
+<p>That is already useful.</p>
+<h3 id="15-2-Practical-reconstruction-path">15.2 Practical reconstruction path</h3>
+<p>If I were reproducing it, I would do the following:</p>
+<ol>
+<li>start from a known 8B BT reward-model checkpoint,</li>
+<li>reconstruct the 19-objective merged dataset with normalized scores,</li>
+<li>freeze backbone and export last-token features,</li>
+<li>fit multi-output regression head,</li>
+<li>compute verbosity correction coefficients on UltraFeedback using Spearman correlation,</li>
+<li>freeze stage-1 model,</li>
+<li>train prompt-conditioned gating MLP on pairwise datasets,</li>
+<li>evaluate on RewardBench with exactly the same weighted protocol.</li>
+</ol>
+<h3 id="15-3-Hard-parts-in-practice">15.3 Hard parts in practice</h3>
+<p>The annoying part is not the math. It is the data harmonization:</p>
+<ul>
+<li>aligning scales across datasets,</li>
+<li>handling missing objectives,</li>
+<li>keeping related-but-not-identical objectives separate,</li>
+<li>ensuring prompt/response formatting is consistent.</li>
+</ul>
+<p>In real reproduction work, these boring details often dominate.</p>
+<h3 id="15-4-Code-release">15.4 Code release</h3>
+<p>The abstract says the code and model are released at:</p>
+<p><code>https://github.com/RLHFlow/RLHF-Reward-Modeling</code></p>
+<p>That is a strong positive for reproducibility.</p>
+<h2 id="16-What-I-would-do-if-I-were-extending-this-work-today">16. What I would do if I were extending this work today</h2>
+<p>If I were building on this paper in 2026, I would push in five directions.</p>
+<h3 id="16-1-Add-downstream-RLHF-policy-evidence">16.1 Add downstream RLHF policy evidence</h3>
+<p>I would test not only RewardBench but also whether a policy optimized with this RM:</p>
+<ul>
+<li>is less verbose,</li>
+<li>is more robust to reward hacking,</li>
+<li>produces better human preference outcomes.</li>
+</ul>
+<h3 id="16-2-Expand-the-objective-vocabulary">16.2 Expand the objective vocabulary</h3>
+<p>I would add objectives like:</p>
+<ul>
+<li>calibration / uncertainty honesty,</li>
+<li>refusal appropriateness,</li>
+<li>evidence faithfulness,</li>
+<li>non-manipulative tone,</li>
+<li>concise sufficiency.</li>
+</ul>
+<h3 id="16-3-Learn-uncertainty-over-objective-weights">16.3 Learn uncertainty over objective weights</h3>
+<p>Instead of one deterministic gating vector, I would like a distribution or confidence measure over objective weights.</p>
+<p>That would be helpful when the model is unsure how to trade off safety vs helpfulness, for example.</p>
+<h3 id="16-4-Study-response-aware-gating">16.4 Study response-aware gating</h3>
+<p>The current design uses prompt-conditioned weights. I would compare that with:</p>
+<ul>
+<li>prompt-only gating,</li>
+<li>prompt-response gating,</li>
+<li>two-stage gating where prompt sets prior weights and response updates them.</li>
+</ul>
+<h3 id="16-5-Move-from-correlation-correction-to-stronger-debiasing-methods">16.5 Move from correlation correction to stronger debiasing methods</h3>
+<p>The verbosity correction is smart, but I would test:</p>
+<ul>
+<li>partial correlation control,</li>
+<li>adversarial nuisance removal,</li>
+<li>causal or counterfactual debiasing proxies,</li>
+<li>direct evaluation under length-controlled comparisons.</li>
+</ul>
+<h2 id="17-Practical-lessons-for-RLHF-engineers">17. Practical lessons for RLHF engineers</h2>
+<p>I think the paper gives at least seven durable engineering lessons.</p>
+<h3 id="Lesson-1-do-not-throw-away-signal-you-already-paid-to-collect">Lesson 1: do not throw away signal you already paid to collect</h3>
+<p>If your dataset contains structured objective scores, use them.</p>
+<h3 id="Lesson-2-a-reward-model-should-expose-dimensions-not-just-one-opaque-number">Lesson 2: a reward model should expose dimensions, not just one opaque number</h3>
+<p>Even partial interpretability is better than pure opacity when debugging alignment failures.</p>
+<h3 id="Lesson-3-scalarization-should-be-context-sensitive">Lesson 3: scalarization should be context-sensitive</h3>
+<p>Different prompts require different judgment trade-offs.</p>
+<h3 id="Lesson-4-nuisance-variables-like-verbosity-deserve-explicit-treatment">Lesson 4: nuisance variables like verbosity deserve explicit treatment</h3>
+<p>If you know a failure mode is common, bake the correction into the model rather than hoping downstream RL will somehow fix it.</p>
+<h3 id="Lesson-5-lightweight-structure-can-beat-brute-force-scale">Lesson 5: lightweight structure can beat brute-force scale</h3>
+<p>This paper is a nice reminder that clever supervision and model design can compete with far larger models.</p>
+<h3 id="Lesson-6-benchmark-gains-should-be-read-category-by-category">Lesson 6: benchmark gains should be read category by category</h3>
+<p>Overall score matters, but category trade-offs reveal where the method is truly helping.</p>
+<h3 id="Lesson-7-interpretability-is-not-only-for-philosophy-it-is-also-for-operations">Lesson 7: interpretability is not only for philosophy; it is also for operations</h3>
+<p>When a reward model misbehaves, engineers need handles they can inspect. Objective decomposition provides such handles.</p>
+<h2 id="18-Final-verdict">18. Final verdict</h2>
+<p>My verdict is <strong>strongly positive</strong>.</p>
+<p>This is not the biggest paper, not the most mathematically flashy paper, and not a complete solution to reward modeling. But it is one of those papers where the core design is simple, sensible, and practically important.</p>
+<h3 id="What-the-paper-convincingly-shows">What the paper convincingly shows</h3>
+<ul>
+<li>Multi-objective absolute-rating supervision is better than blindly collapsing rich preference data into pairwise labels.</li>
+<li>Prompt-aware scalarization is better than a rigid fixed mixture of objectives.</li>
+<li>Explicit verbosity correction is useful.</li>
+<li>An 8B model with the right structure can approach or beat much larger judge systems and reward models on a strong benchmark.</li>
+</ul>
+<h3 id="What-the-paper-does-not-yet-prove">What the paper does not yet prove</h3>
+<ul>
+<li>that the model is fully interpretable in a human-grounded sense,</li>
+<li>that verbosity bias is solved universally,</li>
+<li>that downstream RLHF policies trained with this RM are always better,</li>
+<li>that the objective set fully captures human preference.</li>
+</ul>
+<p>So the right conclusion is:</p>
+<blockquote>
+<p>This paper does not finish reward modeling, but it gives one of the cleanest and most practical upgrades to the standard RLHF reward-model recipe.</p>
+</blockquote>
+<p>If I were advising an engineer building reward models today, I would absolutely want them to understand this paper.</p>
+<h2 id="19-References">19. References</h2>
+<ol>
+<li>Haoxiang Wang, Wei Xiong, Tengyang Xie, Han Zhao, Tong Zhang. <strong>Interpretable Preferences via Multi-Objective Reward Modeling and Mixture-of-Experts.</strong> arXiv:2406.12845, 2024.</li>
+<li>Long Ouyang et al. <strong>Training Language Models to Follow Instructions with Human Feedback.</strong> NeurIPS 2022.</li>
+<li>Ralph Allan Bradley and Milton E. Terry. <strong>Rank Analysis of Incomplete Block Designs: I. The Method of Paired Comparisons.</strong> 1952.</li>
+<li>Nathan Lambert et al. <strong>RewardBench: Evaluating Reward Models for Language Modeling.</strong> arXiv:2403.13787, 2024.</li>
+<li>Zhilin Wang et al. <strong>HelpSteer2: Open-source Dataset for Training Top-performing Reward Models.</strong> 2024.</li>
+</ol>
+<h2 id="20-Appendix-A-beginner-FAQ">20. Appendix A: beginner FAQ</h2>
+<p><strong>Q1: Why not just use GPT-4 as the judge forever?</strong><br>
+Because specialized reward models can be cheaper, faster, easier to deploy privately, and sometimes even better on the specific benchmark you care about.</p>
+<p><strong>Q2: Why are multiple objectives better than one score?</strong><br>
+Because one score hides why the model prefers something. Multiple objectives let us inspect and debug the judgment process.</p>
+<p><strong>Q3: Why is verbosity bias such a big deal?</strong><br>
+Because policy optimization amplifies reward-model bias. A small preference for long answers can become a large preference after training.</p>
+<p><strong>Q4: Is this paper about PPO or DPO?</strong><br>
+Not directly. It is about the reward model used inside many RLHF pipelines, including PPO-style and iterative preference-learning systems.</p>
+<p><strong>Q5: What is the most transferable idea from this paper?</strong><br>
+Separate objective prediction from objective aggregation, and make the aggregation context-sensitive.</p>
+<h2 id="21-Appendix-B-evidence-checklist">21. Appendix B: evidence checklist</h2>
+<p>This review explicitly used the following evidence from the paper:</p>
+<ul>
+<li>Figure 1: full architecture and interpretability story</li>
+<li>Equation (1): multi-objective regression</li>
+<li>Equations (2) and (3): verbosity debiasing by decorrelation</li>
+<li>Equation (4): prompt-conditioned scalar reward</li>
+<li>Equation (5): Bradley-Terry-style gating training objective</li>
+<li>Table 1: RewardBench overall and category numbers</li>
+<li>Experiment details: Llama-3 8B backbone, frozen backbone, linear probing, 3-layer 1024-unit gating MLP</li>
+<li>Appendix A: 19 objectives from 8 datasets and 10 pairwise datasets for MoE training</li>
+<li>Software/hardware notes: CPU linear regression + single NVIDIA A6000 for gating stage</li>
+</ul>
+<p>This review intentionally starts with background, then method, then evidence, then limitations, so a reader with little prior RLHF knowledge can still follow the technical core.</p>
+
+     </div> <footer class="blog-post-footer"> <p class="blog-post-source">
+Originally published at <a href="https://zzz0906.github.io/2026/04/14/2026-04-14-ArmoRM-technical-review-en/" target="_blank" rel="noopener noreferrer">zzz0906.github.io</a>.
+</p> <nav class="blog-post-nav" aria-label="Adjacent posts"> <a class="blog-post-nav-link blog-post-nav-prev" href="/blog/2026-04-15-2026-04-15-LayerSkip-technical-review-en/"> <span class="blog-post-nav-label">← Newer</span> <span class="blog-post-nav-title">LayerSkip: Enabling Early Exit Inference and Self-Speculative Decoding — Deep Technical Review</span> </a> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-04-14-2026-04-14-ArmoRM-阅读笔记-zh/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">ArmoRM：用“多目标奖励建模 + 混合专家门控”做可解释偏好学习——深度阅读笔记</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient ML systems, LLM infrastructure, and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>

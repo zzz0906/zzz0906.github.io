@@ -1,0 +1,357 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DisagMoE: Disaggregating Attention and FFN to Beat the MoE All-to-All Bottleneck | Zhongzhu / Charlie</title><meta name="description" content="A detailed technical review of DisagMoE, which disaggregates attention and FFN layers onto separate GPU pools and stitches them together via the AF-Pipe schedule to hide the MoE all-to-all bottleneck during training."><meta property="og:title" content="DisagMoE: Disaggregating Attention and FFN to Beat the MoE All-to-All Bottleneck | Zhongzhu / Charlie"><meta property="og:description" content="A detailed technical review of DisagMoE, which disaggregates attention and FFN layers onto separate GPU pools and stitches them together via the AF-Pipe schedule to hide the MoE all-to-all bottleneck during training."><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-05-14-2026-05-14-DisagMoE-technical-review-en/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-05-14-2026-05-14-DisagMoE-technical-review-en/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.BtdlpukG.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>116</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>33</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> <nav class="blog-post-toc" aria-label="Table of contents"> <p class="blog-post-toc-title">Contents</p> <ul> <li class="toc-level-2"> <a href="#Short-answer">Short answer</a> </li><li class="toc-level-2"> <a href="#1-Prerequisites">1. Prerequisites</a> </li><li class="toc-level-3"> <a href="#1-1-MoE-in-one-paragraph">1.1 MoE in one paragraph</a> </li><li class="toc-level-3"> <a href="#1-2-Expert-parallelism-EP">1.2 Expert parallelism (EP)</a> </li><li class="toc-level-3"> <a href="#1-3-Why-all-to-all-is-the-bottleneck">1.3 Why all-to-all is the bottleneck</a> </li><li class="toc-level-3"> <a href="#1-4-Pipeline-parallelism-1F1B-and-bubbles">1.4 Pipeline parallelism, 1F1B, and &quot;bubbles&quot;</a> </li><li class="toc-level-3"> <a href="#1-5-Roofline-analysis-in-60-seconds">1.5 Roofline analysis in 60 seconds</a> </li><li class="toc-level-3"> <a href="#1-6-Disaggregation-briefly">1.6 Disaggregation, briefly</a> </li><li class="toc-level-2"> <a href="#2-The-problem-DisagMoE-attacks">2. The problem DisagMoE attacks</a> </li><li class="toc-level-3"> <a href="#2-1-The-compute-communication-imbalance">2.1 The compute-communication imbalance</a> </li><li class="toc-level-3"> <a href="#2-2-Why-per-operator-overlap-is-not-enough">2.2 Why per-operator overlap is not enough</a> </li><li class="toc-level-3"> <a href="#2-3-Why-AFD-for-serving-does-not-transplant-cleanly-to-training">2.3 Why AFD-for-serving does not transplant cleanly to training</a> </li><li class="toc-level-2"> <a href="#3-The-DisagMoE-design">3. The DisagMoE design</a> </li><li class="toc-level-3"> <a href="#3-1-AF-disaggregated-placement-with-depth-interleaving">3.1 AF disaggregated placement with depth interleaving</a> </li><li class="toc-level-3"> <a href="#3-2-AF-Pipe-the-schedule">3.2 AF-Pipe: the schedule</a> </li><li class="toc-level-3"> <a href="#3-3-Adaptive-worker-allocation-with-a-roofline-MILP">3.3 Adaptive worker allocation with a roofline MILP</a> </li><li class="toc-level-2"> <a href="#4-Experiments-and-what-they-actually-show">4. Experiments and what they actually show</a> </li><li class="toc-level-3"> <a href="#4-1-Setup">4.1 Setup</a> </li><li class="toc-level-3"> <a href="#4-2-End-to-end-throughput">4.2 End-to-end throughput</a> </li><li class="toc-level-3"> <a href="#4-3-Iteration-time-decomposition">4.3 Iteration-time decomposition</a> </li><li class="toc-level-3"> <a href="#4-4-Resource-allocation-ablation">4.4 Resource-allocation ablation</a> </li><li class="toc-level-3"> <a href="#4-5-Top-k-and-EP-size-ablation">4.5 Top-k and EP-size ablation</a> </li><li class="toc-level-3"> <a href="#4-6-Virtual-stage-ablation">4.6 Virtual-stage ablation</a> </li><li class="toc-level-2"> <a href="#5-Limitations-and-the-parts-I-would-push-on">5. Limitations and the parts I would push on</a> </li><li class="toc-level-3"> <a href="#5-1-Pretraining-only-shape-assumption">5.1 Pretraining-only shape assumption</a> </li><li class="toc-level-3"> <a href="#5-2-Symmetric-pipeline-depth">5.2 Symmetric pipeline depth</a> </li><li class="toc-level-3"> <a href="#5-3-Things-I-would-have-liked-to-see">5.3 Things I would have liked to see</a> </li><li class="toc-level-3"> <a href="#5-4-What-carries-over-to-other-models">5.4 What carries over to other models?</a> </li><li class="toc-level-2"> <a href="#6-How-DisagMoE-fits-in-the-lineage">6. How DisagMoE fits in the lineage</a> </li><li class="toc-level-2"> <a href="#7-Pseudocode-and-a-worked-numerical-example">7. Pseudocode and a worked numerical example</a> </li><li class="toc-level-3"> <a href="#Worked-example-how-big-is-the-speedup-really">Worked example: how big is the speedup, really?</a> </li><li class="toc-level-2"> <a href="#8-Notation-cheat-sheet">8. Notation cheat sheet</a> </li><li class="toc-level-2"> <a href="#9-Reproducibility-notes">9. Reproducibility notes</a> </li><li class="toc-level-2"> <a href="#10-My-closing-read">10. My closing read</a> </li> </ul> </nav> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-05-14">May 14, 2026</time> <span class="blog-lang blog-lang-en">EN</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/Pipeline-Parallelism/">#Pipeline Parallelism</a><a class="blog-post-tag-chip" href="/blog/tag/Mixture-of-Experts/">#Mixture of Experts</a><a class="blog-post-tag-chip" href="/blog/tag/Distributed-Training/">#Distributed Training</a><a class="blog-post-tag-chip" href="/blog/tag/Speculative-Decoding/">#Speculative Decoding</a><a class="blog-post-tag-chip" href="/blog/tag/LLM-Training/">#LLM Training</a> </span> </p> <h1>DisagMoE: Disaggregating Attention and FFN to Beat the MoE All-to-All Bottleneck</h1> </header> <div class="blog-post-body"> 
+
+      
+        <p><strong>Review date:</strong> 2026-05-14<br>
+<strong>Review author:</strong> Zhongzhu Zhou<br>
+<strong>Paper reviewed:</strong> <em>DisagMoE: Computation-Communication overlapped MoE Training via Disaggregated AF-Pipe Parallelism</em><br>
+<strong>Paper authors:</strong> Zhichen Zeng, Chi-Chih Chang, Jiayi Wang, Zezhou Wang, Ningxin Zheng, Zheng Zhong, Cesar A. Stuardo, Dongyang Wang, Mohamed S. Abdelfattah, Haibin Lin, Banghua Zhu, Ang Li, Ziheng Jiang (ByteDance Seed; University of Washington; Cornell University)<br>
+<strong>arXiv:</strong> 2605.11005v1, 2026-05-10<br>
+<strong>Venue/status:</strong> arXiv preprint</p>
+<h2 id="Short-answer">Short answer</h2>
+<p>DisagMoE is a Mixture-of-Experts (MoE) training system that asks a structural question: <strong>if attention and feed-forward layers have fundamentally different compute-to-communication ratios, why are we still running them on the same set of GPUs with the same network budget?</strong> The proposed answer is to split the transformer by component type. One pool of GPUs runs only the attention layers (data-parallel across the pool). Another pool runs only the feed-forward (FFN) layers (expert-parallel inside the pool). Between the two pools, the system exchanges hidden states using a many-to-many primitive that the authors call M2N/N2M, and the whole thing is scheduled as a pipeline named <em>AF-Pipe</em> in which forward and backward work on different micro-batches is constantly in flight across both pools. A roofline model is used to decide how many GPUs and how many NICs each pool should get, so that neither pool stalls waiting for the other.</p>
+<p>The headline numbers are simple. On 8 to 16 nodes of 8×H800 GPUs, evaluating DeepSeek-MoE, GPT-OSS-120B, and Qwen3-235B at sequence lengths from 4K to 32K, DisagMoE delivers up to <strong>1.81× higher training throughput</strong> than the widely deployed Megatron-LM 1F1B interleaved pipeline, and up to <strong>1.34×</strong> higher throughput than the strongest published MoE communication-overlap systems (Tutel, Comet, DualPipe). Their iteration-time breakdown shows that compared to Tutel, DisagMoE removes about <strong>88%</strong> of the non-overlapped communication time; compared to Comet, about <strong>75%</strong>; compared to DualPipe, about <strong>45%</strong>. The MoE all-to-all share of a training step on 8 nodes — which on Megatron sits near 78% of layer time — collapses to a much smaller residual once attention and FFN are decoupled.</p>
+<p>The deeper observation behind the design is that the two halves of a transformer scale differently as sequence length grows. Attention FLOPs grow quadratically in <em>s</em> while FFN FLOPs and all-to-all traffic grow only linearly. With a single, symmetric (attention + FFN) device group sitting under the same network roof, the FFN side gets starved of bandwidth and stays communication-bound, while the attention side moves toward the compute roof but cannot help its FFN sibling. Disaggregation breaks the symmetry: each side gets the <em>ratio</em> of compute to bandwidth that suits it, and a single MILP-plus-local-search routine finds the right (m, n) GPU split and the right NIC budget per side. Once both sides clock in at roughly the same stage time, the M2N exchanges between them hide cleanly behind compute and the pipeline runs near peak.</p>
+<p>My main takeaway is that DisagMoE follows the same playbook that DistServe (prefill/decode disaggregation) and MegaScale-Infer/StepFun (attention/FFN disaggregation for serving) brought to LLM inference, and ports it carefully to <em>training</em>. The interesting engineering twist is that training, unlike serving, is symmetric in time (forward + backward, gradients flow back, optimizer states live somewhere), so the disaggregation has to be done not only spatially but also schedule-wise: AF-Pipe is the schedule that makes the AF disaggregation <em>work as a producer-consumer ring</em> across both directions. This is the part of the paper that I think is most worth reading carefully if you have already accepted the disaggregation idea on the serving side.</p>
+<h2 id="1-Prerequisites">1. Prerequisites</h2>
+<p>This section is written for someone who has trained a transformer with data parallelism at some point, knows what a forward and backward pass is, and has heard the phrases &quot;MoE&quot;, &quot;expert parallelism&quot;, &quot;pipeline parallelism&quot;, and &quot;all-to-all&quot; without necessarily having implemented them. If you already work daily on Megatron-LM or DeepSpeed-style training, feel free to jump to section 2.</p>
+<h3 id="1-1-MoE-in-one-paragraph">1.1 MoE in one paragraph</h3>
+<p>A Mixture-of-Experts model replaces a single feed-forward block at some transformer layers by <em>E</em> parallel feed-forward blocks (the <strong>experts</strong>) plus a small <strong>gate</strong> network. For each token, the gate picks the <strong>top-k</strong> experts (typical <em>k</em> is 2 to 8 out of dozens to hundreds of experts), runs the token through only those <em>k</em>, and combines their outputs with a weighted sum. The point of this design is that <em>total</em> parameter count grows with <em>E</em> while <em>activated</em> parameter count per token only grows with <em>k</em>. DeepSeek-V4-Pro, used as the running example in the paper, has 1.6T total parameters but activates only 49B per token because it engages 6 out of 384 experts. MoE is how you fit &quot;trillion-parameter&quot; into &quot;we still want to actually train this.&quot;</p>
+<h3 id="1-2-Expert-parallelism-EP">1.2 Expert parallelism (EP)</h3>
+<p>Because there are now many experts and they are large, you cannot keep all of them on one GPU. <strong>Expert parallelism</strong> spreads the experts across GPUs: each GPU holds some fraction of the experts. The natural unit is the <strong>EP group</strong>, a set of GPUs that together hold one complete set of experts for one MoE layer. When the gate decides &quot;this token wants expert 42 and expert 17,&quot; those tokens have to travel from whatever GPU currently holds them (their <em>micro-batch</em> GPU) to whichever GPUs hold experts 42 and 17. That motion is exactly what an <strong>all-to-all</strong> primitive does: every GPU sends a partial buffer to every other GPU in the group.</p>
+<p>Two all-to-all calls happen per MoE layer per forward pass:</p>
+<ol>
+<li><strong>Dispatch.</strong> Reorder tokens by destination expert and ship them to the right GPU.</li>
+<li><strong>Combine.</strong> After the experts finish, ship the results back to wherever the next attention layer wants the token to live.</li>
+</ol>
+<p>The backward pass adds two more, mirrored. So <strong>four</strong> all-to-all calls per MoE layer per training step, each transferring close to the full micro-batch worth of activations.</p>
+<h3 id="1-3-Why-all-to-all-is-the-bottleneck">1.3 Why all-to-all is the bottleneck</h3>
+<p>GPUs in the same node talk through NVLink at roughly 900 GB/s. GPUs in different nodes talk through InfiniBand (IB) or RoCE Ethernet at roughly 100 GB/s — about an order of magnitude slower. As models grow, one MoE layer's experts no longer fit in a single 8-GPU node, so the EP group has to span multiple nodes and the all-to-all is forced onto the slow inter-node fabric. The paper's profiling on 64 H800 GPUs shows the all-to-all share of a forward step rising from 22% on a single node to almost 78% on 8 nodes. Once you sit at 78% communication, the compute units are idle most of the time and adding more GPUs does almost nothing.</p>
+<h3 id="1-4-Pipeline-parallelism-1F1B-and-bubbles">1.4 Pipeline parallelism, 1F1B, and &quot;bubbles&quot;</h3>
+<p>When you cannot fit one full forward pass on one GPU, <strong>pipeline parallelism</strong> chops the model along the depth axis: stage 0 owns layers 0…k, stage 1 owns layers k+1…2k, and so on. A micro-batch flows from stage 0 to stage <em>S</em>–1 in the forward direction, then back from <em>S</em>–1 to 0 in the backward direction. The classical schedule is <strong>1F1B (one-forward-one-backward)</strong>: each worker alternates between forwarding micro-batch <em>i+1</em> and backwarding micro-batch <em>i</em>, which keeps memory usage roughly constant per worker. Megatron also uses an <strong>interleaved</strong> variant where each worker owns multiple non-contiguous &quot;virtual stages&quot; so it can overlap inter-stage point-to-point (P2P) communication with compute.</p>
+<p>A <strong>bubble</strong> is a stretch of time during which a stage is idle because its input has not arrived yet. Warm-up bubbles happen at the start of an iteration (the last stage has nothing to do until the first stage has produced <em>S</em> micro-batches), and cool-down bubbles happen at the end. Reducing bubbles is a major target of pipeline-parallel research.</p>
+<h3 id="1-5-Roofline-analysis-in-60-seconds">1.5 Roofline analysis in 60 seconds</h3>
+<p>A <strong>roofline</strong> plot has <em>arithmetic intensity</em> (FLOPs per byte of memory traffic) on the x-axis and achieved performance (FLOPs/s) on the y-axis. There is a <strong>bandwidth slope</strong> rising from the origin (you cannot exceed bandwidth × intensity) and a <strong>compute roof</strong> at the top (you cannot exceed peak FLOPs). The kink point is the <strong>arithmetic-intensity threshold</strong> <em>Î = peak FLOPs / peak bandwidth</em>. Workloads with intensity above <em>Î</em> are compute-bound; below <em>Î</em>, they are bandwidth-bound. The paper uses this exact picture, except it substitutes <em>network</em> bandwidth (IB) for the usual memory bandwidth — the question becomes whether each MoE layer's compute can hide its all-to-all communication. The crucial insight is then that <em>attention</em> and <em>FFN</em> live on different sides of the kink as sequence length grows.</p>
+<h3 id="1-6-Disaggregation-briefly">1.6 Disaggregation, briefly</h3>
+<p>&quot;Disaggregation&quot; in modern LLM systems means <em>splitting a model's components onto different hardware pools so that each pool can be sized, networked, and scheduled for its own workload profile</em>. The well-known examples on the serving side are:</p>
+<ul>
+<li><strong>DistServe</strong> (OSDI 2024): split prefill (compute-bound, parallelism-friendly) and decode (memory-bound, latency-sensitive) onto different GPU pools.</li>
+<li><strong>MegaScale-Infer / StepFun / StepMesh</strong>: split attention layers (memory-bound during decode) from FFN/MoE layers (compute-bound during decode) onto heterogeneous hardware.</li>
+<li><strong>HeterMoE</strong>: brings AFD to training but only at single-layer granularity, which OOMs at large parameter counts.</li>
+</ul>
+<p>DisagMoE is the natural next step: AFD-for-training that scales to hundreds of billions of parameters by combining AFD placement with a depth-interleaved pipeline.</p>
+<h2 id="2-The-problem-DisagMoE-attacks">2. The problem DisagMoE attacks</h2>
+<h3 id="2-1-The-compute-communication-imbalance">2.1 The compute-communication imbalance</h3>
+<p>Section 3 of the paper makes the structural argument very explicit. Inside one EP group, with sequence length <em>s</em> and hidden dimensions <em>H</em>, <em>De</em>, group size <em>g</em>, batch <em>b</em>, and top-k <em>k</em>, the relevant scaling laws are:</p>
+<ul>
+<li>Attention FLOPs per token-step: roughly <em>α₁ s² + α₂ s</em> (the <em>s²</em> is QK^T and the attention softmax-times-V; the <em>α₂ s</em> is the QKV projections plus output projection).</li>
+<li>FFN FLOPs per active token: roughly <em>β s</em> (two GroupGEMMs through the up- and down-projections of the <em>k</em> selected experts).</li>
+<li>All-to-all volume per token-step: roughly <em>γ s</em> (proportional to top-k times hidden size, in either direction).</li>
+</ul>
+<p>Translating this to arithmetic intensity (FLOPs per communicated byte) inside a single EP group:</p>
+<ul>
+<li><em>I_attn = (H(2 + 2/g) + 4s) / (2k)</em> — grows linearly with <em>s</em>.</li>
+<li><em>I_ffn = 2 De</em> — independent of <em>s</em>.</li>
+</ul>
+<p>So as sequence length grows, attention's intensity rises (its compute grows faster than its share of communication), but FFN's intensity stays put. Concretely (Table from Figure 6a in the paper) on Qwen-3 across 8 nodes:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:center">Sequence length</th>
+<th style="text-align:center">Attention share of compute</th>
+<th style="text-align:center">Attention I (FLOPs/byte)</th>
+<th style="text-align:center">FFN I (FLOPs/byte)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center">4K</td>
+<td style="text-align:center">28.4%</td>
+<td style="text-align:center">1.08</td>
+<td style="text-align:center">0.73</td>
+</tr>
+<tr>
+<td style="text-align:center">32K</td>
+<td style="text-align:center">50.3%</td>
+<td style="text-align:center">2.78</td>
+<td style="text-align:center">0.77</td>
+</tr>
+</tbody>
+</table>
+<p>The &quot;system turning point&quot; <em>Î</em> (peak FLOPs / peak bandwidth) on H800 sits somewhere between these two values, and the consequence is that <em>under a single shared network budget</em>, attention is already above <em>Î</em> and saturating its compute roof, while FFN is below <em>Î</em> and communication-bound. <strong>Overall throughput is dragged down by the slower stage.</strong> Adding more bandwidth helps FFN but is wasted on attention; adding more compute helps attention but is wasted on FFN.</p>
+<h3 id="2-2-Why-per-operator-overlap-is-not-enough">2.2 Why per-operator overlap is not enough</h3>
+<p>The earlier MoE-overlap line of work (Tutel, Comet, FasterMoE, etc.) is operator-level: they chunk the FFN GroupGEMM into tiles and pipeline tile-level GEMMs with chunked dispatch/combine. The window for hiding communication inside FFN compute is then <strong>bounded by the FFN compute time itself</strong>, which we just saw can be much smaller than the all-to-all time in the cross-node regime. So a tail of un-hidden communication always sticks out. Lancet and DualPipe pipeline <em>across</em> micro-batches instead, hiding one micro-batch's communication behind another's compute, but they cannot fix the structural imbalance: attention computation grows quadratically in <em>s</em> while FFN and all-to-all grow linearly, so perfect overlap stays out of reach across realistic shapes.</p>
+<p>Figure 5 in the paper makes this empirically clean: on DeepSeek-MoE and gpt-oss with 8K sequence length, Tutel, Comet, and Megatron all show a clearly visible orange (&quot;non-overlapped communication&quot;) strip on top of the green (&quot;overlapped&quot;) strip. The strip is exactly the residual all-to-all time that operator-level chunking cannot absorb.</p>
+<h3 id="2-3-Why-AFD-for-serving-does-not-transplant-cleanly-to-training">2.3 Why AFD-for-serving does not transplant cleanly to training</h3>
+<p>MegaScale-Infer and StepFun put attention on older/lower-bandwidth GPUs (because attention during decode is memory-bound and tolerant of weaker compute) and FFN on newer GPUs (because FFN during decode is compute-bound). In training:</p>
+<ul>
+<li>The forward + backward pass means each worker must persist the <em>full parameters and optimizer states</em> for the layers it owns across <strong>all transformer layers</strong> of its component type.</li>
+<li>For a 235B Qwen3 with attention disaggregated layer-by-layer, the attention-only worker would need to store gradients and Adam moments for 94 attention layers (Table 2 of the paper). That blows past 80 GB H800 memory.</li>
+</ul>
+<p>HeterMoE proves the basic AFD-for-training idea on small models (~4.3B) but OOMs at the scale that production MoE training cares about. DisagMoE has to solve this scaling problem.</p>
+<h2 id="3-The-DisagMoE-design">3. The DisagMoE design</h2>
+<p>The DisagMoE architecture is best read as the answer to three questions, in order:</p>
+<ol>
+<li><em>Spatially</em>, which GPUs hold which layers?  (Section 3.1 — <em>AF disaggregated placement</em>.)</li>
+<li><em>Temporally</em>, in what order do those GPUs do their work, and how do they overlap compute with communication?  (Section 3.2 — <em>AF-Pipe schedule</em>.)</li>
+<li><em>Sizing</em>, how many GPUs and how many NICs does each group get?  (Section 3.3 — <em>adaptive worker allocation guided by a roofline MILP</em>.)</li>
+</ol>
+<h3 id="3-1-AF-disaggregated-placement-with-depth-interleaving">3.1 AF disaggregated placement with depth interleaving</h3>
+<p>Let the model have <em>L</em> transformer layers. Pick a <em>pipeline depth</em> <em>p</em> shared between the two component types. The attention-pool is split into <em>p</em> groups <em>A₀, A₁, …, A_{p-1}</em>, and the FFN-pool is split into <em>p</em> groups <em>F₀, F₁, …, F_{p-1}</em>. Layer assignment is <strong>interleaved by depth</strong>:</p>
+<blockquote>
+<p>Group <em>g</em> of component <em>c</em> gets layers <em>{g + kp | k = 0, 1, …, v-1}</em>, where <em>v = L/p</em> is the number of virtual stages per group.</p>
+</blockquote>
+<p>So with <em>L = 8</em> and <em>p = 2</em>, attention groups are <em>{A₀ = layers 0,2,4,6}</em> and <em>{A₁ = layers 1,3,5,7}</em>, and FFN groups follow the same pattern. The output embedding lives with whichever F-group owns layer <em>L-1</em>.</p>
+<p><strong>Why this layout and not single-layer-per-group?</strong> Because a group only has to store parameters for <em>v</em> layers of its component type, not all <em>L</em>. That is the trick that lets HeterMoE's &quot;OOM at 4.3B&quot; become &quot;fine at 235B&quot; — fewer parameters per group, more groups in the pipeline.</p>
+<p>Inside each group:</p>
+<ul>
+<li><strong>Attention groups (A-Workers).</strong> GPUs are replicated under data parallelism (DP). Every GPU in an A-group holds a full copy of the assigned attention layers, processes a slice of the micro-batch independently, and synchronizes gradients with all-reduce inside the group.</li>
+<li><strong>FFN groups (F-Workers).</strong> GPUs shard the experts under expert parallelism (EP). All tokens in the micro-batch enter the group; routing inside the group spreads them across the GPUs that hold the selected experts.</li>
+</ul>
+<p>The number of GPUs <em>M</em> in an A-group and <em>N</em> in an F-group are <strong>not required to be equal</strong>. This asymmetry is the lever the roofline model in section 3.3 will pull.</p>
+<h3 id="3-2-AF-Pipe-the-schedule">3.2 AF-Pipe: the schedule</h3>
+<p>Once attention and FFN are physically separated, you have a producer-consumer relationship between A-Workers and F-Workers, in both directions:</p>
+<ul>
+<li>Forward: A produces hidden states <em>h</em>, F consumes them and returns expert-mixed <em>h′</em>, A consumes <em>h′</em> and produces the next layer's <em>h</em>, and so on.</li>
+<li>Backward: gradients flow the other way.</li>
+</ul>
+<p>If you train one micro-batch at a time, half the system idles at any moment. The fix is the classical pipeline-parallel one: <strong>shove many micro-batches into flight, so the producer is always producing and the consumer is always consuming.</strong> AF-Pipe does this, with two important refinements over a vanilla Megatron 1F1B:</p>
+<p><strong>1. The MoE all-to-all becomes a first-class pipeline stage.</strong> In a Megatron 1F1B pipeline, dispatch/combine are baked into a layer's forward and have to be hidden inside whatever overlap the chunked GEMM allows. In AF-Pipe, they become explicit M2N/N2M <em>stages</em> between the A-Worker and F-Worker. The bubble analysis is cleaner because of this.</p>
+<p>The paper makes the bubble comparison explicit. With <em>PP</em> pipeline stages, layers per stage <em>L</em>, <em>v</em> virtual stages per group, attention/FFN/A2A per-layer times <em>T_a, T_f, T_a2a</em> and P2P time <em>T_p2p</em>:</p>
+<ul>
+<li>Baseline 1F1B warm-up: <em>B_base = ((PP-1)/v) · [L(T_a + T_f + 2 T_a2a) + T_p2p]</em>.</li>
+<li>AF-Pipe warm-up: <em>B_AF = ((PP-1)/(2v)) · [max(T_a, T_f) + T_M2N]</em>.</li>
+</ul>
+<p>When <em>L = 1</em> (per-layer staging) and <em>T_M2N ≈ T_a2a</em>, AF-Pipe's bubble is roughly <strong>one-fourth</strong> of the baseline.</p>
+<p><strong>2. M2N replaces a P2P-then-all-to-all chain with one full-duplex transfer.</strong> In a Megatron interleaved pipeline, the inter-stage exchange is P2P (point-to-point activation transfer) and the intra-stage exchange is all-to-all (dispatch/combine). DisagMoE fuses them into a single many-to-many primitive — every A-Worker GPU sends to every F-Worker GPU, and vice versa — operated full-duplex so the inbound and outbound directions saturate the NIC independently. The paper claims this reduces overall communication cost by roughly <em>1/k</em> and removes the redundant data movement step.</p>
+<p><strong>3. Multi-stream asynchronous execution.</strong> Inside one worker, three CUDA streams run concurrently: a forward-compute stream, a backward-compute stream, and a send/receive communication stream. The schedule keeps all three saturated. The published Figure 8(c) shows an F-worker simultaneously sending the gradients for F⁶₁ (backward output), running forward on F⁶₆ (steady-state compute), and receiving backward output from the next A-worker A²₇. If the resource allocator in section 3.3 has done its job well, the three stages take roughly the same wall-clock time and the pipeline runs at peak.</p>
+<p>The implementation is on PyTorch v2.6 over Megatron-LM, in about 6K lines of Python and 2K of C++. The M-to-N/N-to-M primitives ride on top of GPUDirect and GPUCopy, in the same spirit as MegaScale-Infer's StepMesh.</p>
+<h3 id="3-3-Adaptive-worker-allocation-with-a-roofline-MILP">3.3 Adaptive worker allocation with a roofline MILP</h3>
+<p>The disaggregation only pays off if the two pools are sized correctly: too many GPUs in attention means FFN starves on compute, and vice versa. The paper formalises sizing as a small Mixed-Integer Linear Program.</p>
+<p>Let <em>W</em> be the total number of GPUs, <em>M_tot</em> the total NICs, <em>M</em> GPUs to A-pool, <em>N = W - M</em> to F-pool, <em>M_a, M_f</em> NICs split similarly. Each side's iteration latency is the max of its compute and communication time:</p>
+<ul>
+<li><em>T_a = max(C_a / (M · P),  V / (M_a · B_IB))</em></li>
+<li><em>T_f = max(C_f / (N · P),  V / (M_f · B_IB))</em></li>
+</ul>
+<p>where <em>C_a, C_f</em> are per-iteration FLOPs (GroupGEMMs of attention QKV+self-attention and FFN up/down-projection), <em>P</em> is per-GPU compute, <em>B_IB</em> is per-NIC bandwidth, <em>V</em> is the inter-group transferred volume.</p>
+<p>Since AF-Pipe couples the two sides as a producer-consumer, the iteration time is <em>max(T_a, T_f)</em> and any imbalance becomes a bubble. The optimisation is therefore two-stage:</p>
+<ol>
+<li><strong>Phase 1.</strong> Minimise the bottleneck stage: find <em>T* = min max(T_a, T_f)</em> by sweeping feasible <em>(M, M_a)</em>.</li>
+<li><strong>Phase 2 — tie-break by MFU.</strong> Among configurations that achieve <em>T*</em>, pick the one that maximises <em>MFU = (C_a + C_f) / (T* · W · P)</em>, which under fixed <em>T*</em> is equivalent to maximising <em>I_attn + I_ffn</em>.</li>
+</ol>
+<p>The MILP returns a seed <em>(M₀, M_{a,0})</em>. A short profile-guided local search (Algorithm 1 in the paper) perturbs the seed within a radius <em>r</em> for <em>K</em> trials and keeps the best measured allocation. The whole procedure is a <em>one-shot static</em> solve — pretraining shapes are known in advance, so there is no need for online reallocation.</p>
+<p>The roofline diagram (Figure 9) makes the intuition crisp. In the aggregated baseline, attention and FFN share the same network slope and the FFN side is communication-bound. After disaggregation, the A-pool gets fewer NICs and is pushed further to the right (toward the compute roof), while the F-pool gets more NICs (steeper slope) and moves up toward its own compute roof. <em>The system reaches a higher overall point than either side alone could in the aggregated layout.</em></p>
+<h2 id="4-Experiments-and-what-they-actually-show">4. Experiments and what they actually show</h2>
+<h3 id="4-1-Setup">4.1 Setup</h3>
+<ul>
+<li><strong>Hardware.</strong> 16 nodes, each with 8 H800 (80 GB) GPUs, 168 CPUs, 8× 400 GbE ConnectX-7 NICs. NVLink at 400 GB/s intra-node.</li>
+<li><strong>Models.</strong> DeepSeek-MoE (28 layers, 64 experts, top-4, 2048 hidden / 1408 MoE hidden), GPT-OSS-120B (36 layers, 128 experts, top-4, 2880 / 2880), Qwen3-235B-A22B (94 layers, 128 experts, top-8, 4096 / 1536). The Qwen3 model is the most demanding in both depth and width.</li>
+<li><strong>Baselines.</strong> Megatron-LM 1F1B-interleaved (3D parallelism), Tutel (operator-level overlap), Comet (fine-grained overlap library), DualPipe (DeepSeek-V4's bidirectional pipeline overlap).</li>
+<li><strong>Sweep.</strong> Sequence lengths 4K, 8K, 16K, 32K. EP=16 across two nodes for all baselines, with pipeline/virtual-stage configurations tuned per baseline to avoid OOM.</li>
+</ul>
+<p>The local (per-device) batch size is fixed across baselines so total batch scales linearly with GPU count.</p>
+<h3 id="4-2-End-to-end-throughput">4.2 End-to-end throughput</h3>
+<p>Figure 10 plots speedup against Megatron baseline across the three models and four sequence lengths. The patterns are robust:</p>
+<ul>
+<li><strong>Vs Megatron-1F1B:</strong> 1.59–1.81×. The improvement is largest at long sequences, where the imbalance between attention and FFN is widest and the AFD payoff is highest.</li>
+<li><strong>Vs Tutel and Comet:</strong> 1.2–1.5×. Operator-level overlap cannot reach inside the attention layer, so the residual all-to-all sticks out.</li>
+<li><strong>Vs DualPipe:</strong> 1.05–1.13×. DualPipe already hides a lot of the all-to-all through micro-batch pipelining, so the remaining win comes from the AFD sizing and the M2N stage fusion rather than from larger blocks of hidden communication. The author note that DualPipe's warm-up and cool-down are still Megatron-like (large all-to-all on the critical path), and its steady state has imbalance between attention-compute and FFN-compute-to-comm ratios — DisagMoE absorbs both.</li>
+</ul>
+<h3 id="4-3-Iteration-time-decomposition">4.3 Iteration-time decomposition</h3>
+<p>Figure 11 of the paper breaks one training step into three colours: overlapped compute (green) on the left, overlapped communication (purple) in the middle, and non-overlapped communication (orange) on the right. Reading the orange bar:</p>
+<ul>
+<li>Megatron-1F1B: very large orange bar (about a third of the step).</li>
+<li>Tutel: smaller, but DisagMoE removes about <strong>88%</strong> of the residual.</li>
+<li>Comet: about <strong>75%</strong> removed.</li>
+<li>DualPipe: about <strong>45%</strong> removed.</li>
+</ul>
+<p>This is the clearest single picture in the paper, because it isolates the contribution that disaggregation specifically buys you: it does not change the green region much (the compute), it shrinks the orange (non-overlapped communication) directly.</p>
+<h3 id="4-4-Resource-allocation-ablation">4.4 Resource-allocation ablation</h3>
+<p>Figure 12 varies the A:F GPU split with NICs fixed at 16:16. Three patterns to note:</p>
+<ul>
+<li>At 4K sequence, the optimal A:F ratio is roughly <strong>balanced (16:16)</strong> — attention and FFN compute FLOPs are close.</li>
+<li>At 16K sequence, the optimal A:F shifts to <strong>16:10</strong> — attention is doing more work and deserves more compute, FFN can run with fewer GPUs because its work has not grown as fast.</li>
+<li>Forcing very asymmetric splits (16:8 or 8:16) re-introduces stage imbalance and the speedup drops back to near 1×.</li>
+</ul>
+<p>The take-away is that the MILP-plus-local-search allocator is not optional — sequence length actually shifts the optimum by a meaningful amount, and a hand-tuned guess will mis-size at the wrong workload.</p>
+<h3 id="4-5-Top-k-and-EP-size-ablation">4.5 Top-k and EP-size ablation</h3>
+<p>Figure 13 shows top-k swept over {2, 4, 8, 16} with total experts fixed at 64. As top-k grows, both communication volume <em>V</em> and FFN compute <em>C_f</em> grow linearly, so total step time grows. DisagMoE keeps a <strong>1.08–1.92× speedup</strong> band across the sweep. The widest gap is at the most stressful configuration (top-k = 16, large EP), where the all-to-all bottleneck is worst for the baselines.</p>
+<h3 id="4-6-Virtual-stage-ablation">4.6 Virtual-stage ablation</h3>
+<p>Figure 14 sweeps the number of virtual stages <em>v</em> per group, at fixed <em>p</em>. Throughput grows roughly proportional to <em>v</em> up to <em>v = 16</em>, where memory exhausts (each group has to store parameters and activations of all 16 layers it owns). This is exactly the failure mode that HeterMoE hits at single-layer granularity — DisagMoE's <em>p ≥ 1</em> depth-interleaving is what lets you climb the <em>v</em> axis at all.</p>
+<h2 id="5-Limitations-and-the-parts-I-would-push-on">5. Limitations and the parts I would push on</h2>
+<p>The paper is honest about two real limitations and there are a couple more I would add from the engineering side.</p>
+<h3 id="5-1-Pretraining-only-shape-assumption">5.1 Pretraining-only shape assumption</h3>
+<p>The MILP-plus-local-search routine assumes fixed sequence length, micro-batch size, and global batch shape. That is true for pretraining: you set up the schedule, run for weeks, and never change shape. It is <strong>not</strong> true for RL fine-tuning (e.g., GRPO, DAPO-style rollouts) where prompt and response lengths vary per sample, nor for SFT runs that pack mixed-length sequences. Bringing DisagMoE to those workloads would require <strong>online reallocation</strong> of (M, M_a). The paper flags this and leaves it as future work.</p>
+<h3 id="5-2-Symmetric-pipeline-depth">5.2 Symmetric pipeline depth</h3>
+<p>Currently <em>p</em> is shared between attention and FFN groups. That keeps the math clean but throws away an obvious tuning knob: if FFN is the bottleneck, you could imagine <em>p_F &gt; p_A</em> (more FFN groups, each with fewer layers per group) so that the bottleneck side gets more concurrent stages. The paper marks asymmetric <em>(p_A, p_F)</em> as a promising extension whose scheduling complexity has not been worked out.</p>
+<h3 id="5-3-Things-I-would-have-liked-to-see">5.3 Things I would have liked to see</h3>
+<ul>
+<li><strong>Loss-curve evidence.</strong> All the reported numbers are throughput. The paper does not show a side-by-side training-loss curve to convince me that the disaggregation does not subtly alter gradients (it shouldn't — gradients are mathematically the same — but I would still want a final-loss table). For a system going into production this is something I would ask the authors for.</li>
+<li><strong>Failure-recovery behaviour.</strong> With <em>p</em> groups of attention and <em>p</em> groups of FFN running concurrently, a single straggler GPU on the slower side will pipeline-block everyone. The paper does not benchmark how DisagMoE behaves under straggler injection, and at multi-hundred-billion-parameter scale you will see stragglers.</li>
+<li><strong>Network topology sensitivity.</strong> The evaluation is on a uniform 8× 400 GbE per-node cluster. Real production clusters have rail-aligned topology, sometimes with a 2:1 over-subscription at the spine. The M2N primitive presumably interacts non-trivially with rail alignment; the paper does not characterise that.</li>
+</ul>
+<h3 id="5-4-What-carries-over-to-other-models">5.4 What carries over to other models?</h3>
+<p>The two key ratios that drive whether DisagMoE will help you are:</p>
+<ol>
+<li><em>I_attn / I_ffn</em> — how lopsided is your model's per-layer compute-to-comm intensity? Long sequences amplify this gap, MoE with low top-k amplifies it further.</li>
+<li><em>T_a2a / T_compute</em> — how big is your all-to-all relative to your compute? Cross-node EP amplifies this. Single-node training does not need DisagMoE — operator-level overlap suffices.</li>
+</ol>
+<p>So DisagMoE's sweet spot is <strong>large MoE, cross-node EP, long sequence</strong>, which is exactly where production MoE training lives in 2026.</p>
+<h2 id="6-How-DisagMoE-fits-in-the-lineage">6. How DisagMoE fits in the lineage</h2>
+<p>Reading this paper in 2026, it sits inside an unmistakable family tree of &quot;disaggregation in LLM systems&quot;:</p>
+<ul>
+<li><strong>Inference disaggregation:</strong> DistServe (2024, prefill/decode), MegaScale-Infer / StepFun / StepMesh (attention/FFN for decode), Mooncake (KVCache disaggregation).</li>
+<li><strong>Training overlap (without disaggregation):</strong> Tutel, FasterMoE, Comet, Lancet, DualPipe (DeepSeek-V4's bidirectional pipeline).</li>
+<li><strong>Training disaggregation predecessors:</strong> HeterMoE (single-layer AFD for training, OOMs at scale).</li>
+<li><strong>DisagMoE (this paper):</strong> depth-interleaved AFD for training, scales to 235B+ on 8–16 H800 nodes.</li>
+</ul>
+<p>The intellectual move that makes this paper interesting is that DisagMoE takes the inference-style disaggregation seriously enough to confront the training-specific obstacles (optimizer states blowing up memory, gradients flowing backward, pipeline bubbles in both warm-up and cool-down), and solves them with a <em>schedule</em> (AF-Pipe) and a <em>sizing model</em> (the roofline MILP) rather than with new hardware.</p>
+<h2 id="7-Pseudocode-and-a-worked-numerical-example">7. Pseudocode and a worked numerical example</h2>
+<p>A reader who wants to <em>implement</em> DisagMoE on top of Megatron-LM should think of the loop in three nested layers. The pseudocode below is at the conceptual level — the production version handles tensor parallelism inside each worker, gradient accumulation, optimizer-state sharding, and so on, which the paper inherits from Megatron-LM unchanged.</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># Top-level training step (simplified).</span></span><br><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">disagmoe_step</span><span class="params">(model, batch, allocator)</span>:</span></span><br><span class="line">    <span class="comment"># 1. Static sizing (done once at job start).</span></span><br><span class="line">    M_attn_gpus, M_ffn_gpus, M_attn_nics, M_ffn_nics = allocator.solve(</span><br><span class="line">        model_cfg, hardware, seq_len)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 2. AF disaggregated placement (built once).</span></span><br><span class="line">    a_groups = make_attention_groups(model, p=allocator.p,</span><br><span class="line">                                     gpus=M_attn_gpus, nics=M_attn_nics)</span><br><span class="line">    f_groups = make_ffn_groups(model, p=allocator.p,</span><br><span class="line">                               gpus=M_ffn_gpus, nics=M_ffn_nics)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 3. AF-Pipe steady-state schedule across micro-batches.</span></span><br><span class="line">    micro_batches = split(batch, n=num_micro_batches)</span><br><span class="line">    <span class="keyword">for</span> tick <span class="keyword">in</span> pipeline_schedule(a_groups, f_groups, micro_batches):</span><br><span class="line">        <span class="comment"># Each worker independently advances its own three streams.</span></span><br><span class="line">        worker = tick.worker</span><br><span class="line">        stage = tick.stage              <span class="comment"># FWD_A, FWD_F, BWD_A, BWD_F, M2N, N2M</span></span><br><span class="line">        run_async(worker.compute_stream, stage)</span><br><span class="line">        run_async(worker.comm_stream, m2n_transfer_for(stage))</span><br><span class="line">    optimizer.step()</span><br></pre></td></tr></table></figure>
+<p>Inside <code>pipeline_schedule</code>, the <em>AF-Pipe</em> warm-up dispatches <em>p × v</em> micro-batches in forward order, then transitions to steady state where every tick at every worker advances one (forward compute) + one (backward compute) + one (communication) in parallel. M2N transfers happen full-duplex on the NICs.</p>
+<h3 id="Worked-example-how-big-is-the-speedup-really">Worked example: how big is the speedup, really?</h3>
+<p>Take Qwen3-235B at <em>s = 16K</em>, on 8 nodes (64 H800 GPUs total). From the paper's profiling:</p>
+<ul>
+<li>Megatron-1F1B step time on this configuration (normalize to 1.0 unit). Roughly:
+<ul>
+<li>Attention compute: 0.42</li>
+<li>FFN compute: 0.18</li>
+<li>Non-overlapped all-to-all + P2P: 0.40</li>
+</ul>
+</li>
+<li>Total step ≈ 1.00.</li>
+</ul>
+<p>DisagMoE at the same configuration:</p>
+<ul>
+<li>A-pool sized to 16:10 (from Figure 12).</li>
+<li><em>T_a</em> and <em>T_f</em> roughly balanced at <em>max(0.45, 0.43) = 0.45</em>.</li>
+<li>M2N transfer fully hidden, residual orange bar collapses to roughly 0.07.</li>
+<li>Total step ≈ 1.00 / 1.81 ≈ 0.55.</li>
+</ul>
+<p>That is the speedup the headline number is summarising. The lesson for an implementer is that <em>most of the win comes from collapsing the orange (non-overlapped communication) bar</em>, not from speeding up compute. Attention and FFN compute remain unchanged.</p>
+<h2 id="8-Notation-cheat-sheet">8. Notation cheat sheet</h2>
+<p>Variables that recur in the paper:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:center">Symbol</th>
+<th style="text-align:left">Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center"><em>L</em></td>
+<td style="text-align:left">Total transformer layers</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>E</em></td>
+<td style="text-align:left">Total experts in an MoE layer</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>k</em></td>
+<td style="text-align:left">Top-k experts each token is routed to</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>H</em></td>
+<td style="text-align:left">Hidden size</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>De</em></td>
+<td style="text-align:left">FFN hidden size (per expert)</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>s</em></td>
+<td style="text-align:left">Input sequence length</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>b</em></td>
+<td style="text-align:left">Micro-batch size</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>W</em></td>
+<td style="text-align:left">Total GPU world size</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>m, M</em></td>
+<td style="text-align:left">Attention-pool nodes / GPUs</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>n, N</em></td>
+<td style="text-align:left">FFN-pool nodes / GPUs</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>EP</em></td>
+<td style="text-align:left">Expert-parallel size</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>P</em></td>
+<td style="text-align:left">Per-GPU compute density (FLOPs/s)</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>B_NV, B_IB</em></td>
+<td style="text-align:left">NVLink and InfiniBand bandwidth (B/s)</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>p</em></td>
+<td style="text-align:left">Pipeline groups per component type (depth)</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>v</em></td>
+<td style="text-align:left">Virtual stages per group</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>I_attn, I_ffn</em></td>
+<td style="text-align:left">Arithmetic intensities (FLOPs / byte)</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>Î</em></td>
+<td style="text-align:left">System turning point = peak FLOPs / peak bandwidth</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>T_a, T_f</em></td>
+<td style="text-align:left">Attention / FFN per-stage time</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>T_a2a</em></td>
+<td style="text-align:left">All-to-all (dispatch + combine) time per layer</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>T_M2N</em></td>
+<td style="text-align:left">Many-to-many inter-group transfer time</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>T_p2p</em></td>
+<td style="text-align:left">Point-to-point inter-stage transfer time</td>
+</tr>
+<tr>
+<td style="text-align:center"><em>B_base, B_AF</em></td>
+<td style="text-align:left">Warm-up bubbles for Megatron-1F1B and AF-Pipe</td>
+</tr>
+</tbody>
+</table>
+<h2 id="9-Reproducibility-notes">9. Reproducibility notes</h2>
+<ul>
+<li><strong>Code.</strong> The paper does not yet link an open-source release. The text says &quot;implemented in ~6K lines of Python and ~2K of C++ on top of Megatron-LM with PyTorch v2.6&quot;, which means a reasonable Megatron contributor could re-implement the placement and the M2N primitive in a few weeks, but the exact scheduling and the MILP allocator would be the time-consuming pieces.</li>
+<li><strong>Hardware.</strong> The reported numbers require ConnectX-7 8×400 GbE NICs and 8×H800 nodes. With slower NICs (200 G or single-NIC nodes) the M2N stage becomes the bottleneck and the speedups are likely smaller.</li>
+<li><strong>Models.</strong> The three evaluation models (DeepSeek-MoE, GPT-OSS-120B, Qwen3-235B) are public; the training recipes are not, but training-step timing is what is being benchmarked, so any reasonable MoE checkpoint of similar size should reproduce the throughput ratios.</li>
+<li><strong>Roofline MILP.</strong> A direct port of Algorithm 1 of the paper is trivial: any open-source MILP solver (e.g., PuLP, OR-Tools) handles the integer split, and the local-search step needs only profiled per-stage times.</li>
+</ul>
+<h2 id="10-My-closing-read">10. My closing read</h2>
+<p>I find DisagMoE convincing for the same reason I found DistServe convincing two years ago: it identifies a <em>structural</em> asymmetry inside one widely deployed primitive (MoE training with cross-node EP), points out that the asymmetry is wasting hardware budget, and offers a sizing-plus-scheduling solution rather than a &quot;let's invent a new architecture&quot; solution. The roofline argument in section 3 is the load-bearing intellectual contribution; the AF-Pipe schedule and the M2N primitive are the engineering scaffolding that makes the argument deliver in practice.</p>
+<p>If I were a production MoE training team in 2026, I would treat this paper as a strong nudge to do three concrete things this quarter:</p>
+<ol>
+<li><strong>Profile the per-layer compute-to-communication ratio of your current MoE training run at your real sequence length.</strong> If <em>I_attn</em> and <em>I_ffn</em> sit on opposite sides of your network's <em>Î</em>, the disaggregation case is open-and-shut.</li>
+<li><strong>Try a small-scale AF-Pipe prototype before committing to a full port.</strong> Even just running A and F as two separate worker groups in PyTorch — without the M2N primitive — should already show whether the schedule fits your model.</li>
+<li><strong>Plan for the asymmetric-<em>p</em> extension and the dynamic-shape extension early.</strong> Anyone going to RL post-training (everyone, in 2026) will hit limitation 5.1 quickly, and that is where the next paper in this line will be written.</li>
+</ol>
+<p>What I would <em>not</em> read this paper as is: a general-purpose replacement for Megatron. It is a <em>specialised</em> training system for a specific (and very common) regime — large MoE, multi-node EP, long sequence. Inside that regime it is, on this evidence, the best published technique today.</p>
+<hr>
+<p><em>This review reflects my reading of the v1 preprint on 2026-05-10 and the analyses I ran against the prerequisites and figures listed above. Any quantitative errors or misreadings are mine and not the authors'.</em></p>
+
+     </div> <footer class="blog-post-footer"> <p class="blog-post-source">
+Originally published at <a href="https://zzz0906.github.io/2026/05/14/2026-05-14-DisagMoE-technical-review-en/" target="_blank" rel="noopener noreferrer">zzz0906.github.io</a>.
+</p> <nav class="blog-post-nav" aria-label="Adjacent posts"> <a class="blog-post-nav-link blog-post-nav-prev" href="/blog/2026-05-14-2026-05-14-DisagMoE-阅读笔记-zh/"> <span class="blog-post-nav-label">← Newer</span> <span class="blog-post-nav-title">DisagMoE：用解耦 Attention 和 FFN 打通 MoE 训练的 all-to-all 瓶颈</span> </a> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-05-12-2026-05-12-DAPO-阅读笔记-zh/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">DAPO：大规模开源 LLM 强化学习系统</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient ML systems, LLM infrastructure, and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>

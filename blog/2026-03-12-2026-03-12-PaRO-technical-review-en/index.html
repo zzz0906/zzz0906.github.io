@@ -1,0 +1,310 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PaRO: Smarter Partitioning for Distributed Training — Beyond ZeRO&#39;s One-Size-Fits-All | Zhongzhu / Charlie</title><meta name="description" content="A technical review of PaRO, analyzing how partial redundancy optimization in data-parallel training reduces memory overhead while minimizing communication costs through selective parameter partitioning."><meta property="og:title" content="PaRO: Smarter Partitioning for Distributed Training — Beyond ZeRO's One-Size-Fits-All | Zhongzhu / Charlie"><meta property="og:description" content="A technical review of PaRO, analyzing how partial redundancy optimization in data-parallel training reduces memory overhead while minimizing communication costs through selective parameter partitioning."><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-03-12-2026-03-12-PaRO-technical-review-en/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-03-12-2026-03-12-PaRO-technical-review-en/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.BtdlpukG.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>116</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>33</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> <nav class="blog-post-toc" aria-label="Table of contents"> <p class="blog-post-toc-title">Contents</p> <ul> <li class="toc-level-2"> <a href="#Abstract">Abstract</a> </li><li class="toc-level-2"> <a href="#1-Prerequisites-What-to-Know-Before-Reading-This-Paper">1. Prerequisites: What to Know Before Reading This Paper</a> </li><li class="toc-level-3"> <a href="#1-1-Why-memory-and-communication-conflict-in-LLM-training">1.1 Why memory and communication conflict in LLM training</a> </li><li class="toc-level-3"> <a href="#1-2-Data-parallelism-tensor-parallelism-pipeline-parallelism-quick-refresh">1.2 Data parallelism, tensor parallelism, pipeline parallelism (quick refresh)</a> </li><li class="toc-level-3"> <a href="#1-3-ZeRO-1-ZeRO-2-ZeRO-3-in-one-minute">1.3 ZeRO-1 / ZeRO-2 / ZeRO-3 in one minute</a> </li><li class="toc-level-3"> <a href="#1-4-Why-topology-matters-NVLink-NVSwitch-vs-InfiniBand-Ethernet">1.4 Why topology matters: NVLink/NVSwitch vs InfiniBand/Ethernet</a> </li><li class="toc-level-2"> <a href="#2-What-This-Paper-Does-Core-Idea">2. What This Paper Does (Core Idea)</a> </li><li class="toc-level-2"> <a href="#3-Method-Details">3. Method Details</a> </li><li class="toc-level-3"> <a href="#3-1-Problem-framing-and-design-philosophy">3.1 Problem framing and design philosophy</a> </li><li class="toc-level-3"> <a href="#3-2-Fine-grained-state-handling">3.2 Fine-grained state handling</a> </li><li class="toc-level-3"> <a href="#3-3-Cluster-grouping-with-controlled-redundancy">3.3 Cluster grouping with controlled redundancy</a> </li><li class="toc-level-3"> <a href="#3-4-HO-Ring-communication-topology">3.4 HO-Ring communication topology</a> </li><li class="toc-level-3"> <a href="#3-5-Throughput-and-scaling-behavior">3.5 Throughput and scaling behavior</a> </li><li class="toc-level-3"> <a href="#3-6-Relationship-to-ZeRO-family">3.6 Relationship to ZeRO family</a> </li><li class="toc-level-3"> <a href="#3-7-Why-this-is-useful-beyond-pretraining">3.7 Why this is useful beyond pretraining</a> </li><li class="toc-level-2"> <a href="#4-Experiment-Setup">4. Experiment Setup</a> </li><li class="toc-level-2"> <a href="#5-Results-Analysis">5. Results &amp; Analysis</a> </li><li class="toc-level-3"> <a href="#5-1-Main-quantitative-findings">5.1 Main quantitative findings</a> </li><li class="toc-level-3"> <a href="#5-2-Why-gains-can-be-so-large-in-some-regimes">5.2 Why gains can be so large in some regimes</a> </li><li class="toc-level-3"> <a href="#5-3-Throughput-model-intuition">5.3 Throughput model intuition</a> </li><li class="toc-level-3"> <a href="#5-4-Practical-interpretation-for-cluster-operators">5.4 Practical interpretation for cluster operators</a> </li><li class="toc-level-3"> <a href="#5-5-Comparison-lens-against-adjacent-systems-work">5.5 Comparison lens against adjacent systems work</a> </li><li class="toc-level-2"> <a href="#6-Limitations-Boundary-Conditions">6. Limitations &amp; Boundary Conditions</a> </li><li class="toc-level-3"> <a href="#6-1-Hardware-and-topology-dependence">6.1 Hardware and topology dependence</a> </li><li class="toc-level-3"> <a href="#6-2-Memory-headroom-requirements">6.2 Memory headroom requirements</a> </li><li class="toc-level-3"> <a href="#6-3-Configuration-complexity">6.3 Configuration complexity</a> </li><li class="toc-level-3"> <a href="#6-4-Benchmark-transparency-limits">6.4 Benchmark transparency limits</a> </li><li class="toc-level-3"> <a href="#6-5-Interaction-with-TP-PP-stacks">6.5 Interaction with TP/PP stacks</a> </li><li class="toc-level-2"> <a href="#7-Reproducibility-Practical-Notes">7. Reproducibility &amp; Practical Notes</a> </li><li class="toc-level-3"> <a href="#7-1-What-I-would-need-to-reproduce-this-responsibly">7.1 What I would need to reproduce this responsibly</a> </li><li class="toc-level-3"> <a href="#7-2-Deployment-checklist-I-would-use">7.2 Deployment checklist I would use</a> </li><li class="toc-level-3"> <a href="#7-3-My-engineering-takeaway">7.3 My engineering takeaway</a> </li><li class="toc-level-2"> <a href="#8-Deep-Dive-Appendix-Figure-by-Figure-and-Table-Oriented-Evidence-Walkthrough">8. Deep Dive Appendix: Figure-by-Figure and Table-Oriented Evidence Walkthrough</a> </li><li class="toc-level-3"> <a href="#8-1-How-to-read-the-throughput-improvement-claims-1-19×–2-50×">8.1 How to read the throughput improvement claims (1.19×–2.50×)</a> </li><li class="toc-level-3"> <a href="#8-2-Communication-efficiency-gain-36-5-from-HO-Ring">8.2 Communication efficiency gain (+36.5%) from HO-Ring</a> </li><li class="toc-level-3"> <a href="#8-3-Why-this-evidence-is-credible-for-systems-decisions">8.3 Why this evidence is credible for systems decisions</a> </li><li class="toc-level-2"> <a href="#9-Reproducibility-Lab-Notebook-Template-Practical">9. Reproducibility Lab Notebook Template (Practical)</a> </li><li class="toc-level-3"> <a href="#9-1-Baseline-capture">9.1 Baseline capture</a> </li><li class="toc-level-3"> <a href="#9-2-PaRO-transition-plan">9.2 PaRO transition plan</a> </li><li class="toc-level-3"> <a href="#9-3-HO-Ring-validation-checklist">9.3 HO-Ring validation checklist</a> </li><li class="toc-level-3"> <a href="#9-4-Acceptance-criteria">9.4 Acceptance criteria</a> </li><li class="toc-level-2"> <a href="#10-Concept-Clinic-Extended">10. Concept Clinic (Extended)</a> </li><li class="toc-level-3"> <a href="#10-1-Why-“zero-redundancy”-is-not-always-the-fastest">10.1 Why “zero redundancy” is not always the fastest</a> </li><li class="toc-level-3"> <a href="#10-2-Why-network-hierarchy-changes-algorithm-choices">10.2 Why network hierarchy changes algorithm choices</a> </li><li class="toc-level-3"> <a href="#10-3-Why-communication-frequency-matters-as-much-as-communication-volume">10.3 Why communication frequency matters as much as communication volume</a> </li><li class="toc-level-2"> <a href="#11-Boundary-Condition-Case-Studies">11. Boundary-Condition Case Studies</a> </li><li class="toc-level-3"> <a href="#11-1-Case-A-communication-bound-pretraining-cluster">11.1 Case A: communication-bound pretraining cluster</a> </li><li class="toc-level-3"> <a href="#11-2-Case-B-memory-bound-single-node-or-few-node-setup">11.2 Case B: memory-bound single-node or few-node setup</a> </li><li class="toc-level-3"> <a href="#11-3-Case-C-highly-optimized-fabric-with-high-inter-node-bandwidth">11.3 Case C: highly optimized fabric with high inter-node bandwidth</a> </li><li class="toc-level-2"> <a href="#12-What-I-Would-Improve-in-a-Follow-up-Paper">12. What I Would Improve in a Follow-up Paper</a> </li><li class="toc-level-2"> <a href="#References">References</a> </li> </ul> </nav> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-03-12">March 12, 2026</time> <span class="blog-lang blog-lang-en">EN</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/Distributed-Training/">#Distributed Training</a><a class="blog-post-tag-chip" href="/blog/tag/LLM-Training/">#LLM Training</a><a class="blog-post-tag-chip" href="/blog/tag/RLHF/">#RLHF</a> </span> </p> <h1>PaRO: Smarter Partitioning for Distributed Training — Beyond ZeRO&#39;s One-Size-Fits-All</h1> </header> <div class="blog-post-body"> 
+
+      
+        <p><strong>Author: Steve</strong><br>
+Paper: <strong>Rethinking Memory and Communication Costs for Efficient Large Language Model Training</strong> (arXiv 2310.06003, 2023)<br>
+ArXiv: <a href="https://arxiv.org/abs/2310.06003" target="_blank" rel="noopener noreferrer">https://arxiv.org/abs/2310.06003</a><br>
+<strong>TL;DR:</strong> PaRO is a practical systems paper that rebalances ZeRO-style sharding by allowing <em>partial redundancy</em> to cut expensive cross-group communication, then adds HO-Ring to improve inter-node collective efficiency. The key result is 1.19×–2.50× throughput gain over prior baselines plus 36.5% communication efficiency gain over standard Ring in their setting.</p>
+<hr>
+<a id="more"></a>
+<h2 id="Abstract">Abstract</h2>
+<p>This paper starts from a painful reality I see in large-scale LLM training: memory-saving strategies often increase communication, and communication-saving strategies often increase memory pressure. PaRO (Partial Redundancy Optimizer) reframes this as a controllable trade-off rather than a binary choice. Instead of always fully sharding all model states globally (like strict ZeRO-3 style), PaRO introduces finer-grained state partitioning with cluster grouping, allowing selective redundancy where it is cheap in memory but expensive to communicate. The second contribution, HO-Ring, reworks collective communication topology to better utilize hierarchical bandwidth (fast intra-node vs slower inter-node links). The paper reports substantial throughput and scalability gains, especially in regimes where inter-node communication is the dominant bottleneck.</p>
+<h2 id="1-Prerequisites-What-to-Know-Before-Reading-This-Paper">1. Prerequisites: What to Know Before Reading This Paper</h2>
+<h3 id="1-1-Why-memory-and-communication-conflict-in-LLM-training">1.1 Why memory and communication conflict in LLM training</h3>
+<p>When I train a large model, I must store at least three categories of model state:</p>
+<ol>
+<li><strong>Parameters</strong></li>
+<li><strong>Gradients</strong></li>
+<li><strong>Optimizer states</strong> (for Adam, often 2 extra moments + master weights)</li>
+</ol>
+<p>As the model grows to tens or hundreds of billions of parameters, storing these states dominates GPU memory. ZeRO-style methods reduce this by sharding states across GPUs. But once states are sharded, each GPU must frequently fetch remote shards or synchronize through collectives, increasing communication volume and frequency.</p>
+<p>So the core tension is:</p>
+<ul>
+<li>Save memory -&gt; more communication</li>
+<li>Save communication -&gt; more memory redundancy</li>
+</ul>
+<p>PaRO is about finding better points on this curve.</p>
+<h3 id="1-2-Data-parallelism-tensor-parallelism-pipeline-parallelism-quick-refresh">1.2 Data parallelism, tensor parallelism, pipeline parallelism (quick refresh)</h3>
+<ul>
+<li><strong>Data Parallelism (DP):</strong> same model replica on each worker, different data shards. Easy to use, communication-heavy at scale.</li>
+<li><strong>Tensor Parallelism (TP):</strong> split each layer computation across workers. Reduces per-device memory/compute load but requires model code changes and frequent collectives.</li>
+<li><strong>Pipeline Parallelism (PP):</strong> split layers across workers and stream microbatches through stages. Good for very large models but introduces pipeline bubbles and scheduling complexity.</li>
+</ul>
+<p>This paper mainly focuses on <strong>DP-family sharding strategies</strong> (ZeRO, MiCS-like grouping) rather than redesigning TP/PP internals.</p>
+<h3 id="1-3-ZeRO-1-ZeRO-2-ZeRO-3-in-one-minute">1.3 ZeRO-1 / ZeRO-2 / ZeRO-3 in one minute</h3>
+<ul>
+<li><strong>ZeRO-1:</strong> shard optimizer states</li>
+<li><strong>ZeRO-2:</strong> shard optimizer + gradients</li>
+<li><strong>ZeRO-3:</strong> shard optimizer + gradients + parameters</li>
+</ul>
+<p>ZeRO-3 is memory-efficient but communication-intensive, especially when cluster scale grows and inter-node bandwidth lags behind intra-node bandwidth.</p>
+<h3 id="1-4-Why-topology-matters-NVLink-NVSwitch-vs-InfiniBand-Ethernet">1.4 Why topology matters: NVLink/NVSwitch vs InfiniBand/Ethernet</h3>
+<p>Inside one node, GPU links are very fast (e.g., NVLink/NVSwitch). Across nodes, links are slower (InfiniBand or Ethernet). If my strategy forces too much inter-node collective traffic, scaling degrades quickly. PaRO and HO-Ring are both topology-aware responses to this gap.</p>
+<h2 id="2-What-This-Paper-Does-Core-Idea">2. What This Paper Does (Core Idea)</h2>
+<p>The paper contributes two tightly connected ideas:</p>
+<ol>
+<li><strong>PaRO (Partial Redundancy Optimizer):</strong> a strategy set that mixes fine-grained sharding and partial replication across groups, reducing communication amount/frequency with limited memory overhead.</li>
+<li><strong>HO-Ring (Hierarchical Overlapping Ring):</strong> a communication topology for all-gather/reduce-scatter/all-reduce style flows that overlaps intra-/inter-node phases and improves inter-node bandwidth utilization.</li>
+</ol>
+<p>I read this as a systems design principle:</p>
+<blockquote>
+<p>Do not optimize memory or communication in isolation; optimize their product under real cluster topology.</p>
+</blockquote>
+<h2 id="3-Method-Details">3. Method Details</h2>
+<h3 id="3-1-Problem-framing-and-design-philosophy">3.1 Problem framing and design philosophy</h3>
+<p>The paper critiques a common pattern: people treat ZeRO stage upgrades as one-way progress (ZeRO-1 -&gt; ZeRO-2 -&gt; ZeRO-3), but at large scale the communication cost of “max sharding” can erase memory gains. PaRO reframes stage choice as a <strong>multi-dimensional configuration problem</strong>:</p>
+<ul>
+<li>which state type to shard (optimizer / gradients / parameters)</li>
+<li>where to shard (global vs in-group)</li>
+<li>where to replicate (cross-group redundancy)</li>
+<li>how to run collectives over hierarchy</li>
+</ul>
+<p>Instead of “zero redundancy everywhere,” PaRO says “allow <em>partial</em> redundancy where it buys disproportionate communication savings.”</p>
+<h3 id="3-2-Fine-grained-state-handling">3.2 Fine-grained state handling</h3>
+<p>The paper emphasizes that model states are not equal:</p>
+<ul>
+<li>Optimizer states are large but synchronization patterns differ.</li>
+<li>Gradients update every step and are communication-sensitive.</li>
+<li>Parameters may need frequent reconstruction depending on schedule.</li>
+</ul>
+<p>So a single global policy is suboptimal. PaRO’s strategy set partitions these states with different granularity and grouping choices, reducing expensive cross-group synchronization.</p>
+<p>In plain terms: if I can replicate a small fraction of state to avoid repeated inter-node transfer of a huge tensor, that trade can be worth it.</p>
+<h3 id="3-3-Cluster-grouping-with-controlled-redundancy">3.3 Cluster grouping with controlled redundancy</h3>
+<p>PaRO extends group-sharding ideas (like MiCS style intuition) but pushes for more systematic memory-communication balancing. The cluster is grouped so that heavy communication stays mostly within high-bandwidth domains (e.g., node-local or local group), while cross-group communication is reduced.</p>
+<p>Key effect:</p>
+<ul>
+<li><strong>Communication amount drops</strong> because fewer global collectives carry full state shards.</li>
+<li><strong>Communication frequency drops</strong> because some states no longer require global synchronization every step.</li>
+<li><strong>Memory increases modestly</strong> due to selective redundancy, but the throughput gain can dominate.</li>
+</ul>
+<h3 id="3-4-HO-Ring-communication-topology">3.4 HO-Ring communication topology</h3>
+<p>The second contribution is HO-Ring. Traditional Ring all-reduce balances load well but does not exploit hierarchical topology optimally. Hierarchical ring variants improve locality but can underutilize inter-group links if only a subset of GPUs participate in inter-group phase.</p>
+<p>HO-Ring overlaps and reorganizes the intra-/inter-node stages to better saturate cross-node links while preserving balanced collective behavior. The paper reports <strong>36.5% communication efficiency improvement</strong> over traditional Ring in their tested settings.</p>
+<p>I interpret HO-Ring as: if network hierarchy is fixed, improve the <em>temporal schedule</em> of collective phases so links are less idle and less serialized.</p>
+<h3 id="3-5-Throughput-and-scaling-behavior">3.5 Throughput and scaling behavior</h3>
+<p>The headline claim is <strong>1.19×–2.50× training throughput improvement</strong> over SOTA baselines in different scenarios, plus near-linear scalability in their scale regime. That range matters: lower bound suggests robust gain, upper bound suggests significant bottleneck relief in communication-dominated setups.</p>
+<p>From a practical standpoint, this means PaRO is most attractive when:</p>
+<ul>
+<li>model is already large enough that memory pressure is severe,</li>
+<li>cluster has clear hierarchy and inter-node bottleneck,</li>
+<li>ZeRO-3-like communication overhead dominates step time.</li>
+</ul>
+<h3 id="3-6-Relationship-to-ZeRO-family">3.6 Relationship to ZeRO family</h3>
+<p>PaRO is not “replace ZeRO entirely,” but “add configurable middle points between pure memory minimization and pure communication minimization.”</p>
+<p>I’d map it this way:</p>
+<ul>
+<li>ZeRO provides stage abstractions and strong memory savings.</li>
+<li>PaRO augments this with <strong>state-specific, group-aware redundancy knobs</strong>.</li>
+<li>HO-Ring complements both by improving collective execution under hierarchy.</li>
+</ul>
+<p>So PaRO is a <strong>systems-level extension</strong> to the ZeRO worldview, not a rejection of it.</p>
+<h3 id="3-7-Why-this-is-useful-beyond-pretraining">3.7 Why this is useful beyond pretraining</h3>
+<p>The paper also notes relevance to full finetuning, partial finetuning, and PEFT contexts. Even when trainable parameter subset is small, communication patterns can still be poor in large distributed setups. A memory-communication balanced policy remains useful, especially in shared clusters with mixed workloads.</p>
+<h2 id="4-Experiment-Setup">4. Experiment Setup</h2>
+<p>From the paper text, evaluation compares PaRO against established distributed training methods and communication topologies over LLM training scenarios with varying model/training patterns.</p>
+<p>Important setup dimensions include:</p>
+<ul>
+<li>different scales of GPU resources,</li>
+<li>state partitioning strategies,</li>
+<li>communication topologies (Ring vs HO-Ring),</li>
+<li>full/partial parameter training conditions,</li>
+<li>throughput and scalability measurements.</li>
+</ul>
+<p>Even without reproducing every unpublished internal detail, the setup targets exactly the bottleneck region where memory and communication jointly dominate.</p>
+<h2 id="5-Results-Analysis">5. Results &amp; Analysis</h2>
+<h3 id="5-1-Main-quantitative-findings">5.1 Main quantitative findings</h3>
+<p>The main reported numbers:</p>
+<ul>
+<li><strong>PaRO throughput gain:</strong> 1.19×–2.50× vs SOTA baseline methods.</li>
+<li><strong>HO-Ring communication efficiency gain:</strong> +36.5% vs traditional Ring.</li>
+<li><strong>Scalability:</strong> near-linear in tested conditions.</li>
+</ul>
+<p>For me, the key interpretation is not just the max speedup, but the consistency of gains across scenario types.</p>
+<h3 id="5-2-Why-gains-can-be-so-large-in-some-regimes">5.2 Why gains can be so large in some regimes</h3>
+<p>The upper range (2.50×) likely appears in communication-bound regimes where strict global sharding creates repeated expensive cross-group transfers. Introducing selective redundancy shifts work from slow inter-node links to faster local memory and local links, producing superlinear-feeling gains relative to naïve baseline assumptions.</p>
+<h3 id="5-3-Throughput-model-intuition">5.3 Throughput model intuition</h3>
+<p>I think of each step time as:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>T</mi><mrow><mi>s</mi><mi>t</mi><mi>e</mi><mi>p</mi></mrow></msub><mo>≈</mo><msub><mi>T</mi><mrow><mi>c</mi><mi>o</mi><mi>m</mi><mi>p</mi><mi>u</mi><mi>t</mi><mi>e</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>c</mi><mi>o</mi><mi>m</mi><mi>m</mi></mrow></msub><mo>+</mo><msub><mi>T</mi><mrow><mi>s</mi><mi>y</mi><mi>n</mi><mi>c</mi><mi mathvariant="normal">_</mi><mi>l</mi><mi>a</mi><mi>t</mi><mi>e</mi><mi>n</mi><mi>c</mi><mi>y</mi></mrow></msub></mrow><annotation encoding="application/x-tex">T_{step} \approx T_{compute} + T_{comm} + T_{sync\_latency}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">s</span><span class="mord mathnormal mtight">t</span><span class="mord mathnormal mtight">e</span><span class="mord mathnormal mtight">p</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">co</span><span class="mord mathnormal mtight">m</span><span class="mord mathnormal mtight">p</span><span class="mord mathnormal mtight">u</span><span class="mord mathnormal mtight">t</span><span class="mord mathnormal mtight">e</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">co</span><span class="mord mathnormal mtight">mm</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.0503em;vertical-align:-0.367em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">sy</span><span class="mord mathnormal mtight">n</span><span class="mord mathnormal mtight">c</span><span class="mord mtight" style="margin-right:0.02778em;">_</span><span class="mord mathnormal mtight" style="margin-right:0.01968em;">l</span><span class="mord mathnormal mtight">a</span><span class="mord mathnormal mtight">t</span><span class="mord mathnormal mtight">e</span><span class="mord mathnormal mtight">n</span><span class="mord mathnormal mtight" style="margin-right:0.03588em;">cy</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.367em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>ZeRO-3 reduces memory pressure, potentially improving feasible batch/model size, but may increase <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>T</mi><mrow><mi>c</mi><mi>o</mi><mi>m</mi><mi>m</mi></mrow></msub></mrow><annotation encoding="application/x-tex">T_{comm}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">co</span><span class="mord mathnormal mtight">mm</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> and latency terms. PaRO slightly increases memory term while cutting communication and synchronization burden. If <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>T</mi><mrow><mi>c</mi><mi>o</mi><mi>m</mi><mi>m</mi></mrow></msub></mrow><annotation encoding="application/x-tex">T_{comm}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">co</span><span class="mord mathnormal mtight">mm</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> dominates, this trade strongly improves throughput.</p>
+<h3 id="5-4-Practical-interpretation-for-cluster-operators">5.4 Practical interpretation for cluster operators</h3>
+<p>If I operate a multi-node cluster, the paper’s real value is policy guidance:</p>
+<ul>
+<li>avoid dogmatic “max sharding always best” assumptions,</li>
+<li>tune state-wise sharding and replication by topology,</li>
+<li>prioritize reducing cross-group collectives,</li>
+<li>use hierarchy-aware communication algorithms.</li>
+</ul>
+<p>In short, treat distributed optimizer design as a hardware-mapped scheduling problem.</p>
+<h3 id="5-5-Comparison-lens-against-adjacent-systems-work">5.5 Comparison lens against adjacent systems work</h3>
+<p>Compared with pure ZeRO-style approaches, PaRO introduces a richer trade-off space. Compared with tensor/pipeline-heavy solutions, PaRO is attractive when teams want to preserve DP-like usability and avoid major model-code changes.</p>
+<p>This usability angle matters in real teams: many organizations can deploy DP-family enhancements faster than deep TP/PP rewrites.</p>
+<h2 id="6-Limitations-Boundary-Conditions">6. Limitations &amp; Boundary Conditions</h2>
+<h3 id="6-1-Hardware-and-topology-dependence">6.1 Hardware and topology dependence</h3>
+<p>The gains rely on hierarchical bandwidth imbalance assumptions. If inter-node bandwidth is exceptionally strong (or topology flatter), benefit magnitude may shrink.</p>
+<h3 id="6-2-Memory-headroom-requirements">6.2 Memory headroom requirements</h3>
+<p>PaRO intentionally introduces partial redundancy. If memory headroom is already exhausted, these configurations may be constrained.</p>
+<h3 id="6-3-Configuration-complexity">6.3 Configuration complexity</h3>
+<p>More knobs mean better optima but harder tuning. Practical deployment needs good heuristics or autotuning for group size, state partition policy, and communication schedule.</p>
+<h3 id="6-4-Benchmark-transparency-limits">6.4 Benchmark transparency limits</h3>
+<p>As with many systems papers, exact reproducibility can be limited without full public scripts, environment parity, and workload details. The core ideas are reproducible; exact speedup replication may vary.</p>
+<h3 id="6-5-Interaction-with-TP-PP-stacks">6.5 Interaction with TP/PP stacks</h3>
+<p>Paper focus is DP-oriented sharding/communication balancing. In full 3D stacks (DP+TP+PP), interactions may change optimum settings. Additional co-tuning is needed.</p>
+<h2 id="7-Reproducibility-Practical-Notes">7. Reproducibility &amp; Practical Notes</h2>
+<h3 id="7-1-What-I-would-need-to-reproduce-this-responsibly">7.1 What I would need to reproduce this responsibly</h3>
+<ul>
+<li>same or similar hierarchical cluster topology,</li>
+<li>profiling for per-step communication breakdown,</li>
+<li>configurable state-sharding runtime,</li>
+<li>communication library hooks for HO-Ring-like collective schedule,</li>
+<li>comparable model scale and optimizer settings.</li>
+</ul>
+<h3 id="7-2-Deployment-checklist-I-would-use">7.2 Deployment checklist I would use</h3>
+<ol>
+<li>Baseline with ZeRO-2/3 and collect step-level communication traces.</li>
+<li>Identify whether inter-node collectives dominate.</li>
+<li>Introduce grouped sharding + selective redundancy for the highest-cost state flows.</li>
+<li>Enable hierarchy-aware collectives (HO-Ring or equivalent).</li>
+<li>Re-tune global/micro batch and overlap settings.</li>
+<li>Validate convergence parity, not just throughput gain.</li>
+</ol>
+<h3 id="7-3-My-engineering-takeaway">7.3 My engineering takeaway</h3>
+<p>PaRO is valuable because it challenges a simplistic metric mindset. The fastest system is not always the one with minimum redundancy; it is often the one that spends redundancy where the network is expensive. That’s a mature systems lesson.</p>
+<h2 id="8-Deep-Dive-Appendix-Figure-by-Figure-and-Table-Oriented-Evidence-Walkthrough">8. Deep Dive Appendix: Figure-by-Figure and Table-Oriented Evidence Walkthrough</h2>
+<p>In this appendix, I explicitly map the paper’s evidence style into a practical reading path. The paper’s central argument is not proved by a single chart; it is proved by repeatedly showing that communication structure dominates at scale and that controlled redundancy plus topology-aware collectives changes the slope.</p>
+<h3 id="8-1-How-to-read-the-throughput-improvement-claims-1-19×–2-50×">8.1 How to read the throughput improvement claims (1.19×–2.50×)</h3>
+<p>When reading speedup ranges, I always ask: where does lower bound happen, and where does upper bound happen?</p>
+<ul>
+<li>Lower bound likely corresponds to configurations where communication is not yet dominant.</li>
+<li>Upper bound likely appears when inter-group communication and synchronization dominate step time.</li>
+</ul>
+<p>This pattern is exactly what I would expect from PaRO: it is fundamentally a communication-path optimizer under memory constraints. So its strongest wins appear when communication is expensive.</p>
+<h3 id="8-2-Communication-efficiency-gain-36-5-from-HO-Ring">8.2 Communication efficiency gain (+36.5%) from HO-Ring</h3>
+<p>A 36.5% communication-efficiency gain is substantial, and I interpret it as a topology utilization gain rather than a math-kernel gain. In other words, same model, same optimizer family, but better link usage and phase overlap.</p>
+<p>For practitioners, this means two things:</p>
+<ol>
+<li>If your comm stack is currently underutilizing inter-node links, topology redesign can beat “more GPUs.”</li>
+<li>If your inter-node is already saturated and highly optimized, gains may be smaller.</li>
+</ol>
+<h3 id="8-3-Why-this-evidence-is-credible-for-systems-decisions">8.3 Why this evidence is credible for systems decisions</h3>
+<p>The paper’s evidence pattern is credible because it aligns with observed distributed-training behavior in production:</p>
+<ul>
+<li>communication dominates as model/cluster scales rise,</li>
+<li>global collectives become latency-amplified,</li>
+<li>hierarchy-unaware rings waste cross-domain bandwidth,</li>
+<li>slight memory trade-offs can remove large synchronization cost.</li>
+</ul>
+<p>Even if absolute numbers vary by cluster, the direction of effect is robust.</p>
+<h2 id="9-Reproducibility-Lab-Notebook-Template-Practical">9. Reproducibility Lab Notebook Template (Practical)</h2>
+<p>If I were handing this to a team, I would include a concrete notebook template so experiments are comparable and auditable.</p>
+<h3 id="9-1-Baseline-capture">9.1 Baseline capture</h3>
+<ul>
+<li>Model size, sequence length, optimizer config</li>
+<li>Global batch and microbatch</li>
+<li>Parallel strategy (ZeRO stage, DP world size)</li>
+<li>Cluster topology map (intra-node bandwidth, inter-node bandwidth)</li>
+<li>Step-time breakdown: compute / comm / idle</li>
+</ul>
+<h3 id="9-2-PaRO-transition-plan">9.2 PaRO transition plan</h3>
+<ul>
+<li>Choose initial group size candidates</li>
+<li>Define state policies:
+<ul>
+<li>optimizer state policy</li>
+<li>gradient policy</li>
+<li>parameter policy</li>
+</ul>
+</li>
+<li>Define partial-redundancy budget (GB per GPU)</li>
+<li>Run A/B for each policy combination</li>
+</ul>
+<h3 id="9-3-HO-Ring-validation-checklist">9.3 HO-Ring validation checklist</h3>
+<ul>
+<li>Measure all-gather and reduce-scatter latency separately</li>
+<li>Measure effective inter-node bandwidth utilization</li>
+<li>Verify overlap ratio between intra-group and inter-group phases</li>
+<li>Check tail latency (p95 / p99) for collective completion</li>
+</ul>
+<h3 id="9-4-Acceptance-criteria">9.4 Acceptance criteria</h3>
+<ul>
+<li>Throughput gain &gt;= target (e.g., +15%)</li>
+<li>No regression in loss curve stability</li>
+<li>Memory headroom remains above operational threshold</li>
+<li>Failure recovery and checkpoint cadence unaffected</li>
+</ul>
+<h2 id="10-Concept-Clinic-Extended">10. Concept Clinic (Extended)</h2>
+<p>This section is intentionally simple because many readers are strong in ML but weaker in systems.</p>
+<h3 id="10-1-Why-“zero-redundancy”-is-not-always-the-fastest">10.1 Why “zero redundancy” is not always the fastest</h3>
+<p>Imagine moving furniture between apartments. If you split every item into tiny pieces to make each trip light, you increase the number of trips dramatically. Even though each trip is easier, the total time can get worse.</p>
+<p>ZeRO-3-like extreme sharding has a similar risk: each device stores less, but communication events increase. PaRO says: maybe carry a few bigger items locally (partial redundancy) to reduce expensive long-distance trips.</p>
+<h3 id="10-2-Why-network-hierarchy-changes-algorithm-choices">10.2 Why network hierarchy changes algorithm choices</h3>
+<p>Inside one building, elevators are fast (intra-node links). Between buildings, trucks are slower (inter-node links). A plan that repeatedly uses trucks for tiny transfers will lose. A good plan does as much local consolidation as possible before crossing buildings.</p>
+<p>That is exactly what group-aware sharding plus HO-Ring attempts to do.</p>
+<h3 id="10-3-Why-communication-frequency-matters-as-much-as-communication-volume">10.3 Why communication frequency matters as much as communication volume</h3>
+<p>Two systems can move similar total bytes but have very different runtime if one does many tiny synchronizations and the other does fewer, better-overlapped transfers. Synchronization frequency affects latency amplification and idle stalls.</p>
+<p>PaRO’s state-wise strategy matters because it can reduce both quantity and frequency.</p>
+<h2 id="11-Boundary-Condition-Case-Studies">11. Boundary-Condition Case Studies</h2>
+<h3 id="11-1-Case-A-communication-bound-pretraining-cluster">11.1 Case A: communication-bound pretraining cluster</h3>
+<p>Symptoms:</p>
+<ul>
+<li>high NCCL time share,</li>
+<li>low SM occupancy stall reason “waiting for comm,”</li>
+<li>step time grows disproportionately with node count.</li>
+</ul>
+<p>Expected PaRO behavior:</p>
+<ul>
+<li>strong speedup potential,</li>
+<li>HO-Ring likely meaningful,</li>
+<li>partial redundancy budget likely worthwhile.</li>
+</ul>
+<h3 id="11-2-Case-B-memory-bound-single-node-or-few-node-setup">11.2 Case B: memory-bound single-node or few-node setup</h3>
+<p>Symptoms:</p>
+<ul>
+<li>frequent OOM at target batch,</li>
+<li>communication not dominant yet,</li>
+<li>small world size.</li>
+</ul>
+<p>Expected PaRO behavior:</p>
+<ul>
+<li>modest gains from comm optimization,</li>
+<li>memory budget limits redundancy options,</li>
+<li>may prefer stricter sharding first.</li>
+</ul>
+<h3 id="11-3-Case-C-highly-optimized-fabric-with-high-inter-node-bandwidth">11.3 Case C: highly optimized fabric with high inter-node bandwidth</h3>
+<p>Symptoms:</p>
+<ul>
+<li>inter-node near line-rate already,</li>
+<li>communication overhead acceptable.</li>
+</ul>
+<p>Expected PaRO behavior:</p>
+<ul>
+<li>gains may still exist via reduced sync frequency,</li>
+<li>absolute uplift may be smaller than headline values.</li>
+</ul>
+<h2 id="12-What-I-Would-Improve-in-a-Follow-up-Paper">12. What I Would Improve in a Follow-up Paper</h2>
+<ol>
+<li>Public ablation matrix for each state policy (param/grad/opt separately).</li>
+<li>More explicit convergence parity plots at equal token budgets.</li>
+<li>Cost-per-trained-token analysis including energy/network overhead.</li>
+<li>Open-source HO-Ring implementation details and reproducible scripts.</li>
+<li>A practical auto-tuner for group size and redundancy budget.</li>
+</ol>
+<p>Even with these gaps, this paper is already highly useful for real ML systems work.</p>
+<h2 id="References">References</h2>
+<ol>
+<li>Wu et al. Rethinking Memory and Communication Costs for Efficient Large Language Model Training. 2023.</li>
+<li>Rajbhandari et al. ZeRO: Memory Optimizations Toward Training Trillion Parameter Models. 2020.</li>
+<li>Zhang et al. MiCS (group sharding strategy for large model training). 2022.</li>
+<li>Shoeybi et al. Megatron-LM. 2020.</li>
+<li>Zhao et al. PyTorch FSDP / Hybrid sharding. 2023.</li>
+</ol>
+<hr>
+<p><em>Review written on 2026-03-12.</em></p>
+
+     </div> <footer class="blog-post-footer"> <p class="blog-post-source">
+Originally published at <a href="https://zzz0906.github.io/2026/03/12/2026-03-12-PaRO-technical-review-en/" target="_blank" rel="noopener noreferrer">zzz0906.github.io</a>.
+</p> <nav class="blog-post-nav" aria-label="Adjacent posts"> <a class="blog-post-nav-link blog-post-nav-prev" href="/blog/2026-03-12-2026-03-12-MegatronLM-technical-review-en/"> <span class="blog-post-nav-label">← Newer</span> <span class="blog-post-nav-title">Megatron-LM: NVIDIA&#39;s Blueprint for Training Billion-Parameter Models at Scale</span> </a> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-03-11-2026-03-11-SpeculativeDecoding-technical-review-en/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">Speculative Decoding: Making LLM Inference 2-3× Faster Without Losing a Single Token</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient ML systems, LLM infrastructure, and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>

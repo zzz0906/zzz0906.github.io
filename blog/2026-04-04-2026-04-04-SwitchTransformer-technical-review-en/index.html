@@ -1,0 +1,552 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Switch Transformers: Scaling to Trillion-Parameter Sparse Models — In-Depth Technical Review | Zhongzhu / Charlie</title><meta name="description" content="Switch Transformer routes each token to a single expert, making trillion-parameter sparse models practical with major training-speed gains and simpler MoE scaling."><meta property="og:title" content="Switch Transformers: Scaling to Trillion-Parameter Sparse Models — In-Depth Technical Review | Zhongzhu / Charlie"><meta property="og:description" content="Switch Transformer routes each token to a single expert, making trillion-parameter sparse models practical with major training-speed gains and simpler MoE scaling."><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-04-04-2026-04-04-SwitchTransformer-technical-review-en/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-04-04-2026-04-04-SwitchTransformer-technical-review-en/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.BtdlpukG.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>116</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>33</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> <nav class="blog-post-toc" aria-label="Table of contents"> <p class="blog-post-toc-title">Contents</p> <ul> <li class="toc-level-2"> <a href="#1-What-This-Paper-Does">1. What This Paper Does</a> </li><li class="toc-level-2"> <a href="#2-Prerequisites-What-You-Need-to-Know-First">2. Prerequisites: What You Need to Know First</a> </li><li class="toc-level-3"> <a href="#2-1-The-Transformer-Architecture">2.1 The Transformer Architecture</a> </li><li class="toc-level-3"> <a href="#2-2-The-T5-Model-Text-to-Text-Transfer-Transformer">2.2 The T5 Model (Text-to-Text Transfer Transformer)</a> </li><li class="toc-level-3"> <a href="#2-3-What-Are-FLOPs-and-Why-Do-They-Matter">2.3 What Are FLOPs and Why Do They Matter?</a> </li><li class="toc-level-3"> <a href="#2-4-Mixture-of-Experts-MoE-The-Foundation">2.4 Mixture of Experts (MoE): The Foundation</a> </li><li class="toc-level-3"> <a href="#2-5-Load-Balancing-Why-It-Matters">2.5 Load Balancing: Why It Matters</a> </li><li class="toc-level-3"> <a href="#2-6-Distributed-Training-and-Parallelism">2.6 Distributed Training and Parallelism</a> </li><li class="toc-level-3"> <a href="#2-7-Precision-Formats-float32-bfloat16-and-Mixed-Precision">2.7 Precision Formats: float32, bfloat16, and Mixed Precision</a> </li><li class="toc-level-3"> <a href="#2-8-Knowledge-Distillation">2.8 Knowledge Distillation</a> </li><li class="toc-level-2"> <a href="#3-The-Switch-Transformer-Core-Method">3. The Switch Transformer: Core Method</a> </li><li class="toc-level-3"> <a href="#3-1-The-Key-Insight-Route-to-One-Expert-Not-Two">3.1 The Key Insight: Route to One Expert, Not Two</a> </li><li class="toc-level-3"> <a href="#3-2-Architecture-Where-Do-the-Experts-Go">3.2 Architecture: Where Do the Experts Go?</a> </li><li class="toc-level-3"> <a href="#3-3-Expert-Capacity-and-Token-Dropping">3.3 Expert Capacity and Token Dropping</a> </li><li class="toc-level-3"> <a href="#3-4-The-Load-Balancing-Loss">3.4 The Load Balancing Loss</a> </li><li class="toc-level-3"> <a href="#3-5-Training-Stability-Techniques">3.5 Training Stability Techniques</a> </li><li class="toc-level-4"> <a href="#3-5-1-Selective-Precision">3.5.1 Selective Precision</a> </li><li class="toc-level-4"> <a href="#3-5-2-Smaller-Initialization">3.5.2 Smaller Initialization</a> </li><li class="toc-level-4"> <a href="#3-5-3-Expert-Dropout">3.5.3 Expert Dropout</a> </li><li class="toc-level-2"> <a href="#4-Experimental-Results-Scaling-Properties">4. Experimental Results: Scaling Properties</a> </li><li class="toc-level-3"> <a href="#4-1-Switch-vs-MoE-vs-Dense-Table-1">4.1 Switch vs. MoE vs. Dense (Table 1)</a> </li><li class="toc-level-3"> <a href="#4-2-Scaling-with-Number-of-Experts">4.2 Scaling with Number of Experts</a> </li><li class="toc-level-3"> <a href="#4-3-Wall-Clock-Speed-Advantage-Figure-5">4.3 Wall-Clock Speed Advantage (Figure 5)</a> </li><li class="toc-level-3"> <a href="#4-4-vs-Larger-Dense-Models-Figure-6">4.4 vs. Larger Dense Models (Figure 6)</a> </li><li class="toc-level-2"> <a href="#5-Downstream-Fine-Tuning-Results">5. Downstream Fine-Tuning Results</a> </li><li class="toc-level-3"> <a href="#5-1-Comprehensive-Benchmark-Results-Table-5">5.1 Comprehensive Benchmark Results (Table 5)</a> </li><li class="toc-level-3"> <a href="#5-2-Distillation-Results">5.2 Distillation Results</a> </li><li class="toc-level-3"> <a href="#5-3-Multilingual-Results">5.3 Multilingual Results</a> </li><li class="toc-level-2"> <a href="#6-Scaling-to-Trillion-Parameters">6. Scaling to Trillion Parameters</a> </li><li class="toc-level-3"> <a href="#6-1-Model-Configurations-Table-9">6.1 Model Configurations (Table 9)</a> </li><li class="toc-level-3"> <a href="#6-2-Pre-training-Results">6.2 Pre-training Results</a> </li><li class="toc-level-3"> <a href="#6-3-Training-Instability-at-Scale">6.3 Training Instability at Scale</a> </li><li class="toc-level-3"> <a href="#6-4-Parallelism-Strategy-Analysis">6.4 Parallelism Strategy Analysis</a> </li><li class="toc-level-2"> <a href="#7-Discussion-Strengths-Limitations-and-Boundary-Conditions">7. Discussion: Strengths, Limitations, and Boundary Conditions</a> </li><li class="toc-level-3"> <a href="#7-1-Strengths">7.1 Strengths</a> </li><li class="toc-level-3"> <a href="#7-2-Limitations-and-Boundary-Conditions">7.2 Limitations and Boundary Conditions</a> </li><li class="toc-level-3"> <a href="#7-3-Reproducibility">7.3 Reproducibility</a> </li><li class="toc-level-2"> <a href="#8-Legacy-and-Impact">8. Legacy and Impact</a> </li><li class="toc-level-2"> <a href="#9-Conclusion">9. Conclusion</a> </li><li class="toc-level-2"> <a href="#References">References</a> </li> </ul> </nav> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-04-04">April 4, 2026</time> <span class="blog-lang blog-lang-en">EN</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/Mixture-of-Experts/">#Mixture of Experts</a><a class="blog-post-tag-chip" href="/blog/tag/Distributed-Training/">#Distributed Training</a> </span> </p> <h1>Switch Transformers: Scaling to Trillion-Parameter Sparse Models — In-Depth Technical Review</h1> </header> <div class="blog-post-body"> 
+
+      
+        <h2 id="1-What-This-Paper-Does">1. What This Paper Does</h2>
+<p>Imagine you have a massive library with thousands of specialist librarians, each an expert in a different topic. When you walk in with a question about, say, ancient Roman aqueducts, instead of asking every single librarian (which would take forever), you are instantly directed to the one librarian who knows the most about Roman engineering. You get an expert-quality answer in the time it would take to ask just one person. That is the core idea behind the Switch Transformer.</p>
+<p>In the world of deep learning, conventional models use <strong>all</strong> of their parameters to process <strong>every</strong> input. A model with 11 billion parameters applies all 11 billion weights to every single word it reads. The Switch Transformer flips this on its head: it has an enormous number of parameters—up to <strong>1.6 trillion</strong>—but for any given input token, only a small fraction of those parameters are activated. The rest sit idle, waiting for inputs that need their particular expertise.</p>
+<a id="more"></a>
+<p>This paper, by William Fedus, Barret Zoph, and Noam Shazeer at Google, introduces the <strong>Switch Transformer</strong> architecture, which simplifies the earlier Mixture-of-Experts (MoE) approach by routing each token to just <strong>one</strong> expert instead of two or more. This seemingly small change yields enormous practical benefits: reduced computational overhead, simpler implementation, lower communication costs, and better training stability.</p>
+<p>The results are remarkable:</p>
+<ul>
+<li><strong>7× pre-training speedup</strong> over the T5-Base model with the same computational budget</li>
+<li><strong>4× speedup</strong> over the much larger T5-XXL model</li>
+<li>Improvements on <strong>all 101 languages</strong> in multilingual pre-training</li>
+<li>Successful scaling to <strong>1.6 trillion parameters</strong></li>
+<li>The ability to <strong>distill</strong> the sparse model back into a dense model, preserving ~30% of the quality gain at 99% compression</li>
+</ul>
+<p>This paper is foundational to modern large language model design. Models like Mixtral, DeepSeek-V2, and many production systems at Google directly build on the ideas introduced here. Understanding Switch Transformers is essential for anyone working in efficient AI systems.</p>
+<h2 id="2-Prerequisites-What-You-Need-to-Know-First">2. Prerequisites: What You Need to Know First</h2>
+<p>Before we dive into the Switch Transformer itself, let us carefully build up the background knowledge you will need. Even if some of these concepts are familiar, this section is designed to be thorough, because each piece is essential for understanding why the Switch Transformer works and why it matters.</p>
+<h3 id="2-1-The-Transformer-Architecture">2.1 The Transformer Architecture</h3>
+<p>The Transformer, introduced by Vaswani et al. in 2017, is the backbone of virtually all modern large language models (GPT, BERT, T5, PaLM, LLaMA, etc.). At its core, a Transformer is a stack of identical layers, each containing two main sub-components:</p>
+<ol>
+<li>
+<p><strong>Self-Attention Layer</strong>: This allows each word (token) in a sequence to &quot;look at&quot; every other word to understand context. For example, in &quot;The cat sat on the mat because it was tired,&quot; the self-attention mechanism helps the model understand that &quot;it&quot; refers to &quot;the cat,&quot; not &quot;the mat.&quot;</p>
+</li>
+<li>
+<p><strong>Feed-Forward Network (FFN) Layer</strong>: After the attention step, each token is independently processed through a small neural network (typically two linear transformations with a non-linearity in between). This is where much of the model's &quot;knowledge&quot; is stored—the FFN layers act as a kind of memory bank.</p>
+</li>
+</ol>
+<p>Each of these sub-components is wrapped with a <strong>residual connection</strong> (the input is added back to the output) and <strong>layer normalization</strong> (the values are rescaled to have stable statistics). This architecture is simple, parallelizable, and scales remarkably well.</p>
+<p><strong>Key insight for this paper</strong>: The FFN layer processes each token <strong>independently</strong>—there is no interaction between tokens at this stage. This independence is what makes it possible to route different tokens to different FFN &quot;experts&quot; without breaking the computation.</p>
+<h3 id="2-2-The-T5-Model-Text-to-Text-Transfer-Transformer">2.2 The T5 Model (Text-to-Text Transfer Transformer)</h3>
+<p>T5, introduced by Raffel et al. in 2019, is the specific Transformer model that the Switch Transformer builds upon. T5 treats every NLP task as a text-to-text problem: whether you are doing translation, summarization, question answering, or classification, you format both the input and the output as text strings.</p>
+<p>T5 comes in several sizes:</p>
+<ul>
+<li><strong>T5-Small</strong>: 60M parameters</li>
+<li><strong>T5-Base</strong>: 223M parameters</li>
+<li><strong>T5-Large</strong>: 739M parameters</li>
+<li><strong>T5-XL</strong>: 3B parameters</li>
+<li><strong>T5-XXL</strong>: 11B parameters</li>
+</ul>
+<p>The Switch Transformer paper primarily compares against T5-Base and T5-Large for controlled experiments, and T5-XXL for the largest-scale comparisons. Understanding T5's role is important because all Switch Transformer variants are designed to be <strong>FLOP-matched</strong> to their T5 counterparts—meaning they use the same amount of computation per token, just with vastly more parameters.</p>
+<h3 id="2-3-What-Are-FLOPs-and-Why-Do-They-Matter">2.3 What Are FLOPs and Why Do They Matter?</h3>
+<p><strong>FLOPs</strong> (Floating Point Operations) measure the amount of computation required to process data through a neural network. When we say two models are &quot;FLOP-matched,&quot; we mean they perform the same number of arithmetic operations per input token.</p>
+<p>This is crucial for fair comparison. If a Switch Transformer with 7 billion parameters achieves better results than a T5-Base with 223 million parameters, you might think: &quot;Well, of course—it has 30× more parameters!&quot; But the Switch Transformer uses the <strong>same amount of computation</strong> because most of those 7 billion parameters are dormant for any given token. Only the parameters of the selected expert are activated.</p>
+<p>Think of it like this: a FLOP-matched comparison is like comparing two factories that use the same amount of electricity. One factory has a single production line that runs all day. The other has 128 specialized production lines, but only one runs at a time based on what product is needed. They use the same energy, but the specialized factory might produce higher-quality products because each production line is optimized for its specific task.</p>
+<h3 id="2-4-Mixture-of-Experts-MoE-The-Foundation">2.4 Mixture of Experts (MoE): The Foundation</h3>
+<p>The Mixture of Experts concept dates back to 1991 (Jacobs et al.) and is the direct ancestor of the Switch Transformer. Here is how it works:</p>
+<p><strong>The Basic Idea</strong>: Instead of having a single FFN layer that processes all tokens, you have <strong>N separate FFN layers</strong> (called &quot;experts&quot;), and a <strong>router</strong> that decides which expert(s) should process each token.</p>
+<p><strong>The Router</strong>: The router is a small neural network (typically a single linear layer followed by a softmax) that takes a token's representation as input and outputs a probability distribution over all N experts. The token is then sent to the expert(s) with the highest probability.</p>
+<p><strong>Traditional MoE (Top-k Routing)</strong>: In the original formulation by Shazeer et al. (2017), each token was routed to the <strong>top-k experts</strong> (typically k=2). The outputs from the selected experts were then combined as a weighted sum, with weights given by the router's probability assignments.</p>
+<p>Mathematically, for a token x, the router computes:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>p</mi><mi>i</mi></msub><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>=</mo><mfrac><msup><mi>e</mi><mrow><mi>h</mi><mo stretchy="false">(</mo><mi>x</mi><msub><mo stretchy="false">)</mo><mi>i</mi></msub></mrow></msup><mrow><munderover><mo>∑</mo><mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow><mi>N</mi></munderover><msup><mi>e</mi><mrow><mi>h</mi><mo stretchy="false">(</mo><mi>x</mi><msub><mo stretchy="false">)</mo><mi>j</mi></msub></mrow></msup></mrow></mfrac></mrow><annotation encoding="application/x-tex">p_i(x) = \frac{e^{h(x)_i} }{\sum_{j=1}^{N} e^{h(x)_j} }
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal">p</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.872em;vertical-align:-1.307em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.565em;"><span style="top:-2.1288em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.9812em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.2029em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.4358em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8301em;"><span style="top:-3.0051em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">h</span><span class="mopen mtight">(</span><span class="mord mathnormal mtight">x</span><span class="mclose mtight"><span class="mclose mtight">)</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2819em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal">e</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.888em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">h</span><span class="mopen mtight">(</span><span class="mord mathnormal mtight">x</span><span class="mclose mtight"><span class="mclose mtight">)</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3281em;"><span style="top:-2.357em;margin-left:0em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.143em;"><span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.307em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+<p>where h(x) = W_r · x are the router logits. The output is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>y</mi><mo>=</mo><munder><mo>∑</mo><mrow><mi>i</mi><mo>∈</mo><mtext>top-k</mtext></mrow></munder><msub><mi>p</mi><mi>i</mi></msub><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo><mo>⋅</mo><msub><mi>E</mi><mi>i</mi></msub><mo stretchy="false">(</mo><mi>x</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">y = \sum_{i \in \text{top-k} } p_i(x) \cdot E_i(x)
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.4882em;vertical-align:-1.4382em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.8479em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">∈</span><span class="mord text mtight"><span class="mord mtight">top-k</span></span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.4382em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">p</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.05764em;">E</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0576em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">x</span><span class="mclose">)</span></span></span></span></span></p>
+<p><strong>Why MoE Was Not Widely Adopted</strong>: Despite promising results, MoE models had three major problems:</p>
+<ol>
+<li><strong>Complexity</strong>: Routing to multiple experts, combining their outputs, and managing the routing logic was complicated.</li>
+<li><strong>Communication Costs</strong>: In distributed training, tokens must be sent across devices to reach their assigned experts, creating expensive all-to-all communication.</li>
+<li><strong>Training Instability</strong>: The hard routing decisions create discontinuities in the training process, leading to instability, especially at large scale.</li>
+</ol>
+<h3 id="2-5-Load-Balancing-Why-It-Matters">2.5 Load Balancing: Why It Matters</h3>
+<p>One of the biggest challenges with expert models is <strong>load imbalance</strong>. Imagine you have 128 experts, but the router learns to send 90% of tokens to just 3 or 4 of them. The other 124 experts sit idle, wasting memory and parameters. Worse, the popular experts become overwhelmed, leading to <strong>token dropping</strong> (tokens that cannot be processed are skipped).</p>
+<p>To prevent this, MoE models use an <strong>auxiliary load balancing loss</strong>—an additional term in the training objective that penalizes the model when token distribution across experts is uneven. This loss gently pushes the router toward distributing tokens more uniformly.</p>
+<p>Getting this balance right is critical: too much load balancing pressure and you override the router's natural specialization; too little and you get catastrophic imbalance.</p>
+<h3 id="2-6-Distributed-Training-and-Parallelism">2.6 Distributed Training and Parallelism</h3>
+<p>Training large language models requires splitting the work across many accelerators (GPUs or TPUs). There are several ways to do this:</p>
+<ul>
+<li><strong>Data Parallelism</strong>: Each accelerator gets a different batch of data but has a full copy of the model. Gradients are averaged across accelerators after each step. Simple but limited by model size.</li>
+<li><strong>Model Parallelism</strong>: The model's parameters are split across accelerators. Each accelerator holds a fraction of the weights. Requires communication during the forward and backward pass.</li>
+<li><strong>Expert Parallelism</strong>: Specific to MoE models—each accelerator holds one or more experts. Tokens are routed to the appropriate accelerator via all-to-all communication.</li>
+<li><strong>Pipeline Parallelism</strong>: Different layers of the model run on different accelerators, with data &quot;piped&quot; through them.</li>
+</ul>
+<p>The Switch Transformer paper is particularly notable for its thorough analysis of how to combine these parallelism strategies effectively.</p>
+<h3 id="2-7-Precision-Formats-float32-bfloat16-and-Mixed-Precision">2.7 Precision Formats: float32, bfloat16, and Mixed Precision</h3>
+<p>Neural networks perform arithmetic using floating-point numbers. The standard format, <strong>float32</strong>, uses 32 bits per number, providing high precision but consuming significant memory and computation. <strong>bfloat16</strong> (brain floating-point 16) uses only 16 bits, cutting memory usage and increasing speed, but at the cost of reduced numerical precision.</p>
+<p><strong>Mixed precision training</strong> uses bfloat16 for most operations but switches to float32 for numerically sensitive computations. This is standard practice for large model training.</p>
+<p>The Switch Transformer had a specific challenge here: the router's softmax computation is highly sensitive to numerical precision. Small errors in the routing probabilities can cause tokens to be sent to the wrong expert, destabilizing training. The paper's solution—<strong>selective precision</strong>—is one of its key technical contributions.</p>
+<h3 id="2-8-Knowledge-Distillation">2.8 Knowledge Distillation</h3>
+<p><strong>Distillation</strong> is a technique where a large, powerful model (the &quot;teacher&quot;) is used to train a smaller, more deployable model (the &quot;student&quot;). Instead of training the student only on the ground truth labels, you also train it to match the teacher's output probabilities.</p>
+<p>The intuition is that the teacher's probability distribution contains &quot;dark knowledge&quot;—it tells the student not just the right answer, but how confident to be about alternatives. For example, if a language model sees &quot;The capital of France is ___,&quot; the teacher might assign 95% probability to &quot;Paris&quot; but also 3% to &quot;Lyon&quot; and 1% to &quot;Marseille.&quot; These soft targets convey useful information that hard labels (just &quot;Paris&quot;) do not.</p>
+<p>Distillation is particularly important for MoE models because their massive parameter counts make them impractical to deploy directly. The ability to compress a trillion-parameter sparse model into a manageable dense model while retaining much of the quality gain is a key selling point.</p>
+<h2 id="3-The-Switch-Transformer-Core-Method">3. The Switch Transformer: Core Method</h2>
+<p>Now that we have all the background, let us examine the Switch Transformer's design in detail.</p>
+<h3 id="3-1-The-Key-Insight-Route-to-One-Expert-Not-Two">3.1 The Key Insight: Route to One Expert, Not Two</h3>
+<p>The single most important design choice in the Switch Transformer is <strong>routing each token to exactly one expert</strong> (top-1 routing), rather than the traditional top-2 or top-k.</p>
+<p>Previous work (Shazeer et al., 2017) conjectured that routing to k &gt; 1 experts was <strong>necessary</strong> for the router to receive meaningful gradients during training. The reasoning was: if you only route to one expert, the model cannot &quot;compare&quot; experts and learn which ones are better for which tokens. Ramachandran and Le (2018) even found that higher k values were particularly important in lower layers.</p>
+<p>Fedus et al. challenged this assumption head-on. They showed that top-1 routing not only works—it actually works <strong>better</strong> in practice. The benefits are threefold:</p>
+<ol>
+<li><strong>Reduced Router Computation</strong>: Computing the top-1 selection is cheaper than top-2.</li>
+<li><strong>Halved Expert Capacity</strong>: Since each token goes to only one expert (instead of two), the batch buffer needed per expert is halved, reducing memory.</li>
+<li><strong>Simplified Communication</strong>: Only one set of token-to-expert transfers is needed instead of two, reducing the all-to-all communication cost.</li>
+</ol>
+<h3 id="3-2-Architecture-Where-Do-the-Experts-Go">3.2 Architecture: Where Do the Experts Go?</h3>
+<p>The Switch Transformer replaces the FFN layer in alternating Transformer layers with a <strong>Switch FFN layer</strong>. Here is exactly what happens:</p>
+<ol>
+<li>A token x enters the layer after self-attention and layer normalization.</li>
+<li>The <strong>router</strong> computes a probability distribution over N experts: p(x) = softmax(W_r · x).</li>
+<li>The token is sent to the expert with the highest probability: i* = argmax p(x).</li>
+<li>The selected expert E_{i*} processes the token (this is just a standard FFN computation).</li>
+<li>The output is <strong>multiplied by the router's gate value</strong> p_{i*}(x), scaling the expert's output by the router's confidence.</li>
+<li>The result passes through the residual connection.</li>
+</ol>
+<p>This gate-value multiplication is important—it makes the routing <strong>differentiable</strong> with respect to the router parameters, even though the argmax selection itself is not differentiable. The gradient flows through the gate value, allowing the router to learn.</p>
+<p><strong>Placement</strong>: In the standard Switch Transformer configuration, experts replace the FFN at <strong>every other layer</strong>. The other layers use a standard (dense) FFN. This alternating pattern reduces the communication overhead while still providing substantial capacity expansion.</p>
+<h3 id="3-3-Expert-Capacity-and-Token-Dropping">3.3 Expert Capacity and Token Dropping</h3>
+<p>Because training on TPUs requires statically declared tensor shapes, the Switch Transformer must pre-allocate a fixed buffer for each expert. This buffer size is called the <strong>expert capacity</strong>:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>expert capacity</mtext><mo>=</mo><mrow><mo fence="true">(</mo><mfrac><mtext>tokens per batch</mtext><mtext>number of experts</mtext></mfrac><mo fence="true">)</mo></mrow><mo>×</mo><mtext>capacity factor</mtext></mrow><annotation encoding="application/x-tex">\text{expert capacity} = \left(\frac{\text{tokens per batch} }{\text{number of experts} }\right) \times \text{capacity factor}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8623em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord">expert capacity</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">(</span></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3714em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord text"><span class="mord">number of experts</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord text"><span class="mord">tokens per batch</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.8804em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">)</span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord">capacity factor</span></span></span></span></span></span></p>
+<p>The <strong>capacity factor</strong> (CF) is a hyperparameter that controls how much buffer is allocated beyond the theoretically perfect (uniform) distribution:</p>
+<ul>
+<li><strong>CF = 1.0</strong>: Each expert gets exactly (tokens/experts) slots. If distribution is not perfectly uniform, some tokens will be dropped.</li>
+<li><strong>CF = 1.25</strong>: 25% extra buffer per expert, tolerating some imbalance.</li>
+<li><strong>CF = 2.0</strong>: 100% extra buffer, very tolerant but wasteful.</li>
+</ul>
+<p><strong>Token dropping</strong>: When an expert's buffer is full, additional tokens routed to it are <strong>dropped</strong>—they skip the expert layer entirely and pass directly through the residual connection. This is not catastrophic (the token still has its representation from previous layers), but excessive dropping degrades quality.</p>
+<p>The paper found that token drop rates were typically below 1% with proper load balancing, and that <strong>lower capacity factors (1.0–1.25) actually worked better</strong> for Switch Transformers compared to the higher capacity factors (2.0) needed by traditional MoE. This is a direct consequence of routing to only one expert: the variance in per-expert load is lower.</p>
+<h3 id="3-4-The-Load-Balancing-Loss">3.4 The Load Balancing Loss</h3>
+<p>To encourage uniform token distribution across experts, the Switch Transformer adds an auxiliary loss to the training objective. For N experts and a batch of T tokens:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi mathvariant="script">L</mi><mtext>aux</mtext></msub><mo>=</mo><mi>α</mi><mo>⋅</mo><mi>N</mi><mo>⋅</mo><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>N</mi></munderover><msub><mi>f</mi><mi>i</mi></msub><mo>⋅</mo><msub><mi>P</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">\mathcal{L}_{\text{aux} } = \alpha \cdot N \cdot \sum_{i=1}^{N} f_i \cdot P_i
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathcal">L</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">aux</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.4445em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.10903em;">N</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:3.106em;vertical-align:-1.2777em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8283em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.10903em;">N</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.2777em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1076em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span></span></p>
+<p>where:</p>
+<ul>
+<li>f_i is the <strong>fraction of tokens</strong> actually dispatched to expert i (a discrete, non-differentiable quantity)</li>
+<li>P_i is the <strong>fraction of router probability</strong> allocated to expert i (continuous, differentiable)</li>
+<li>α is a hyperparameter (set to 10⁻² throughout the paper)</li>
+</ul>
+<p><strong>Why this works</strong>: Under perfect uniform routing, f_i = P_i = 1/N for all i, giving a loss of N × N × (1/N)² = 1. Any deviation from uniformity increases this product (by the AM-GM inequality). The scaling by N keeps the loss magnitude constant regardless of the number of experts.</p>
+<p><strong>Why α = 10⁻²</strong>: The authors swept α from 10⁻¹ to 10⁻⁵ and found that 10⁻² was large enough to achieve good load balancing but small enough not to overwhelm the primary cross-entropy training objective. This is a delicate balance—too large and you force perfect uniformity at the cost of meaningful specialization; too small and experts become imbalanced.</p>
+<h3 id="3-5-Training-Stability-Techniques">3.5 Training Stability Techniques</h3>
+<p>The paper introduces three crucial techniques to stabilize training:</p>
+<h4 id="3-5-1-Selective-Precision">3.5.1 Selective Precision</h4>
+<p>The router's softmax computation is highly sensitive to numerical precision. Training entirely in bfloat16 caused the model to <strong>diverge</strong> (Table 2 shows the bfloat16 model achieving a catastrophic -3.780 neg. log perplexity versus -1.718 for float32).</p>
+<p>The solution: <strong>cast only the router's internal computation to float32</strong>, while keeping everything else in bfloat16. This works because:</p>
+<ul>
+<li>The router function is local to each device (no expensive cross-device communication of float32 tensors)</li>
+<li>The dispatch and combine tensors are recast to bfloat16 at the router's output</li>
+<li>The computational overhead is negligible</li>
+</ul>
+<p>Result: selective precision achieves nearly identical quality to full float32 (-1.716 vs -1.718) at the same speed as full bfloat16 (1390 examples/sec vs 1160 for float32).</p>
+<h4 id="3-5-2-Smaller-Initialization">3.5.2 Smaller Initialization</h4>
+<p>The authors found that reducing the standard Transformer weight initialization scale by a factor of 10 (from s=1.0 to s=0.1) dramatically improved both average quality and training stability. With s=1.0, the average neg. log perplexity after 3.5k steps was -3.60 with a standard deviation of 0.68 (highly unstable). With s=0.1, the average improved to -2.72 with a standard deviation of just 0.01 (rock solid).</p>
+<p>This technique is broadly effective, working for models from 223M to over 1 trillion parameters.</p>
+<h4 id="3-5-3-Expert-Dropout">3.5.3 Expert Dropout</h4>
+<p>For fine-tuning on small downstream tasks, the Switch Transformer's massive parameter count creates severe overfitting risk. Standard dropout (uniformly applied to all layers) did not solve this—increasing dropout from 0.1 to 0.3 actually hurt performance.</p>
+<p>The paper proposes <strong>expert dropout</strong>: use a low dropout rate (0.1) for all non-expert layers, but a much higher dropout rate (0.4) specifically for the expert FFN layers. This selectively regularizes the parts of the model most prone to overfitting (the experts) while preserving the learned representations in the shared layers.</p>
+<p>Results (Table 4): Expert dropout (d=0.1, ed=0.4) achieves the best scores on GLUE (85.2), CNNDM (19.6), SQuAD (83.7), and SuperGLUE (73.0), outperforming all uniform dropout configurations.</p>
+<h2 id="4-Experimental-Results-Scaling-Properties">4. Experimental Results: Scaling Properties</h2>
+<h3 id="4-1-Switch-vs-MoE-vs-Dense-Table-1">4.1 Switch vs. MoE vs. Dense (Table 1)</h3>
+<p>The paper's first experiment is a carefully controlled head-to-head comparison. All models use 128 experts (where applicable), train on 32 TPUv3 cores, and run for the same number of steps.</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Capacity Factor</th>
+<th>Quality @100k steps</th>
+<th>Time to Threshold</th>
+<th>Speed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>T5-Base</td>
+<td>—</td>
+<td>-1.731</td>
+<td>Not achieved</td>
+<td>1600 ex/s</td>
+</tr>
+<tr>
+<td>T5-Large</td>
+<td>—</td>
+<td>-1.550</td>
+<td>131.1 hrs</td>
+<td>470 ex/s</td>
+</tr>
+<tr>
+<td>MoE-Base (top-2)</td>
+<td>2.0</td>
+<td>-1.547</td>
+<td>68.7 hrs</td>
+<td>840 ex/s</td>
+</tr>
+<tr>
+<td><strong>Switch-Base</strong></td>
+<td><strong>2.0</strong></td>
+<td><strong>-1.554</strong></td>
+<td><strong>72.8 hrs</strong></td>
+<td><strong>860 ex/s</strong></td>
+</tr>
+<tr>
+<td>MoE-Base</td>
+<td>1.25</td>
+<td>-1.559</td>
+<td>80.7 hrs</td>
+<td>790 ex/s</td>
+</tr>
+<tr>
+<td><strong>Switch-Base</strong></td>
+<td><strong>1.25</strong></td>
+<td><strong>-1.553</strong></td>
+<td><strong>65.0 hrs</strong></td>
+<td><strong>910 ex/s</strong></td>
+</tr>
+<tr>
+<td>MoE-Base</td>
+<td>1.0</td>
+<td>-1.572</td>
+<td>80.1 hrs</td>
+<td>860 ex/s</td>
+</tr>
+<tr>
+<td><strong>Switch-Base</strong></td>
+<td><strong>1.0</strong></td>
+<td><strong>-1.561</strong></td>
+<td><strong>62.8 hrs</strong></td>
+<td><strong>1000 ex/s</strong></td>
+</tr>
+<tr>
+<td>Switch-Base+</td>
+<td>1.0</td>
+<td>-1.534</td>
+<td>67.6 hrs</td>
+<td>780 ex/s</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key findings</strong>:</p>
+<ol>
+<li>Switch outperforms MoE at every capacity factor, both in quality and speed.</li>
+<li>At CF=1.0, Switch achieves 1000 examples/sec (vs 860 for MoE)—a 16% speed advantage.</li>
+<li>Switch-Base+ (scaled to match MoE's speed) achieves the best quality of all models (-1.534).</li>
+<li>T5-Base never reached the quality threshold of -1.50 within 100k steps.</li>
+</ol>
+<h3 id="4-2-Scaling-with-Number-of-Experts">4.2 Scaling with Number of Experts</h3>
+<p>Figure 4 in the paper demonstrates a beautiful scaling relationship: as you increase the number of experts (2, 4, 8, 16, 32, 64, 128, 256), performance consistently improves—even though FLOPs per token remain constant. This validates the paper's central hypothesis that parameter count is a useful <strong>independent</strong> axis for scaling, separate from computation.</p>
+<p>Specific result: The Switch-Base 64 expert model achieves the same quality as T5-Base in <strong>one-seventh</strong> the training steps (60k vs 450k steps)—a 7.5× improvement in sample efficiency.</p>
+<h3 id="4-3-Wall-Clock-Speed-Advantage-Figure-5">4.3 Wall-Clock Speed Advantage (Figure 5)</h3>
+<p>On a wall-clock basis (accounting for communication overhead), the Switch-Base 64 expert model achieves a <strong>7× speedup</strong> over T5-Base. This is slightly lower than the step-basis improvement because of routing and communication overhead, but still dramatic.</p>
+<h3 id="4-4-vs-Larger-Dense-Models-Figure-6">4.4 vs. Larger Dense Models (Figure 6)</h3>
+<p>Even when compared to T5-Large (which uses 3.5× more FLOPs per token), Switch-Base 64 expert is <strong>2.5× faster</strong> on a wall-clock basis. This is a remarkable result: a model using fewer FLOPs outperforms a model using 3.5× more computation, simply by having more (but sparsely activated) parameters.</p>
+<h2 id="5-Downstream-Fine-Tuning-Results">5. Downstream Fine-Tuning Results</h2>
+<h3 id="5-1-Comprehensive-Benchmark-Results-Table-5">5.1 Comprehensive Benchmark Results (Table 5)</h3>
+<p>The paper evaluates on a wide range of NLP tasks. Here are the complete results:</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>T5-Base</th>
+<th>Switch-Base</th>
+<th>T5-Large</th>
+<th>Switch-Large</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GLUE</td>
+<td>84.3</td>
+<td>86.7 (+2.4)</td>
+<td>87.8</td>
+<td>88.5 (+0.7)</td>
+</tr>
+<tr>
+<td>SQuAD</td>
+<td>85.5</td>
+<td>87.2 (+1.7)</td>
+<td>88.1</td>
+<td>88.6 (+0.5)</td>
+</tr>
+<tr>
+<td>SuperGLUE</td>
+<td>75.1</td>
+<td><strong>79.5 (+4.4)</strong></td>
+<td>82.7</td>
+<td><strong>84.7 (+2.0)</strong></td>
+</tr>
+<tr>
+<td>Winogrande</td>
+<td>66.6</td>
+<td><strong>73.3 (+6.7)</strong></td>
+<td>79.1</td>
+<td><strong>83.0 (+3.9)</strong></td>
+</tr>
+<tr>
+<td>XSum</td>
+<td>18.7</td>
+<td>20.3 (+1.6)</td>
+<td>20.9</td>
+<td>22.3 (+1.4)</td>
+</tr>
+<tr>
+<td>ANLI (R3)</td>
+<td>51.8</td>
+<td>54.0 (+2.2)</td>
+<td>56.6</td>
+<td>58.6 (+2.0)</td>
+</tr>
+<tr>
+<td>ARC Easy</td>
+<td>56.7</td>
+<td>61.3 (+4.6)</td>
+<td>68.8</td>
+<td>66.0 (-2.8)</td>
+</tr>
+<tr>
+<td>ARC Challenge</td>
+<td>35.5</td>
+<td>32.8 (-2.7)</td>
+<td>35.5</td>
+<td>35.5 (0.0)</td>
+</tr>
+<tr>
+<td>CB Web QA</td>
+<td>26.6</td>
+<td>27.4 (+0.8)</td>
+<td>27.7</td>
+<td>31.3 (+3.6)</td>
+</tr>
+<tr>
+<td>CB Natural QA</td>
+<td>25.8</td>
+<td>26.8 (+1.0)</td>
+<td>27.6</td>
+<td>29.5 (+1.9)</td>
+</tr>
+<tr>
+<td>CB Trivia QA</td>
+<td>24.5</td>
+<td><strong>30.7 (+6.2)</strong></td>
+<td>29.5</td>
+<td><strong>36.9 (+7.4)</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Notable findings</strong>:</p>
+<ul>
+<li><strong>SuperGLUE</strong> sees the largest consistent improvement: +4.4 for Base, +2.0 for Large.</li>
+<li><strong>Winogrande</strong> (commonsense reasoning): +6.7 for Base, +3.9 for Large.</li>
+<li><strong>Closed-book Trivia QA</strong>: +6.2 for Base, +7.4 for Large—the largest single improvement, suggesting sparse models are excellent knowledge stores.</li>
+<li><strong>ARC Challenge</strong> is the one task where Switch-Base underperforms T5-Base (-2.7 points), suggesting that certain types of multi-step reasoning may not benefit as directly from sparse parameter scaling.</li>
+</ul>
+<h3 id="5-2-Distillation-Results">5.2 Distillation Results</h3>
+<p>The paper demonstrates that the massive sparse models can be compressed through distillation:</p>
+<table>
+<thead>
+<tr>
+<th>Sparse Model Size</th>
+<th>Compression Rate</th>
+<th>Quality Preserved</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1.1B → 223M</td>
+<td>82%</td>
+<td>37%</td>
+</tr>
+<tr>
+<td>2.0B → 223M</td>
+<td>90%</td>
+<td>32%</td>
+</tr>
+<tr>
+<td>3.8B → 223M</td>
+<td>95%</td>
+<td>30%</td>
+</tr>
+<tr>
+<td>7.4B → 223M</td>
+<td>97%</td>
+<td>27%</td>
+</tr>
+<tr>
+<td>14.7B → 223M</td>
+<td>99%</td>
+<td>28%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Best distillation recipe</strong>: Initialize the student with the teacher's non-expert weights + use a mixture of 75% hard labels and 25% soft teacher labels. This preserves ~30% of the quality gain.</p>
+<p>For fine-tuned distillation on SuperGLUE: Switch-Base (7.4B) achieves 81.3; distilled T5-Base (223M) achieves 76.6, preserving 30% of the 6.7-point gap over baseline T5-Base (74.6).</p>
+<h3 id="5-3-Multilingual-Results">5.3 Multilingual Results</h3>
+<p>When pre-trained on the multilingual Common Crawl (mC4) spanning 101 languages:</p>
+<ul>
+<li>Switch Transformer improves over mT5-Base on <strong>all 101 languages</strong> (Figure 7)</li>
+<li>Mean speedup is <strong>5× per step</strong> over the dense baseline (Figure 8)</li>
+<li><strong>91% of languages</strong> achieve at least a <strong>4× speedup</strong></li>
+<li>Improvements are observed across diverse language families, scripts, and resource levels</li>
+</ul>
+<h2 id="6-Scaling-to-Trillion-Parameters">6. Scaling to Trillion Parameters</h2>
+<h3 id="6-1-Model-Configurations-Table-9">6.1 Model Configurations (Table 9)</h3>
+<p>The paper designs two large-scale models:</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Parameters</th>
+<th>FLOPs/seq</th>
+<th>Experts</th>
+<th>dmodel</th>
+<th>dff</th>
+<th>Layers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>T5-XXL</td>
+<td>11B</td>
+<td>6.3T</td>
+<td>—</td>
+<td>4096</td>
+<td>10240</td>
+<td>24</td>
+</tr>
+<tr>
+<td>Switch-XXL</td>
+<td>395B</td>
+<td>6.3T</td>
+<td>64</td>
+<td>4096</td>
+<td>10240</td>
+<td>24</td>
+</tr>
+<tr>
+<td>Switch-C</td>
+<td>1,571B</td>
+<td>890B</td>
+<td>2048</td>
+<td>2080</td>
+<td>6144</td>
+<td>15</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Switch-C</strong> is a fascinating design: it uses <strong>only</strong> expert parallelism (no model parallelism), with 2048 experts. This makes each individual expert very small, but the aggregate parameter count is enormous. The per-token FLOPs (890B) are actually much lower than T5-XXL (6.3T).</p>
+<p><strong>Switch-XXL</strong> is FLOP-matched to T5-XXL, using 64 experts with larger individual dimensions. It applies ~10× more FLOPs per token than Switch-C.</p>
+<h3 id="6-2-Pre-training-Results">6.2 Pre-training Results</h3>
+<p>After 250k steps:</p>
+<ul>
+<li>Switch-XXL: -1.086 neg. log perplexity</li>
+<li>Switch-C: -1.096 neg. log perplexity</li>
+<li>T5-XXL: -1.147 neg. log perplexity</li>
+</ul>
+<p>After 500k steps:</p>
+<ul>
+<li>Switch-XXL: -1.008</li>
+<li>Switch-C: -1.043</li>
+<li>T5-XXL: -1.095</li>
+</ul>
+<p>Switch-XXL achieves a <strong>4× speedup</strong> over T5-XXL to a fixed perplexity.</p>
+<h3 id="6-3-Training-Instability-at-Scale">6.3 Training Instability at Scale</h3>
+<p>The paper candidly reports that training instability remains a challenge at the largest scales. Switch-C (1.6T parameters, 2048 experts) showed <strong>no instability</strong>—likely because its per-token computation is modest. Switch-XXL (395B parameters, but 10× more FLOPs per token) exhibited sporadic instability, preventing full 1M-step training runs.</p>
+<p>This is an honest and valuable observation: the combination of high per-token computation and sparse routing creates interaction effects that are not yet fully understood.</p>
+<h3 id="6-4-Parallelism-Strategy-Analysis">6.4 Parallelism Strategy Analysis</h3>
+<p>Section 5 of the paper provides an unusually thorough analysis of how different parallelism strategies combine. The key insight is that each strategy involves trade-offs:</p>
+<ul>
+<li><strong>Data parallelism</strong> alone: Simple, no communication during forward/backward pass, but limited by model size fitting in a single device.</li>
+<li><strong>Model parallelism</strong> alone: Allows larger models, but requires all-reduce communication at every layer.</li>
+<li><strong>Expert parallelism</strong> alone: Requires all-to-all communication for token routing, but each expert is small enough to fit on one device.</li>
+<li><strong>Combined</strong>: Necessary for the largest models, but the optimal configuration requires empirical tuning based on the specific hardware (TPU topology, interconnect bandwidth, memory per device).</li>
+</ul>
+<p>The paper found that the optimal strategy depends on the relative costs of computation, memory, and communication on the target hardware. This is not a one-size-fits-all answer, but the paper provides the conceptual framework for making these decisions.</p>
+<h2 id="7-Discussion-Strengths-Limitations-and-Boundary-Conditions">7. Discussion: Strengths, Limitations, and Boundary Conditions</h2>
+<h3 id="7-1-Strengths">7.1 Strengths</h3>
+<ol>
+<li><strong>Simplicity</strong>: The core idea (route to one expert instead of two) is elegantly simple yet highly effective.</li>
+<li><strong>Efficiency</strong>: FLOP-matched models achieve dramatically better quality, with 7× speedups demonstrated.</li>
+<li><strong>Scalability</strong>: The approach scales from 2 experts on a single GPU to 2048 experts across a TPU cluster.</li>
+<li><strong>Practical training techniques</strong>: Selective precision, smaller initialization, and expert dropout are all broadly applicable beyond Switch Transformers.</li>
+<li><strong>Multilingual universality</strong>: Improvements on all 101 languages tested, not just high-resource ones.</li>
+</ol>
+<h3 id="7-2-Limitations-and-Boundary-Conditions">7.2 Limitations and Boundary Conditions</h3>
+<ol>
+<li>
+<p><strong>Training instability at extreme scale</strong>: The Switch-XXL model experienced sporadic instability. The training stabilization techniques, while helpful, were not sufficient for the very largest configurations.</p>
+</li>
+<li>
+<p><strong>Fine-tuning gap for reasoning tasks</strong>: Despite superior pre-training quality, the translation to downstream reasoning tasks is inconsistent. Switch-C (1.6T params) achieved only 87.7 on SQuAD vs. 89.6 for the much smaller Switch-XXL (395B params). More FLOPs per token seem important for reasoning, not just more parameters.</p>
+</li>
+<li>
+<p><strong>ARC Challenge regression</strong>: Switch-Base actually underperformed T5-Base on ARC Challenge (32.8 vs 35.5), suggesting that some reasoning tasks may not benefit from—or may even be harmed by—sparse routing.</p>
+</li>
+<li>
+<p><strong>Deployment challenges</strong>: A 1.6T parameter model, even with sparse activation, requires enormous memory just to hold the weights. Distillation helps but loses 70% of the quality gain.</p>
+</li>
+<li>
+<p><strong>Load balancing sensitivity</strong>: The auxiliary loss hyperparameter α must be carefully tuned. The paper used α = 10⁻², but this may not generalize to all settings.</p>
+</li>
+<li>
+<p><strong>Token dropping</strong>: While typically below 1%, token dropping is an information loss mechanism that has no analogue in dense models. In the worst case, important tokens could be dropped from overloaded experts.</p>
+</li>
+<li>
+<p><strong>Static expert capacity</strong>: TPU compilation requires fixed tensor shapes, meaning expert capacity must be set at compile time. This prevents dynamic adjustment based on actual routing patterns during inference.</p>
+</li>
+</ol>
+<h3 id="7-3-Reproducibility">7.3 Reproducibility</h3>
+<p>The paper provides strong reproducibility support:</p>
+<ul>
+<li>JAX code and model checkpoints are publicly available</li>
+<li>All models are trained on the public C4 dataset</li>
+<li>Hyperparameters are fully specified in Table 9</li>
+<li>The training infrastructure (TPUv3) is well-documented</li>
+</ul>
+<p>However, reproducing the largest experiments (Switch-C with 2048 experts) requires access to substantial TPU clusters, which limits independent verification.</p>
+<h2 id="8-Legacy-and-Impact">8. Legacy and Impact</h2>
+<p>The Switch Transformer has had enormous influence on the field:</p>
+<ol>
+<li>
+<p><strong>Mixtral (Mistral AI, 2024)</strong>: Uses top-2 sparse MoE routing, directly inspired by this line of work, achieving competitive performance with far less compute than dense alternatives.</p>
+</li>
+<li>
+<p><strong>DeepSeek-V2/V3</strong>: Employs MoE with innovations like fine-grained expert segmentation, directly building on the Switch Transformer's foundation.</p>
+</li>
+<li>
+<p><strong>Google's production models</strong>: Many of Google's internal models use sparse MoE architectures derived from the Switch Transformer design.</p>
+</li>
+<li>
+<p><strong>Efficient ML ecosystem</strong>: The paper's demonstration that parameter count and computation can be decoupled has influenced the entire field's thinking about model scaling.</p>
+</li>
+<li>
+<p><strong>The &quot;sparse is beautiful&quot; paradigm</strong>: Before this paper, the conventional wisdom was &quot;scale up dense models.&quot; After it, sparse models became a legitimate and popular alternative, leading to the current generation of efficient MoE models.</p>
+</li>
+</ol>
+<h2 id="9-Conclusion">9. Conclusion</h2>
+<p>The Switch Transformer is one of those rare papers that is both conceptually simple and technically deep. Its core contribution—routing each token to a single expert—is easy to state but has profound implications for model design, training efficiency, and scaling.</p>
+<p>The paper demonstrates that by decoupling parameter count from computational cost, we can build models that are simultaneously larger (in parameters) and cheaper (in compute) than their dense counterparts. The 7× speedup over T5-Base and 4× over T5-XXL are not incremental improvements—they represent a paradigm shift in how we think about scaling.</p>
+<p>The training techniques (selective precision, smaller initialization, expert dropout) and the thorough analysis of parallelism strategies provide a practical playbook for building large sparse models. And the distillation results offer a path to deployment even when the full sparse model is impractically large.</p>
+<p>For practitioners: if you are building or fine-tuning large language models and are not considering sparse MoE architectures, this paper makes a compelling case for why you should. The efficiency gains are too large to ignore, and the modern ecosystem (Mixtral, DeepSeek, etc.) has proven that these ideas work in practice at production scale.</p>
+<p>For researchers: the paper is refreshingly honest about what does not work (training instability, inconsistent fine-tuning improvements, the reasoning gap). These open problems remain active research areas and represent valuable directions for future work.</p>
+<p>The Switch Transformer did not just advance the state of the art—it opened a door to a new way of thinking about neural network scaling that continues to shape the field today.</p>
+<h2 id="References">References</h2>
+<ol>
+<li>Fedus, W., Zoph, B., &amp; Shazeer, N. (2022). Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity. JMLR, 23, 1-40.</li>
+<li>Shazeer, N., et al. (2017). Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer.</li>
+<li>Raffel, C., et al. (2019). Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer (T5).</li>
+<li>Vaswani, A., et al. (2017). Attention Is All You Need.</li>
+<li>Kaplan, J., et al. (2020). Scaling Laws for Neural Language Models.</li>
+<li>Brown, T., et al. (2020). Language Models are Few-Shot Learners (GPT-3).</li>
+<li>Lepikhin, D., et al. (2020). GShard: Scaling Giant Models with Conditional Computation and Automatic Sharding.</li>
+<li>Hinton, G., et al. (2015). Distilling the Knowledge in a Neural Network.</li>
+<li>Jacobs, R., et al. (1991). Adaptive Mixtures of Local Experts.</li>
+<li>Wang, A., et al. (2019). SuperGLUE: A Stickier Benchmark for General-Purpose Language Understanding.</li>
+</ol>
+
+     </div> <footer class="blog-post-footer"> <p class="blog-post-source">
+Originally published at <a href="https://zzz0906.github.io/2026/04/04/2026-04-04-SwitchTransformer-technical-review-en/" target="_blank" rel="noopener noreferrer">zzz0906.github.io</a>.
+</p> <nav class="blog-post-nav" aria-label="Adjacent posts"> <a class="blog-post-nav-link blog-post-nav-prev" href="/blog/2026-04-07-2026-04-07-ORPO-阅读笔记-zh/"> <span class="blog-post-nav-label">← Newer</span> <span class="blog-post-nav-title">ORPO：不用参考模型的一体化偏好优化 — 深度阅读笔记</span> </a> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-04-04-2026-04-04-SwitchTransformer-阅读笔记-zh/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">Switch Transformers：用简单高效的稀疏性扩展到万亿参数模型 — 深度阅读笔记</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient ML systems, LLM infrastructure, and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>
