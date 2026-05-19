@@ -9,7 +9,6 @@ Tags
 <strong>作者团队：</strong> Dat Tran, Douwe Kiela（Stanford University）
 <strong>arXiv：</strong> 2604.02460v2，2026-04-11 修订
 <strong>状态：</strong> Preprint，under review。</p>
-<hr>
 <h2 id="简短结论">简短结论</h2>
 <p>这篇论文要做的事情其实很小、也很狠：<strong>把”思考 token 预算”这件事单独拎出来，固定住，然后让单 Agent（SAS）与各种多 Agent 架构（MAS）在同样的预算下面对面打</strong>。结论是——一旦预算被卡死，绝大多数被吹得很神的多 Agent 系统就不再有架构上的优势了。</p>
 <p>我之前在生产环境里写过几版多 Agent 系统：planner+worker+aggregator、debate、role-specialization、ensemble。每次上线时都觉得”看，多 Agent 比单 Agent 好一截”；但一回到内部对比，只要把单 Agent 的 thinking budget 调大、把 SAS 与 MAS 各自的总 token 数对齐，那个”一截”就消失了，有时甚至反转。这篇 Stanford 的工作把这个直觉做成了三件结合得很好的事：</p>
@@ -20,7 +19,6 @@ Tags
 </ol>
 <p>更让我心服的是，论文不只是说”SAS 通杀”，它还<strong>给出了 MAS 真正有用的边界条件</strong>：通过显式制造上下文退化（删除、掩码、替换、注入干扰句），论文展示了当单 Agent 对上下文的有效利用变差到某个程度时，结构化的 MAS（特别是 Sequential）会反超。这个反超是 DPI 论证里可预测的，也是 §3.1 中”degraded context”那段的实证证据。所以这篇论文最终留给我的不是”MAS 没用”，而是**“MAS 是 SAS 上下文利用受损时的一种补救手段，不是普适架构”**。这种边界化的结论比”通杀”更有工程价值。</p>
 <p>下面我把要点拆开记，重点放在前置知识（让没看过排队论 + 信息论交叉的人也能读懂）、DPI 论证、实验设计、五种 MAS 的对比，以及我自己对这套结论在实际生产中怎么用的判断。</p>
-<hr>
 <h2 id="1-前置知识">1. 前置知识</h2>
 <p>这一节面向已经写过 LLM 应用、但没系统看过 SAS vs MAS 这条争论线的读者。如果你对 DPI、思考 token、FRAMES/MuSiQue、debate/ensemble 这些都熟，可以跳过。</p>
 <h3 id="11-思考-token到底是什么">1.1 “思考 token”到底是什么</h3>
@@ -101,7 +99,6 @@ Tags
 <li><strong>它对应论文里 DPI 论证中的”channel 容量”</strong>。每个 worker 用 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi mathvariant="normal">/</mi><mi>k</mi></mrow><annotation encoding="application/x-tex">B/k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0502em;">B</span><span class="mord">/</span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span></span></span></span> 思考 token，本质就是把同一份信道容量切成 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span></span></span></span> 段。这与 Shannon 信道编码里的 rate-distortion 思路是同构的。</li>
 </ul>
 <p>如果你做的系统真的关心的是延迟或美元成本，那需要单独建模。论文很坦诚地说自己<strong>没</strong>做这两个轴，但思考 token 是任何 budget-controlled 评估的合理起点。</p>
-<hr>
 <h2 id="2-dpi-论证两步走">2. DPI 论证两步走</h2>
 <p>论文的理论核心是两个引理，结合得很紧凑。</p>
 <h3 id="21-引理-1完美上下文利用下sas-不劣于-mas">2.1 引理 1：完美上下文利用下，SAS 不劣于 MAS</h3>
@@ -125,7 +122,6 @@ Tags
 <li>高退化：MAS 反超。</li>
 </ul>
 <p>这个预测被 §5.3 完整地复现出来。这是论文里我最喜欢的部分——它<strong>把”MAS 在哪些情况下值得用”明确化</strong>了，不是大而化之地说”MAS 是个补丁”。</p>
-<hr>
 <h2 id="3-实验设计">3. 实验设计</h2>
 <h3 id="31-sas-与-sas-l">3.1 SAS 与 SAS-L</h3>
 <p>SAS 一次调用：system prompt 是”逐步思考，然后回答；越短越好；只返回最终答案”。开源模型走 <code>&#x3C;think>...&#x3C;/think></code> 块，Gemini 走 thought summary 字段。预算 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.0502em;">B</span></span></span></span> 设在思考链上。</p>
@@ -154,7 +150,6 @@ Tags
 <li>每个配置 bootstrap 95% CI。</li>
 </ul>
 <p>这是我见过近期 agent 比较实验里最大的对比矩阵之一。</p>
-<hr>
 <h2 id="4-主结果">4. 主结果</h2>
 <h3 id="41-表-1跨预算平均重排便于直接读">4.1 表 1：跨预算平均（重排，便于直接读）</h3>
 
@@ -263,7 +258,6 @@ Tags
 <li><strong>Distractor</strong> 不发生反超：两边都掉，但 SAS 始终领先。</li>
 </ul>
 <p>这正是 §2.2 引理 2 预测的图景。把它当成一个”MAS 适用诊断表”——<strong>只在你怀疑 SAS 上下文里有大量被替换/掩码的低质量片段时，才考虑切到 MAS</strong>。简单的”上下文太长导致丢信息”，Distractor 实验告诉你 MAS 也救不了。</p>
-<hr>
 <h2 id="5-论文的诊断学贡献">5. 论文的诊断学贡献</h2>
 <h3 id="51-gemini-api-预算伪影">5.1 Gemini API 预算伪影</h3>
 <p>Appendix G 是我心目里这篇论文最有方法论价值的部分。作者发现：</p>
@@ -305,7 +299,6 @@ Tags
 <li>MAS 的失败模式是 “aggregator 抽不出”，可以用 self-consistency / 候选 confidence 打分这种基于概率的合并方法治。</li>
 <li>“两边都错”的桶里，gold 几乎从不出现在思考里——这才是真正反映模型能力上限的样本。</li>
 </ul>
-<hr>
 <h2 id="6-我的几个保留意见">6. 我的几个保留意见</h2>
 <p>主结论我接受，但有些细节比标题更软。</p>
 <h3 id="61-理论几乎是-trivial-的重头戏在-compute-控制">6.1 理论几乎是 trivial 的——重头戏在 compute 控制</h3>
@@ -330,7 +323,6 @@ Tags
 <p>Gemini-2.5-Pro 顶到 0.45，开源更低。在这种准确率水平上，0.02 的差距是真实的但很小，95% CI 经常重叠到几个架构都”并列第一”。论文的 bolding 规则会让对比看上去比点估计更平。所以一条更保守的说法是：“SAS 在 7 种架构里属于第一梯队，且通常以最少的实际 token 达到”。</p>
 <h3 id="65-sequential-的-kkk-没扫">6.5 Sequential 的 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span></span></span></span> 没扫</h3>
 <p>如果 planner 把问题切成 7 步，每 worker 只剩 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi mathvariant="normal">/</mi><mn>7</mn><mo>≈</mo><mn>140</mn></mrow><annotation encoding="application/x-tex">B/7 \approx 140</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0502em;">B</span><span class="mord">/7</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">140</span></span></span></span> token（在 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mo>=</mo><mn>1000</mn></mrow><annotation encoding="application/x-tex">B=1000</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.0502em;">B</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1000</span></span></span></span> 时），这种 worker 几乎跑不出像样的思考。可能 Sequential 的成绩被 planner 的”过度分解”压低了。一个学习型 planner（论文里引用的 Ke 等 2026 MAS-Orchestra）应该能改善——但论文没扫这一维，是个 follow-up 空白。</p>
-<hr>
 <h2 id="7-我会在下一版做的事">7. 我会在下一版做的事</h2>
 <p>如果让我接着做这个方向，我会优先做四件事：</p>
 <ol>
@@ -339,7 +331,6 @@ Tags
 <li><strong>改 aggregator 为基于校准 confidence 的合并</strong>。表 2 的 SR/MW 桶清楚地告诉我们，MAS 经常是”找到了 gold 但 aggregator 漏掉”。Self-consistency、token-level logprob 加权这种方法应该能补回相当一部分损失。</li>
 <li><strong>延迟图</strong>。把 wall-clock 拉进来。即使 MAS 准确率持平，多次 roundtrip 在交互式场景里仍是致命缺陷。这是一个部署故事，论文没讲。</li>
 </ol>
-<hr>
 <h2 id="8-复现性">8. 复现性</h2>
 <p>论文给出的：</p>
 <ul>
@@ -354,7 +345,6 @@ Tags
 <li>在 Qwen3 / DeepSeek 上你应该能在 bootstrap noise 之内复现。</li>
 <li>在 Gemini 上务必同时跑 SAS 与 SAS-L；没有 SAS-L 的 Gemini 比较因为 API 预算伪影是不可信的。</li>
 </ul>
-<hr>
 <h2 id="9-适用边界">9. 适用边界</h2>
 <p>为了避免过度推广，明确写一下这条结论<strong>不适用</strong>的场景：</p>
 <ul>
@@ -366,7 +356,6 @@ Tags
 <li><strong>没有 thinking-mode 的模型</strong>：预算可控性差，整套对比框架都会松动。</li>
 </ul>
 <p>边界之内（容量足够的 reasoning 模型 + 纯文本多跳推理）：结论稳。</p>
-<hr>
 <h2 id="10-与前人工作的关系">10. 与前人工作的关系</h2>
 <ul>
 <li><strong>Anthropic 2025 “How we built our multi-agent research system”</strong>：明确说 MAS 优势大部分来自 compute 增加。这篇 Tran &#x26; Kiela 把它从一个工程观察变成可证伪假设，并在实验里证实。</li>
@@ -376,7 +365,6 @@ Tags
 <li><strong>Ke 等 2026 “MAS-Orchestra”</strong>：学习型 MAS 编排。<strong>自然的下一步</strong>是看学习型 planner 能否在预算对齐的 setting 下缩小差距。</li>
 </ul>
 <p>这篇论文的独特价值在于<strong>组合</strong>：清洁的理论 + 大型预算对齐实验矩阵 + 一个被严格刻画的边界条件（context degradation）+ 一份方法学审计（Gemini 计量伪影、MuSiQue 改写脆弱性）。</p>
-<hr>
 <h2 id="11-一个部署侧的小算账">11. 一个部署侧的小算账</h2>
 <p>假设你在 Gemini-2.5-Pro 上做多跳问答系统，两种方案：</p>
 <ul>
@@ -384,7 +372,6 @@ Tags
 <li><strong>方案 B</strong>：Sequential MAS，planner + 5 worker + aggregator，worker 每个 1000。平均准确率 ≈ 0.39。成本与方案 A 接近（worker 通常用不满预算），但延迟 ≈ 7 倍。</li>
 </ul>
 <p>准确率差 0.03 偏向 SAS。成本基本平。<strong>延迟差 7 倍</strong>。除非你确实在退化上下文区域，否则方案 A 一面倒占优。论文没展开这个算账，但数据本身完全支撑。</p>
-<hr>
 <h2 id="12-sas-first-agent-工程实操清单">12. SAS-first agent 工程实操清单</h2>
 <p>结合论文和我自己的判断：</p>
 <ol>
@@ -397,7 +384,6 @@ Tags
 <li><strong>基准必须经过深度改写测试</strong>。如果准确率在 deep paraphrase 下大幅下降，说明你被 surface form 记忆污染。</li>
 <li><strong>100 thinking token 当对照组，不当比较</strong>。500 以下信号噪声比太低。</li>
 </ol>
-<hr>
 <h2 id="125-一些容易被忽略的细节">12.5 一些容易被忽略的细节</h2>
 <p>读完整篇论文后，有几个细节我想单独记下来，它们在主线叙述里被淡化了，但对工程实践很要紧：</p>
 <ul>
@@ -412,7 +398,6 @@ Tags
 <h2 id="13-结尾一句">13. 结尾一句</h2>
 <p>如果我要用一句话向同事概括这篇论文：<strong>多 Agent LLM 系统的本质是”compute 多了一些、内部通信通道差了一些的单 Agent 系统”。把这两件事都纠正之后，架构红利在多跳推理里基本消失，除非你的上下文已经退化到 SAS 难以利用的程度</strong>。</p>
 <p>这是一个边界清晰、有理论支撑、有实证证据、有可操作建议的结论。下一篇值得做的论文我已经写在 §7：<strong>每个 agent 都能独立调用工具时，picture 是怎样的？</strong>——那才是 MAS 真正可能扩大 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi></mrow><annotation encoding="application/x-tex">C</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.0715em;">C</span></span></span></span> 的 setting，DPI 在那里就站不住了。在那篇出来之前，纯推理 MAS 的工程默认值应该是”先别用，除非测过确实需要”。</p>
-<hr>
 <h2 id="参考文献">参考文献</h2>
 <ul>
 <li>Tran, D., &#x26; Kiela, D. (2026). <em>Single-Agent LLMs Outperform Multi-Agent Systems on Multi-Hop Reasoning Under Equal Thinking Token Budgets</em>. arXiv:2604.02460v2.</li>
