@@ -1,0 +1,856 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CodeAct: Executable Code Actions Elicit Better LLM Agents | Zhongzhu / Charlie</title><meta name="description" content="CodeAct proposes using executable Python code as the single unified action space for LLM agents, replacing fragmented JSON/text tool calls. With control flow, data reuse, existing libraries, and automated error feedback, agents using CodeAct achieve up to 20% higher success rates across 17 LLMs — and fine-tuned CodeActAgent rivals closed-source models on agent benchmarks."><meta property="og:title" content="CodeAct: Executable Code Actions Elicit Better LLM Agents | Zhongzhu / Charlie"><meta property="og:description" content="CodeAct proposes using executable Python code as the single unified action space for LLM agents, replacing fragmented JSON/text tool calls. With control flow, data reuse, existing libraries, and automated error feedback, agents using CodeAct achieve up to 20% higher success rates across 17 LLMs — and fine-tuned CodeActAgent rivals closed-source models on agent benchmarks."><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-05-25-codeact-technical-review-en/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-05-25-codeact-technical-review-en/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.BtdlpukG.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>132</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>21</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> <nav class="blog-post-toc" aria-label="Table of contents"> <p class="blog-post-toc-title">Contents</p> <ul> <li class="toc-level-2"> <a href="#short-answer">Short Answer</a> </li><li class="toc-level-2"> <a href="#prerequisites-what-you-need-to-know-first">Prerequisites: What You Need to Know First</a> </li><li class="toc-level-3"> <a href="#1-the-standard-llm-agent-loop">1. The Standard LLM Agent Loop</a> </li><li class="toc-level-3"> <a href="#2-what-tool-use-means-in-llms">2. What “Tool Use” Means in LLMs</a> </li><li class="toc-level-3"> <a href="#3-the-action-format-landscape">3. The Action Format Landscape</a> </li><li class="toc-level-3"> <a href="#4-why-python-specifically">4. Why Python Specifically?</a> </li><li class="toc-level-3"> <a href="#5-the-multi-turn-self-debug-mechanism">5. The Multi-Turn Self-Debug Mechanism</a> </li><li class="toc-level-2"> <a href="#the-codeact-framework-design-and-formalization">The CodeAct Framework: Design and Formalization</a> </li><li class="toc-level-3"> <a href="#1-a-unified-action-space">1. A Unified Action Space</a> </li><li class="toc-level-3"> <a href="#2-advantages-over-json-a-formal-comparison">2. Advantages Over JSON: A Formal Comparison</a> </li><li class="toc-level-3"> <a href="#3-system-prompt-design">3. System Prompt Design</a> </li><li class="toc-level-2"> <a href="#research-question-1-does-code-familiarity-help-for-atomic-tool-calls">Research Question 1: Does Code Familiarity Help for Atomic Tool Calls?</a> </li><li class="toc-level-3"> <a href="#experimental-setup">Experimental Setup</a> </li><li class="toc-level-3"> <a href="#results-and-analysis-table-2">Results and Analysis (Table 2)</a> </li><li class="toc-level-2"> <a href="#research-question-2-does-control-flow-help-for-complex-tasks">Research Question 2: Does Control Flow Help for Complex Tasks?</a> </li><li class="toc-level-3"> <a href="#the-mtooleval-benchmark">The M³ToolEval Benchmark</a> </li><li class="toc-level-3"> <a href="#experimental-setup-1">Experimental Setup</a> </li><li class="toc-level-3"> <a href="#results-table-3">Results (Table 3)</a> </li><li class="toc-level-3"> <a href="#why-doesnt-json-close-the-gap-with-better-prompting">Why Doesn’t JSON Close the Gap with Better Prompting?</a> </li><li class="toc-level-2"> <a href="#research-question-3-multi-turn-interactions-and-existing-software">Research Question 3: Multi-Turn Interactions and Existing Software</a> </li><li class="toc-level-3"> <a href="#codeactagent-in-action">CodeActAgent in Action</a> </li><li class="toc-level-3"> <a href="#the-self-debug-rate">The Self-Debug Rate</a> </li><li class="toc-level-2"> <a href="#codeactinstruct-building-the-training-dataset">CodeActInstruct: Building the Training Dataset</a> </li><li class="toc-level-3"> <a href="#design-philosophy">Design Philosophy</a> </li><li class="toc-level-3"> <a href="#trajectory-generation-pipeline">Trajectory Generation Pipeline</a> </li><li class="toc-level-3"> <a href="#comparison-with-prior-datasets">Comparison with Prior Datasets</a> </li><li class="toc-level-2"> <a href="#codeactagent-fine-tuning-open-source-llms">CodeActAgent: Fine-Tuning Open-Source LLMs</a> </li><li class="toc-level-3"> <a href="#training-setup">Training Setup</a> </li><li class="toc-level-3"> <a href="#evaluation-protocol">Evaluation Protocol</a> </li><li class="toc-level-3"> <a href="#key-results-table-5">Key Results (Table 5)</a> </li><li class="toc-level-2"> <a href="#ablation-study">Ablation Study</a> </li><li class="toc-level-3"> <a href="#what-components-actually-matter">What Components Actually Matter?</a> </li><li class="toc-level-2"> <a href="#what-codeact-is-not-comparison-with-related-work">What CodeAct Is Not: Comparison with Related Work</a> </li><li class="toc-level-3"> <a href="#vs-voyager-wang-et-al-2023a">vs. Voyager (Wang et al., 2023a)</a> </li><li class="toc-level-3"> <a href="#vs-opencodeinterpreter-zheng-et-al-2024">vs. OpenCodeInterpreter (Zheng et al., 2024)</a> </li><li class="toc-level-3"> <a href="#vs-taskweaver-qiao-et-al-2023">vs. TaskWeaver (Qiao et al., 2023)</a> </li><li class="toc-level-2"> <a href="#limitations-and-boundary-conditions">Limitations and Boundary Conditions</a> </li><li class="toc-level-3"> <a href="#1-python-knowledge-required">1. Python Knowledge Required</a> </li><li class="toc-level-3"> <a href="#2-security-and-sandboxing">2. Security and Sandboxing</a> </li><li class="toc-level-3"> <a href="#3-hallucination-of-package-apis">3. Hallucination of Package APIs</a> </li><li class="toc-level-3"> <a href="#4-gap-between-open-and-closed-source-models">4. Gap Between Open and Closed-Source Models</a> </li><li class="toc-level-3"> <a href="#5-turn-limit-sensitivity">5. Turn-Limit Sensitivity</a> </li><li class="toc-level-2"> <a href="#reproducibility-notes">Reproducibility Notes</a> </li><li class="toc-level-2"> <a href="#my-analysis-and-takeaways">My Analysis and Takeaways</a> </li><li class="toc-level-3"> <a href="#why-this-paper-matters">Why This Paper Matters</a> </li><li class="toc-level-3"> <a href="#the-fundamental-insight-about-action-spaces">The Fundamental Insight About Action Spaces</a> </li><li class="toc-level-3"> <a href="#open-questions">Open Questions</a> </li><li class="toc-level-2"> <a href="#summary">Summary</a> </li><li class="toc-level-2"> <a href="#deep-dive-the-codeact-agent-loop-algorithm">Deep Dive: The CodeAct Agent Loop Algorithm</a> </li><li class="toc-level-3"> <a href="#pseudocode-codeact-multi-turn-agent-loop">Pseudocode: CodeAct Multi-Turn Agent Loop</a> </li><li class="toc-level-3"> <a href="#key-invariant-interpreter-state-persistence">Key Invariant: Interpreter State Persistence</a> </li><li class="toc-level-3"> <a href="#comparison-json-agent-loop-algorithm">Comparison: JSON Agent Loop Algorithm</a> </li><li class="toc-level-2"> <a href="#understanding-the-experiments-statistical-nuances">Understanding the Experiments: Statistical Nuances</a> </li><li class="toc-level-3"> <a href="#why-17-llms">Why 17 LLMs?</a> </li><li class="toc-level-3"> <a href="#the-closed-source-json-anomaly">The Closed-Source JSON Anomaly</a> </li><li class="toc-level-3"> <a href="#the-turn-efficiency-formula">The Turn Efficiency Formula</a> </li><li class="toc-level-2"> <a href="#the-data-mixture-problem-a-closer-look">The Data Mixture Problem: A Closer Look</a> </li><li class="toc-level-3"> <a href="#why-does-removing-general-conversation-hurt-so-much">Why Does Removing General Conversation Hurt So Much?</a> </li><li class="toc-level-3"> <a href="#the-data-mixing-objective">The Data Mixing Objective</a> </li><li class="toc-level-2"> <a href="#codeacts-influence-the-post-2024-landscape">CodeAct’s Influence: The Post-2024 Landscape</a> </li><li class="toc-level-3"> <a href="#how-the-field-moved-after-codeact">How the Field Moved After CodeAct</a> </li><li class="toc-level-3"> <a href="#what-hasnt-changed-the-safety-problem">What Hasn’t Changed: The Safety Problem</a> </li><li class="toc-level-2"> <a href="#experimental-figure-annotations">Experimental Figure Annotations</a> </li><li class="toc-level-3"> <a href="#figure-1-paper-the-motivating-example">Figure 1 (Paper): The Motivating Example</a> </li><li class="toc-level-3"> <a href="#figure-2-paper-the-agent-framework-diagram">Figure 2 (Paper): The Agent Framework Diagram</a> </li><li class="toc-level-3"> <a href="#figure-3-paper-codeactagent-in-action">Figure 3 (Paper): CodeActAgent in Action</a> </li><li class="toc-level-2"> <a href="#final-verdict">Final Verdict</a> </li> </ul> </nav> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-05-25">May 25, 2026</time> <span class="blog-lang blog-lang-en">EN</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/LLM-Agent/">#LLM Agent</a><a class="blog-post-tag-chip" href="/blog/tag/Reasoning/">#Reasoning</a><a class="blog-post-tag-chip" href="/blog/tag/LLM-Training/">#LLM Training</a> </span> </p> <h1>CodeAct: Executable Code Actions Elicit Better LLM Agents</h1> </header> <div class="blog-post-body"> <p><strong>Review date:</strong> 2026-05-25
+<strong>Review author:</strong> Zhongzhu Zhou
+<strong>Paper reviewed:</strong> Executable Code Actions Elicit Better LLM Agents
+<strong>Paper authors:</strong> Xingyao Wang, Yangyi Chen, Lifan Yuan, Yizhe Zhang, Yunzhu Li, Hao Peng, Heng Ji
+<strong>arXiv:</strong> 2402.01030
+<strong>Status/Venue:</strong> ICML 2024 (Proceedings of the 41st International Conference on Machine Learning, PMLR 235)</p>
+<h2 id="short-answer">Short Answer</h2>
+<p>CodeAct is a simple but high-impact insight: instead of asking an LLM agent to emit JSON objects or free-text commands to call tools one at a time, just let it write and execute Python code. Code is a universal action language — it already supports loops, conditionals, variables, imported libraries, and built-in error messages. By treating each agent turn as a Python code execution rather than a single JSON tool invocation, CodeAct collapses a fragmented action space into a single, expressive, and well-debuggable medium. Across 17 LLMs tested on API-Bank and the authors’ new M³ToolEval benchmark, CodeAct achieves up to 20% higher success rates than JSON or text-based alternatives. More importantly, CodeAct enables LLMs to self-debug and improve across multiple turns — something JSON agents fundamentally cannot do. The authors build CodeActAgent, a fine-tuned open-source 7B model on 7,139 trajectories, that matches the agent-task performance of models five to ten times its size.</p>
+<hr>
+<h2 id="prerequisites-what-you-need-to-know-first">Prerequisites: What You Need to Know First</h2>
+<p>Before diving into the technical details, I want to make sure the core concepts are solid. CodeAct operates at the intersection of language models, tool use, and software execution environments. Readers coming from a pure NLP background will want to understand the agent loop and why action formats matter; readers from a systems background will want to understand why existing LLMs struggle with multi-step tasks.</p>
+<h3 id="1-the-standard-llm-agent-loop">1. The Standard LLM Agent Loop</h3>
+<p>An LLM agent is a language model that interacts with an external environment over multiple turns. The standard loop looks like this:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant U as User</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant A as LLM Agent</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant E as Environment (Python Interpreter / APIs / Web)</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    U->>A: Instruction (natural language)</span></span>
+<span class="line"><span style="color:#E1E4E8">    loop Multi-turn interaction</span></span>
+<span class="line"><span style="color:#E1E4E8">        A->>A: Think / Plan (chain-of-thought, optional)</span></span>
+<span class="line"><span style="color:#E1E4E8">        A->>E: Action (tool call, code, JSON, text...)</span></span>
+<span class="line"><span style="color:#E1E4E8">        E->>A: Observation (execution result, API response, error)</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"><span style="color:#E1E4E8">    A->>U: Final Answer</span></span></code></pre>
+<p>The agent receives an instruction, decides on an action, sends it to the environment, observes the result, and repeats until it has enough information to answer. Simple in concept, but the <strong>format of the action</strong> turns out to matter enormously — which is exactly what CodeAct is about.</p>
+<h3 id="2-what-tool-use-means-in-llms">2. What “Tool Use” Means in LLMs</h3>
+<p>Modern LLMs like GPT-4 and Claude can call external tools. In practice, “tool use” typically means the model generates a structured string — often JSON — describing which function to call and with what arguments. For example, to look up a phone price in Germany, a JSON-action agent might emit:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="json"><code><span class="line"><span style="color:#E1E4E8">{</span><span style="color:#79B8FF">"tool"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"lookup_phone_price"</span><span style="color:#E1E4E8">, </span><span style="color:#79B8FF">"country"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"Germany"</span><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>The framework then parses this JSON, calls the actual Python function, and returns the result as text. The model never sees Python code at execution time — it just produces a string that gets interpreted.</p>
+<p><strong>The problem:</strong> This JSON is a very constrained language. It can describe exactly one function call at a time. If you need to call five tools and combine their results, you need five separate turns, each with a new JSON object. There’s no way to express “call tool A and tool B in a loop and average the results” in a single JSON action.</p>
+<h3 id="3-the-action-format-landscape">3. The Action Format Landscape</h3>
+<p>Before CodeAct, three main action formats were used in LLM agents:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Format</th><th>Example</th><th>Strengths</th><th>Weaknesses</th></tr></thead><tbody><tr><td><strong>Free Text</strong></td><td><code>Action: lookup_rates, country: Germany</code></td><td>Human-readable</td><td>Hard to parse reliably; no structure</td></tr><tr><td><strong>JSON</strong></td><td><code>{"tool": "lookup_rates", "country": "Germany"}</code></td><td>Parseable; schema-validated</td><td>One tool per turn; no loops; no data flow</td></tr><tr><td><strong>Code (CodeAct)</strong></td><td><code>rates = lookup_rates("Germany")</code></td><td>Full expressiveness; libraries; self-debug</td><td>Model must know Python</td></tr></tbody></table>
+<p>The key insight of CodeAct is that code is not just a programming construct — it is a <strong>general-purpose action language</strong> that already supports everything JSON cannot: loops, conditionals, variable binding, error handling, and library imports.</p>
+<h3 id="4-why-python-specifically">4. Why Python Specifically?</h3>
+<p>The authors chose Python for four reasons:</p>
+<ol>
+<li><strong>Pre-training data richness.</strong> Python is the #1 language on the TIOBE index (2024) and dominates ML/data science GitHub repositories. LLMs have seen vastly more Python than any structured JSON schema.</li>
+<li><strong>Existing ecosystem.</strong> <code>import pandas</code>, <code>import numpy</code>, <code>import sklearn</code> — the entire scientific Python stack is available. No need to pre-define tools.</li>
+<li><strong>Built-in feedback.</strong> Python’s <code>TypeError</code>, <code>ValueError</code>, and <code>traceback</code> output are already in natural language. Agents can read their own error messages and self-debug.</li>
+<li><strong>Control and data flow.</strong> <code>for</code>, <code>if</code>, <code>while</code>, list comprehensions, generator expressions — everything an agent might need to compose tool outputs.</li>
+</ol>
+<h3 id="5-the-multi-turn-self-debug-mechanism">5. The Multi-Turn Self-Debug Mechanism</h3>
+<p>One under-appreciated aspect is that CodeAct enables a form of <strong>automated curriculum learning</strong> through error feedback. When a Python snippet fails, the interpreter returns a traceback. This traceback is fed back as the next “observation.” A sufficiently capable LLM reads the traceback and produces a corrected code block. No human intervention needed. This is qualitatively different from JSON agents, where a failed API call just returns <code>{"error": "Invalid argument"}</code> — there is no path trace, no line number, no type information.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A["Agent writes Python code\n(Turn N)"] --> B["Python interpreter executes"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -- "Success" --> C["Observation: result\nAgent answers / continues"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -- "Failure" --> D["Observation: traceback\n(TypeError, NameError, ...)"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E["Agent reads traceback\nand self-debugs\n(Turn N+1)"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> A</span></span></code></pre>
+<p>This loop is the secret behind CodeAct’s multi-turn improvement — it closes the feedback cycle without human-curated error mappings.</p>
+<hr>
+<h2 id="the-codeact-framework-design-and-formalization">The CodeAct Framework: Design and Formalization</h2>
+<h3 id="1-a-unified-action-space">1. A Unified Action Space</h3>
+<p>CodeAct’s central claim is: <strong>all agent–environment interactions should be expressed as a single block of executable Python code.</strong> The formal setup is:</p>
+<ul>
+<li><strong>Agent</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="script">A</mi></mrow><annotation encoding="application/x-tex">\mathcal{A}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathcal">A</span></span></span></span>: the LLM</li>
+<li><strong>User</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="script">U</mi></mrow><annotation encoding="application/x-tex">\mathcal{U}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathcal" style="margin-right:0.0993em;">U</span></span></span></span>: the human providing instructions</li>
+<li><strong>Environment</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="script">E</mi></mrow><annotation encoding="application/x-tex">\mathcal{E}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathcal" style="margin-right:0.0894em;">E</span></span></span></span>: Python interpreter + APIs + external tools (exposed as Python functions)</li>
+</ul>
+<p>At each turn <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi></mrow><annotation encoding="application/x-tex">t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6151em;"></span><span class="mord mathnormal">t</span></span></span></span>, the agent receives an observation <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>o</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">o_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> (either from the user or from code execution) and produces an action <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">a_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>, which is a Python code block enclosed in <code>&#x3C;execute>...&#x3C;/execute></code> tags. The environment executes <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">a_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> and returns <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>o</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow><annotation encoding="application/x-tex">o_{t+1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6389em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span></span></span></span> (the <code>stdout</code>, <code>stderr</code>, or result of the code).</p>
+<p>Formally, a trajectory is:</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mi>τ</mi><mo>=</mo><mo stretchy="false">(</mo><msub><mi>o</mi><mn>1</mn></msub><mo separator="true">,</mo><msub><mi>a</mi><mn>1</mn></msub><mo separator="true">,</mo><msub><mi>o</mi><mn>2</mn></msub><mo separator="true">,</mo><msub><mi>a</mi><mn>2</mn></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>o</mi><mi>T</mi></msub><mo separator="true">,</mo><msub><mi>a</mi><mi>T</mi></msub><mo separator="true">,</mo><msub><mi>o</mi><mrow><mi>T</mi><mo>+</mo><mn>1</mn></mrow></msub><mo stretchy="false">)</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(1)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\tau = (o_1, a_1, o_2, a_2, \ldots, o_T, a_T, o_{T+1}) \tag{1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.1389em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.1389em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.1389em;">T</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span><span class="tag"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">1</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>o</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">o_1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is the initial user instruction, each <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mi>t</mi></msub><mo>∈</mo><mi mathvariant="script">C</mi></mrow><annotation encoding="application/x-tex">a_t \in \mathcal{C}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6891em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathcal" style="margin-right:0.0583em;">C</span></span></span></span> (the space of valid Python programs), and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>o</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><mi mathvariant="script">E</mi><mo stretchy="false">(</mo><msub><mi>a</mi><mi>t</mi></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">o_{t+1} = \mathcal{E}(a_t)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6389em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathcal" style="margin-right:0.0894em;">E</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span> is the execution output.</p>
+<p>The total trajectory length <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi></mrow><annotation encoding="application/x-tex">T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span></span></span></span> is bounded by a maximum turn limit (set to 10 in the M³ToolEval experiments).</p>
+<h3 id="2-advantages-over-json-a-formal-comparison">2. Advantages Over JSON: A Formal Comparison</h3>
+<p>Let me make the four claimed advantages precise.</p>
+<p><strong>Advantage 1 — Control Flow.</strong> In JSON, expressing “compute the sum of tool outputs for a list of inputs” requires <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span></span></span></span> separate JSON turns. In CodeAct:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="python"><code><span class="line"><span style="color:#E1E4E8">countries </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> [</span><span style="color:#9ECBFF">"USA"</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">"Japan"</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">"Germany"</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">"India"</span><span style="color:#E1E4E8">]</span></span>
+<span class="line"><span style="color:#E1E4E8">final_prices </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> {}</span></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> country </span><span style="color:#F97583">in</span><span style="color:#E1E4E8"> countries:</span></span>
+<span class="line"><span style="color:#E1E4E8">    local_price </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> lookup_phone_price(</span><span style="color:#9ECBFF">"CodeAct 1"</span><span style="color:#E1E4E8">, country)</span></span>
+<span class="line"><span style="color:#E1E4E8">    rate </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> lookup_rates(country)</span></span>
+<span class="line"><span style="color:#E1E4E8">    converted </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> convert_and_tax(local_price, rate, tax_rate)</span></span>
+<span class="line"><span style="color:#E1E4E8">    shipping </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> estimate_shipping_cost(country)</span></span>
+<span class="line"><span style="color:#E1E4E8">    final_prices[country] </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> estimate_final_price(converted, shipping)</span></span>
+<span class="line"><span style="color:#E1E4E8">best </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> min</span><span style="color:#E1E4E8">(final_prices, </span><span style="color:#FFAB70">key</span><span style="color:#F97583">=</span><span style="color:#E1E4E8">final_prices.get)</span></span>
+<span class="line"><span style="color:#79B8FF">print</span><span style="color:#E1E4E8">(best, final_prices[best])</span></span></code></pre>
+<p>This is <strong>one</strong> CodeAct turn versus four or more JSON turns. The loop saves both wall-clock time and LLM API calls.</p>
+<p><strong>Advantage 2 — Data Flow.</strong> JSON actions are stateless: each action is a fresh call, and values from prior calls cannot be stored as intermediate variables. In Python, <code>rate</code> computed in turn <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span></span></span></span> can be referenced in turn <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>+</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">N+1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> without re-querying. The Python interpreter maintains state across <code>&#x3C;execute></code> blocks in the same session (similar to a Jupyter notebook).</p>
+<p><strong>Advantage 3 — Existing Packages.</strong> Compare the effort to add a new tool:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Action Type</th><th>Cost to Add New Tool</th></tr></thead><tbody><tr><td>JSON / Text</td><td>Define schema, register handler, update prompt</td></tr><tr><td>CodeAct</td><td>None — <code>import tool_library</code> and call directly</td></tr></tbody></table>
+<p>The entire PyPI ecosystem (~500,000 packages) becomes the tool library. The model’s pre-training exposure to package documentation means it often knows how to use packages without any explicit tool definition.</p>
+<p><strong>Advantage 4 — Automated Feedback.</strong> Python tracebacks are structured natural-language error messages. Compare:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span># JSON agent error</span></span>
+<span class="line"><span>{"status": "error", "code": -1}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># CodeAct Python traceback</span></span>
+<span class="line"><span>TypeError: unsupported operand type(s) for *: 'str' and 'float'</span></span>
+<span class="line"><span>  File "&#x3C;execute>", line 3, in &#x3C;module></span></span>
+<span class="line"><span>    converted = local_price * rate</span></span></code></pre>
+<p>The traceback tells the agent exactly what failed, on which line, with what types. This is actionable information for self-correction.</p>
+<h3 id="3-system-prompt-design">3. System Prompt Design</h3>
+<p>The CodeAct system prompt (Appendix E) instructs the model to:</p>
+<ol>
+<li>Interact with a “Python Jupyter Notebook” environment</li>
+<li>Enclose code in <code>&#x3C;execute>...&#x3C;/execute></code> tags</li>
+<li>Use <code>!pip install [package]</code> for missing packages</li>
+<li>Attempt fewer things per block (shorter, more targeted code)</li>
+<li>Stop and provide an answer once the execution result is sufficient</li>
+</ol>
+<p>This is notably minimal. Unlike many agent frameworks that require extensive few-shot demonstrations, CodeAct’s zero-shot prompt is just 6 lines of instructions. The rest is handled by the model’s pre-trained Python knowledge.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">graph TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph System["System Prompt (zero-shot, 6 lines)"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        SP1["You interact with a Python Jupyter environment"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        SP2["Code in &#x26;lt;execute&#x26;gt; tags"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        SP3["Install packages with !pip install"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        SP4["Attempt fewer things per block"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        SP5["Stop and answer once result obtained"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph Turn["Turn Structure"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        OBS["Observation (user or env)"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        THINK["Optional think / CoT"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        CODE["&#x26;lt;execute&#x26;gt; Python code &#x26;lt;/execute&#x26;gt;"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        RESULT["Environment returns stdout/stderr"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"><span style="color:#E1E4E8">    System --> Turn</span></span></code></pre>
+<hr>
+<h2 id="research-question-1-does-code-familiarity-help-for-atomic-tool-calls">Research Question 1: Does Code Familiarity Help for Atomic Tool Calls?</h2>
+<h3 id="experimental-setup">Experimental Setup</h3>
+<p>The first experiment tests the simplest possible scenario: a single tool call. The task is to call one API function correctly with the right arguments. This ablates the control/data-flow advantage of code, leaving only the question: <strong>does using code syntax help LLMs call tools compared to JSON or text?</strong></p>
+<p>The authors repurpose <strong>API-Bank</strong> (Li et al., 2023), a benchmark of 113 level-1 (single tool call) instances covering calendar, finance, weather, and more APIs.</p>
+<p><strong>Evaluation metric:</strong> Correctness — whether the model-generated API call’s output exactly matches the ground-truth output.</p>
+<p><strong>Models tested:</strong> 8 open-source (CodeLlama-7B/13B/34B, Llama-2-7B-chat/13B/70B, Mistral-7B-Instruct, Lemur-70B) and 8 closed-source (claude-2, claude-instant-1, gemini-pro, gpt-3.5-turbo-0613/1106, gpt-4-0613, gpt-4-1106-preview, text-davinci-002/003).</p>
+<h3 id="results-and-analysis-table-2">Results and Analysis (Table 2)</h3>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mtext>Correctness</mtext><mtext>CodeAct</mtext></msub><mo>≥</mo><msub><mtext>Correctness</mtext><mtext>JSON</mtext></msub><mtext> for 8/17 models</mtext></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(2)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\text{Correctness}_{\text{CodeAct}} \geq \text{Correctness}_{\text{JSON}} \text{ for 8/17 models} \tag{2}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord text"><span class="mord">Correctness</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">CodeAct</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord text"><span class="mord">Correctness</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">JSON</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord text"><span class="mord"> for 8/17 models</span></span></span><span class="tag"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">2</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>For most LLMs, CodeAct achieves comparable or better performance than JSON and text, even on single-tool-call tasks where CodeAct’s control-flow advantage cannot contribute. Key observations:</p>
+<ol>
+<li>
+<p><strong>Open-source LLMs favor Code over JSON.</strong> For CodeLlama-13B (38.1 vs. 12.0 vs. 17.8), Llama-2-70B (35.6 vs. 14.3 vs. 36.6), and Lemur-70B (58.6 vs. 46.6 vs. 56.1), code format substantially outperforms JSON. The hypothesis: open-source models have heavy code pre-training data but no JSON tool-call fine-tuning, so code format is “native” while JSON tool calling is foreign.</p>
+</li>
+<li>
+<p><strong>Closed-source LLMs show smaller gaps.</strong> GPT-4, claude-2, and gpt-3.5-turbo already have JSON tool-calling fine-tuning in their training, so the margin is smaller. Still, CodeAct is competitive.</p>
+</li>
+<li>
+<p><strong>Text format sometimes wins for base models.</strong> Llama-2-70B-chat performs best on text (36.6 vs. 35.6 for code). This suggests text is an even more natural format than code for instruction-tuned chat models — but JSON is consistently the weakest for open-source models.</p>
+</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">xychart-beta</span></span>
+<span class="line"><span style="color:#E1E4E8">    title "API-Bank Correctness (%) by Action Format"</span></span>
+<span class="line"><span style="color:#E1E4E8">    x-axis [CodeLlama-7B, CodeLlama-13B, Llama-2-70B-chat, Lemur-70B, gpt-4-0613, gpt-4-1106]</span></span>
+<span class="line"><span style="color:#E1E4E8">    y-axis "Correctness (%)" 0 --> 90</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [12.5, 38.1, 35.6, 58.6, 75.4, 76.8]</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [12.0, 12.0, 14.3, 46.6, 82.0, 82.7]</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [17.0, 14.0, 36.6, 56.1, 74.4, 75.4]</span></span></code></pre>
+<p><strong>The takeaway for RQ1:</strong> Code is a natural tool-calling format for LLMs with substantial code pre-training. JSON is not an obvious choice for general-purpose LLMs that haven’t been specifically fine-tuned for it.</p>
+<hr>
+<h2 id="research-question-2-does-control-flow-help-for-complex-tasks">Research Question 2: Does Control Flow Help for Complex Tasks?</h2>
+<h3 id="the-mtooleval-benchmark">The M³ToolEval Benchmark</h3>
+<p>The second experiment tackles what JSON fundamentally cannot do: tasks requiring <strong>multiple tool calls, across multiple turns, with composition of results</strong>. The authors curate M³ToolEval — <strong>M</strong>ultiple <strong>M</strong>odels <strong>M</strong>ulti-turn Tool Evaluation — consisting of 82 human-annotated instances spanning:</p>
+<ul>
+<li><strong>Web browsing</strong> (7 tools: click, scroll, go back, etc.)</li>
+<li><strong>Finance</strong> (price lookup, currency conversion, tax calculation, shipping)</li>
+<li><strong>Travel itinerary</strong> (flight search, hotel booking, weather)</li>
+<li><strong>Science information processing</strong> (data retrieval, calculation, summarization)</li>
+</ul>
+<p>Each instance requires calling multiple different tools in a single task. Table A.7 in the paper compares M³ToolEval against prior benchmarks:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Benchmark</th><th>Multi-turn</th><th>Multi-tool</th><th>No external API dependency</th></tr></thead><tbody><tr><td>ToolBench</td><td>✗</td><td>✓</td><td>✗</td></tr><tr><td>APIBench</td><td>✗</td><td>✗</td><td>✓</td></tr><tr><td>API-Bank</td><td>✗</td><td>✗</td><td>✓</td></tr><tr><td><strong>M³ToolEval</strong></td><td><strong>✓</strong></td><td><strong>✓</strong></td><td><strong>✓</strong></td></tr></tbody></table>
+<p>This is the first benchmark that simultaneously requires multi-turn interaction, multiple tools, and uses local APIs (no external service dependencies that could cause spurious failures).</p>
+<h3 id="experimental-setup-1">Experimental Setup</h3>
+<ul>
+<li>Maximum 10 interaction turns</li>
+<li>Metric: <strong>success rate</strong> (answer matches ground truth) + <strong>average turns</strong> (lower is better)</li>
+<li>Same 17 LLMs as RQ1</li>
+<li>Zero-shot setting (no demonstrations in prompt)</li>
+</ul>
+<h3 id="results-table-3">Results (Table 3)</h3>
+<p>This is where CodeAct’s advantage becomes decisive:</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mtext>SuccessRate</mtext><mtext>CodeAct</mtext></msub><mo>−</mo><msub><mtext>SuccessRate</mtext><mtext>JSON</mtext></msub><mo>≤</mo><mn>20</mn><mi mathvariant="normal">%</mi><mtext> absolute (best model)</mtext></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(3)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\text{SuccessRate}_{\text{CodeAct}} - \text{SuccessRate}_{\text{JSON}} \leq 20\% \text{ absolute (best model)} \tag{3}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord text"><span class="mord">SuccessRate</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">CodeAct</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord text"><span class="mord">SuccessRate</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">JSON</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≤</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">20%</span><span class="mord text"><span class="mord"> absolute (best model)</span></span></span><span class="tag"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">3</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>For <code>gpt-4-1106-preview</code>: CodeAct = 74.4%, JSON = 53.7%, Text = 53.7%. The 20.7% absolute improvement is the headline result of the paper.</p>
+<p>For average turns: CodeAct = 5.5 turns vs. JSON = 7.6 vs. Text = 7.7. CodeAct achieves more with 2.1 fewer turns on average.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">xychart-beta</span></span>
+<span class="line"><span style="color:#E1E4E8">    title "M³ToolEval Success Rate (%) — CodeAct vs JSON vs Text"</span></span>
+<span class="line"><span style="color:#E1E4E8">    x-axis [claude-2, gpt-3.5-0613, gpt-4-0613, gpt-4-1106, text-davinci-003, gemini-pro]</span></span>
+<span class="line"><span style="color:#E1E4E8">    y-axis "Success Rate (%)" 0 --> 80</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [54.9, 51.2, 67.1, 74.4, 20.7, 22.0]</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [39.0, 26.8, 56.1, 53.7, 18.3, 19.5]</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [29.3, 20.7, 45.1, 53.7, 7.3, 11.0]</span></span></code></pre>
+<p><strong>Why does CodeAct use fewer turns?</strong> Because it can do in one turn what JSON needs multiple turns for. In the phone-price example from Figure 1, CodeAct writes a loop that calls <code>lookup_rates</code>, <code>lookup_phone_price</code>, <code>convert_and_tax</code>, and <code>estimate_shipping_cost</code> for all four countries in one <code>&#x3C;execute></code> block. JSON needs at least 4 × 4 = 16 separate turns.</p>
+<p><strong>The gap pattern is instructive:</strong> The improvement is largest for stronger models (gpt-4 > gpt-3.5 > open-source). This is because CodeAct requires the model to write correct, runnable Python — a higher bar than producing a syntactically valid JSON string. Weaker models produce broken Python more often, partially erasing the conceptual advantage.</p>
+<h3 id="why-doesnt-json-close-the-gap-with-better-prompting">Why Doesn’t JSON Close the Gap with Better Prompting?</h3>
+<p>One might ask: can’t we just give the JSON agent more turns to compensate? Yes, up to the turn limit — but the turn limit itself matters. Every extra turn costs LLM API time, money, and latency. More fundamentally, the data flow problem cannot be solved by more turns: if the JSON agent needs the output of turn <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span></span></span></span> as input to turn <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>+</mo><mn>3</mn></mrow><annotation encoding="application/x-tex">N+3</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">3</span></span></span></span>, it must store that value somewhere, and storing/retrieving intermediate values in JSON is an awkward manual process (asking the LLM to “remember” a number). Python variables handle this natively.</p>
+<hr>
+<h2 id="research-question-3-multi-turn-interactions-and-existing-software">Research Question 3: Multi-Turn Interactions and Existing Software</h2>
+<h3 id="codeactagent-in-action">CodeActAgent in Action</h3>
+<p>Figure 3 in the paper shows a complete example of CodeActAgent (Mistral-7B fine-tuned) handling a data analysis task:</p>
+<ol>
+<li>User uploads a dataset and asks to “look at it, check for missing values, train a regression model.”</li>
+<li>Agent emits <code>&#x3C;execute>import pandas; df = pd.read_csv(url); df.info()&#x3C;/execute></code> → sees data types and missing values.</li>
+<li>Finds a type error (a column is <code>str</code> instead of <code>float</code> due to a <code>$</code> character). Fixes it with <code>df[col] = df[col].str.replace('$', '').astype(float)</code>.</li>
+<li>Trains sklearn <code>LinearRegression</code> with train-test split → prints MSE and R².</li>
+<li>User asks for coefficient visualization → agent writes Matplotlib code → gets an error about <code>tick_params</code> argument → reads the traceback → corrects the argument → produces the plot.</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant U as User</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant A as CodeActAgent</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant E as Python Interpreter</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    U->>A: "Download dataset, check missing values, train regression model"</span></span>
+<span class="line"><span style="color:#E1E4E8">    A->>E: import pandas; df = pd.read_csv(url); df.info(); df.isnull().sum()</span></span>
+<span class="line"><span style="color:#E1E4E8">    E->>A: [shape, dtypes, null counts — 'car name' has '$']</span></span>
+<span class="line"><span style="color:#E1E4E8">    A->>E: df['price'] = df['price'].str.replace('$','').astype(float); ...split/train...</span></span>
+<span class="line"><span style="color:#E1E4E8">    E->>A: MSE=10.79, R²=0.795</span></span>
+<span class="line"><span style="color:#E1E4E8">    U->>A: "Visualize regression coefficients, rotate x-axis 45°"</span></span>
+<span class="line"><span style="color:#E1E4E8">    A->>E: plt.xticks(feature_names, rotation=45); plt.show()</span></span>
+<span class="line"><span style="color:#E1E4E8">    E->>A: TypeError: tick_params() got unexpected keyword argument 'ticks'</span></span>
+<span class="line"><span style="color:#E1E4E8">    A->>E: plt.xticks(feature_names, rotation=45, ha='right', fontsize=12); plt.show()</span></span>
+<span class="line"><span style="color:#E1E4E8">    E->>A: [Figure 6464×480]</span></span>
+<span class="line"><span style="color:#E1E4E8">    A->>U: Visualization complete. Coefficients plotted.</span></span></code></pre>
+<p>This multi-turn, self-debugging interaction is what makes CodeAct powerful in practice. The agent never needed a pre-defined “fix_column_type” tool — it invented the fix on the fly using Python string methods it learned during pre-training.</p>
+<h3 id="the-self-debug-rate">The Self-Debug Rate</h3>
+<p>In the CodeActInstruct dataset, the authors specifically curate trajectories where the model encounters errors and recovers:</p>
+<blockquote>
+<p>“We selectively preserve those trajectories wherein the model initially encounters errors but subsequently rectifies these inaccuracies in later interactions.”</p>
+</blockquote>
+<p>This curation is critical. If you train on trajectories that always succeed on the first try, you don’t teach the model how to recover from errors. CodeActInstruct explicitly includes “stumble-then-recover” trajectories to build the self-debug capability.</p>
+<hr>
+<h2 id="codeactinstruct-building-the-training-dataset">CodeActInstruct: Building the Training Dataset</h2>
+<h3 id="design-philosophy">Design Philosophy</h3>
+<p>CodeActInstruct is a purpose-built instruction-tuning dataset for CodeAct. It covers five domains that together stress-test different aspects of the agent-environment interaction:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Domain</th><th>Capability</th><th>Source Dataset</th><th># Instances</th></tr></thead><tbody><tr><td>Information Seeking</td><td>Web search via Wikipedia API</td><td>HotpotQA</td><td>3,000</td></tr><tr><td>Software Package (Tool)</td><td>Math with sympy</td><td>MATH</td><td>1,732</td></tr><tr><td>Software Package (Tool)</td><td>Self-debug Python code</td><td>APPS (code gen)</td><td>647</td></tr><tr><td>External Memory</td><td>Table queries (SQLite + Pandas)</td><td>WikiTableQuestion</td><td>1,065</td></tr><tr><td>Robot Planning</td><td>Embodied task via ALFWorld</td><td>ALFWorld</td><td>2,031</td></tr><tr><td><strong>Total</strong></td><td></td><td></td><td><strong>7,139</strong></td></tr></tbody></table>
+<h3 id="trajectory-generation-pipeline">Trajectory Generation Pipeline</h3>
+<p>Generating CodeActInstruct trajectories is a three-step pipeline:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    DS["Source Dataset\n(HotpotQA, MATH, APPS,\nWikiTableQuestion, ALFWorld)"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    CON["Convert to multi-turn\n(MINT framework)\nSingle-turn → interactive with\nmax 5 turns + self-debug"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    GEN["Trajectory Generation\ngpt-3.5-turbo-0613,\nclaude-2,\ngpt-4-0613 (hard problems only)"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    FILT["Data Selection\n1. Code-as-Actions filter\n2. Self-Improving filter\n3. Instruction-Following filter"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    FINAL["Final: 7,139 trajectories\n(6,728 from gpt-3.5/claude + 411 from gpt-4)"]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    DS --> CON --> GEN --> FILT --> FINAL</span></span></code></pre>
+<p><strong>Step 1 — Convert to multi-turn:</strong> The MINT framework (Wang et al., 2023e) converts single-turn problems into multi-turn interactive settings. For APPS (code generation), this means giving the model up to 5 attempts to pass test cases rather than requiring a correct one-shot solution.</p>
+<p><strong>Step 2 — Generate trajectories:</strong> The authors use gpt-3.5-turbo-0613 and claude-2 as teacher models for most problems (cheaper), and gpt-4-0613 for problems that gpt-3.5 cannot solve.</p>
+<p><strong>Step 3 — Data selection heuristics (critical):</strong></p>
+<ol>
+<li>
+<p><strong>Code-as-Actions:</strong> Exclude trajectories where the model doesn’t follow the code format (either calls APIs incorrectly or produces non-executable actions).</p>
+</li>
+<li>
+<p><strong>Self-Improving:</strong> Keep trajectories where the model <strong>initially fails but later corrects</strong>. Exclude trajectories that fail throughout (useless for learning recovery) and exclude trajectories that succeed without ever encountering an error (useful but don’t teach debugging).</p>
+</li>
+<li>
+<p><strong>Instruction-Following:</strong> Exclude trajectories with an odd number of turns (indicates the model didn’t follow the turn-taking format correctly).</p>
+</li>
+</ol>
+<p>After all three filters: 6,728 from gpt-3.5 and claude, 411 from gpt-4.</p>
+<h3 id="comparison-with-prior-datasets">Comparison with Prior Datasets</h3>
+<p>CodeActInstruct is 3.8× larger than FireAct and 5× larger than AgentInstruct in terms of trajectories, and covers 5 domains vs. FireAct’s 2 (QA + search). Its key differentiator is the explicit multi-turn self-improvement data.</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mi mathvariant="normal">∣</mi><mtext>CodeActInstruct</mtext><mi mathvariant="normal">∣</mi><mo>=</mo><mn>7</mn><mo separator="true">,</mo><mn>139</mn><mspace width="1em"></mspace><mtext>vs</mtext><mspace width="1em"></mspace><mi mathvariant="normal">∣</mi><mtext>AgentInstruct</mtext><mi mathvariant="normal">∣</mi><mo>=</mo><mn>1</mn><mo separator="true">,</mo><mn>866</mn><mspace width="1em"></mspace><mtext>vs</mtext><mspace width="1em"></mspace><mi mathvariant="normal">∣</mi><mtext>FireAct</mtext><mi mathvariant="normal">∣</mi><mo>=</mo><mn>2</mn><mo separator="true">,</mo><mn>063</mn></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(4)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">|\text{CodeActInstruct}| = 7,139 \quad \text{vs} \quad |\text{AgentInstruct}| = 1,866 \quad \text{vs} \quad |\text{FireAct}| = 2,063 \tag{4}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∣</span><span class="mord text"><span class="mord">CodeActInstruct</span></span><span class="mord">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">7</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">139</span><span class="mspace" style="margin-right:1em;"></span><span class="mord text"><span class="mord">vs</span></span><span class="mspace" style="margin-right:1em;"></span><span class="mord">∣</span><span class="mord text"><span class="mord">AgentInstruct</span></span><span class="mord">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">866</span><span class="mspace" style="margin-right:1em;"></span><span class="mord text"><span class="mord">vs</span></span><span class="mspace" style="margin-right:1em;"></span><span class="mord">∣</span><span class="mord text"><span class="mord">FireAct</span></span><span class="mord">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8389em;vertical-align:-0.1944em;"></span><span class="mord">2</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">063</span></span><span class="tag"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">4</span></span><span class="mord">)</span></span></span></span></span></span>
+<hr>
+<h2 id="codeactagent-fine-tuning-open-source-llms">CodeActAgent: Fine-Tuning Open-Source LLMs</h2>
+<h3 id="training-setup">Training Setup</h3>
+<p>The authors fine-tune two open-source backbones:</p>
+<ul>
+<li><strong>LLaMA-2 7B</strong> (Touvron et al., 2023)</li>
+<li><strong>Mistral-7B</strong> (Jiang et al., 2023)</li>
+</ul>
+<p>Training is supervised fine-tuning (SFT) on a mixture of CodeActInstruct (7,139 agent trajectories) and general conversation data (69,230 examples from OpenOrca, ShareGPT, and CapyBara). The mixture ratio is important: agent data alone would hurt general task performance.</p>
+<p><strong>Training infrastructure:</strong></p>
+<ul>
+<li>4× A100-40GB SXM nodes</li>
+<li>Megatron-LLM fork (Cano et al., 2023)</li>
+<li>Tensor Parallel degree: 4</li>
+<li>Learning rate: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mo>×</mo><msup><mn>10</mn><mrow><mo>−</mo><mn>5</mn></mrow></msup></mrow><annotation encoding="application/x-tex">1 \times 10^{-5}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord">1</span><span class="mord"><span class="mord">0</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">5</span></span></span></span></span></span></span></span></span></span></span></span> with 50 warmup steps, cosine decay to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mo>×</mo><msup><mn>10</mn><mrow><mo>−</mo><mn>6</mn></mrow></msup></mrow><annotation encoding="application/x-tex">1 \times 10^{-6}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord">1</span><span class="mord"><span class="mord">0</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">6</span></span></span></span></span></span></span></span></span></span></span></span></li>
+<li>5 epochs, batch size 32</li>
+<li>Sequence length: 4,096 (LLaMA-2), 16,384 (Mistral)</li>
+<li>Use 3rd epoch checkpoint (best empirically)</li>
+<li>Loss computed only on assistant responses (not user/system turns)</li>
+</ul>
+<h3 id="evaluation-protocol">Evaluation Protocol</h3>
+<p>CodeActAgent is evaluated on:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Task Type</th><th>Benchmark</th><th>In-domain (ID) or Out-of-domain (OD)</th></tr></thead><tbody><tr><td>Code as Action (agent)</td><td>MINT (subset)</td><td>ID for agent tasks</td></tr><tr><td>Text as Action (agent)</td><td>Miniwob++, ScienceWorld</td><td>OD (never seen during training)</td></tr><tr><td>General LLM</td><td>MMLU, HumanEval, GSM8K, MTBench</td><td>OD</td></tr></tbody></table>
+<p>The split between ID and OD is crucial: CodeActAgent (Mistral) achieves <strong>57.4 MINT (ID)</strong> and <strong>32.4 MINT (OD)</strong>, while on M³ToolEval (OD) it achieves <strong>12.2</strong> — already competitive with some closed-source models.</p>
+<h3 id="key-results-table-5">Key Results (Table 5)</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">xychart-beta</span></span>
+<span class="line"><span style="color:#E1E4E8">    title "CodeActAgent Mistral-7B vs. Baselines (MINT benchmark)"</span></span>
+<span class="line"><span style="color:#E1E4E8">    x-axis ["Mistral Base", "Mistral Instruct", "AgentLM-7B", "FireAct-7B", "CodeActAgent (Mistral)", "gpt-3.5-0613", "gpt-4-0613"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    y-axis "MINT Score (ID)" 0 --> 80</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [0, 18.8, 0, 0, 57.4, 33.9, 68.6]</span></span></code></pre>
+<p><strong>CodeActAgent (Mistral, 7B) achieves 57.4 on MINT ID</strong> — higher than gpt-3.5-turbo-0613 (33.9) and within striking distance of gpt-4 (68.6). This is a ~24-point gain over AgentLM-7B and FireAct-7B, which use similar-size backbones but different data.</p>
+<p><strong>Three critical findings:</strong></p>
+<ol>
+<li>
+<p><strong>Generalizes to text actions (OD).</strong> CodeActAgent (LLaMA-2) achieves 25.5 on MiniWob++ text actions and 17.6 on ScienceWorld — comparable to AgentLM-7B (28.9 / 13.7) despite AgentLM being explicitly tuned for text actions. This suggests CodeAct training generalizes to other action modalities.</p>
+</li>
+<li>
+<p><strong>Maintains general LLM capability.</strong> On MMLU (59.1), HumanEval (34.7), GSM8K (58.0), CodeActAgent (Mistral) matches or exceeds Mistral Instruct, confirming that the mixed training does not degrade general performance (except a slight MMLU drop for LLaMA-2 variant).</p>
+</li>
+<li>
+<p><strong>LLaMA-2 variant unexpectedly doesn’t improve.</strong> CodeActAgent (LLaMA-2) shows near-zero improvement on most agent tasks. The authors attribute this to LLaMA-2’s generally weak instruction-following capability — fine-tuning on agent data can’t compensate for the base model’s weaknesses on complex multi-step planning.</p>
+</li>
+</ol>
+<hr>
+<h2 id="ablation-study">Ablation Study</h2>
+<h3 id="what-components-actually-matter">What Components Actually Matter?</h3>
+<p>Table A.8 in the appendix performs a systematic ablation of CodeActAgent (Mistral) by removing training data components:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Model</th><th>MINT (ID)</th><th>MINT (OD)</th><th>Miniwob++</th><th>SciWorld</th><th>MMLU</th><th>HumanEval</th><th>GSM8K</th><th>Overall</th></tr></thead><tbody><tr><td>CodeActAgent (Mistral)</td><td><strong>57.4</strong></td><td><strong>32.4</strong></td><td><strong>46.2</strong></td><td><strong>15.9</strong></td><td><strong>59.1</strong></td><td><strong>34.7</strong></td><td><strong>58.0</strong></td><td><strong>46.8</strong></td></tr><tr><td>w/o CodeAct data</td><td>32.9</td><td>23.0</td><td>47.8</td><td>17.0</td><td>59.9</td><td>33.2</td><td>59.5</td><td>46.2</td></tr><tr><td>w/o general conversations</td><td>50.5</td><td>13.9</td><td>0.0</td><td>11.0</td><td>52.4</td><td>27.9</td><td>26.8</td><td>22.6</td></tr></tbody></table>
+<p><strong>Interpretation:</strong></p>
+<ul>
+<li><strong>Removing CodeAct training data</strong> causes a ~25 point drop on MINT ID and ~9 point drop on OD — confirming agent-specific data is essential.</li>
+<li><strong>Removing general conversation data</strong> causes catastrophic failure on Miniwob++ (46.2 → 0.0) and GSM8K (58.0 → 26.8) — showing that CodeAct training alone causes the model to “forget” general conversational and reasoning abilities. Both data types are necessary.</li>
+</ul>
+<p>This is an important negative result: you cannot get a good general-purpose agent model by training exclusively on agent trajectories. The mixture is the trick.</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mi mathvariant="script">L</mi><mo stretchy="false">(</mo><mi>θ</mi><mo stretchy="false">)</mo><mo>=</mo><msub><mi mathvariant="double-struck">E</mi><mrow><mo stretchy="false">(</mo><mi mathvariant="bold">x</mi><mo separator="true">,</mo><mi mathvariant="bold">y</mi><mo stretchy="false">)</mo><mo>∼</mo><msub><mi mathvariant="script">D</mi><mtext>CodeAct</mtext></msub><mo>∪</mo><msub><mi mathvariant="script">D</mi><mtext>general</mtext></msub></mrow></msub><mrow><mo fence="true">[</mo><mo>−</mo><munder><mo>∑</mo><mi>t</mi></munder><mi>log</mi><mo>⁡</mo><msub><mi>p</mi><mi>θ</mi></msub><mo stretchy="false">(</mo><msub><mi>y</mi><mi>t</mi></msub><mo>∣</mo><mi mathvariant="bold">x</mi><mo separator="true">,</mo><msub><mi>y</mi><mrow><mo>&#x3C;</mo><mi>t</mi></mrow></msub><mo stretchy="false">)</mo><mo fence="true">]</mo></mrow></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(5)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\mathcal{L}(\theta) = \mathbb{E}_{(\mathbf{x}, \mathbf{y}) \sim \mathcal{D}_{\text{CodeAct}} \cup \mathcal{D}_{\text{general}}} \left[ - \sum_{t} \log p_\theta(y_t \mid \mathbf{x}, y_{&#x3C;t}) \right] \tag{5}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathcal">L</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.0278em;">θ</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3em;vertical-align:-1.25em;"></span><span class="mord"><span class="mord mathbb">E</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.5198em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathbf mtight">x</span><span class="mpunct mtight">,</span><span class="mord mathbf mtight" style="margin-right:0.016em;">y</span><span class="mclose mtight">)</span><span class="mrel mtight">∼</span><span class="mord mtight"><span class="mord mathcal mtight" style="margin-right:0.0278em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.3488em;margin-left:-0.0278em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">CodeAct</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1512em;"><span></span></span></span></span></span></span><span class="mbin mtight">∪</span><span class="mord mtight"><span class="mord mathcal mtight" style="margin-right:0.0278em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.3488em;margin-left:-0.0278em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">general</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2901em;"><span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3833em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size4">[</span></span><span class="mord">−</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.9em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.25em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">lo<span style="margin-right:0.0139em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">p</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathbf">x</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mrel mtight">&#x3C;</span><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1774em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size4">]</span></span></span></span><span class="tag"><span class="strut" style="height:3em;vertical-align:-1.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">5</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>where the loss is only computed over assistant tokens <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">y</mi></mrow><annotation encoding="application/x-tex">\mathbf{y}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6389em;vertical-align:-0.1944em;"></span><span class="mord mathbf" style="margin-right:0.016em;">y</span></span></span></span>, not user/system tokens.</p>
+<hr>
+<h2 id="what-codeact-is-not-comparison-with-related-work">What CodeAct Is Not: Comparison with Related Work</h2>
+<h3 id="vs-voyager-wang-et-al-2023a">vs. Voyager (Wang et al., 2023a)</h3>
+<p>Voyager also uses code for agent actions in Minecraft, but writes <strong>function definitions</strong> (entire plans) rather than imperative code blocks. This disallows dynamic atomic action adjustment: in CodeAct, each <code>&#x3C;execute></code> block is a small, targeted action. In Voyager, the agent writes one function that handles all possible cases, which is harder and requires more prompt engineering. CodeAct is more flexible and works zero-shot.</p>
+<h3 id="vs-opencodeinterpreter-zheng-et-al-2024">vs. OpenCodeInterpreter (Zheng et al., 2024)</h3>
+<p>Concurrent work focused specifically on competitive programming. Useful for code generation / debugging tasks but not designed as a general agent framework. No CodeActInstruct-equivalent training data for diverse domains.</p>
+<h3 id="vs-taskweaver-qiao-et-al-2023">vs. TaskWeaver (Qiao et al., 2023)</h3>
+<p>The closest conceptually — also uses code in the action space. But TaskWeaver relies on qualitative closed-source model demonstrations and doesn’t provide rigorous quantitative benchmarks, open-source models, or training data. CodeAct provides all three.</p>
+<hr>
+<h2 id="limitations-and-boundary-conditions">Limitations and Boundary Conditions</h2>
+<h3 id="1-python-knowledge-required">1. Python Knowledge Required</h3>
+<p>CodeAct’s advantage is proportional to the model’s Python capability. For models with minimal code pre-training (e.g., some smaller open-source instruction-tuned chat models), CodeAct offers no advantage and may hurt performance due to syntax errors. JSON may be a better choice for models below a certain Python competence threshold.</p>
+<h3 id="2-security-and-sandboxing">2. Security and Sandboxing</h3>
+<p>CodeAct <strong>directly executes arbitrary Python code</strong>. This is a fundamental security concern. The paper acknowledges:</p>
+<blockquote>
+<p>“CodeAct directly grants access for the agent to freely execute code in a sandbox environment, in the worst scenario (e.g., in Sci-Fi movies), such an agent may potentially break free of the sandbox restriction and cause harm to the world through cyber-attack.”</p>
+</blockquote>
+<p>In production, CodeAct requires a robust sandboxed execution environment (e.g., Docker containers with no network access, resource limits, and filesystem isolation). This is an engineering burden that JSON-based systems avoid.</p>
+<h3 id="3-hallucination-of-package-apis">3. Hallucination of Package APIs</h3>
+<p>LLMs sometimes confidently write <code>import nonexistent_package</code> or call <code>df.some_made_up_method()</code>. In a pure text agent, this produces a wrong answer silently. In CodeAct, this produces an <code>ImportError</code> or <code>AttributeError</code> — which is actually better (the agent can detect and correct it), but only if the model has enough capability to recover. Weaker models may loop on errors without converging.</p>
+<h3 id="4-gap-between-open-and-closed-source-models">4. Gap Between Open and Closed-Source Models</h3>
+<p>On M³ToolEval, the best open-source model (Lemur-70B) achieves 13.4% while the best closed-source (gpt-4-1106-preview) achieves 74.4%. CodeAct narrows this gap proportionally but doesn’t eliminate it. The fundamental capability gap in multi-step reasoning remains.</p>
+<h3 id="5-turn-limit-sensitivity">5. Turn-Limit Sensitivity</h3>
+<p>The paper uses a 10-turn limit for M³ToolEval. Real-world tasks may require more. Every additional turn costs LLM inference compute and introduces the risk of context-window overflow for models with short contexts (LLaMA-2’s 4,096 token limit is a practical concern for long trajectories).</p>
+<hr>
+<h2 id="reproducibility-notes">Reproducibility Notes</h2>
+<p>The paper provides strong reproducibility:</p>
+<ul>
+<li><strong>Code and data:</strong> <code>github.com/xingyaoww/code-act</code> — includes all training code, model checkpoints, evaluation scripts.</li>
+<li><strong>Models:</strong> CodeActAgent (LLaMA-2 7B) and CodeActAgent (Mistral 7B) are released publicly.</li>
+<li><strong>Dataset:</strong> CodeActInstruct (7,139 trajectories, 10.5M tokens) is released.</li>
+<li><strong>Benchmark:</strong> M³ToolEval (82 instances, 4 domains) is available for evaluation.</li>
+<li><strong>Training details:</strong> Fully specified in Appendix D — optimizer, learning rate schedule, batch size, hardware, sequence length.</li>
+</ul>
+<p>One important note: trajectory generation used gpt-3.5-turbo-0613 and claude-2, which may be deprecated or changed by the time you run this. Regenerating trajectories with current model versions may yield different results.</p>
+<p>The 3rd-epoch checkpoint (not the final checkpoint) is used. This is unusual and suggests overfitting occurs in later epochs — worth noting if you reproduce training.</p>
+<hr>
+<h2 id="my-analysis-and-takeaways">My Analysis and Takeaways</h2>
+<h3 id="why-this-paper-matters">Why This Paper Matters</h3>
+<p>CodeAct is important not because it introduces a new architecture or training algorithm, but because it demonstrates a <strong>design principle</strong>: when you’re already forcing LLMs to generate structured text, make that structure a general-purpose programming language rather than a task-specific schema.</p>
+<p>The implications are broader than the paper’s experiments. If code is the natural action format for LLMs, then:</p>
+<ol>
+<li>
+<p><strong>Tool definitions are unnecessary.</strong> You don’t need to write function schemas for every capability — just provide Python packages and let the model discover the API from documentation or trial and error.</p>
+</li>
+<li>
+<p><strong>Error handling is built-in.</strong> Python’s exception system is a natural curriculum for agent self-improvement. You don’t need human-curated error mappings.</p>
+</li>
+<li>
+<p><strong>Arbitrary computation is possible.</strong> Sorting, filtering, math, string manipulation — anything computable is available to the agent as a first-class citizen.</p>
+</li>
+</ol>
+<h3 id="the-fundamental-insight-about-action-spaces">The Fundamental Insight About Action Spaces</h3>
+<p>The paper implicitly makes a deep point about the relationship between <strong>expressiveness</strong> and <strong>learnability</strong> of action spaces:</p>
+<ul>
+<li>Too restrictive (atomic JSON calls): easy to parse, hard to compose, many turns</li>
+<li>Too expressive (unconstrained text): hard to parse, flexible but fragile</li>
+<li>Code: expressive, parseable (interpreter), learnable (pre-training data), composable (data flow)</li>
+</ul>
+<p>Code threads the needle. This is why the concept has since been adopted in OpenHands (formerly OpenDevin), Claude Computer Use, and essentially every serious agent framework built after 2024.</p>
+<h3 id="open-questions">Open Questions</h3>
+<ol>
+<li>
+<p><strong>Optimal code granularity.</strong> How much code should each <code>&#x3C;execute></code> block contain? The paper recommends “fewer things at a time,” but the optimal tradeoff between block length and turn count is unexplored.</p>
+</li>
+<li>
+<p><strong>Non-Python languages.</strong> Bash, JavaScript, SQL are all plausible alternatives. When would you prefer SQL to Python for a data agent? This is underexplored.</p>
+</li>
+<li>
+<p><strong>Mixture ratio for training.</strong> The paper uses a specific ratio of CodeActInstruct to general conversation data. The optimal ratio (and whether it depends on task distribution at test time) is not systematically ablated.</p>
+</li>
+<li>
+<p><strong>Longer context requirements.</strong> As tasks become more complex, trajectory lengths grow. The 4,096-token limit of LLaMA-2 is already a bottleneck in the paper. Future work should explore explicit trajectory compression.</p>
+</li>
+</ol>
+<hr>
+<h2 id="summary">Summary</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Aspect</th><th>Summary</th></tr></thead><tbody><tr><td><strong>Core idea</strong></td><td>Use executable Python as the agent action space</td></tr><tr><td><strong>Key advantages</strong></td><td>Control flow, data flow, existing packages, automated error feedback</td></tr><tr><td><strong>Benchmarks</strong></td><td>API-Bank (atomic calls), M³ToolEval (multi-tool, multi-turn)</td></tr><tr><td><strong>Main result</strong></td><td>Up to 20% absolute improvement in success rate; 30% fewer turns</td></tr><tr><td><strong>Dataset</strong></td><td>CodeActInstruct: 7,139 trajectories across 5 domains</td></tr><tr><td><strong>Model</strong></td><td>CodeActAgent (Mistral-7B): matches closed-source on agent benchmarks</td></tr><tr><td><strong>Key limitation</strong></td><td>Requires Python competence; security sandbox needed</td></tr><tr><td><strong>Venue</strong></td><td>ICML 2024</td></tr><tr><td><strong>Code</strong></td><td>github.com/xingyaoww/code-act</td></tr></tbody></table>
+<p>CodeAct is a conceptually clean, well-executed paper that changes how the field thinks about agent action spaces. Its influence is visible in every major agent framework built since its release — which is the clearest indicator of a paper that got something fundamentally right.</p>
+<hr>
+<h2 id="deep-dive-the-codeact-agent-loop-algorithm">Deep Dive: The CodeAct Agent Loop Algorithm</h2>
+<p>Let me formalize the CodeAct agent loop more precisely to make the mechanics explicit. I’ll write it as pseudocode and then explain each step.</p>
+<h3 id="pseudocode-codeact-multi-turn-agent-loop">Pseudocode: CodeAct Multi-Turn Agent Loop</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Algorithm 1: CodeAct Agent Loop</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Input:</span></span>
+<span class="line"><span>  instruction  : str     -- User's natural-language task description</span></span>
+<span class="line"><span>  tools        : dict    -- Python functions available to the agent (may be empty)</span></span>
+<span class="line"><span>  max_turns    : int     -- Maximum number of interaction turns (default: 10)</span></span>
+<span class="line"><span>  llm          : LLM     -- Language model backbone (e.g., Mistral-7B, gpt-4)</span></span>
+<span class="line"><span>  interpreter  : PythonInterpreter  -- Stateful Python execution environment</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Output:</span></span>
+<span class="line"><span>  answer       : str     -- Final answer to the user's instruction</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>1:  context ← [system_prompt] + [("user", instruction)]</span></span>
+<span class="line"><span>2:  turn ← 0</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>3:  while turn &#x3C; max_turns:</span></span>
+<span class="line"><span>4:      response ← llm.generate(context)</span></span>
+<span class="line"><span>5:</span></span>
+<span class="line"><span>6:      if "&#x3C;execute>" in response:</span></span>
+<span class="line"><span>7:          code_block ← extract_between_tags(response, "&#x3C;execute>", "&#x3C;/execute>")</span></span>
+<span class="line"><span>8:          observation ← interpreter.run(code_block)    // stdout + stderr</span></span>
+<span class="line"><span>9:          context.append(("assistant", response))</span></span>
+<span class="line"><span>10:         context.append(("environment", observation))</span></span>
+<span class="line"><span>11:         turn ← turn + 1</span></span>
+<span class="line"><span>12:</span></span>
+<span class="line"><span>13:     else if "Answer:" in response:</span></span>
+<span class="line"><span>14:         answer ← extract_answer(response)</span></span>
+<span class="line"><span>15:         return answer</span></span>
+<span class="line"><span>16:</span></span>
+<span class="line"><span>17:     else:</span></span>
+<span class="line"><span>18:         // Free-form natural language response (e.g., asking for clarification)</span></span>
+<span class="line"><span>19:         context.append(("assistant", response))</span></span>
+<span class="line"><span>20:         user_reply ← wait_for_user()</span></span>
+<span class="line"><span>21:         context.append(("user", user_reply))</span></span>
+<span class="line"><span>22:         turn ← turn + 1</span></span>
+<span class="line"><span>23:</span></span>
+<span class="line"><span>24: return None   // Exceeded max turns without answer</span></span></code></pre>
+<p><strong>Line-by-line explanation:</strong></p>
+<ul>
+<li>
+<p><strong>Line 1:</strong> The context is initialized with the system prompt (the 6-line CodeAct instruction from Appendix E) and the user’s instruction. The <code>tools</code> dictionary, if non-empty, is also appended as Python function definitions in the system prompt.</p>
+</li>
+<li>
+<p><strong>Line 4:</strong> The LLM generates a response conditioned on the full context window. This is a standard autoregressive generation step.</p>
+</li>
+<li>
+<p><strong>Line 6–11:</strong> If the response contains an <code>&#x3C;execute></code> block, the code is extracted and passed to the Python interpreter. The interpreter is <strong>stateful</strong> — variables defined in turn <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi></mrow><annotation encoding="application/x-tex">t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6151em;"></span><span class="mord mathnormal">t</span></span></span></span> are available in turn <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">t+1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6984em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">t</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span>. The observation (stdout + stderr) is appended to context as an “environment” turn.</p>
+</li>
+<li>
+<p><strong>Line 13–15:</strong> If the response contains “Answer:”, the agent believes it has sufficient information and returns the answer. This is the success path.</p>
+</li>
+<li>
+<p><strong>Line 17–22:</strong> If neither <code>&#x3C;execute></code> nor “Answer:” appears, the agent is asking the user for clarification. This is uncommon in practice (the system prompt encourages executing code rather than asking).</p>
+</li>
+<li>
+<p><strong>Line 24:</strong> If <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi></mrow><annotation encoding="application/x-tex">T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span></span></span></span> turns elapse without an answer, the interaction terminates. Success rate measurements count this as failure.</p>
+</li>
+</ul>
+<h3 id="key-invariant-interpreter-state-persistence">Key Invariant: Interpreter State Persistence</h3>
+<p>The most important property of the CodeAct loop is that the Python interpreter maintains state across turns:</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mtext>State</mtext><mo stretchy="false">(</mo><mi>t</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo><mo>=</mo><mtext>State</mtext><mo stretchy="false">(</mo><mi>t</mi><mo stretchy="false">)</mo><mo>∪</mo><mtext>NewBindings</mtext><mo stretchy="false">(</mo><msub><mtext>code</mtext><mi>t</mi></msub><mo stretchy="false">)</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(6)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\text{State}(t+1) = \text{State}(t) \cup \text{NewBindings}(\text{code}_t) \tag{6}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">State</span></span><span class="mopen">(</span><span class="mord mathnormal">t</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">State</span></span><span class="mopen">(</span><span class="mord mathnormal">t</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">∪</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">NewBindings</span></span><span class="mopen">(</span><span class="mord"><span class="mord text"><span class="mord">code</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span><span class="tag"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">6</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>After executing <code>x = 42</code> in turn 3, the variable <code>x</code> is available in turn 4. This is the fundamental mechanism behind data flow — and it’s simply how a Python REPL works. The implementation detail that makes this work is that the interpreter is <strong>not restarted</strong> between turns, i.e., it behaves like a persistent Jupyter kernel.</p>
+<h3 id="comparison-json-agent-loop-algorithm">Comparison: JSON Agent Loop Algorithm</h3>
+<p>For contrast, here is the equivalent JSON agent loop:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Algorithm 2: JSON Tool-Calling Agent Loop (for comparison)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>1:  context ← [system_prompt + tool_schemas] + [("user", instruction)]</span></span>
+<span class="line"><span>2:  turn ← 0</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>3:  while turn &#x3C; max_turns:</span></span>
+<span class="line"><span>4:      response ← llm.generate(context)</span></span>
+<span class="line"><span>5:</span></span>
+<span class="line"><span>6:      if "Action:" in response:</span></span>
+<span class="line"><span>7:          json_str ← extract_json(response)</span></span>
+<span class="line"><span>8:          tool_name ← json_str["tool"]</span></span>
+<span class="line"><span>9:          args ← json_str["args"]</span></span>
+<span class="line"><span>10:         if tool_name in registered_tools:</span></span>
+<span class="line"><span>11:             result ← registered_tools[tool_name](**args)</span></span>
+<span class="line"><span>12:         else:</span></span>
+<span class="line"><span>13:             result ← {"error": f"Unknown tool {tool_name}"}</span></span>
+<span class="line"><span>14:         context.append(("assistant", response))</span></span>
+<span class="line"><span>15:         context.append(("observation", str(result)))</span></span>
+<span class="line"><span>16:         turn ← turn + 1</span></span>
+<span class="line"><span>17:</span></span>
+<span class="line"><span>18:     else if "Answer:" in response:</span></span>
+<span class="line"><span>19:         return extract_answer(response)</span></span>
+<span class="line"><span>20:</span></span>
+<span class="line"><span>21: return None</span></span></code></pre>
+<p><strong>Key differences:</strong></p>
+<ol>
+<li>
+<p><strong>Line 8–11 vs. Code line 7–8:</strong> JSON requires parsing the tool name from a structured string and dispatching to a pre-registered handler. CodeAct directly executes arbitrary Python — no dispatch table needed.</p>
+</li>
+<li>
+<p><strong>Line 13:</strong> If the JSON names an unknown tool, it fails with a generic error. In CodeAct, the Python interpreter returns <code>NameError: name 'unknown_tool' is not defined</code> — more informative.</p>
+</li>
+<li>
+<p><strong>Data flow:</strong> The JSON loop has <strong>no mechanism</strong> for variable binding across turns. If turn 3 computes <code>price = 42.0</code>, turn 4 cannot reference <code>price</code> — it must re-query the tool. CodeAct’s interpreter state handles this automatically.</p>
+</li>
+</ol>
+<hr>
+<h2 id="understanding-the-experiments-statistical-nuances">Understanding the Experiments: Statistical Nuances</h2>
+<h3 id="why-17-llms">Why 17 LLMs?</h3>
+<p>The choice to test 17 models is not arbitrary. The paper wants to show that CodeAct’s advantage is not model-specific — it holds across closed-source and open-source, large and small, instruction-tuned and base models. Table 2 and Table 3 both report the <strong>frequency of best-performing format</strong> row at the bottom:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Metric</th><th>CodeAct</th><th>JSON</th><th>Text</th></tr></thead><tbody><tr><td>Best format (API-Bank, open-source)</td><td>5</td><td>0</td><td>1</td></tr><tr><td>Best format (API-Bank, closed-source)</td><td>4</td><td>5</td><td>0</td></tr><tr><td>Best format (M³ToolEval, open-source)</td><td>5</td><td>4</td><td>3</td></tr><tr><td>Best format (M³ToolEval, closed-source)</td><td>7</td><td>2</td><td>1</td></tr></tbody></table>
+<p>On M³ToolEval (the more meaningful benchmark), CodeAct is the best format for <strong>12 out of 17 LLMs</strong> — a strong majority. JSON is best for 5, text for 4 (note a model can tie for best so counts exceed 17).</p>
+<h3 id="the-closed-source-json-anomaly">The Closed-Source JSON Anomaly</h3>
+<p>Why does JSON sometimes beat CodeAct for closed-source models on API-Bank? Because GPT-3.5, GPT-4, and Claude have all been fine-tuned with <strong>JSON function calling</strong> as a specific capability. Their training data includes function-calling examples in exactly the JSON schema format. For single atomic calls (API-Bank), this targeted fine-tuning gives them an advantage over code-format. For multi-tool tasks (M³ToolEval), this advantage disappears because no amount of JSON fine-tuning can add for-loops to the action space.</p>
+<p>This analysis predicts: as open-source models receive more instruction tuning (including function-calling), the JSON advantage for closed-source models will shrink. By 2025-2026, this prediction has largely come true — most state-of-the-art open-source models have explicit function-calling capability, and code-first agents (like Claude Computer Use, OpenHands) have become the dominant paradigm.</p>
+<h3 id="the-turn-efficiency-formula">The Turn Efficiency Formula</h3>
+<p>The expected number of turns for a JSON agent to complete a task requiring <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span></span></span></span> tool calls is at minimum <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span></span></span></span> (ignoring retries). For CodeAct, a loop over <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span></span></span></span> tools is a single turn:</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mi>T</mi><mtext>JSON</mtext></msub><mo>≥</mo><mi>N</mi><mspace width="1em"></mspace><mtext>vs</mtext><mspace width="1em"></mspace><msub><mi>T</mi><mtext>CodeAct</mtext></msub><mo>=</mo><mn>1</mn><mo>+</mo><mi>δ</mi></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(7)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">T_{\text{JSON}} \geq N \quad \text{vs} \quad T_{\text{CodeAct}} = 1 + \delta \tag{7}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">JSON</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span><span class="mspace" style="margin-right:1em;"></span><span class="mord text"><span class="mord">vs</span></span><span class="mspace" style="margin-right:1em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">CodeAct</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0379em;">δ</span></span><span class="tag"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">7</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>δ</mi><mo>≥</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">\delta \geq 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8304em;vertical-align:-0.136em;"></span><span class="mord mathnormal" style="margin-right:0.0379em;">δ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0</span></span></span></span> is the number of additional self-debug turns triggered by Python errors. In the paper’s experiments, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>δ</mi><mtext>avg</mtext></msub><mo>≈</mo><mn>0.5</mn></mrow><annotation encoding="application/x-tex">\delta_{\text{avg}} \approx 0.5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9805em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0379em;">δ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0379em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">avg</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.5</span></span></span></span> for strong models (gpt-4), meaning CodeAct uses about 1.5 turns for a task that needs <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>≥</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">N \geq 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8193em;vertical-align:-0.136em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> tool calls.</p>
+<p>The result: <strong>30% fewer turns on average</strong> (paper’s headline number), which translates directly to 30% fewer LLM API calls and approximately 30% lower inference cost.</p>
+<hr>
+<h2 id="the-data-mixture-problem-a-closer-look">The Data Mixture Problem: A Closer Look</h2>
+<h3 id="why-does-removing-general-conversation-hurt-so-much">Why Does Removing General Conversation Hurt So Much?</h3>
+<p>The ablation result in Table A.8 shows that removing general conversation data catastrophically hurts Miniwob++ (46.2 → 0.0). This is surprising — why would text-based web interaction require general conversation data?</p>
+<p>The explanation is a form of <strong>catastrophic forgetting</strong>. When fine-tuned exclusively on CodeActInstruct (agent trajectories), the model learns to <em>always</em> respond in the code-as-action format. When evaluated on Miniwob++ (which expects text-format actions), the model can’t switch to the text format — it has forgotten that text actions are even possible. Adding general conversation data reminds the model that natural language responses are also valid.</p>
+<p>This is a general principle in instruction tuning: <strong>mixture diversity prevents format lock-in.</strong> A model trained on one narrow distribution of outputs will produce that format even when it’s inappropriate. Diverse training maintains the model’s ability to modulate output format based on context.</p>
+<h3 id="the-data-mixing-objective">The Data Mixing Objective</h3>
+<p>Formally, the training distribution is:</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mi mathvariant="script">D</mi><mtext>train</mtext></msub><mo>=</mo><mi>α</mi><mo>⋅</mo><msub><mi mathvariant="script">D</mi><mtext>CodeAct</mtext></msub><mo>+</mo><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><mi>α</mi><mo stretchy="false">)</mo><mo>⋅</mo><msub><mi mathvariant="script">D</mi><mtext>general</mtext></msub></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(8)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\mathcal{D}_{\text{train}} = \alpha \cdot \mathcal{D}_{\text{CodeAct}} + (1-\alpha) \cdot \mathcal{D}_{\text{general}} \tag{8}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathcal" style="margin-right:0.0278em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3175em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">train</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.4445em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathcal" style="margin-right:0.0278em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">CodeAct</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathcal" style="margin-right:0.0278em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">general</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span><span class="tag"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">8</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>≈</mo><mn>7</mn><mo separator="true">,</mo><mn>139</mn><mi mathvariant="normal">/</mi><mo stretchy="false">(</mo><mn>7</mn><mo separator="true">,</mo><mn>139</mn><mo>+</mo><mn>69</mn><mo separator="true">,</mo><mn>230</mn><mo stretchy="false">)</mo><mo>≈</mo><mn>0.093</mn></mrow><annotation encoding="application/x-tex">\alpha \approx 7,139 / (7,139 + 69,230) \approx 0.093</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4831em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">7</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">139/</span><span class="mopen">(</span><span class="mord">7</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">139</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">69</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">230</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.093</span></span></span></span> in the paper’s setup. The agent trajectories are about 9% of all training examples by count, but since they are much longer (~1,482 tokens per instance vs. ~797 for general data), they represent approximately 15% of total training tokens.</p>
+<p>The authors don’t ablate over <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> — finding the optimal mixture ratio is left as an open problem.</p>
+<hr>
+<h2 id="codeacts-influence-the-post-2024-landscape">CodeAct’s Influence: The Post-2024 Landscape</h2>
+<h3 id="how-the-field-moved-after-codeact">How the Field Moved After CodeAct</h3>
+<p>CodeAct’s most lasting contribution is not its specific model (CodeActAgent has been superseded by many larger and better models) but its conceptualization of <strong>code as a universal agent action space</strong>. Looking at major agent frameworks built after the paper:</p>
+<p><strong>OpenHands (formerly OpenDevin, 2024):</strong> Directly builds on CodeAct’s framework. Uses a CodeAct-style code execution loop as the core agent loop. The lead author of CodeAct (Xingyao Wang) is also a contributor to OpenHands.</p>
+<p><strong>Claude Computer Use (Anthropic, Oct 2024):</strong> Uses code (bash commands + Python) as the primary action language for computer control tasks. JSON tool calls are available but secondary.</p>
+<p><strong>Codex/o3-mini Agent Mode (OpenAI, 2025):</strong> Generates Python code for execution as part of task solving — exactly the CodeAct pattern.</p>
+<p><strong>Agent frameworks (LangChain, LlamaIndex, 2024+):</strong> Both added Python REPL tools as first-class action types after CodeAct demonstrated their superiority.</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">timeline</span></span>
+<span class="line"><span style="color:#E1E4E8">    title CodeAct's Influence on Agent Frameworks</span></span>
+<span class="line"><span style="color:#E1E4E8">    2024-02 : CodeAct paper (arXiv)</span></span>
+<span class="line"><span style="color:#E1E4E8">    2024-06 : ICML 2024 acceptance</span></span>
+<span class="line"><span style="color:#E1E4E8">    2024-07 : OpenHands (OpenDevin) adopts CodeAct loop</span></span>
+<span class="line"><span style="color:#E1E4E8">    2024-10 : Claude Computer Use (code-first actions)</span></span>
+<span class="line"><span style="color:#E1E4E8">    2025-01 : Most SOTA agent benchmarks use code actions</span></span>
+<span class="line"><span style="color:#E1E4E8">    2025-06 : Code-as-action becomes default in all major agent frameworks</span></span></code></pre>
+<h3 id="what-hasnt-changed-the-safety-problem">What Hasn’t Changed: The Safety Problem</h3>
+<p>Despite widespread adoption, the fundamental security concern remains unresolved. Executing arbitrary LLM-generated Python in a production environment requires:</p>
+<ol>
+<li><strong>Process isolation</strong> (Docker container or VM)</li>
+<li><strong>Network restrictions</strong> (no outbound HTTP except allowed endpoints)</li>
+<li><strong>Filesystem restrictions</strong> (no access to sensitive paths)</li>
+<li><strong>Resource limits</strong> (CPU time, memory, disk I/O)</li>
+<li><strong>Code auditing</strong> (detecting potentially malicious patterns before execution)</li>
+</ol>
+<p>Most agent frameworks today run CodeAct in Docker containers with restricted capabilities. But the attack surface is real: an adversarially crafted instruction could cause the agent to execute <code>os.system("rm -rf /")</code> if the sandbox is misconfigured. The paper acknowledges this but doesn’t provide a solution — it remains an active research area as of 2026.</p>
+<hr>
+<h2 id="experimental-figure-annotations">Experimental Figure Annotations</h2>
+<h3 id="figure-1-paper-the-motivating-example">Figure 1 (Paper): The Motivating Example</h3>
+<p>The paper’s Figure 1 shows side-by-side comparison of JSON vs. CodeAct for determining the cheapest country to buy a smartphone. The JSON agent needs at least 8 turns (2 per country × 4 countries minimum), while CodeAct does it in 1 turn using a for-loop. Key annotations:</p>
+<ul>
+<li><strong>“Control &#x26; Data Flow of Code Simplifies Complex Operations”</strong> — the for-loop handles all countries in one block</li>
+<li><strong>“Re-use ‘min’ Function from Existing Software Infrastructures (Python library)”</strong> — <code>min(final_prices, key=...)</code> is a built-in that JSON agents can’t use</li>
+<li><strong>“Fewer Actions Required!”</strong> — the comparison caption</li>
+</ul>
+<h3 id="figure-2-paper-the-agent-framework-diagram">Figure 2 (Paper): The Agent Framework Diagram</h3>
+<p>Figure 2 shows the general multi-turn interaction framework. Key components:</p>
+<ul>
+<li><strong>Agent:</strong> receives observations, runs chain-of-thought, emits actions</li>
+<li><strong>Environment:</strong> two types — Computer interface (information seeking, tools, external memory) and Physical world (robots)</li>
+<li><strong>User:</strong> provides instructions, receives natural-language responses</li>
+<li><strong>Planning module:</strong> chain-of-thought, self-reflection, learning from prior observations</li>
+</ul>
+<p>The diagram makes explicit that CodeAct is a <strong>general framework</strong> — not specific to any one application. The same loop works for web browsing (click_url in Python), database queries (sqlite3 in Python), math (sympy in Python), and robot control (robot APIs in Python).</p>
+<h3 id="figure-3-paper-codeactagent-in-action">Figure 3 (Paper): CodeActAgent in Action</h3>
+<p>The data-analysis session in Figure 3 demonstrates four self-debug cycles:</p>
+<ol>
+<li>Type error on <code>$</code> character in price column → fixed with <code>str.replace('$','')</code></li>
+<li><code>tick_params()</code> wrong argument → fixed by switching to <code>xticks(rotation=...)</code>
+Both fixes are derived purely from reading the traceback, with no human-provided hint about what’s wrong.</li>
+</ol>
+<hr>
+<h2 id="final-verdict">Final Verdict</h2>
+<p>CodeAct is one of the cleaner papers in the LLM agent literature of 2024 — it makes a specific, testable claim (code outperforms JSON/text), provides rigorous experiments across 17 models and two benchmarks, releases all code/data/models, and builds a concrete artifact (CodeActAgent) that demonstrates the idea works in practice.</p>
+<p>The 20% success rate improvement headline is real and reproducible. The more important contribution is conceptual: code is the right level of abstraction for agent actions. Not natural language (too ambiguous), not JSON (too constrained), but executable code — the universal “language of computation” that LLMs have been reading and writing since before they were called LLMs.</p>
+<p>The sandboxing and safety gap is the paper’s main unresolved issue, and it’s an important one for anyone deploying CodeAct-style agents in production. But for research purposes, the case is made compellingly.</p> </div> <footer class="blog-post-footer">  <nav class="blog-post-nav" aria-label="Adjacent posts"> <span></span> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-05-25-codeact-阅读笔记-zh/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">CodeAct：用可执行代码驱动更强的 LLM Agent</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient ML systems, LLM infrastructure, and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>

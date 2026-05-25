@@ -1,0 +1,854 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CodeAct：用可执行代码驱动更强的 LLM Agent | Zhongzhu / Charlie</title><meta name="description" content="CodeAct 提出用可执行 Python 代码作为 LLM Agent 的统一动作空间，取代碎片化的 JSON/文本工具调用。借助控制流、变量复用、现有软件库和自动错误反馈，CodeAct Agent 在 17 个大模型上的成功率提升最高达 20%——而微调后的 CodeActAgent 7B 模型在 Agent 基准上可比肩百亿规模闭源模型。"><meta property="og:title" content="CodeAct：用可执行代码驱动更强的 LLM Agent | Zhongzhu / Charlie"><meta property="og:description" content="CodeAct 提出用可执行 Python 代码作为 LLM Agent 的统一动作空间，取代碎片化的 JSON/文本工具调用。借助控制流、变量复用、现有软件库和自动错误反馈，CodeAct Agent 在 17 个大模型上的成功率提升最高达 20%——而微调后的 CodeActAgent 7B 模型在 Agent 基准上可比肩百亿规模闭源模型。"><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-05-25-codeact-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-05-25-codeact-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.BtdlpukG.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>132</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>21</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> <nav class="blog-post-toc" aria-label="Table of contents"> <p class="blog-post-toc-title">Contents</p> <ul> <li class="toc-level-2"> <a href="#一句话总结">一句话总结</a> </li><li class="toc-level-2"> <a href="#前置知识">前置知识</a> </li><li class="toc-level-3"> <a href="#1-llm-agent-的基本循环">1. LLM Agent 的基本循环</a> </li><li class="toc-level-3"> <a href="#2-工具调用在-llm-中意味着什么">2. “工具调用”在 LLM 中意味着什么</a> </li><li class="toc-level-3"> <a href="#3-三种主流动作格式对比">3. 三种主流动作格式对比</a> </li><li class="toc-level-3"> <a href="#4-为什么选-python">4. 为什么选 Python？</a> </li><li class="toc-level-3"> <a href="#5-自调试的工作原理">5. 自调试的工作原理</a> </li><li class="toc-level-2"> <a href="#codeact-框架的设计与形式化">CodeAct 框架的设计与形式化</a> </li><li class="toc-level-3"> <a href="#1-统一动作空间">1. 统一动作空间</a> </li><li class="toc-level-3"> <a href="#2-四个优势的精确阐述">2. 四个优势的精确阐述</a> </li><li class="toc-level-3"> <a href="#3-系统提示设计">3. 系统提示设计</a> </li><li class="toc-level-2"> <a href="#研究问题一代码格式对原子工具调用有帮助吗">研究问题一：代码格式对原子工具调用有帮助吗？</a> </li><li class="toc-level-3"> <a href="#实验设置">实验设置</a> </li><li class="toc-level-3"> <a href="#结果与分析表2">结果与分析（表2）</a> </li><li class="toc-level-2"> <a href="#研究问题二控制流对复杂任务有帮助吗">研究问题二：控制流对复杂任务有帮助吗？</a> </li><li class="toc-level-3"> <a href="#mtooleval-基准">M³ToolEval 基准</a> </li><li class="toc-level-3"> <a href="#实验设置与结果表3">实验设置与结果（表3）</a> </li><li class="toc-level-3"> <a href="#为什么更多轮次的-json-无法弥补差距">为什么更多轮次的 JSON 无法弥补差距？</a> </li><li class="toc-level-2"> <a href="#研究问题三多轮交互与现有软件的价值">研究问题三：多轮交互与现有软件的价值</a> </li><li class="toc-level-3"> <a href="#codeactagent-实际演示">CodeActAgent 实际演示</a> </li><li class="toc-level-2"> <a href="#codeactinstruct构建训练数据集">CodeActInstruct：构建训练数据集</a> </li><li class="toc-level-3"> <a href="#设计哲学">设计哲学</a> </li><li class="toc-level-3"> <a href="#轨迹生成流程">轨迹生成流程</a> </li><li class="toc-level-3"> <a href="#与前作数据集的对比">与前作数据集的对比</a> </li><li class="toc-level-2"> <a href="#codeactagent微调开源-llm">CodeActAgent：微调开源 LLM</a> </li><li class="toc-level-3"> <a href="#训练设置">训练设置</a> </li><li class="toc-level-3"> <a href="#评估协议">评估协议</a> </li><li class="toc-level-3"> <a href="#关键结果表5">关键结果（表5）</a> </li><li class="toc-level-2"> <a href="#消融研究">消融研究</a> </li><li class="toc-level-3"> <a href="#哪些数据组件真正重要">哪些数据组件真正重要？</a> </li><li class="toc-level-2"> <a href="#与相关工作的对比">与相关工作的对比</a> </li><li class="toc-level-3"> <a href="#vs-voyagerwang-等2023">vs. Voyager（Wang 等，2023）</a> </li><li class="toc-level-3"> <a href="#vs-opencodeinterpreterzheng-等2024">vs. OpenCodeInterpreter（Zheng 等，2024）</a> </li><li class="toc-level-3"> <a href="#vs-taskweaverqiao-等2023">vs. TaskWeaver（Qiao 等，2023）</a> </li><li class="toc-level-2"> <a href="#局限性与边界条件">局限性与边界条件</a> </li><li class="toc-level-3"> <a href="#1-需要-python-能力">1. 需要 Python 能力</a> </li><li class="toc-level-3"> <a href="#2-安全沙箱要求">2. 安全沙箱要求</a> </li><li class="toc-level-3"> <a href="#3-包-api-幻觉">3. 包 API 幻觉</a> </li><li class="toc-level-3"> <a href="#4-开源与闭源模型的巨大差距">4. 开源与闭源模型的巨大差距</a> </li><li class="toc-level-3"> <a href="#5-上下文窗口瓶颈">5. 上下文窗口瓶颈</a> </li><li class="toc-level-2"> <a href="#可复现性说明">可复现性说明</a> </li><li class="toc-level-2"> <a href="#我的思考与评价">我的思考与评价</a> </li><li class="toc-level-3"> <a href="#这篇论文为什么重要">这篇论文为什么重要</a> </li><li class="toc-level-3"> <a href="#动作空间的设计哲学">动作空间的设计哲学</a> </li><li class="toc-level-3"> <a href="#尚未解决的问题">尚未解决的问题</a> </li><li class="toc-level-2"> <a href="#总结">总结</a> </li><li class="toc-level-2"> <a href="#深入拆解codeact-agent-循环算法">深入拆解：CodeAct Agent 循环算法</a> </li><li class="toc-level-3"> <a href="#伪代码codeact-多轮-agent-循环">伪代码：CodeAct 多轮 Agent 循环</a> </li><li class="toc-level-3"> <a href="#对比json-agent-循环的伪代码">对比：JSON Agent 循环的伪代码</a> </li><li class="toc-level-2"> <a href="#统计分析的深度理解">统计分析的深度理解</a> </li><li class="toc-level-3"> <a href="#为什么要测-17-个模型">为什么要测 17 个模型？</a> </li><li class="toc-level-3"> <a href="#闭源模型-json-异常的解释">闭源模型 JSON 异常的解释</a> </li><li class="toc-level-3"> <a href="#数据混合比例的影响">数据混合比例的影响</a> </li><li class="toc-level-2"> <a href="#codeact-的后续影响2024-年后的-agent-领域">CodeAct 的后续影响：2024 年后的 Agent 领域</a> </li><li class="toc-level-3"> <a href="#主流框架的采纳">主流框架的采纳</a> </li><li class="toc-level-3"> <a href="#安全问题仍未解决">安全问题仍未解决</a> </li><li class="toc-level-2"> <a href="#论文图表的详细解读">论文图表的详细解读</a> </li><li class="toc-level-3"> <a href="#图1论文核心动机示例">图1（论文）：核心动机示例</a> </li><li class="toc-level-3"> <a href="#图2论文agent-框架图">图2（论文）：Agent 框架图</a> </li><li class="toc-level-3"> <a href="#图3论文codeactagent-实战">图3（论文）：CodeActAgent 实战</a> </li><li class="toc-level-2"> <a href="#最终评价">最终评价</a> </li> </ul> </nav> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-05-25">May 25, 2026</time> <span class="blog-lang blog-lang-zh">中</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/LLM-Agent/">#LLM Agent</a><a class="blog-post-tag-chip" href="/blog/tag/Reasoning/">#Reasoning</a><a class="blog-post-tag-chip" href="/blog/tag/LLM-Training/">#LLM Training</a> </span> </p> <h1>CodeAct：用可执行代码驱动更强的 LLM Agent</h1> </header> <div class="blog-post-body"> <p><strong>笔记日期：</strong> 2026-05-25
+<strong>笔记作者：</strong> Zhongzhu Zhou
+<strong>论文标题：</strong> Executable Code Actions Elicit Better LLM Agents
+<strong>作者：</strong> Xingyao Wang, Yangyi Chen, Lifan Yuan, Yizhe Zhang, Yunzhu Li, Hao Peng, Heng Ji
+<strong>arXiv：</strong> 2402.01030
+<strong>状态 / Venue：</strong> ICML 2024（第41届国际机器学习会议，PMLR 235）</p>
+<h2 id="一句话总结">一句话总结</h2>
+<p>CodeAct 的核心洞见：与其让 LLM Agent 输出 JSON 对象逐一调用工具，不如直接让它写一段可执行的 Python 代码。代码天生支持循环、条件、变量和库导入，一个 <code>&#x3C;execute></code> 块就能完成 JSON 需要十几轮才能完成的任务——而且 Python 报错信息本身就是最好的调试提示，让 Agent 可以自主发现并修复错误。</p>
+<hr>
+<h2 id="前置知识">前置知识</h2>
+<p>在深入论文细节之前，我想把几个基础概念讲清楚。CodeAct 涉及 LLM Agent 框架、工具调用机制和执行环境三个方向，读者不需要深入了解每个方向，但对以下概念有直觉认识会让后续内容容易很多。</p>
+<h3 id="1-llm-agent-的基本循环">1. LLM Agent 的基本循环</h3>
+<p>LLM Agent 的工作方式是一个多轮交互循环：模型接收到用户指令，产生一个”动作”（Action），动作被送入外部环境执行，环境返回一个”观察”（Observation），模型根据这个观察决定下一步动作，如此往复直到完成任务。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant U as 用户</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant A as LLM Agent</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant E as 环境 (Python 解释器 / API / 网络)</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    U->>A: 指令（自然语言）</span></span>
+<span class="line"><span style="color:#E1E4E8">    loop 多轮交互</span></span>
+<span class="line"><span style="color:#E1E4E8">        A->>A: 思考 / 规划（可选链式思维）</span></span>
+<span class="line"><span style="color:#E1E4E8">        A->>E: 动作（工具调用 / 代码 / JSON / 文本...）</span></span>
+<span class="line"><span style="color:#E1E4E8">        E->>A: 观察（执行结果 / API 响应 / 报错）</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"><span style="color:#E1E4E8">    A->>U: 最终答案</span></span></code></pre>
+<p>这个循环听起来简单，但<strong>动作的格式</strong>至关重要——这正是 CodeAct 要解决的问题。</p>
+<h3 id="2-工具调用在-llm-中意味着什么">2. “工具调用”在 LLM 中意味着什么</h3>
+<p>现代 LLM（如 GPT-4、Claude）可以调用外部工具。在实现层面，“工具调用”通常是模型生成一个 JSON 字符串，描述要调用哪个函数以及传什么参数。例如：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="json"><code><span class="line"><span style="color:#E1E4E8">{</span><span style="color:#79B8FF">"tool"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"lookup_phone_price"</span><span style="color:#E1E4E8">, </span><span style="color:#79B8FF">"country"</span><span style="color:#E1E4E8">: </span><span style="color:#9ECBFF">"Germany"</span><span style="color:#E1E4E8">}</span></span></code></pre>
+<p>框架解析这段 JSON，调用实际的 Python 函数，把结果作为文本返回给模型。模型从来不”直接运行代码”——它只是生成一个被解释的字符串。</p>
+<p><strong>问题所在：</strong> JSON 是一种极为受限的语言。它一次只能描述一个函数调用。如果你需要调用五个工具并组合结果，就必须进行五轮独立的 JSON 交互。无法用一个 JSON 动作表达”循环调用工具 A，把所有结果取平均值”这样的逻辑。</p>
+<h3 id="3-三种主流动作格式对比">3. 三种主流动作格式对比</h3>
+<p>在 CodeAct 之前，LLM Agent 领域主要有三种动作格式：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>格式</th><th>示例</th><th>优点</th><th>缺点</th></tr></thead><tbody><tr><td><strong>自由文本</strong></td><td><code>Action: lookup_rates, country: Germany</code></td><td>可读性强</td><td>解析不稳定；无结构</td></tr><tr><td><strong>JSON</strong></td><td><code>{"tool": "lookup_rates", "country": "Germany"}</code></td><td>可解析；可验证</td><td>每次一个工具；无循环；无数据流</td></tr><tr><td><strong>代码（CodeAct）</strong></td><td><code>rates = lookup_rates("Germany")</code></td><td>完全表达力；库；自调试</td><td>模型需要 Python 能力</td></tr></tbody></table>
+<p>CodeAct 的核心洞见：代码不只是一种编程语言，它是一种<strong>通用动作语言</strong>，天然支持 JSON 做不到的一切：循环、条件、变量绑定、异常处理和库导入。</p>
+<h3 id="4-为什么选-python">4. 为什么选 Python？</h3>
+<p>作者选择 Python 基于四点理由：</p>
+<ol>
+<li><strong>预训练数据丰富。</strong> Python 是 TIOBE 指数 2024 年排名第一的语言，在 GitHub ML/数据科学仓库中占统治地位。LLM 见过的 Python 代码远比任何 JSON Schema 多。</li>
+<li><strong>现有生态系统。</strong> <code>import pandas</code>、<code>import numpy</code>、<code>import sklearn</code>——整个科学 Python 栈都可以用。不需要预先定义工具。</li>
+<li><strong>内置反馈机制。</strong> Python 的 <code>TypeError</code>、<code>ValueError</code>、<code>traceback</code> 输出本身就是自然语言。Agent 可以直接阅读自己产生的报错并修复。</li>
+<li><strong>控制流与数据流。</strong> <code>for</code>、<code>if</code>、<code>while</code>、列表推导——Agent 需要的一切计算能力都在语言本身里。</li>
+</ol>
+<h3 id="5-自调试的工作原理">5. 自调试的工作原理</h3>
+<p>CodeAct 有一个核心机制经常被低估：<strong>基于报错信息的自动自调试</strong>。当一段 Python 代码执行失败时，解释器返回 traceback。这个 traceback 作为下一轮的”观察”送回给模型。能力足够的 LLM 读取 traceback 并生成修正后的代码。整个过程无需人工干预。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A["Agent 输出 Python 代码\n（第 N 轮）"] --> B["Python 解释器执行"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -- "成功" --> C["观察：执行结果\nAgent 继续或回答"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -- "失败" --> D["观察：traceback\n（TypeError, NameError, ...）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    D --> E["Agent 阅读报错\n自主修复\n（第 N+1 轮）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> A</span></span></code></pre>
+<p>对比之下，JSON Agent 调用失败只会收到 <code>{"error": "Invalid argument"}</code>——没有行号、没有类型信息、没有调用栈，无法从中推断出修复方案。</p>
+<hr>
+<h2 id="codeact-框架的设计与形式化">CodeAct 框架的设计与形式化</h2>
+<h3 id="1-统一动作空间">1. 统一动作空间</h3>
+<p>CodeAct 的核心主张：<strong>Agent 与环境的所有交互，都应表达为一段可执行的 Python 代码块。</strong> 形式化定义如下：</p>
+<ul>
+<li><strong>Agent</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="script">A</mi></mrow><annotation encoding="application/x-tex">\mathcal{A}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathcal">A</span></span></span></span>：语言模型本体</li>
+<li><strong>用户</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="script">U</mi></mrow><annotation encoding="application/x-tex">\mathcal{U}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathcal" style="margin-right:0.0993em;">U</span></span></span></span>：提供指令的人类</li>
+<li><strong>环境</strong> <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="script">E</mi></mrow><annotation encoding="application/x-tex">\mathcal{E}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathcal" style="margin-right:0.0894em;">E</span></span></span></span>：Python 解释器 + API + 外部工具（以 Python 函数形式暴露）</li>
+</ul>
+<p>在第 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi></mrow><annotation encoding="application/x-tex">t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6151em;"></span><span class="mord mathnormal">t</span></span></span></span> 轮，Agent 接收观察 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>o</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">o_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>（来自用户或代码执行结果），产生动作 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">a_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>（包裹在 <code>&#x3C;execute>...&#x3C;/execute></code> 标签中的 Python 代码块）。环境执行 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">a_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>，返回 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>o</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub></mrow><annotation encoding="application/x-tex">o_{t+1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6389em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span></span></span></span>（<code>stdout</code> + <code>stderr</code>）。</p>
+<p><strong>一条完整轨迹的形式化表示：</strong></p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mi>τ</mi><mo>=</mo><mo stretchy="false">(</mo><msub><mi>o</mi><mn>1</mn></msub><mo separator="true">,</mo><msub><mi>a</mi><mn>1</mn></msub><mo separator="true">,</mo><msub><mi>o</mi><mn>2</mn></msub><mo separator="true">,</mo><msub><mi>a</mi><mn>2</mn></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>o</mi><mi>T</mi></msub><mo separator="true">,</mo><msub><mi>a</mi><mi>T</mi></msub><mo separator="true">,</mo><msub><mi>o</mi><mrow><mi>T</mi><mo>+</mo><mn>1</mn></mrow></msub><mo stretchy="false">)</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(1)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\tau = (o_1, a_1, o_2, a_2, \ldots, o_T, a_T, o_{T+1}) \tag{1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.1389em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.1389em;">T</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.1389em;">T</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span><span class="tag"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">1</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>其中 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>o</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">o_1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 是用户初始指令，每个 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mi>t</mi></msub></mrow><annotation encoding="application/x-tex">a_t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 是一段合法 Python 程序，<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>o</mi><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow></msub><mo>=</mo><mi mathvariant="script">E</mi><mo stretchy="false">(</mo><msub><mi>a</mi><mi>t</mi></msub><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">o_{t+1} = \mathcal{E}(a_t)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6389em;vertical-align:-0.2083em;"></span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2083em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathcal" style="margin-right:0.0894em;">E</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">a</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span> 是执行输出。</p>
+<h3 id="2-四个优势的精确阐述">2. 四个优势的精确阐述</h3>
+<p><strong>优势一 — 控制流。</strong> 以计算手机在多个国家的最低购买价格为例：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="python"><code><span class="line"><span style="color:#E1E4E8">countries </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> [</span><span style="color:#9ECBFF">"USA"</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">"Japan"</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">"Germany"</span><span style="color:#E1E4E8">, </span><span style="color:#9ECBFF">"India"</span><span style="color:#E1E4E8">]</span></span>
+<span class="line"><span style="color:#E1E4E8">final_prices </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> {}</span></span>
+<span class="line"><span style="color:#F97583">for</span><span style="color:#E1E4E8"> country </span><span style="color:#F97583">in</span><span style="color:#E1E4E8"> countries:</span></span>
+<span class="line"><span style="color:#E1E4E8">    local_price </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> lookup_phone_price(</span><span style="color:#9ECBFF">"CodeAct 1"</span><span style="color:#E1E4E8">, country)</span></span>
+<span class="line"><span style="color:#E1E4E8">    rate </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> lookup_rates(country)</span></span>
+<span class="line"><span style="color:#E1E4E8">    converted </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> convert_and_tax(local_price, rate, tax_rate)</span></span>
+<span class="line"><span style="color:#E1E4E8">    shipping </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> estimate_shipping_cost(country)</span></span>
+<span class="line"><span style="color:#E1E4E8">    final_prices[country] </span><span style="color:#F97583">=</span><span style="color:#E1E4E8"> estimate_final_price(converted, shipping)</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">best </span><span style="color:#F97583">=</span><span style="color:#79B8FF"> min</span><span style="color:#E1E4E8">(final_prices, </span><span style="color:#FFAB70">key</span><span style="color:#F97583">=</span><span style="color:#E1E4E8">final_prices.get)</span></span>
+<span class="line"><span style="color:#79B8FF">print</span><span style="color:#E1E4E8">(best, final_prices[best])</span></span></code></pre>
+<p>这是<strong>一轮</strong> CodeAct 交互，而 JSON Agent 至少需要 4 × 4 = 16 轮（每个国家调用4个 API）。</p>
+<p><strong>优势二 — 数据流。</strong> JSON 动作是无状态的：每次调用都是新的，前一次调用的返回值无法以变量形式保存供后续引用。Python 解释器维护跨 <code>&#x3C;execute></code> 块的会话状态（类似 Jupyter Notebook 的 kernel），第 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi></mrow><annotation encoding="application/x-tex">t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6151em;"></span><span class="mord mathnormal">t</span></span></span></span> 轮定义的变量在第 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">t+1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6984em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">t</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> 轮仍然可用：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mtext>State</mtext><mo stretchy="false">(</mo><mi>t</mi><mo>+</mo><mn>1</mn><mo stretchy="false">)</mo><mo>=</mo><mtext>State</mtext><mo stretchy="false">(</mo><mi>t</mi><mo stretchy="false">)</mo><mo>∪</mo><mtext>NewBindings</mtext><mo stretchy="false">(</mo><msub><mtext>code</mtext><mi>t</mi></msub><mo stretchy="false">)</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(2)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\text{State}(t+1) = \text{State}(t) \cup \text{NewBindings}(\text{code}_t) \tag{2}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">State</span></span><span class="mopen">(</span><span class="mord mathnormal">t</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">State</span></span><span class="mopen">(</span><span class="mord mathnormal">t</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">∪</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">NewBindings</span></span><span class="mopen">(</span><span class="mord"><span class="mord text"><span class="mord">code</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span><span class="tag"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">2</span></span><span class="mord">)</span></span></span></span></span></span>
+<p><strong>优势三 — 现有软件包。</strong> 对比添加新工具的代价：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>动作类型</th><th>添加新工具的代价</th></tr></thead><tbody><tr><td>JSON / 文本</td><td>定义 schema、注册处理函数、更新提示词</td></tr><tr><td>CodeAct</td><td>无——<code>import tool_library</code> 直接调用</td></tr></tbody></table>
+<p>PyPI 上的约 50 万个包即为工具库，模型在预训练中已经学会如何使用它们。</p>
+<p><strong>优势四 — 自动反馈。</strong> 对比报错信息的信息量：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span># JSON Agent 报错</span></span>
+<span class="line"><span>{"status": "error", "code": -1}</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span># CodeAct Python traceback</span></span>
+<span class="line"><span>TypeError: unsupported operand type(s) for *: 'str' and 'float'</span></span>
+<span class="line"><span>  File "&#x3C;execute>", line 3, in &#x3C;module></span></span>
+<span class="line"><span>    converted = local_price * rate</span></span></code></pre>
+<p>traceback 精确告知：哪一行、哪种类型错误——这是可直接用于修复的信息。</p>
+<h3 id="3-系统提示设计">3. 系统提示设计</h3>
+<p>CodeAct 的系统提示（论文附录 E）仅有 6 行，指示模型：</p>
+<ol>
+<li>与”Python Jupyter Notebook”环境交互</li>
+<li>代码包裹在 <code>&#x3C;execute>...&#x3C;/execute></code> 标签中</li>
+<li>用 <code>!pip install [package]</code> 安装缺失包</li>
+<li>每次尝试少一点，避免一个 <code>&#x3C;execute></code> 块塞太多代码</li>
+<li>获得足够信息后停止执行并给出答案</li>
+</ol>
+<p><strong>重要的是它的极简性。</strong> 许多 Agent 框架需要大量 few-shot 示例。CodeAct 的零样本提示只有 6 行——其余依赖模型在预训练中积累的 Python 能力。</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">graph TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph SYS["系统提示（6行，零样本）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        S1["与 Python Jupyter 环境交互"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        S2["代码包在 &#x26;lt;execute&#x26;gt; 标签内"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        S3["缺包用 !pip install 安装"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        S4["每次块里做的事情少一些"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        S5["有答案了就停止执行"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph TURN["单轮结构"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        OBS["观察（用户或环境返回）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        THK["可选思维链（CoT）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        CODE["&#x26;lt;execute&#x26;gt; Python 代码 &#x26;lt;/execute&#x26;gt;"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        RES["环境返回 stdout / stderr"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"><span style="color:#E1E4E8">    SYS --> TURN</span></span></code></pre>
+<hr>
+<h2 id="研究问题一代码格式对原子工具调用有帮助吗">研究问题一：代码格式对原子工具调用有帮助吗？</h2>
+<h3 id="实验设置">实验设置</h3>
+<p>第一组实验测试最简单场景：<strong>单次工具调用</strong>。任务是用正确的参数调用一个 API。这个设置把代码的控制流/数据流优势完全屏蔽掉，只剩下一个问题：<strong>用代码语法调用工具，比用 JSON 或文本更自然吗？</strong></p>
+<p>数据集：<strong>API-Bank</strong>，113 个一级（单工具调用）实例，涵盖日历、金融、天气等 API。</p>
+<p>评估指标：正确率——模型生成的 API 调用输出是否与标准答案完全一致。</p>
+<p>测试模型：8 个开源（CodeLlama 系列、Llama-2 系列、Mistral-7B、Lemur-70B）+ 8 个闭源（claude-2、gemini-pro、gpt-3.5/4 系列、text-davinci 系列）。</p>
+<h3 id="结果与分析表2">结果与分析（表2）</h3>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mtext>Correctness</mtext><mtext>CodeAct</mtext></msub><mo>≥</mo><msub><mtext>Correctness</mtext><mtext>JSON</mtext></msub><mtext> 对 8/17 个模型成立</mtext></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(3)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\text{Correctness}_{\text{CodeAct}} \geq \text{Correctness}_{\text{JSON}} \text{ 对 8/17 个模型成立} \tag{3}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord text"><span class="mord">Correctness</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">CodeAct</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord text"><span class="mord">Correctness</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">JSON</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord text"><span class="mord"> </span><span class="mord cjk_fallback">对</span><span class="mord"> 8/17 </span><span class="mord cjk_fallback">个模型成立</span></span></span><span class="tag"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">3</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>关键观察：</p>
+<ol>
+<li>
+<p><strong>开源模型偏好代码格式胜于 JSON。</strong> 对 CodeLlama-13B（38.1 vs 12.0）、Llama-2-70B（35.6 vs 14.3）和 Lemur-70B（58.6 vs 46.6），代码格式显著优于 JSON。原因：开源模型在预训练中见了大量代码，但没有经过 JSON 工具调用专项微调，代码格式才是它们的”母语”。</p>
+</li>
+<li>
+<p><strong>闭源模型差距更小。</strong> GPT-4、claude-2 等都经过 JSON 函数调用专项微调，对单次调用场景有优势。但代码格式仍然有竞争力。</p>
+</li>
+<li>
+<p><strong>文本格式在少数基础模型上占优。</strong> 这表明对话式指令微调模型来说，文本比代码更自然，但 JSON 对开源模型一致是最差的选择。</p>
+</li>
+</ol>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">xychart-beta</span></span>
+<span class="line"><span style="color:#E1E4E8">    title "API-Bank 正确率（%）——按动作格式"</span></span>
+<span class="line"><span style="color:#E1E4E8">    x-axis [CodeLlama-13B, Llama-2-70B, Lemur-70B, gpt-4-0613, gpt-4-1106]</span></span>
+<span class="line"><span style="color:#E1E4E8">    y-axis "正确率 (%)" 0 --> 90</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [38.1, 35.6, 58.6, 75.4, 76.8]</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [12.0, 14.3, 46.6, 82.0, 82.7]</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [14.0, 36.6, 56.1, 74.4, 75.4]</span></span></code></pre>
+<p><strong>RQ1 的结论：</strong> 代码是有大量代码预训练数据的 LLM 的自然工具调用格式。JSON 对通用 LLM 并非显而易见的最佳选择。</p>
+<hr>
+<h2 id="研究问题二控制流对复杂任务有帮助吗">研究问题二：控制流对复杂任务有帮助吗？</h2>
+<h3 id="mtooleval-基准">M³ToolEval 基准</h3>
+<p>第二组实验针对 JSON <strong>根本无法处理</strong>的场景：需要<strong>多工具、多轮次、结果组合</strong>的复杂任务。作者构建了 M³ToolEval（Multiple Models Multi-turn Tool Evaluation），包含82个人工标注实例，覆盖：</p>
+<ul>
+<li><strong>网页浏览</strong>（7个工具：点击、滚动、回退等）</li>
+<li><strong>金融</strong>（价格查询、汇率转换、税费计算、运费估算）</li>
+<li><strong>旅行行程</strong>（机票搜索、酒店预订、天气查询）</li>
+<li><strong>科学信息处理</strong>（数据检索、计算、摘要）</li>
+</ul>
+<p>每个实例都需要在一个任务中调用多个不同工具。表 A.7 对比了现有基准：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>基准</th><th>多轮</th><th>多工具</th><th>无外部 API 依赖</th></tr></thead><tbody><tr><td>ToolBench</td><td>✗</td><td>✓</td><td>✗</td></tr><tr><td>APIBench</td><td>✗</td><td>✗</td><td>✓</td></tr><tr><td>API-Bank</td><td>✗</td><td>✗</td><td>✓</td></tr><tr><td><strong>M³ToolEval</strong></td><td><strong>✓</strong></td><td><strong>✓</strong></td><td><strong>✓</strong></td></tr></tbody></table>
+<h3 id="实验设置与结果表3">实验设置与结果（表3）</h3>
+<ul>
+<li>最多10轮交互</li>
+<li>指标：<strong>成功率</strong>（答案与标准答案一致）+ <strong>平均轮次</strong>（越少越好）</li>
+<li>零样本设置（提示词中无示例）</li>
+</ul>
+<p><strong>这里 CodeAct 的优势变得决定性：</strong></p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mtext>SuccessRate</mtext><mtext>CodeAct</mtext></msub><mo stretchy="false">(</mo><mtext>gpt-4-1106</mtext><mo stretchy="false">)</mo><mo>=</mo><mn>74.4</mn><mi mathvariant="normal">%</mi><mspace width="1em"></mspace><mtext>vs</mtext><mspace width="1em"></mspace><mn>53.7</mn><mi mathvariant="normal">%</mi><mo stretchy="false">(</mo><mtext>JSON</mtext><mo stretchy="false">)</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(4)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\text{SuccessRate}_{\text{CodeAct}}(\text{gpt-4-1106}) = 74.4\% \quad \text{vs} \quad 53.7\%(\text{JSON}) \tag{4}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord text"><span class="mord">SuccessRate</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">CodeAct</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord text"><span class="mord">gpt-4-1106</span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">74.4%</span><span class="mspace" style="margin-right:1em;"></span><span class="mord text"><span class="mord">vs</span></span><span class="mspace" style="margin-right:1em;"></span><span class="mord">53.7%</span><span class="mopen">(</span><span class="mord text"><span class="mord">JSON</span></span><span class="mclose">)</span></span><span class="tag"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">4</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>绝对提升 20.7%，是论文的核心数字。平均轮次：CodeAct 5.5 轮 vs JSON 7.6 轮。<strong>减少约 30% 的交互轮次。</strong></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">xychart-beta</span></span>
+<span class="line"><span style="color:#E1E4E8">    title "M³ToolEval 成功率（%）——CodeAct vs JSON vs 文本"</span></span>
+<span class="line"><span style="color:#E1E4E8">    x-axis [claude-2, gpt-3.5-0613, gpt-4-0613, gpt-4-1106, gemini-pro]</span></span>
+<span class="line"><span style="color:#E1E4E8">    y-axis "成功率 (%)" 0 --> 80</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [54.9, 51.2, 67.1, 74.4, 22.0]</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [39.0, 26.8, 56.1, 53.7, 19.5]</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [29.3, 20.7, 45.1, 53.7, 11.0]</span></span></code></pre>
+<p><strong>为什么 CodeAct 使用更少轮次？</strong> 因为它可以用一轮完成 JSON 需要多轮的事情。在手机价格例子中，CodeAct 用一个 for 循环在一个 <code>&#x3C;execute></code> 块里查询4个国家的价格和汇率；JSON Agent 至少需要16轮独立调用。</p>
+<p><strong>改进模式说明了一个重要原则：</strong> 优势对强模型（gpt-4）最大，对开源弱模型最小。这是因为 CodeAct 要求模型写出正确可运行的 Python——比生成语法正确的 JSON 字符串要求更高。弱模型写出的 Python 经常报错，部分抵消了概念上的优势。</p>
+<h3 id="为什么更多轮次的-json-无法弥补差距">为什么更多轮次的 JSON 无法弥补差距？</h3>
+<p>理论上，给 JSON Agent 更多轮次可以完成同样的任务——但每额外一轮都要付出 LLM API 时间、费用和延迟。更根本的是，<strong>数据流问题无法用更多轮次解决</strong>：JSON Agent 无法把第 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span></span></span></span> 轮的计算结果存储为变量供第 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>+</mo><mn>3</mn></mrow><annotation encoding="application/x-tex">N+3</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">3</span></span></span></span> 轮使用。Python 变量天然处理这个问题。</p>
+<p>轮次效率的简化公式：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mi>T</mi><mtext>JSON</mtext></msub><mo>≥</mo><mi>N</mi><mspace width="1em"></mspace><mtext>vs</mtext><mspace width="1em"></mspace><msub><mi>T</mi><mtext>CodeAct</mtext></msub><mo>=</mo><mn>1</mn><mo>+</mo><mi>δ</mi></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(5)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">T_{\text{JSON}} \geq N \quad \text{vs} \quad T_{\text{CodeAct}} = 1 + \delta \tag{5}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">JSON</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span><span class="mspace" style="margin-right:1em;"></span><span class="mord text"><span class="mord">vs</span></span><span class="mspace" style="margin-right:1em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.1389em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">CodeAct</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0379em;">δ</span></span><span class="tag"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">5</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>其中 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span></span></span></span> 是任务需要调用的工具次数，<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>δ</mi><mo>≥</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">\delta \geq 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8304em;vertical-align:-0.136em;"></span><span class="mord mathnormal" style="margin-right:0.0379em;">δ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0</span></span></span></span> 是 Python 报错触发的额外自调试轮次。对强模型（gpt-4），<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>δ</mi><mtext>avg</mtext></msub><mo>≈</mo><mn>0.5</mn></mrow><annotation encoding="application/x-tex">\delta_{\text{avg}} \approx 0.5</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9805em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0379em;">δ</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0379em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">avg</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.5</span></span></span></span>，即 CodeAct 完成需要 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>≥</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">N \geq 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8193em;vertical-align:-0.136em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> 次工具调用的任务平均只需 1.5 轮。</p>
+<hr>
+<h2 id="研究问题三多轮交互与现有软件的价值">研究问题三：多轮交互与现有软件的价值</h2>
+<h3 id="codeactagent-实际演示">CodeActAgent 实际演示</h3>
+<p>论文图3展示了一个完整的数据分析会话示例：</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant U as 用户</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant A as CodeActAgent（Mistral-7B）</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant E as Python 解释器</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    U->>A: "下载数据集，检查缺失值，训练回归模型"</span></span>
+<span class="line"><span style="color:#E1E4E8">    A->>E: import pandas; df = pd.read_csv(url); df.info(); df.isnull().sum()</span></span>
+<span class="line"><span style="color:#E1E4E8">    E->>A: [数据类型、缺失值统计——'price' 列含 '$' 字符]</span></span>
+<span class="line"><span style="color:#E1E4E8">    A->>E: df['price']=df['price'].str.replace('$','').astype(float); ...train...</span></span>
+<span class="line"><span style="color:#E1E4E8">    E->>A: MSE=10.79, R²=0.795</span></span>
+<span class="line"><span style="color:#E1E4E8">    U->>A: "可视化回归系数，x轴旋转45度"</span></span>
+<span class="line"><span style="color:#E1E4E8">    A->>E: plt.xticks(feature_names, rotation=45); plt.show()</span></span>
+<span class="line"><span style="color:#E1E4E8">    E->>A: TypeError: tick_params() got unexpected argument 'ticks'</span></span>
+<span class="line"><span style="color:#E1E4E8">    A->>E: plt.xticks(feature_names, rotation=45, ha='right', fontsize=12); plt.show()</span></span>
+<span class="line"><span style="color:#E1E4E8">    E->>A: [Figure 6464×480 渲染成功]</span></span>
+<span class="line"><span style="color:#E1E4E8">    A->>U: 可视化完成，回归系数图已生成</span></span></code></pre>
+<p>这个例子体现了三个关键能力：</p>
+<ol>
+<li>自主使用 pandas/sklearn/matplotlib（无需预定义工具）</li>
+<li>读取报错（<code>$</code> 字符类型错误）并自主修复</li>
+<li>读取 traceback（<code>tick_params</code> 参数错误）并自主修复</li>
+</ol>
+<p>没有任何一步需要人工提示”用什么 API”或”如何修复这个错误”——模型依靠预训练积累的 Python 知识完成了所有推理。</p>
+<hr>
+<h2 id="codeactinstruct构建训练数据集">CodeActInstruct：构建训练数据集</h2>
+<h3 id="设计哲学">设计哲学</h3>
+<p>CodeActInstruct 是专为 CodeAct 设计的指令微调数据集，覆盖5个领域：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>领域</th><th>能力</th><th>来源数据集</th><th>实例数</th></tr></thead><tbody><tr><td>信息检索</td><td>通过 Wikipedia API 进行网络搜索</td><td>HotpotQA</td><td>3,000</td></tr><tr><td>软件包（工具）</td><td>用 sympy 做数学运算</td><td>MATH</td><td>1,732</td></tr><tr><td>软件包（工具）</td><td>自调试 Python 代码</td><td>APPS（代码生成）</td><td>647</td></tr><tr><td>外部记忆</td><td>SQLite + Pandas 表格查询</td><td>WikiTableQuestion</td><td>1,065</td></tr><tr><td>机器人规划</td><td>通过 ALFWorld 的具身任务</td><td>ALFWorld</td><td>2,031</td></tr><tr><td><strong>合计</strong></td><td></td><td></td><td><strong>7,139</strong></td></tr></tbody></table>
+<h3 id="轨迹生成流程">轨迹生成流程</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    DS["源数据集\n（HotpotQA, MATH, APPS,\nWikiTableQuestion, ALFWorld）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    CON["转为多轮交互\n（MINT 框架）\n单轮 → 最多5轮 + 自调试"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    GEN["轨迹生成\ngpt-3.5-turbo-0613\nclaude-2\ngpt-4-0613（难题）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    FILT["数据筛选\n1. 代码动作格式过滤\n2. 自我改进过滤\n3. 指令遵循过滤"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    FINAL["最终：7,139 条轨迹\n（6,728 条来自 gpt-3.5/claude\n411 条来自 gpt-4）"]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    DS --> CON --> GEN --> FILT --> FINAL</span></span></code></pre>
+<p><strong>步骤一 — 转为多轮：</strong> MINT 框架把单轮问题改写为多轮交互形式。对 APPS 代码生成任务，这意味着给模型最多5次机会通过测试用例，而非要求一次性正确解答。</p>
+<p><strong>步骤二 — 生成轨迹：</strong> 大多数问题使用 gpt-3.5-turbo-0613 和 claude-2（成本更低），仅对 gpt-3.5 无法解决的问题使用 gpt-4-0613。</p>
+<p><strong>步骤三 — 三重数据筛选（关键）：</strong></p>
+<ol>
+<li>
+<p><strong>代码动作过滤：</strong> 排除模型不遵循代码格式的轨迹（要么 API 调用格式错误，要么生成了无法执行的动作）。</p>
+</li>
+<li>
+<p><strong>自我改进过滤：</strong> 保留模型<strong>先出错后修复</strong>的轨迹；排除全程失败的轨迹（对学习无用）；排除从未遇到错误就成功的轨迹（不教调试能力）。</p>
+</li>
+<li>
+<p><strong>指令遵循过滤：</strong> 排除交互轮次为奇数的轨迹（说明模型没有正确遵循轮次交替格式）。</p>
+</li>
+</ol>
+<p>筛选后：来自 gpt-3.5 和 claude 的 6,728 条 + 来自 gpt-4 的 411 条。</p>
+<h3 id="与前作数据集的对比">与前作数据集的对比</h3>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mi mathvariant="normal">∣</mi><mtext>CodeActInstruct</mtext><mi mathvariant="normal">∣</mi><mo>=</mo><mn>7</mn><mo separator="true">,</mo><mn>139</mn><mspace width="1em"></mspace><mtext>vs</mtext><mspace width="1em"></mspace><mi mathvariant="normal">∣</mi><mtext>AgentInstruct</mtext><mi mathvariant="normal">∣</mi><mo>=</mo><mn>1</mn><mo separator="true">,</mo><mn>866</mn><mspace width="1em"></mspace><mtext>vs</mtext><mspace width="1em"></mspace><mi mathvariant="normal">∣</mi><mtext>FireAct</mtext><mi mathvariant="normal">∣</mi><mo>=</mo><mn>2</mn><mo separator="true">,</mo><mn>063</mn></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(6)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">|\text{CodeActInstruct}| = 7,139 \quad \text{vs} \quad |\text{AgentInstruct}| = 1,866 \quad \text{vs} \quad |\text{FireAct}| = 2,063 \tag{6}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∣</span><span class="mord text"><span class="mord">CodeActInstruct</span></span><span class="mord">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">7</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">139</span><span class="mspace" style="margin-right:1em;"></span><span class="mord text"><span class="mord">vs</span></span><span class="mspace" style="margin-right:1em;"></span><span class="mord">∣</span><span class="mord text"><span class="mord">AgentInstruct</span></span><span class="mord">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">866</span><span class="mspace" style="margin-right:1em;"></span><span class="mord text"><span class="mord">vs</span></span><span class="mspace" style="margin-right:1em;"></span><span class="mord">∣</span><span class="mord text"><span class="mord">FireAct</span></span><span class="mord">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8389em;vertical-align:-0.1944em;"></span><span class="mord">2</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">063</span></span><span class="tag"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">6</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>CodeActInstruct 是 FireAct 的 3.8 倍、AgentInstruct 的 5 倍（轨迹数量），覆盖 5 个领域（FireAct 只覆盖 QA + 搜索 2 个领域）。关键差异化点：明确包含<strong>先失败后修复</strong>的多轮自改进数据。</p>
+<hr>
+<h2 id="codeactagent微调开源-llm">CodeActAgent：微调开源 LLM</h2>
+<h3 id="训练设置">训练设置</h3>
+<p>作者对两个开源基础模型进行监督微调（SFT）：</p>
+<ul>
+<li><strong>LLaMA-2 7B</strong>（Touvron 等，2023）</li>
+<li><strong>Mistral-7B</strong>（Jiang 等，2023）</li>
+</ul>
+<p>训练数据：CodeActInstruct（7,139 条 Agent 轨迹）+ 通用对话数据（69,230 条，来自 OpenOrca、ShareGPT、CapyBara）。</p>
+<p><strong>训练基础设施：</strong></p>
+<ul>
+<li>4× A100-40GB SXM 节点</li>
+<li>使用 Megatron-LLM fork（Cano 等，2023）</li>
+<li>张量并行度：4</li>
+<li>学习率：<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mo>×</mo><msup><mn>10</mn><mrow><mo>−</mo><mn>5</mn></mrow></msup></mrow><annotation encoding="application/x-tex">1 \times 10^{-5}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord">1</span><span class="mord"><span class="mord">0</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">5</span></span></span></span></span></span></span></span></span></span></span></span>，50步 warmup，余弦衰减到 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mo>×</mo><msup><mn>10</mn><mrow><mo>−</mo><mn>6</mn></mrow></msup></mrow><annotation encoding="application/x-tex">1 \times 10^{-6}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord">1</span><span class="mord"><span class="mord">0</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">−</span><span class="mord mtight">6</span></span></span></span></span></span></span></span></span></span></span></span></li>
+<li>5个 epoch，batch size 32</li>
+<li>序列长度：LLaMA-2 为 4,096，Mistral 为 16,384</li>
+<li>使用第3个 epoch 的 checkpoint（实验最优）</li>
+<li>仅对助手回复计算 loss（不包括用户/系统 token）</li>
+</ul>
+<p><strong>训练目标：</strong></p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mi mathvariant="script">L</mi><mo stretchy="false">(</mo><mi>θ</mi><mo stretchy="false">)</mo><mo>=</mo><msub><mi mathvariant="double-struck">E</mi><mrow><mo stretchy="false">(</mo><mi mathvariant="bold">x</mi><mo separator="true">,</mo><mi mathvariant="bold">y</mi><mo stretchy="false">)</mo><mo>∼</mo><msub><mi mathvariant="script">D</mi><mtext>CodeAct</mtext></msub><mo>∪</mo><msub><mi mathvariant="script">D</mi><mtext>general</mtext></msub></mrow></msub><mrow><mo fence="true">[</mo><mo>−</mo><munder><mo>∑</mo><mi>t</mi></munder><mi>log</mi><mo>⁡</mo><msub><mi>p</mi><mi>θ</mi></msub><mo stretchy="false">(</mo><msub><mi>y</mi><mi>t</mi></msub><mo>∣</mo><mi mathvariant="bold">x</mi><mo separator="true">,</mo><msub><mi>y</mi><mrow><mo>&#x3C;</mo><mi>t</mi></mrow></msub><mo stretchy="false">)</mo><mo fence="true">]</mo></mrow></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(7)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\mathcal{L}(\theta) = \mathbb{E}_{(\mathbf{x}, \mathbf{y}) \sim \mathcal{D}_{\text{CodeAct}} \cup \mathcal{D}_{\text{general}}} \left[ - \sum_{t} \log p_\theta(y_t \mid \mathbf{x}, y_{&#x3C;t}) \right] \tag{7}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathcal">L</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.0278em;">θ</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3em;vertical-align:-1.25em;"></span><span class="mord"><span class="mord mathbb">E</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.5198em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mopen mtight">(</span><span class="mord mathbf mtight">x</span><span class="mpunct mtight">,</span><span class="mord mathbf mtight" style="margin-right:0.016em;">y</span><span class="mclose mtight">)</span><span class="mrel mtight">∼</span><span class="mord mtight"><span class="mord mathcal mtight" style="margin-right:0.0278em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.3488em;margin-left:-0.0278em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">CodeAct</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1512em;"><span></span></span></span></span></span></span><span class="mbin mtight">∪</span><span class="mord mtight"><span class="mord mathcal mtight" style="margin-right:0.0278em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.3488em;margin-left:-0.0278em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">general</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2901em;"><span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3833em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size4">[</span></span><span class="mord">−</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.9em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.25em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop">lo<span style="margin-right:0.0139em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">p</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">θ</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathbf">x</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mrel mtight">&#x3C;</span><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1774em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size4">]</span></span></span></span><span class="tag"><span class="strut" style="height:3em;vertical-align:-1.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">7</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>其中 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">y</mi></mrow><annotation encoding="application/x-tex">\mathbf{y}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6389em;vertical-align:-0.1944em;"></span><span class="mord mathbf" style="margin-right:0.016em;">y</span></span></span></span> 是助手回复 token，<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="bold">x</mi></mrow><annotation encoding="application/x-tex">\mathbf{x}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4444em;"></span><span class="mord mathbf">x</span></span></span></span> 是上下文（用户指令 + 系统提示 + 历史交互）。</p>
+<h3 id="评估协议">评估协议</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>任务类型</th><th>基准</th><th>域内/域外</th></tr></thead><tbody><tr><td>代码动作（Agent）</td><td>MINT（子集）</td><td>域内（ID）</td></tr><tr><td>文本动作（Agent）</td><td>Miniwob++、ScienceWorld</td><td>域外（OD）</td></tr><tr><td>通用 LLM</td><td>MMLU、HumanEval、GSM8K、MTBench</td><td>域外（OD）</td></tr></tbody></table>
+<h3 id="关键结果表5">关键结果（表5）</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">xychart-beta</span></span>
+<span class="line"><span style="color:#E1E4E8">    title "CodeActAgent Mistral-7B vs. 基准线（MINT 基准）"</span></span>
+<span class="line"><span style="color:#E1E4E8">    x-axis ["Mistral Base", "Mistral Instruct", "AgentLM-7B", "FireAct-7B", "CodeActAgent", "gpt-3.5-0613", "gpt-4-0613"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    y-axis "MINT 得分（ID）" 0 --> 80</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [0, 18.8, 0, 0, 57.4, 33.9, 68.6]</span></span></code></pre>
+<p><strong>CodeActAgent（Mistral，7B）在 MINT ID 上达到 57.4</strong>——高于 gpt-3.5-turbo-0613（33.9），接近 gpt-4（68.6）。相比相同规模基准线 AgentLM-7B 和 FireAct-7B，提升约24分。</p>
+<p><strong>三个关键发现：</strong></p>
+<ol>
+<li>
+<p><strong>泛化到文本动作（域外）。</strong> CodeActAgent（LLaMA-2）在 MiniWob++ 文本动作上达到 25.5，ScienceWorld 达到 17.6——与专门为文本动作微调的 AgentLM-7B（28.9 / 13.7）相当。说明 CodeAct 训练能够泛化到其他动作模态。</p>
+</li>
+<li>
+<p><strong>保持通用 LLM 能力。</strong> 在 MMLU（59.1）、HumanEval（34.7）、GSM8K（58.0）上，CodeActAgent（Mistral）与 Mistral Instruct 持平或更好。混合训练不会损害通用性能。</p>
+</li>
+<li>
+<p><strong>LLaMA-2 变体意外未能改进。</strong> LLaMA-2 版 CodeActAgent 在大多数 Agent 任务上几乎零增益。作者认为 LLaMA-2 基础的指令遵循能力较弱，在复杂多步规划上微调 Agent 数据无法弥补基础模型的局限。</p>
+</li>
+</ol>
+<hr>
+<h2 id="消融研究">消融研究</h2>
+<h3 id="哪些数据组件真正重要">哪些数据组件真正重要？</h3>
+<p>表 A.8 系统消融 CodeActAgent（Mistral）：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>模型</th><th>MINT(ID)</th><th>MINT(OD)</th><th>Miniwob++</th><th>SciWorld</th><th>GSM8K</th><th>总体</th></tr></thead><tbody><tr><td>CodeActAgent（Mistral）</td><td><strong>57.4</strong></td><td><strong>32.4</strong></td><td><strong>46.2</strong></td><td><strong>15.9</strong></td><td><strong>58.0</strong></td><td><strong>46.8</strong></td></tr><tr><td>去掉 CodeAct 数据</td><td>32.9</td><td>23.0</td><td>47.8</td><td>17.0</td><td>59.5</td><td>46.2</td></tr><tr><td>去掉通用对话数据</td><td>50.5</td><td>13.9</td><td>0.0</td><td>11.0</td><td>26.8</td><td>22.6</td></tr></tbody></table>
+<p><strong>解读：</strong></p>
+<ul>
+<li><strong>去掉 CodeAct 训练数据</strong>：MINT ID 下降约25分，证明 Agent 专项数据不可或缺。</li>
+<li><strong>去掉通用对话数据</strong>：Miniwob++（46.2 → 0.0）和 GSM8K（58.0 → 26.8）出现灾难性遗忘——模型学会了总是以代码动作格式回应，面对需要文本动作的场景时”忘记了”其他输出形式也是合法的。</li>
+</ul>
+<p>这是一个重要的负面结果：<strong>不能只用 Agent 轨迹训练，必须混合通用数据</strong>，才能同时保持 Agent 能力和通用能力。这是指令微调中格式锁定（format lock-in）的典型案例。</p>
+<p><strong>混合数据的数学表达：</strong></p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mi mathvariant="script">D</mi><mtext>train</mtext></msub><mo>=</mo><mi>α</mi><mo>⋅</mo><msub><mi mathvariant="script">D</mi><mtext>CodeAct</mtext></msub><mo>+</mo><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><mi>α</mi><mo stretchy="false">)</mo><mo>⋅</mo><msub><mi mathvariant="script">D</mi><mtext>general</mtext></msub></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(8)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\mathcal{D}_{\text{train}} = \alpha \cdot \mathcal{D}_{\text{CodeAct}} + (1-\alpha) \cdot \mathcal{D}_{\text{general}} \tag{8}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathcal" style="margin-right:0.0278em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3175em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">train</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.4445em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathcal" style="margin-right:0.0278em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">CodeAct</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathcal" style="margin-right:0.0278em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">general</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span><span class="tag"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">8</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>其中 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>≈</mo><mn>7139</mn><mi mathvariant="normal">/</mi><mo stretchy="false">(</mo><mn>7139</mn><mo>+</mo><mn>69230</mn><mo stretchy="false">)</mo><mo>≈</mo><mn>0.093</mn></mrow><annotation encoding="application/x-tex">\alpha \approx 7139 / (7139 + 69230) \approx 0.093</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4831em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">7139/</span><span class="mopen">(</span><span class="mord">7139</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">69230</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.093</span></span></span></span>（按样本数量）。但由于 Agent 轨迹更长（约1482 token/条 vs 通用数据约797 token/条），按 token 数量计算约占 15%。</p>
+<hr>
+<h2 id="与相关工作的对比">与相关工作的对比</h2>
+<h3 id="vs-voyagerwang-等2023">vs. Voyager（Wang 等，2023）</h3>
+<p>Voyager 在 Minecraft 中也用代码作为动作，但写的是<strong>函数定义</strong>（整体规划），而非命令式代码块。这禁止了原子动作的动态调整：在 CodeAct 中，每个 <code>&#x3C;execute></code> 块是一个小的、针对性的动作；在 Voyager 中，Agent 必须一次写出处理所有可能情况的完整函数。CodeAct 更灵活，且零样本工作。</p>
+<h3 id="vs-opencodeinterpreterzheng-等2024">vs. OpenCodeInterpreter（Zheng 等，2024）</h3>
+<p>并发工作，专注于竞争性编程的代码调试。对代码生成/调试任务有用，但不是通用 Agent 框架，没有跨领域的 CodeActInstruct 等效训练数据。</p>
+<h3 id="vs-taskweaverqiao-等2023">vs. TaskWeaver（Qiao 等，2023）</h3>
+<p>概念上最接近的工作——同样在动作空间中使用代码。但 TaskWeaver 依赖闭源模型的定性示例，没有严格定量基准、开源模型或训练数据。CodeAct 三者兼具。</p>
+<hr>
+<h2 id="局限性与边界条件">局限性与边界条件</h2>
+<h3 id="1-需要-python-能力">1. 需要 Python 能力</h3>
+<p>CodeAct 的优势与模型的 Python 能力成正比。对 Python 预训练数据少的小模型，CodeAct 可能不带来优势，甚至因语法错误而表现更差。<strong>存在一个 Python 能力门槛</strong>，低于该门槛时 JSON 可能是更好的选择。</p>
+<h3 id="2-安全沙箱要求">2. 安全沙箱要求</h3>
+<p>CodeAct <strong>直接执行任意 Python 代码</strong>。论文坦诚承认：</p>
+<blockquote>
+<p>“CodeAct 直接授权 Agent 在沙箱环境中自由执行代码。在最坏情况下，此类 Agent 可能突破沙箱限制，通过网络攻击对现实世界造成危害。”</p>
+</blockquote>
+<p>生产部署中 CodeAct 需要健壮的沙箱执行环境（Docker 容器配合网络限制、资源限制和文件系统隔离）。这是 JSON 系统无需面对的工程负担。</p>
+<h3 id="3-包-api-幻觉">3. 包 API 幻觉</h3>
+<p>LLM 有时会自信地写出 <code>import nonexistent_package</code> 或调用 <code>df.some_made_up_method()</code>。纯文本 Agent 这样的错误会静默产生错误答案。CodeAct 中会产生 <code>ImportError</code> 或 <code>AttributeError</code>——对能力强的模型反而更好（可检测并修复），但弱模型可能陷入错误循环无法收敛。</p>
+<h3 id="4-开源与闭源模型的巨大差距">4. 开源与闭源模型的巨大差距</h3>
+<p>在 M³ToolEval 上，最好的开源模型（Lemur-70B）达到 13.4%，最好的闭源模型（gpt-4-1106-preview）达到 74.4%。CodeAct 按比例缩小了这个差距，但无法消除它。多步推理的基础能力差距依然存在。</p>
+<h3 id="5-上下文窗口瓶颈">5. 上下文窗口瓶颈</h3>
+<p>论文对 M³ToolEval 使用10轮限制。真实世界任务可能需要更多轮次。LLaMA-2 的 4,096 token 限制在长轨迹中是实际瓶颈——轨迹越来越长时，早期轮次的内容可能被截断。</p>
+<hr>
+<h2 id="可复现性说明">可复现性说明</h2>
+<p>论文提供了较强的可复现性支持：</p>
+<ul>
+<li><strong>代码和数据：</strong> <code>github.com/xingyaoww/code-act</code>，包含所有训练代码、模型权重和评估脚本</li>
+<li><strong>模型：</strong> CodeActAgent（LLaMA-2 7B）和 CodeActAgent（Mistral 7B）公开发布</li>
+<li><strong>数据集：</strong> CodeActInstruct（7,139 条轨迹，10.5M token）公开发布</li>
+<li><strong>基准：</strong> M³ToolEval（82 个实例，4 个领域）可用于评估</li>
+<li><strong>训练细节：</strong> 附录 D 完整说明——优化器、学习率 schedule、batch size、硬件、序列长度</li>
+</ul>
+<p><strong>一个重要提示：</strong> 轨迹生成用的是 gpt-3.5-turbo-0613 和 claude-2，这些版本可能已经废弃或更新。用当前模型版本重新生成轨迹可能得到不同结果。</p>
+<p>使用的是<strong>第3个 epoch 的 checkpoint</strong>（不是最终 checkpoint）。这意味着后续 epoch 出现了过拟合——如果你复现训练，需要注意这个细节。</p>
+<hr>
+<h2 id="我的思考与评价">我的思考与评价</h2>
+<h3 id="这篇论文为什么重要">这篇论文为什么重要</h3>
+<p>CodeAct 的重要性不在于提出了新架构或新训练算法，而在于证明了一个<strong>设计原则</strong>：当你已经在让 LLM 生成结构化文本时，让那个结构是通用编程语言，而不是任务特定的 Schema。</p>
+<p>这个洞见的影响远超论文实验本身。如果代码是 LLM 动作的自然格式，那么：</p>
+<ol>
+<li><strong>工具定义变得不必要。</strong> 不需要为每个能力编写函数 Schema——提供 Python 包，让模型从文档或试错中发现 API。</li>
+<li><strong>错误处理内置其中。</strong> Python 的异常系统是 Agent 自我改进的天然课程，无需人工整理错误映射。</li>
+<li><strong>任意计算成为一等公民。</strong> 排序、过滤、数学、字符串处理——任何可计算的东西都直接对 Agent 可用。</li>
+</ol>
+<h3 id="动作空间的设计哲学">动作空间的设计哲学</h3>
+<p>论文隐式指出了动作空间<strong>表达力</strong>与<strong>可学习性</strong>之间的权衡：</p>
+<ul>
+<li>太受限（原子 JSON 调用）：易解析，难组合，需要很多轮次</li>
+<li>太宽泛（无约束自然语言）：难解析，灵活但脆弱</li>
+<li><strong>代码</strong>：富有表达力，可解析（解释器），可学习（预训练数据），可组合（数据流）</li>
+</ul>
+<p>代码恰好是那个”黄金分割点”。这正是这一概念此后被 OpenHands、Claude Computer Use 以及 2024 年后几乎所有主流 Agent 框架采用的原因。</p>
+<h3 id="尚未解决的问题">尚未解决的问题</h3>
+<ol>
+<li>
+<p><strong>最优代码粒度。</strong> 每个 <code>&#x3C;execute></code> 块应该包含多少代码？论文建议”每次少做一点”，但块长度与轮次数量之间的最优权衡没有被系统研究。</p>
+</li>
+<li>
+<p><strong>非 Python 语言。</strong> Bash、JavaScript、SQL 都是潜在替代方案。什么时候数据 Agent 应该优先用 SQL 而不是 Python？这没有被探讨。</p>
+</li>
+<li>
+<p><strong>训练混合比例的优化。</strong> 作者使用了特定的 CodeActInstruct 与通用对话数据比例，但最优比例（以及它是否依赖测试时的任务分布）没有被系统消融。</p>
+</li>
+<li>
+<p><strong>更长上下文需求。</strong> 随着任务复杂度增加，轨迹长度增长。LLaMA-2 的 4,096 token 限制在论文中已经是瓶颈。未来工作应探索轨迹压缩。</p>
+</li>
+</ol>
+<hr>
+<h2 id="总结">总结</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>维度</th><th>内容</th></tr></thead><tbody><tr><td><strong>核心思想</strong></td><td>用可执行 Python 代码作为 Agent 动作空间</td></tr><tr><td><strong>四大优势</strong></td><td>控制流、数据流、现有包、自动错误反馈</td></tr><tr><td><strong>基准测试</strong></td><td>API-Bank（原子调用）、M³ToolEval（多工具多轮）</td></tr><tr><td><strong>核心结果</strong></td><td>成功率最高提升 20%；轮次减少约 30%</td></tr><tr><td><strong>数据集</strong></td><td>CodeActInstruct：5个领域 7,139 条轨迹</td></tr><tr><td><strong>开源模型</strong></td><td>CodeActAgent（Mistral-7B）：匹配百亿级闭源模型</td></tr><tr><td><strong>主要局限</strong></td><td>需要 Python 能力；生产部署需沙箱</td></tr><tr><td><strong>发表</strong></td><td>ICML 2024</td></tr><tr><td><strong>代码</strong></td><td>github.com/xingyaoww/code-act</td></tr></tbody></table>
+<p>CodeAct 是一篇设计简洁、执行严谨的论文，从根本上改变了这个领域对 Agent 动作空间的思考方式。其影响力体现在它发布后所有主流 Agent 框架都采用了代码优先的动作设计——这是一篇论文”点中了某个根本正确的东西”的最清晰标志。</p>
+<hr>
+<h2 id="深入拆解codeact-agent-循环算法">深入拆解：CodeAct Agent 循环算法</h2>
+<p>让我把 CodeAct Agent 循环用伪代码精确形式化，然后逐行解释每一步的含义和设计动机。</p>
+<h3 id="伪代码codeact-多轮-agent-循环">伪代码：CodeAct 多轮 Agent 循环</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>算法 1：CodeAct Agent 循环</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>输入：</span></span>
+<span class="line"><span>  instruction  : str     -- 用户的自然语言任务描述</span></span>
+<span class="line"><span>  tools        : dict    -- 对 Agent 可用的 Python 函数（可为空）</span></span>
+<span class="line"><span>  max_turns    : int     -- 最大交互轮次（默认：10）</span></span>
+<span class="line"><span>  llm          : LLM     -- 语言模型主体（如 Mistral-7B、gpt-4）</span></span>
+<span class="line"><span>  interpreter  : PythonInterpreter  -- 有状态 Python 执行环境</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>输出：</span></span>
+<span class="line"><span>  answer       : str     -- 用户指令的最终答案</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>1:  context ← [system_prompt] + [("user", instruction)]</span></span>
+<span class="line"><span>2:  turn ← 0</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>3:  while turn &#x3C; max_turns:</span></span>
+<span class="line"><span>4:      response ← llm.generate(context)</span></span>
+<span class="line"><span>5:</span></span>
+<span class="line"><span>6:      if "&#x3C;execute>" in response:</span></span>
+<span class="line"><span>7:          code_block ← extract_between_tags(response, "&#x3C;execute>", "&#x3C;/execute>")</span></span>
+<span class="line"><span>8:          observation ← interpreter.run(code_block)    # stdout + stderr</span></span>
+<span class="line"><span>9:          context.append(("assistant", response))</span></span>
+<span class="line"><span>10:         context.append(("environment", observation))</span></span>
+<span class="line"><span>11:         turn ← turn + 1</span></span>
+<span class="line"><span>12:</span></span>
+<span class="line"><span>13:     else if "Answer:" in response:</span></span>
+<span class="line"><span>14:         answer ← extract_answer(response)</span></span>
+<span class="line"><span>15:         return answer</span></span>
+<span class="line"><span>16:</span></span>
+<span class="line"><span>17:     else:</span></span>
+<span class="line"><span>18:         # 纯自然语言回复（例如向用户请求澄清）</span></span>
+<span class="line"><span>19:         context.append(("assistant", response))</span></span>
+<span class="line"><span>20:         user_reply ← wait_for_user()</span></span>
+<span class="line"><span>21:         context.append(("user", user_reply))</span></span>
+<span class="line"><span>22:         turn ← turn + 1</span></span>
+<span class="line"><span>23:</span></span>
+<span class="line"><span>24: return None   # 超过最大轮次仍未回答</span></span></code></pre>
+<p><strong>逐行解释：</strong></p>
+<ul>
+<li>
+<p><strong>第1行：</strong> context 以系统提示（CodeAct 附录 E 的6行指令）和用户指令初始化。如果 <code>tools</code> 非空，工具定义（Python 函数签名 + 文档字符串）也附加在系统提示末尾。</p>
+</li>
+<li>
+<p><strong>第4行：</strong> LLM 基于完整 context 进行自回归生成。这是标准的文本生成步骤。</p>
+</li>
+<li>
+<p><strong>第6-11行：</strong> 如果回复中包含 <code>&#x3C;execute></code> 块，提取代码并传递给 Python 解释器。解释器是<strong>有状态的</strong>——第 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi></mrow><annotation encoding="application/x-tex">t</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6151em;"></span><span class="mord mathnormal">t</span></span></span></span> 轮定义的变量在第 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>t</mi><mo>+</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">t+1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6984em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">t</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> 轮仍然可用。观察结果（stdout + stderr）作为”environment”轮次追加到 context。</p>
+</li>
+<li>
+<p><strong>第13-15行：</strong> 如果回复包含”Answer:“，Agent 认为已有足够信息，直接返回答案。这是成功路径。</p>
+</li>
+<li>
+<p><strong>第17-22行：</strong> 既无 <code>&#x3C;execute></code> 也无”Answer:“，Agent 在向用户请求澄清。在实际操作中这种情况少见——系统提示鼓励执行代码而非提问。</p>
+</li>
+<li>
+<p><strong>第24行：</strong> 超过 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi></mrow><annotation encoding="application/x-tex">T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span></span></span></span> 轮仍无答案，交互终止。成功率评估中这记为失败。</p>
+</li>
+</ul>
+<h3 id="对比json-agent-循环的伪代码">对比：JSON Agent 循环的伪代码</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>算法 2：JSON 工具调用 Agent 循环（对比用）</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>1:  context ← [system_prompt + tool_schemas] + [("user", instruction)]</span></span>
+<span class="line"><span>2:  turn ← 0</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>3:  while turn &#x3C; max_turns:</span></span>
+<span class="line"><span>4:      response ← llm.generate(context)</span></span>
+<span class="line"><span>5:</span></span>
+<span class="line"><span>6:      if "Action:" in response:</span></span>
+<span class="line"><span>7:          json_str ← extract_json(response)</span></span>
+<span class="line"><span>8:          tool_name ← json_str["tool"]</span></span>
+<span class="line"><span>9:          args ← json_str["args"]</span></span>
+<span class="line"><span>10:         if tool_name in registered_tools:</span></span>
+<span class="line"><span>11:             result ← registered_tools[tool_name](**args)</span></span>
+<span class="line"><span>12:         else:</span></span>
+<span class="line"><span>13:             result ← {"error": f"未知工具 {tool_name}"}</span></span>
+<span class="line"><span>14:         context.append(("assistant", response))</span></span>
+<span class="line"><span>15:         context.append(("observation", str(result)))</span></span>
+<span class="line"><span>16:         turn ← turn + 1</span></span>
+<span class="line"><span>17:</span></span>
+<span class="line"><span>18:     else if "Answer:" in response:</span></span>
+<span class="line"><span>19:         return extract_answer(response)</span></span>
+<span class="line"><span>20:</span></span>
+<span class="line"><span>21: return None</span></span></code></pre>
+<p><strong>关键差异对比：</strong></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>维度</th><th>CodeAct</th><th>JSON Agent</th></tr></thead><tbody><tr><td>工具分发</td><td>Python 解释器直接执行</td><td>解析 JSON → 查找处理函数 → 调用</td></tr><tr><td>未知工具</td><td><code>NameError: name 'xxx' is not defined</code>（信息丰富）</td><td><code>{"error": "Unknown tool"}</code> （信息贫乏）</td></tr><tr><td>跨轮数据流</td><td>Python 变量在解释器 session 内持久存在</td><td>无法跨轮保存中间结果</td></tr><tr><td>控制流</td><td>for/if/while 原生支持</td><td>无法表达；需要多轮模拟</td></tr><tr><td>工具注册</td><td>不需要；<code>import package</code> 即可</td><td>需要显式注册所有工具</td></tr></tbody></table>
+<hr>
+<h2 id="统计分析的深度理解">统计分析的深度理解</h2>
+<h3 id="为什么要测-17-个模型">为什么要测 17 个模型？</h3>
+<p>测试 17 个模型不是随意的。论文想证明 CodeAct 的优势不是特定模型专属——它在闭源和开源、大和小、指令微调和基础模型之间都成立。表2和表3底部都有”最佳格式频率”行：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>指标</th><th>CodeAct</th><th>JSON</th><th>文本</th></tr></thead><tbody><tr><td>最佳格式（API-Bank，开源）</td><td>5</td><td>0</td><td>1</td></tr><tr><td>最佳格式（API-Bank，闭源）</td><td>4</td><td>5</td><td>0</td></tr><tr><td>最佳格式（M³ToolEval，开源）</td><td>5</td><td>4</td><td>3</td></tr><tr><td>最佳格式（M³ToolEval，闭源）</td><td>7</td><td>2</td><td>1</td></tr></tbody></table>
+<p>在更有意义的 M³ToolEval 上，CodeAct 在 <strong>17 个模型中的12个</strong>上是最佳格式——强有力的多数。</p>
+<h3 id="闭源模型-json-异常的解释">闭源模型 JSON 异常的解释</h3>
+<p>为什么 JSON 在 API-Bank 上对某些闭源模型有时胜过 CodeAct？因为 GPT-3.5、GPT-4 和 Claude 都经过了 JSON 函数调用<strong>专项微调</strong>——它们的训练数据包含 JSON Schema 格式的函数调用示例。对于单次原子调用（API-Bank），这种针对性微调提供了优势。但对于多工具任务（M³ToolEval），这种优势消失了——因为再多的 JSON 微调也无法给动作空间加上 for 循环。</p>
+<p>这个分析做出了一个预测：随着开源模型获得更多指令微调（包括函数调用），闭源模型的 JSON 优势会缩小。到 2025-2026 年，这个预测已基本成真——大多数顶级开源模型都具备了显式的函数调用能力，而代码优先的 Agent（如 Claude Computer Use、OpenHands）已成为主流范式。</p>
+<h3 id="数据混合比例的影响">数据混合比例的影响</h3>
+<p>训练分布的形式化表达：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mi mathvariant="script">D</mi><mtext>train</mtext></msub><mo>=</mo><mi>α</mi><mo>⋅</mo><msub><mi mathvariant="script">D</mi><mtext>CodeAct</mtext></msub><mo>+</mo><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><mi>α</mi><mo stretchy="false">)</mo><mo>⋅</mo><msub><mi mathvariant="script">D</mi><mtext>general</mtext></msub></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(9)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\mathcal{D}_{\text{train}} = \alpha \cdot \mathcal{D}_{\text{CodeAct}} + (1-\alpha) \cdot \mathcal{D}_{\text{general}} \tag{9}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathcal" style="margin-right:0.0278em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3175em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">train</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.4445em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathcal" style="margin-right:0.0278em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">CodeAct</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathcal" style="margin-right:0.0278em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">general</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span><span class="tag"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">9</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>在论文设置中，按样本数量 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>≈</mo><mn>0.093</mn></mrow><annotation encoding="application/x-tex">\alpha \approx 0.093</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4831em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.093</span></span></span></span>；按 token 数量约为 0.15（因为 Agent 轨迹更长）。</p>
+<p>去掉 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi mathvariant="script">D</mi><mtext>general</mtext></msub></mrow><annotation encoding="application/x-tex">\mathcal{D}_{\text{general}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathcal" style="margin-right:0.0278em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">general</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span>（即 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>=</mo><mn>1.0</mn></mrow><annotation encoding="application/x-tex">\alpha = 1.0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1.0</span></span></span></span>）导致 Miniwob++ 得分从 46.2 崩溃到 0.0。这可以理解为<strong>分布外推断失败</strong>：模型在训练集中从未见过文本动作格式，因此无法在测试时产生它。</p>
+<p>去掉 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi mathvariant="script">D</mi><mtext>CodeAct</mtext></msub></mrow><annotation encoding="application/x-tex">\mathcal{D}_{\text{CodeAct}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathcal" style="margin-right:0.0278em;">D</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord text mtight"><span class="mord mtight">CodeAct</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>（即 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">\alpha = 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0</span></span></span></span>）则导致 MINT ID 从 57.4 降至 32.9。这是<strong>任务分布偏移</strong>：通用对话数据中很少有多工具多轮 Agent 交互，模型没有学会在这种场景下系统地规划和调试。</p>
+<p>论文没有对 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> 进行系统消融——最优比例仍是开放问题。</p>
+<hr>
+<h2 id="codeact-的后续影响2024-年后的-agent-领域">CodeAct 的后续影响：2024 年后的 Agent 领域</h2>
+<h3 id="主流框架的采纳">主流框架的采纳</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">timeline</span></span>
+<span class="line"><span style="color:#E1E4E8">    title CodeAct 对 Agent 框架的影响</span></span>
+<span class="line"><span style="color:#E1E4E8">    2024-02 : CodeAct 论文发布（arXiv）</span></span>
+<span class="line"><span style="color:#E1E4E8">    2024-06 : ICML 2024 正式接收</span></span>
+<span class="line"><span style="color:#E1E4E8">    2024-07 : OpenHands（原 OpenDevin）采用 CodeAct 循环</span></span>
+<span class="line"><span style="color:#E1E4E8">    2024-10 : Claude Computer Use（代码优先动作）</span></span>
+<span class="line"><span style="color:#E1E4E8">    2025-01 : 主流 Agent 基准默认使用代码动作</span></span>
+<span class="line"><span style="color:#E1E4E8">    2025-06 : 代码即动作成为所有主流框架的默认选择</span></span></code></pre>
+<p><strong>OpenHands（原 OpenDevin，2024）：</strong> 直接在 CodeAct 框架上构建，使用代码执行循环作为核心 Agent 循环。CodeAct 论文的第一作者（Xingyao Wang）也是 OpenHands 的贡献者。</p>
+<p><strong>Claude Computer Use（Anthropic，2024年10月）：</strong> 以 bash 命令 + Python 代码作为计算机控制任务的主要动作语言。JSON 工具调用可用但处于次要地位。</p>
+<p><strong>LangChain / LlamaIndex（2024+）：</strong> 两者都在 CodeAct 证明优越性后将 Python REPL 工具添加为一等动作类型。</p>
+<h3 id="安全问题仍未解决">安全问题仍未解决</h3>
+<p>尽管被广泛采用，基本安全问题仍然悬而未决。在生产环境中执行任意 LLM 生成的 Python 需要：</p>
+<ol>
+<li><strong>进程隔离</strong>（Docker 容器或虚拟机）</li>
+<li><strong>网络限制</strong>（除白名单端点外无出站 HTTP）</li>
+<li><strong>文件系统限制</strong>（不访问敏感路径）</li>
+<li><strong>资源限制</strong>（CPU 时间、内存、磁盘 I/O）</li>
+<li><strong>代码审计</strong>（执行前检测潜在恶意模式）</li>
+</ol>
+<p>如果沙箱配置有误，精心设计的指令可能导致 Agent 执行 <code>os.system("rm -rf /")</code> 等破坏性操作。论文承认这一问题但未提供解决方案——截至 2026 年它仍是活跃研究领域。</p>
+<hr>
+<h2 id="论文图表的详细解读">论文图表的详细解读</h2>
+<h3 id="图1论文核心动机示例">图1（论文）：核心动机示例</h3>
+<p>论文图1展示了 JSON vs CodeAct 确定在哪个国家购买智能手机最便宜的对比。JSON Agent 至少需要8轮（每个国家至少2次调用 × 4个国家），而 CodeAct 用一轮的 for 循环完成。关键标注：</p>
+<ul>
+<li><strong>“控制和数据流简化了复杂操作”</strong> — for 循环一次处理所有国家</li>
+<li><strong>“复用现有软件基础设施（Python 库）中的 ‘min’ 函数”</strong> — <code>min(final_prices, key=...)</code> 是 JSON Agent 无法使用的内置函数</li>
+<li><strong>“所需动作更少！”</strong> — 对比说明</li>
+</ul>
+<h3 id="图2论文agent-框架图">图2（论文）：Agent 框架图</h3>
+<p>图2展示了通用多轮交互框架。关键组件：</p>
+<ul>
+<li><strong>Agent：</strong> 接收观察、执行链式思维、发出动作</li>
+<li><strong>环境（计算机接口）：</strong> 信息检索、软件包（工具）、外部记忆</li>
+<li><strong>环境（物理世界）：</strong> 机器人控制</li>
+<li><strong>用户：</strong> 提供指令、接收自然语言回复</li>
+<li><strong>规划模块：</strong> 链式思维、自反思、从先前观察中学习</li>
+</ul>
+<p>图2明确表明 CodeAct 是<strong>通用框架</strong>——同一循环适用于网页浏览（Python 中的 click_url）、数据库查询（Python 中的 sqlite3）、数学（Python 中的 sympy）和机器人控制（Python 中的机器人 API）。</p>
+<h3 id="图3论文codeactagent-实战">图3（论文）：CodeActAgent 实战</h3>
+<p>图3的数据分析会话展示了4个自调试循环：</p>
+<ol>
+<li><strong>价格列类型错误</strong>（含 <code>$</code> 字符）→ 用 <code>str.replace('$','')</code> 修复</li>
+<li><strong><code>tick_params()</code> 参数错误</strong> → 切换到 <code>xticks(rotation=...)</code> 修复</li>
+</ol>
+<p>两个修复都纯粹来自阅读 traceback，没有人工提示”哪里出了问题”或”如何修复”。</p>
+<p><strong>这是 CodeAct 自调试能力的标志性演示</strong>：Python 的异常系统充当了自然课程，驱动 Agent 不断改进，直到代码正确运行。</p>
+<hr>
+<h2 id="最终评价">最终评价</h2>
+<p>从一个 LLM 工程师的角度看，CodeAct 最让我信服的不是实验数字，而是它的<strong>论证结构</strong>：</p>
+<ol>
+<li>识别出 JSON 动作空间的根本局限（无控制流、无数据流、无反馈）</li>
+<li>提出一个自然的解决方案（用代码替换 JSON）</li>
+<li>分解优势为可测试的研究问题（RQ1、RQ2、RQ3）</li>
+<li>用覆盖17个模型的严格实验验证每个优势</li>
+<li>构建开源产物（CodeActAgent、CodeActInstruct、M³ToolEval）让结论可复现</li>
+</ol>
+<p>这是理想的实证论文写法。每个主张都有实验支撑，没有夸大结论，局限性也坦诚承认。</p>
+<p><strong>我认为这篇论文真正”对”的地方</strong>：它认识到 LLM 的能力不只是”生成文本”——LLM 已经是优秀的程序员。让它们以程序为动作，是对这种能力最自然的利用方式。与其为每个任务发明一种新的 JSON Schema（本质上是在发明一门编程语言的子集），不如直接使用 Python——那门 LLM 已经非常熟练的语言。</p>
+<p>这个洞见看起来简单，但在 2024 年之前并没有被系统证明——这就是 CodeAct 的价值所在。</p> </div> <footer class="blog-post-footer">  <nav class="blog-post-nav" aria-label="Adjacent posts"> <a class="blog-post-nav-link blog-post-nav-prev" href="/blog/2026-05-25-codeact-technical-review-en/"> <span class="blog-post-nav-label">← Newer</span> <span class="blog-post-nav-title">CodeAct: Executable Code Actions Elicit Better LLM Agents</span> </a> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-05-24-flashattention2-technical-review-en/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient ML systems, LLM infrastructure, and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>
