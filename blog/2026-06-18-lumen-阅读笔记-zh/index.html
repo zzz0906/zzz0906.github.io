@@ -1,0 +1,795 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>LUMEN：面向分布式大模型推理的负载感知协同故障恢复 | Zhongzhu / Charlie</title><meta name="description" content="LUMEN 把 LLM 服务集群中的 GPU worker 故障恢复，重新定义为一个负载感知的协同调度问题，在四种 worker 的 Qwen3-32B 实验中，将平均 TTFT 降低 44%、恢复时间缩短 50%。"><meta property="og:title" content="LUMEN：面向分布式大模型推理的负载感知协同故障恢复 | Zhongzhu / Charlie"><meta property="og:description" content="LUMEN 把 LLM 服务集群中的 GPU worker 故障恢复，重新定义为一个负载感知的协同调度问题，在四种 worker 的 Qwen3-32B 实验中，将平均 TTFT 降低 44%、恢复时间缩短 50%。"><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-06-18-lumen-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-06-18-lumen-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.BtdlpukG.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <nav class="page-toc" aria-label="Page outline" data-heading-selector=".blog-post-body h2"> <div class="page-toc-handle" aria-hidden="true"> <span class="page-toc-handle-icon">☰</span> <span class="page-toc-handle-label">Outline</span> </div> <div class="page-toc-panel"> <p class="page-toc-title">On this page</p> <ul class="page-toc-list"></ul> </div> </nav> <script type="module">document.addEventListener("DOMContentLoaded",()=>{const r=document.querySelector(".page-toc-list"),c=document.querySelector(".page-toc");if(!r||!c)return;const l=c.dataset.headingSelector||"main h2",i=document.querySelectorAll(l);if(i.length<2){c.style.display="none";return}const d=e=>e.toLowerCase().trim().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi,"-").replace(/^-+|-+$/g,""),a=[];i.forEach((e,o)=>{const n=(e.textContent||"").trim();if(n){if(!e.id){const t=d(n)||`section-${o}`;let s=t,f=2;for(;document.getElementById(s);)s=`${t}-${f++}`;e.id=s}e.style.scrollMarginTop="84px",a.push({href:`#${e.id}`,text:n})}}),a.forEach(({href:e,text:o})=>{const n=document.createElement("li"),t=document.createElement("a");t.href=e,t.textContent=o,n.appendChild(t),r.appendChild(n)});const u=Array.from(r.querySelectorAll("a")),g=new Map(u.map(e=>[e.getAttribute("href").slice(1),e])),p=new IntersectionObserver(e=>{e.forEach(o=>{const n=o.target.id,t=g.get(n);t&&(o.isIntersecting?t.classList.add("page-toc-active"):t.classList.remove("page-toc-active"))})},{rootMargin:"-40% 0px -50% 0px",threshold:0});i.forEach(e=>p.observe(e))});</script> <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>174</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>25</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-06-18">June 18, 2026</time> <span class="blog-lang blog-lang-zh">中</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/LLM-Serving/">#LLM Serving</a><a class="blog-post-tag-chip" href="/blog/tag/LLM-Inference/">#LLM Inference</a><a class="blog-post-tag-chip" href="/blog/tag/Distributed-Systems/">#Distributed Systems</a> </span> </p> <h1>LUMEN：面向分布式大模型推理的负载感知协同故障恢复</h1> </header> <div class="blog-post-body"> <p><strong>笔记日期：</strong> 2026 年 6 月 18 日
+<strong>笔记作者：</strong> Zhongzhu Zhou
+<strong>论文标题：</strong> LUMEN: Coordinated Failure Recovery for Distributed LLM Serving
+<strong>作者：</strong> Zhang Cao, Shujie Han, Juncheng Zhang, Yuanming Ren, Yongkun Li, Patrick P. C. Lee
+<strong>arXiv：</strong> <a href="https://arxiv.org/abs/2606.17787">2606.17787</a>
+<strong>状态/Venue：</strong> arXiv 预印本，2026 年 6 月</p>
+<h2 id="一句话总结">一句话总结</h2>
+<p>生产 LLM 服务集群中 GPU worker 的故障是常态，而不是例外；LUMEN 把故障恢复重新定义为一个三维的负载感知协同决策问题，通过”在故障前把 KV 检查点分散到最空闲的 worker”、“故障时按前缀长度和负载动态决定路由”、以及”在模型重载窗口用草稿模型做推测解码来提前贡献算力”，系统性地解决了现有方案各自存在的瓶颈，在 SGLang 原型上将平均 TTFT 比 Stop-and-Restart 基线降低 44%，恢复时间缩短 50%。</p>
+<hr>
+<h2 id="前置知识">前置知识</h2>
+<p>这一节专门为不熟悉 LLM 服务系统内部原理的读者打下基础。如果你已经熟悉 prefill/decode/KV cache，可以直接跳到下一节。</p>
+<h3 id="大语言模型推理的两个阶段">大语言模型推理的两个阶段</h3>
+<p>Transformer 语言模型处理一个请求分为两个阶段：</p>
+<p><strong>Prefill 阶段：</strong> 模型接到用户输入的 prompt 之后，把所有 token 并行处理一遍，生成第一个输出 token。这个阶段的瓶颈是计算——GPU 的算术单元被充分利用，进行大规模矩阵乘法。对于一个长度为 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>L</mi><mi>p</mi></msub></mrow><annotation encoding="application/x-tex">L_p</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">L</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">p</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> 的 prompt，prefill 在每一层都要做一个完整的注意力计算，复杂度为 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><msubsup><mi>L</mi><mi>p</mi><mn>2</mn></msubsup><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(L_p^2)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.1972em;vertical-align:-0.3831em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">O</span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">L</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-2.453em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">p</span></span></span><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3831em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span>。</p>
+<p><strong>Decode 阶段：</strong> Prefill 完成后，模型进入逐 token 生成的阶段，每一步只生成一个新 token，但要对全部已有 token（包括 prompt 和之前生成的 token）进行注意力计算。这个阶段的瓶颈是显存带宽——GPU 每一步都要从 HBM 把模型权重和 KV cache 全部读出来，而算术单元大部分时间在等待，利用率低。</p>
+<h3 id="kv-cache推理的核心状态">KV Cache：推理的核心状态</h3>
+<p>为了避免 decode 每一步都从头重新计算注意力，系统会把每个 token 的 key 和 value 向量缓存下来，这就是 <strong>KV cache</strong>。KV cache 保存在 GPU HBM 中，随着生成长度增加而不断增大。</p>
+<p>一个请求的 KV cache 大小为：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mi>S</mi><mrow><mi>K</mi><mi>V</mi></mrow></msub><mo stretchy="false">(</mo><mi>L</mi><mo stretchy="false">)</mo><mo>=</mo><mn>2</mn><mo>⋅</mo><msub><mi>n</mi><mrow><mi>l</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi><mi>s</mi></mrow></msub><mo>⋅</mo><msub><mi>n</mi><mrow><mi>h</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>s</mi></mrow></msub><mo>⋅</mo><msub><mi>d</mi><mrow><mi>h</mi><mi>e</mi><mi>a</mi><mi>d</mi></mrow></msub><mo>⋅</mo><mi>L</mi><mo>⋅</mo><mtext>每元素字节数</mtext></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(1)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">S_{KV}(L) = 2 \cdot n_{layers} \cdot n_{heads} \cdot d_{head} \cdot L \cdot \text{每元素字节数} \tag{1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0576em;">S</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0576em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">K</span><span class="mord mathnormal mtight" style="margin-right:0.2222em;">V</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal">L</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7306em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0197em;">l</span><span class="mord mathnormal mtight">a</span><span class="mord mathnormal mtight" style="margin-right:0.0359em;">y</span><span class="mord mathnormal mtight" style="margin-right:0.0278em;">er</span><span class="mord mathnormal mtight">s</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.5945em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">h</span><span class="mord mathnormal mtight">e</span><span class="mord mathnormal mtight">a</span><span class="mord mathnormal mtight">d</span><span class="mord mathnormal mtight">s</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">h</span><span class="mord mathnormal mtight">e</span><span class="mord mathnormal mtight">a</span><span class="mord mathnormal mtight">d</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">L</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord text"><span class="mord cjk_fallback">每元素字节数</span></span></span><span class="tag"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">1</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>以 Llama-3-70B（<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>n</mi><mrow><mi>l</mi><mi>a</mi><mi>y</mi><mi>e</mi><mi>r</mi><mi>s</mi></mrow></msub><mo>=</mo><mn>80</mn></mrow><annotation encoding="application/x-tex">n_{layers}=80</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0197em;">l</span><span class="mord mathnormal mtight">a</span><span class="mord mathnormal mtight" style="margin-right:0.0359em;">y</span><span class="mord mathnormal mtight" style="margin-right:0.0278em;">er</span><span class="mord mathnormal mtight">s</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">80</span></span></span></span>，GQA 下 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>n</mi><mrow><mi>h</mi><mi>e</mi><mi>a</mi><mi>d</mi><mi>s</mi></mrow></msub><mo>=</mo><mn>8</mn></mrow><annotation encoding="application/x-tex">n_{heads}=8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">h</span><span class="mord mathnormal mtight">e</span><span class="mord mathnormal mtight">a</span><span class="mord mathnormal mtight">d</span><span class="mord mathnormal mtight">s</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">8</span></span></span></span>，<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mrow><mi>h</mi><mi>e</mi><mi>a</mi><mi>d</mi></mrow></msub><mo>=</mo><mn>128</mn></mrow><annotation encoding="application/x-tex">d_{head}=128</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">h</span><span class="mord mathnormal mtight">e</span><span class="mord mathnormal mtight">a</span><span class="mord mathnormal mtight">d</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">128</span></span></span></span>，BF16 精度）为例，一个 4096 token 的请求：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mi>S</mi><mrow><mi>K</mi><mi>V</mi></mrow></msub><mo>=</mo><mn>2</mn><mo>×</mo><mn>80</mn><mo>×</mo><mn>8</mn><mo>×</mo><mn>128</mn><mo>×</mo><mn>4096</mn><mo>×</mo><mn>2</mn><mo>=</mo><mn>1.34</mn><mtext> GB</mtext></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(2)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">S_{KV} = 2 \times 80 \times 8 \times 128 \times 4096 \times 2 = 1.34 \text{ GB} \tag{2}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8333em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0576em;">S</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0576em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">K</span><span class="mord mathnormal mtight" style="margin-right:0.2222em;">V</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">2</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">80</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">8</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">128</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">4096</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">1.34</span><span class="mord text"><span class="mord"> GB</span></span></span><span class="tag"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">2</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>注意，<strong>KV cache 是请求最重要的中间状态</strong>。如果这部分数据丢失（比如 GPU worker 崩溃），就必须重新从头运行 prefill 才能恢复，代价极高。</p>
+<p><strong>表 A：不同序列长度下的 KV Cache 大小（BF16，GQA）</strong></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>模型</th><th>层数</th><th>KV 头数</th><th>头维度</th><th>1K token</th><th>4K token</th><th>32K token</th></tr></thead><tbody><tr><td>Qwen3-14B</td><td>48</td><td>8</td><td>128</td><td>0.38 GB</td><td>1.54 GB</td><td>12.3 GB</td></tr><tr><td>Qwen3-32B</td><td>64</td><td>8</td><td>128</td><td>0.50 GB</td><td>2.00 GB</td><td>16.0 GB</td></tr><tr><td>Llama-3-70B</td><td>80</td><td>8</td><td>128</td><td>0.63 GB</td><td>2.52 GB</td><td>20.2 GB</td></tr><tr><td>Llama-4-405B</td><td>126</td><td>16</td><td>128</td><td>1.98 GB</td><td>7.92 GB</td><td>63.4 GB</td></tr></tbody></table>
+<p>这些数字直观说明了为什么长上下文请求的 KV cache 丢失代价如此之高：一个 32K token 的 Qwen3-32B 请求，如果 worker 在没有 checkpoint 的情况下故障，需要从头重新计算 16 GB 的 KV 内容——对 A100 而言，这大约需要 3–5 分钟的 prefill 时间。</p>
+<p><strong>分页 KV 管理：</strong> vLLM 提出了 PagedAttention，将 KV cache 以固定大小的”页”管理，类似操作系统的虚拟内存。PagedAttention 把传统的连续 KV cache 分割成固定大小的”块”（如每块 16 个 token 的 KV），允许不连续物理内存存储，消除了碎片化，也为 LUMEN 的”KV 页流式传输到另一台主机”提供了天然的传输粒度。LUMEN 在此基础上将 KV 页从 GPU 显存流式传输到 checkpoint holder 的主机内存（Host DRAM）中。</p>
+<p>PagedAttention 页大小的选择（通常 16 token）对 LUMEN checkpoint 流式传输的开销有直接影响：页越大，每次传输的粒度越粗，但传输次数越少；页越小，传输频率越高，但单次传输量越少。对于典型的 decode step（每步生成 1 个新 KV 页），LUMEN 需要触发一次异步传输，频率约为每次 decode step（几十毫秒）一次，远低于网络带宽瓶颈，不影响正常 decode 延迟。</p>
+<p><strong>分块 prefill：</strong> Sarathi-Serve、SGLang 等现代系统将长 prompt 切成固定大小的块（如每块 1024 token），分多个调度迭代完成，和 decode 步骤交替执行。这样能减少大 prompt 引起的延迟尖峰，也让 LUMEN 能更精确地估计重新计算某个请求 KV cache 的代价。</p>
+<h3 id="推测解码speculative-decoding">推测解码（Speculative Decoding）</h3>
+<p>推测解码是一种用”小草稿模型提速大目标模型”的技术，是 LUMEN 第三个机制的基础，需要单独介绍。</p>
+<p><strong>基本思路：</strong> 小草稿模型（draft model，如 Qwen3-1.5B）先快速生成 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span></span></span></span> 个候选 token，然后大目标模型（target model，如 Qwen3-32B）对这 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span></span></span></span> 个 token 做一次并行验证（等效于一次 mini-prefill），接受从左到右到第一个被拒绝为止的所有 token。</p>
+<p>这个过程在数学上可以证明：不管 draft 模型质量如何，最终输出的分布与目标模型独立采样的分布完全相同（只要拒绝采样过程正确实施）。也就是说，加速不以牺牲输出质量为代价。</p>
+<p><strong>每步期望接受 token 数：</strong> 如果每个位置的 draft token 被接受的概率为 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span>，草稿长度为 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span></span></span></span>，则每步期望接受 token 数为：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mi>E</mi><mo stretchy="false">[</mo><mtext>每步 token 数</mtext><mo stretchy="false">]</mo><mo>=</mo><mfrac><mrow><mn>1</mn><mo>−</mo><msup><mi>α</mi><mrow><mi>k</mi><mo>+</mo><mn>1</mn></mrow></msup></mrow><mrow><mn>1</mn><mo>−</mo><mi>α</mi></mrow></mfrac></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(3)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">E[\text{每步 token 数}] = \frac{1 - \alpha^{k+1}}{1 - \alpha} \tag{3}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0576em;">E</span><span class="mopen">[</span><span class="mord text"><span class="mord cjk_fallback">每步</span><span class="mord"> token </span><span class="mord cjk_fallback">数</span></span><span class="mclose">]</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.2954em;vertical-align:-0.7693em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.5261em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8491em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span><span class="mbin mtight">+</span><span class="mord mtight">1</span></span></span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.7693em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span><span class="tag"><span class="strut" style="height:2.2954em;vertical-align:-0.7693em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">3</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>当 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo>=</mo><mn>0.8</mn></mrow><annotation encoding="application/x-tex">\alpha = 0.8</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.8</span></span></span></span>，<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">k = 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> 时，每步期望约 3.4 个 token，相比正常 decode 的 1 个 token 提升明显。</p>
+<p>LUMEN 的创新之处在于：<strong>把推测解码从吞吐优化工具，变成了故障恢复工具</strong>——正在恢复的 worker 用小草稿模型为压力最大的幸存 worker 生成草稿 token，在全量模型重载期间提前贡献算力。</p>
+<h3 id="分布式-llm-服务架构">分布式 LLM 服务架构</h3>
+<p><strong>Worker（工作进程）：</strong> 一个 worker 是模型的一个完整副本，可以独立服务请求。一个 worker 可以是单 GPU、单节点内的张量并行（TP）组，或跨节点的流水线并行（PP）组，或 TP+PP 组合。<strong>关键点：worker 内所有 GPU 紧耦合，任意一个 GPU 故障都会导致整个 worker 不可用。</strong></p>
+<p><strong>张量并行（TP）：</strong> 每个 Transformer 权重矩阵沿列方向分割到 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>d</mi><mrow><mi>T</mi><mi>P</mi></mrow></msub></mrow><annotation encoding="application/x-tex">d_{TP}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.1389em;">T</span><span class="mord mathnormal mtight" style="margin-right:0.1389em;">P</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 个 GPU。每个 GPU 保存 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mi mathvariant="normal">/</mi><msub><mi>d</mi><mrow><mi>T</mi><mi>P</mi></mrow></msub></mrow><annotation encoding="application/x-tex">1/d_{TP}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1/</span><span class="mord"><span class="mord mathnormal">d</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.1389em;">T</span><span class="mord mathnormal mtight" style="margin-right:0.1389em;">P</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 的权重，decode 每步需要做全规约（all-reduce）来同步中间结果。TP 利用 NVLink 的高带宽（TB/s 量级），适合单节点内并行。</p>
+<p><strong>流水线并行（PP）：</strong> 将模型层按顺序分割成多个阶段，放在不同节点的 GPU 上。激活值在阶段间传递。PP 减少每 GPU 内存，但会引入流水线 bubble，且跨阶段故障处理更复杂——任何一个阶段故障都会中断整个流水线。</p>
+<p><strong>Gateway（网关）：</strong> 接收客户端请求，路由到各 worker，并在故障时触发恢复动作。基线系统（vLLM、SGLang）的 gateway 比较简单，使用轮询或 join-shortest-queue 路由。LUMEN 对 gateway 进行扩展，加入负载感知逻辑。</p>
+<h3 id="gpu-集群中的硬件故障现状">GPU 集群中的硬件故障现状</h3>
+<p>大型 GPU 集群的故障率远比很多人想象的高：</p>
+<ul>
+<li>万卡集群每天多次硬件事件</li>
+<li>LLM 服务任务平均每隔几小时就会遭遇一次故障</li>
+<li>故障来源：GPU 级（ECC 错误、显存溢出 OOM、驱动崩溃）、节点级（宿主机崩溃、内核 panic、断电）、网络级（NIC 故障、链路抖动、集合通信超时）</li>
+</ul>
+<p>所有故障最终表现为一个或多个 worker 不可用（worker-level failure）。故障 worker 同时丢失：</p>
+<ol>
+<li><strong>KV cache</strong>（所有正在 decode 的请求的状态，需要重新计算）</li>
+<li><strong>服务容量</strong>（从故障到模型重载完成，这期间的请求只能由幸存 worker 承担）</li>
+</ol>
+<h3 id="现有故障恢复方案">现有故障恢复方案</h3>
+<p><strong>Stop-and-Restart（vLLM-k8s、TGI、Triton 等默认策略）：</strong></p>
+<ul>
+<li>故障时重启失败 worker 并将其请求分发到幸存 worker</li>
+<li>幸存 worker 对每个中断请求重新从头运行 prefill，重建丢失的 KV cache</li>
+<li>无需预先保存状态，实现简单</li>
+<li><strong>缺点：</strong> 长上下文请求的重新 prefill 代价极高（replay TTFT 可达 24–29 秒），且集中打到已经过载的幸存 worker 上</li>
+</ul>
+<p><strong>Fixed-Checkpointing（DéjàVu）：</strong></p>
+<ul>
+<li>每个请求在 decode 阶段将 KV 页异步流式传输到预先指定的邻居 worker（checkpoint holder）的主机内存中</li>
+<li>故障时从该 worker 的主机内存恢复 KV 页，跳过 prefill</li>
+<li>比 Stop-and-Restart 大幅减少重新计算</li>
+<li><strong>缺点：</strong> checkpoint holder 是静态分配的（通常是固定邻居），故障时所有中断请求的恢复工作都打到同一个 worker 上，不管该 worker 当前是否已经过载</li>
+</ul>
+<p>两种方案还有一个共同缺点：<strong>失败 worker 在模型重载期间完全闲置</strong>，一分钱的算力都不贡献，而幸存 worker 正在苦苦支撑额外的负载。</p>
+<hr>
+<h2 id="论文做了什么">论文做了什么</h2>
+<p>LUMEN 的核心洞察只有一句话：<strong>故障恢复不仅仅是数据放置问题，本质上是一个负载感知的协同调度问题。</strong></p>
+<p>故障恢复存在三个关键决策点，每一个都需要考虑当前的集群负载状态：</p>
+<p><strong>决策点 1：在故障发生前，KV checkpoint 应该放在哪里？</strong>
+Fix-Checkpointing 静态指定邻居，一旦故障就把所有检查点恢复工作集中到一个 worker 上。LUMEN 根据每个 worker 的预期恢复负载动态选择 checkpoint holder，把检查点分散到整个集群。</p>
+<p><strong>决策点 2：故障发生时，中断请求应该路由到哪里？</strong>
+“全部发给 checkpoint holder”会造成恢复瓶颈；“全部重新均衡”会丢弃已保存的 KV 页，强制重新 prefill。LUMEN 对每个请求单独判断：如果 holder 不过载或请求前缀很长，就发给 holder 恢复；如果 holder 过载且前缀短（重新计算代价小），就发给最空闲的 worker 重算。</p>
+<p><strong>决策点 3：在模型重载窗口（可能长达数分钟），恢复中的 worker 怎么贡献算力？</strong>
+两种基线都让恢复中的 worker 闲置。LUMEN 让恢复 worker 先快速加载一个草稿模型（秒级完成），在全量模型后台加载期间，用草稿模型为最过载的幸存 worker 做推测解码，贡献额外的 decode 吞吐量。</p>
+<p>整个 LUMEN 系统在这三个决策点上共享同一个底层基础设施：<strong>实时负载监控</strong>。</p>
+<hr>
+<h2 id="系统架构">系统架构</h2>
+<p>图 1 展示了 LUMEN 的架构。LUMEN 对 SGLang 的 gateway 进行扩展，增加了三个新模块：负载监控器（Load Monitor）、检查点管理器（Checkpoint Manager）和恢复协调器（Recovery Coordinator）。各 worker 通过轻量心跳消息向 Load Monitor 上报队列深度和已存储的 checkpoint 大小。</p>
+<p><strong>图 1：LUMEN 系统架构总览</strong></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph GW["LUMEN Gateway（扩展后的网关）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        Router["请求路由\n(join-shortest-queue)"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        LM["负载监控器\n实时跟踪各 worker\n队列深度和 checkpoint 大小"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        CM["检查点管理器\n分配 holder；\n追踪 KV 页映射；\n管理主机内存预算"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        RC["恢复协调器\n故障时触发调度；\n协调草稿推测辅助"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        Router &#x3C;--> LM</span></span>
+<span class="line"><span style="color:#E1E4E8">        CM &#x3C;--> LM</span></span>
+<span class="line"><span style="color:#E1E4E8">        RC &#x3C;--> LM</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph Cluster["Worker 集群"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        W1["Worker 1（正常）\nGPU HBM：模型权重 + 部分 checkpoint"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        W2["Worker 2（正常）\nGPU HBM：模型权重 + 部分 checkpoint"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        W3["Worker 3（恢复中）\nGPU HBM：草稿模型\n后台加载：全量模型"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"><span style="color:#E1E4E8">    GW --> W1</span></span>
+<span class="line"><span style="color:#E1E4E8">    GW --> W2</span></span>
+<span class="line"><span style="color:#E1E4E8">    GW -.->|"恢复路由"| W1 &#x26; W2</span></span>
+<span class="line"><span style="color:#E1E4E8">    RC -->|"推测辅助指令"| W3</span></span>
+<span class="line"><span style="color:#E1E4E8">    W3 -->|"草稿 token"| W1</span></span></code></pre>
+<p>正常请求的生命周期下，checkpoint 流式传输是异步的，不阻塞 GPU decode 的关键路径：</p>
+<p><strong>图 2：正常请求生命周期与 KV Checkpoint 流程</strong></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant C as 客户端</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant GW as Gateway</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant W as 服务 Worker</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant CH as Checkpoint Holder</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    C->>GW: 新请求 r</span></span>
+<span class="line"><span style="color:#E1E4E8">    GW->>W: 路由到 W（负载最低）</span></span>
+<span class="line"><span style="color:#E1E4E8">    W->>W: Prefill（计算 KV 页）</span></span>
+<span class="line"><span style="color:#E1E4E8">    loop 每次 decode 步骤</span></span>
+<span class="line"><span style="color:#E1E4E8">        W->>W: 生成新 token → 新 KV 页</span></span>
+<span class="line"><span style="color:#E1E4E8">        W-->>CH: 异步流式传输 KV 页到主机内存</span></span>
+<span class="line"><span style="color:#E1E4E8">        Note over GW,CH: CM 更新 checkpoint_holder(r) 和 L̂(CH)</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"><span style="color:#E1E4E8">    W->>C: 返回生成的 token</span></span>
+<span class="line"><span style="color:#E1E4E8">    Note over CH: 请求完成后释放主机内存中的 KV 页</span></span></code></pre>
+<hr>
+<h2 id="机制一负载感知的-kv-checkpoint-放置">机制一：负载感知的 KV Checkpoint 放置</h2>
+<h3 id="静态放置的问题">静态放置的问题</h3>
+<p>在 Fixed-Checkpointing 中，worker <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">w_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 所有请求的 checkpoint 都放在固定邻居 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">w_j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0572em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span>。集群高负载时，<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">w_j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0572em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> 可能已经有很深的队列；<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>i</mi></msub></mrow><annotation encoding="application/x-tex">w_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 故障后，大量恢复请求（包括 KV 恢复）都集中到 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">w_j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0572em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span>，把它变成新的瓶颈。</p>
+<p>如图 3 所示，LUMEN 的负载感知放置把同样的 checkpoint 分散到多个 worker：</p>
+<p><strong>图 3：Fixed-Checkpointing vs. LUMEN 负载感知放置</strong></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph Fixed["Fixed-Checkpointing（DéjàVu）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        FA["Worker A（故障）\n10 个活跃请求"] -->|"全部 10 个 checkpoint"| FB["Worker B\n→ 10 个恢复任务 + 原有负载\n= 严重瓶颈"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        FC["Worker C\n（空闲，0 个 checkpoint）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        FD["Worker D\n（空闲，0 个 checkpoint）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph LUMEN_cp["LUMEN 负载感知放置"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        LA["Worker A（故障）\n10 个活跃请求"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        LA -->|"~3 个 checkpoint"| LB["Worker B → 3 个恢复任务"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        LA -->|"~4 个 checkpoint"| LC["Worker C → 4 个恢复任务"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        LA -->|"~3 个 checkpoint"| LD["Worker D → 3 个恢复任务"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span></code></pre>
+<h3 id="负载估计公式">负载估计公式</h3>
+<p>LUMEN 用以下公式估计 worker <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi></mrow><annotation encoding="application/x-tex">w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0269em;">w</span></span></span></span> 的预期恢复负载：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mover accent="true"><mi>L</mi><mo>^</mo></mover><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo><mo>=</mo><mi>α</mi><mo>⋅</mo><munder><mo>∑</mo><mrow><mi>r</mi><mo>∈</mo><mi>C</mi><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo></mrow></munder><mi mathvariant="normal">∣</mi><mi>K</mi><msub><mi>V</mi><mi>r</mi></msub><mi mathvariant="normal">∣</mi><mo>+</mo><mi>β</mi><mo>⋅</mo><msub><mi>Q</mi><mi>w</mi></msub></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(4)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\hat{L}(w) = \alpha \cdot \sum_{r \in C(w)} |KV_r| + \beta \cdot Q_w \tag{4}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.1968em;vertical-align:-0.25em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9468em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">L</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.2222em;"><span class="mord">^</span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.4445em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.566em;vertical-align:-1.516em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.809em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">r</span><span class="mrel mtight">∈</span><span class="mord mathnormal mtight" style="margin-right:0.0715em;">C</span><span class="mopen mtight">(</span><span class="mord mathnormal mtight" style="margin-right:0.0269em;">w</span><span class="mclose mtight">)</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.516em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.0715em;">K</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.2222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord">∣</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.0528em;">β</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8778em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal">Q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0269em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span><span class="tag"><span class="strut" style="height:2.566em;vertical-align:-1.516em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">4</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>其中：</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">C(w)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0715em;">C</span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="mclose">)</span></span></span></span>：目前 checkpoint 存储在 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi></mrow><annotation encoding="application/x-tex">w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0269em;">w</span></span></span></span> 上的请求集合</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">∣</mi><mi>K</mi><msub><mi>V</mi><mi>r</mi></msub><mi mathvariant="normal">∣</mi></mrow><annotation encoding="application/x-tex">|KV_r|</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.0715em;">K</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.2222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord">∣</span></span></span></span>：请求 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi></mrow><annotation encoding="application/x-tex">r</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">r</span></span></span></span> 当前已保存的 KV 页数量（与当前序列长度成正比）</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>Q</mi><mi>w</mi></msub></mrow><annotation encoding="application/x-tex">Q_w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8778em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal">Q</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0269em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>：worker <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>w</mi></mrow><annotation encoding="application/x-tex">w</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0269em;">w</span></span></span></span> 当前队列深度</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><mo separator="true">,</mo><mi>β</mi></mrow><annotation encoding="application/x-tex">\alpha, \beta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal" style="margin-right:0.0528em;">β</span></span></span></span>：权重系数，平衡”恢复时恢复 KV 的代价”与”当前队列占用情况”</li>
+</ul>
+<p><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi>L</mi><mo>^</mo></mover><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">\hat{L}(w)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.1968em;vertical-align:-0.25em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9468em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">L</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.2222em;"><span class="mord">^</span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="mclose">)</span></span></span></span> 同时反映两类负担：已经累积的 checkpoint 数据（故障时的恢复工作量）和当前请求队列（额外工作的吸收能力）。LUMEN 目标是让各 worker 的 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi>L</mi><mo>^</mo></mover></mrow><annotation encoding="application/x-tex">\hat{L}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9468em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9468em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">L</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.2222em;"><span class="mord">^</span></span></span></span></span></span></span></span></span></span> 尽量均衡。</p>
+<h3 id="checkpoint-分配算法">Checkpoint 分配算法</h3>
+<p>每当新请求 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi></mrow><annotation encoding="application/x-tex">r</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">r</span></span></span></span> 被分配到服务 worker <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>r</mi></msub></mrow><annotation encoding="application/x-tex">w_r</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 时，LUMEN 为其选择 checkpoint holder：</p>
+<p><strong>算法 1：负载感知 Checkpoint Holder 分配</strong></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>输入：请求 r，服务 worker w_r，集群 worker 集合 W，负载估计 L̂</span></span>
+<span class="line"><span>输出：checkpoint holder h_r</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>1: h_r ← argmin_{w ∈ W \ {w_r}} L̂(w)</span></span>
+<span class="line"><span>   // 选负载最低的 worker 作为 holder（排除服务 worker 本身）</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>2: 通知 w_r："将请求 r 的 KV 页流式传输到 h_r"</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>3: 每当 w_r 生成新的 KV 页 p 时：</span></span>
+<span class="line"><span>     a. 异步将 p 传输到 h_r 的主机内存</span></span>
+<span class="line"><span>     b. 更新：L̂(h_r) += |p|</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>4: 请求 r 完成时：</span></span>
+<span class="line"><span>     释放 h_r 上的 checkpoint 页</span></span>
+<span class="line"><span>     更新：L̂(h_r) -= |KV_r|</span></span></code></pre>
+<p>分配决策是 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>W</mi><mi mathvariant="normal">∣</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(|W|)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">O</span><span class="mopen">(</span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.1389em;">W</span><span class="mord">∣</span><span class="mclose">)</span></span></span></span> 的贪心算法，每次请求到达时执行一次，开销可以忽略不计。</p>
+<h3 id="主机内存预算与降级处理">主机内存预算与降级处理</h3>
+<p>每个 worker 的主机内存（Host DRAM）有限，LUMEN 设置了每 worker 的 checkpoint 预算上限：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><munder><mo>∑</mo><mrow><mi>r</mi><mo>∈</mo><mi>C</mi><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo></mrow></munder><mi mathvariant="normal">∣</mi><mi>K</mi><msub><mi>V</mi><mi>r</mi></msub><mi mathvariant="normal">∣</mi><mo>≤</mo><msub><mi>M</mi><mrow><mi>b</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi></mrow></msub><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(5)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\sum_{r \in C(w)} |KV_r| \leq M_{budget}(w) \tag{5}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:2.566em;vertical-align:-1.516em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.809em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">r</span><span class="mrel mtight">∈</span><span class="mord mathnormal mtight" style="margin-right:0.0715em;">C</span><span class="mopen mtight">(</span><span class="mord mathnormal mtight" style="margin-right:0.0269em;">w</span><span class="mclose mtight">)</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.516em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.0715em;">K</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.2222em;">V</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.2222em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≤</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.109em;">M</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">b</span><span class="mord mathnormal mtight">u</span><span class="mord mathnormal mtight">d</span><span class="mord mathnormal mtight" style="margin-right:0.0359em;">g</span><span class="mord mathnormal mtight">e</span><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="mclose">)</span></span><span class="tag"><span class="strut" style="height:2.566em;vertical-align:-1.516em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">5</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>典型设置如 20 GB（服务器通常有 512 GB 主机内存，留 20 GB 给 checkpoint）。当预算满时，新请求的 checkpoint 可以放到远程 worker 或完全不保存（退化到 Stop-and-Restart，只影响该请求，不影响其他请求）。这种优雅降级保证系统在内存压力下也不会崩溃，只是个别请求在故障时需要重算。</p>
+<hr>
+<h2 id="机制二局部性感知的恢复调度">机制二：局部性感知的恢复调度</h2>
+<h3 id="故障时的两难困境">故障时的两难困境</h3>
+<p>当 worker <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>f</mi></msub></mrow><annotation encoding="application/x-tex">w_f</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.1076em;">f</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span> 故障时，对每个中断请求 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi></mrow><annotation encoding="application/x-tex">r</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">r</span></span></span></span> 的处理存在根本矛盾：</p>
+<ul>
+<li><strong>利用 KV 局部性：</strong> 把 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi></mrow><annotation encoding="application/x-tex">r</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">r</span></span></span></span> 发给其 checkpoint holder <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mi>r</mi></msub></mrow><annotation encoding="application/x-tex">h_r</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">h</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span>，可以从保存的 KV 页恢复，跳过 prefill。代价是可能给 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mi>r</mi></msub></mrow><annotation encoding="application/x-tex">h_r</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8444em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">h</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 增加过多负担。</li>
+<li><strong>维护负载均衡：</strong> 把 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi></mrow><annotation encoding="application/x-tex">r</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">r</span></span></span></span> 发给最空闲的 worker，充分利用集群容量。代价是丢弃已保存的 KV 页，对每个请求重新运行完整的 prefill。</li>
+</ul>
+<p>对这两个极端的分析：</p>
+<ul>
+<li>如果 checkpoint 前缀<strong>很长</strong>（如 8K token），重新 prefill 代价极高（数秒），值得接受一定的 holder 过载</li>
+<li>如果 checkpoint 前缀<strong>很短</strong>（如 128 token），重新 prefill 几乎不花时间，不值得过载 holder</li>
+</ul>
+<p>LUMEN 的路由策略把这个判断形式化为：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mtext>Route</mtext><mo stretchy="false">(</mo><mi>r</mi><mo stretchy="false">)</mo><mo>=</mo><mrow><mo fence="true">{</mo><mtable rowspacing="0.36em" columnalign="left left" columnspacing="1em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><msub><mi>h</mi><mi>r</mi></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mtext>如果 </mtext><mover accent="true"><mi>L</mi><mo>^</mo></mover><mo stretchy="false">(</mo><msub><mi>h</mi><mi>r</mi></msub><mo stretchy="false">)</mo><mo>≤</mo><mi>θ</mi><mspace width="1em"></mspace><mtext>（holder 不过载）</mtext></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><msub><mi>h</mi><mi>r</mi></msub></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mtext>如果 </mtext><mi mathvariant="normal">∣</mi><msub><mi>C</mi><mi>r</mi></msub><mi mathvariant="normal">∣</mi><mo>></mo><mi>τ</mi><mspace width="1em"></mspace><mtext>（前缀长，KV 重用值得）</mtext></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mi>arg</mi><mo>⁡</mo><msub><mrow><mi>min</mi><mo>⁡</mo></mrow><mrow><mi>w</mi><mo>∈</mo><mi>W</mi><mo>∖</mo><mo stretchy="false">{</mo><msub><mi>w</mi><mi>f</mi></msub><mo stretchy="false">}</mo></mrow></msub><mover accent="true"><mi>L</mi><mo>^</mo></mover><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mtext>否则（前缀短且 holder 过载）</mtext></mstyle></mtd></mtr></mtable></mrow></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(6)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\text{Route}(r) = \begin{cases}
+h_r &#x26; \text{如果 } \hat{L}(h_r) \leq \theta \quad \text{（holder 不过载）} \\
+h_r &#x26; \text{如果 } |C_r| > \tau \quad \text{（前缀长，KV 重用值得）} \\
+\arg\min_{w \in W \setminus \{w_f\}} \hat{L}(w) &#x26; \text{否则（前缀短且 holder 过载）}
+\end{cases}
+\tag{6}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">Route</span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:4.32em;vertical-align:-1.91em;"></span><span class="minner"><span class="mopen"><span class="delimsizing mult"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:2.35em;"><span style="top:-2.2em;"><span class="pstrut" style="height:3.15em;"></span><span class="delimsizinginner delim-size4"><span>⎩</span></span></span><span style="top:-2.192em;"><span class="pstrut" style="height:3.15em;"></span><span style="height:0.316em;width:0.8889em;"><svg xmlns="http://www.w3.org/2000/svg" width="0.8889em" height="0.316em" style="width:0.8889em" viewBox="0 0 888.89 316" preserveAspectRatio="xMinYMin"><path d="M384 0 H504 V316 H384z M384 0 H504 V316 H384z"></path></svg></span></span><span style="top:-3.15em;"><span class="pstrut" style="height:3.15em;"></span><span class="delimsizinginner delim-size4"><span>⎨</span></span></span><span style="top:-4.292em;"><span class="pstrut" style="height:3.15em;"></span><span style="height:0.316em;width:0.8889em;"><svg xmlns="http://www.w3.org/2000/svg" width="0.8889em" height="0.316em" style="width:0.8889em" viewBox="0 0 888.89 316" preserveAspectRatio="xMinYMin"><path d="M384 0 H504 V316 H384z M384 0 H504 V316 H384z"></path></svg></span></span><span style="top:-4.6em;"><span class="pstrut" style="height:3.15em;"></span><span class="delimsizinginner delim-size4"><span>⎧</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.85em;"><span></span></span></span></span></span></span><span class="mord"><span class="mtable"><span class="col-align-l"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:2.41em;"><span style="top:-4.41em;"><span class="pstrut" style="height:3.008em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal">h</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-2.97em;"><span class="pstrut" style="height:3.008em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal">h</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-1.53em;"><span class="pstrut" style="height:3.008em;"></span><span class="mord"><span class="mop">ar<span style="margin-right:0.0139em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop"><span class="mop">min</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.5198em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0269em;">w</span><span class="mrel mtight">∈</span><span class="mord mathnormal mtight" style="margin-right:0.1389em;">W</span><span class="mbin mtight">∖</span><span class="mopen mtight">{</span><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3448em;"><span style="top:-2.3488em;margin-left:-0.0269em;margin-right:0.0714em;"><span class="pstrut" style="height:2.5em;"></span><span class="sizing reset-size3 size1 mtight"><span class="mord mathnormal mtight" style="margin-right:0.1076em;">f</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2901em;"><span></span></span></span></span></span></span><span class="mclose mtight">}</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3833em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9468em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">L</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.2222em;"><span class="mord">^</span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.91em;"><span></span></span></span></span></span><span class="arraycolsep" style="width:1em;"></span><span class="col-align-l"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:2.41em;"><span style="top:-4.41em;"><span class="pstrut" style="height:3.008em;"></span><span class="mord"><span class="mord text"><span class="mord cjk_fallback">如果</span><span class="mord"> </span></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9468em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">L</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.2222em;"><span class="mord">^</span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">h</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≤</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">θ</span><span class="mspace" style="margin-right:1em;"></span><span class="mord text"><span class="mord cjk_fallback">（</span><span class="mord">holder </span><span class="mord cjk_fallback">不过载）</span></span></span></span><span style="top:-2.97em;"><span class="pstrut" style="height:3.008em;"></span><span class="mord"><span class="mord text"><span class="mord cjk_fallback">如果</span><span class="mord"> </span></span><span class="mord">∣</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0715em;">C</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-left:-0.0715em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0278em;">r</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord">∣</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span><span class="mspace" style="margin-right:1em;"></span><span class="mord text"><span class="mord cjk_fallback">（前缀长，</span><span class="mord">KV </span><span class="mord cjk_fallback">重用值得）</span></span></span></span><span style="top:-1.53em;"><span class="pstrut" style="height:3.008em;"></span><span class="mord"><span class="mord text"><span class="mord cjk_fallback">否则（前缀短且</span><span class="mord"> holder </span><span class="mord cjk_fallback">过载）</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.91em;"><span></span></span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span><span class="tag"><span class="strut" style="height:4.32em;vertical-align:-1.91em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">6</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>其中 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi></mrow><annotation encoding="application/x-tex">\theta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">θ</span></span></span></span> 是负载阈值（如正常队列深度的 2 倍），<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>τ</mi></mrow><annotation encoding="application/x-tex">\tau</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span></span></span></span> 是前缀长度阈值（如 512 token 对应的 KV 页数）。</p>
+<p><strong>算法 2：局部性感知的恢复路由</strong></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>输入：故障 worker w_f，中断请求集合 R_f，负载估计 L̂，阈值 θ 和 τ</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>对 R_f 中每个请求 r：</span></span>
+<span class="line"><span>1: h_r ← checkpoint_holder(r)</span></span>
+<span class="line"><span>2: if L̂(h_r) ≤ θ or |C_r| > τ:</span></span>
+<span class="line"><span>     // 路由到 checkpoint holder，恢复 KV 页，继续 decode</span></span>
+<span class="line"><span>     将 r 路由到 h_r</span></span>
+<span class="line"><span>     h_r 从主机内存恢复 KV 页到 GPU HBM</span></span>
+<span class="line"><span>     h_r 从中断点继续 decode</span></span>
+<span class="line"><span>     更新：L̂(h_r) += 恢复代价(r)</span></span>
+<span class="line"><span>   else:</span></span>
+<span class="line"><span>     // 路由到最空闲 worker，重新运行 prefill</span></span>
+<span class="line"><span>     w* ← argmin_{w ∈ W \ {w_f}} L̂(w)</span></span>
+<span class="line"><span>     将 r 路由到 w*</span></span>
+<span class="line"><span>     w* 重新运行完整 prefill</span></span>
+<span class="line"><span>     释放 h_r 上 r 的 checkpoint 页</span></span>
+<span class="line"><span>     更新：L̂(w*) += re_prefill_cost(r)</span></span></code></pre>
+<p>图 4 展示了恢复路由的决策流程：</p>
+<p><strong>图 4：局部性感知恢复路由决策树</strong></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A["中断请求 r\n（来自故障 worker f）"] --> B{"Checkpoint holder h_r\n是否不过载？\nL̂(h_r) ≤ θ"}</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -->|是，holder 空闲| C["路由到 h_r\n从主机内存恢复 KV 页\n继续 decode（跳过 prefill）\n⚡ 快速恢复"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    B -->|否，holder 较忙| D{"已保存的前缀是否足够长？\n|C_r| > τ"}</span></span>
+<span class="line"><span style="color:#E1E4E8">    D -->|是，前缀长、重算代价高| C</span></span>
+<span class="line"><span style="color:#E1E4E8">    D -->|否，前缀短、重算便宜| E["找最空闲的 worker w*\n路由到 w*，丢弃 checkpoint\n重新运行 prefill\n⚖️ 负载均衡恢复"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    C --> F["decode 继续\n几乎无 prefill 开销"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    E --> G["短 prefill（几百 token）\n快速完成"]</span></span></code></pre>
+<hr>
+<h2 id="机制三推测辅助的渐进式恢复">机制三：推测辅助的渐进式恢复</h2>
+<h3 id="闲置恢复-worker-的浪费">闲置恢复 Worker 的浪费</h3>
+<p>故障 worker 重启后，需要从磁盘重新加载完整的模型权重。对于大型模型（32B+ 参数，权重超过 60 GB），即使使用高速 NVMe SSD（7 GB/s），也需要约 10 分钟。在此期间，该 worker 的 GPU 完全闲置，贡献为零。</p>
+<p>与此同时，幸存的 worker 正在承受额外 33%（25% 故障率情况下）的请求负载，队列积压严重，用户看到 TTFT 和 TPOT 都在上涨。</p>
+<p>LUMEN 的第三个机制：<strong>让恢复 worker 先快速加载草稿模型，在全量模型后台加载期间充当推测解码的草稿提供者，提前贡献算力。</strong></p>
+<h3 id="具体工作方式">具体工作方式</h3>
+<p><strong>图 5：推测辅助渐进式恢复的时序</strong></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">sequenceDiagram</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant R as 恢复 Worker</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant S as 最过载幸存 Worker</span></span>
+<span class="line"><span style="color:#E1E4E8">    participant D as 磁盘/存储</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    R->>D: 加载草稿模型（Qwen3-1.5B，秒级）</span></span>
+<span class="line"><span style="color:#E1E4E8">    R->>S: 宣告：可以做推测辅助</span></span>
+<span class="line"><span style="color:#E1E4E8">    loop 全量模型加载期间</span></span>
+<span class="line"><span style="color:#E1E4E8">        S->>R: 共享解码上下文（token_ids, KV 状态）</span></span>
+<span class="line"><span style="color:#E1E4E8">        R->>R: 草稿模型生成 k 个候选 token</span></span>
+<span class="line"><span style="color:#E1E4E8">        R->>S: 发送草稿 token</span></span>
+<span class="line"><span style="color:#E1E4E8">        S->>S: 并行验证（一次 mini-prefill）</span></span>
+<span class="line"><span style="color:#E1E4E8">        S->>R: 接受/拒绝结果</span></span>
+<span class="line"><span style="color:#E1E4E8">        alt 接受 m 个 token（m ≥ 1）</span></span>
+<span class="line"><span style="color:#E1E4E8">            Note over S: S 每步推进 m+1 个 token，消化积压</span></span>
+<span class="line"><span style="color:#E1E4E8">        else 全部被拒绝（草稿上下文已过时）</span></span>
+<span class="line"><span style="color:#E1E4E8">            Note over R,S: 丢弃本轮草稿，不影响 S 正常解码</span></span>
+<span class="line"><span style="color:#E1E4E8">        end</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"><span style="color:#E1E4E8">    R->>D: 全量模型后台加载完成</span></span>
+<span class="line"><span style="color:#E1E4E8">    R->>S: 结束推测辅助</span></span>
+<span class="line"><span style="color:#E1E4E8">    Note over R: 无缝切换为正常 worker，全量模型已就绪</span></span></code></pre>
+<p><strong>算法 3：推测辅助渐进式恢复</strong></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>恢复 worker w_r 重启后执行：</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>阶段 1：快速加载草稿模型</span></span>
+<span class="line"><span>1: 加载草稿模型 D_w（如 Qwen3-1.5B，秒级完成）</span></span>
+<span class="line"><span>2: 向 gateway 报告：就绪可做推测辅助</span></span>
+<span class="line"><span>3: 后台异步开始加载全量模型 T_w</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>阶段 2：推测辅助循环（在全量模型加载期间运行）</span></span>
+<span class="line"><span>4: w_s ← argmax_{w ∈ 幸存 workers} L̂(w)  // 选最过载的幸存 worker</span></span>
+<span class="line"><span>5: 循环直到 T_w 加载完成：</span></span>
+<span class="line"><span>   a. 从 w_s 接收某个活跃请求的 decode 上下文</span></span>
+<span class="line"><span>   b. D_w.forward(上下文) → 草稿 token[1..k]</span></span>
+<span class="line"><span>   c. 将草稿 token 发送给 w_s</span></span>
+<span class="line"><span>   d. w_s 并行验证：接受前 m 个 token，对第 m+1 个位置补充修正 token</span></span>
+<span class="line"><span>   e. 若 m == 0（全部被拒绝，即草稿过时）：</span></span>
+<span class="line"><span>        跳过本轮（对 w_s 的正常解码无影响，开销有界）</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>阶段 3：无缝切换</span></span>
+<span class="line"><span>6: T_w 加载完成（在后台早已开始，不需要额外等待）</span></span>
+<span class="line"><span>7: 停止推测辅助循环</span></span>
+<span class="line"><span>8: w_r 注册为正式 worker，L̂(w_r) ← 0</span></span>
+<span class="line"><span>9: gateway 开始将新请求路由到 w_r</span></span></code></pre>
+<h3 id="为什么草稿-token-会过时">为什么草稿 token 会”过时”</h3>
+<p>推测解码要求草稿模型和目标模型的 KV 上下文保持同步。恢复 worker 的草稿模型 GPU 状态是全新的（刚加载），没有历史 KV 缓存，而幸存 worker 的实际 decode 状态已经包含了若干先前生成的 token。因此草稿模型的预测可能和目标 worker 的实际状态有偏差，导致 token 被拒绝。</p>
+<p>LUMEN 的应对策略：</p>
+<ol>
+<li><strong>过时检测有界：</strong> 即使全部 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span></span></span></span> 个草稿 token 被拒绝，损失也只是幸存 worker 多做了一次 mini-prefill 验证，开销有上界</li>
+<li><strong>上下文同步：</strong> 每步验证后，恢复 worker 接收被接受的 token，更新自己草稿模型的 KV 上下文，使草稿质量随时间逐步提升</li>
+</ol>
+<h3 id="全量模型加载期间为什么能无缝切换">全量模型加载期间为什么能无缝切换</h3>
+<p>一个可能的疑问：推测辅助结束后，恢复 worker 不需要重新等待吗？不需要。因为全量模型是在阶段 1 完成后立即在<strong>后台</strong>异步加载的，和推测辅助循环并行进行。当循环结束时，全量模型已经加载完毕，不存在第二次等待。这是该机制设计的关键一环。</p>
+<p>图 6 直观对比三种方案的恢复时间线：</p>
+<p><strong>图 6：三种恢复方案的时间线对比</strong></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">gantt</span></span>
+<span class="line"><span style="color:#E1E4E8">    title 故障恢复时间线对比（示意）</span></span>
+<span class="line"><span style="color:#E1E4E8">    dateFormat s</span></span>
+<span class="line"><span style="color:#E1E4E8">    axisFormat %Ss</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    section Stop-and-Restart</span></span>
+<span class="line"><span style="color:#E1E4E8">    故障发生          :milestone, sr0, 0, 0s</span></span>
+<span class="line"><span style="color:#E1E4E8">    幸存 workers 承受 replay 过载 :sr1, 0, 20s</span></span>
+<span class="line"><span style="color:#E1E4E8">    恢复 worker 空转等模型加载 :sr2, 0, 20s</span></span>
+<span class="line"><span style="color:#E1E4E8">    集群恢复正常      :milestone, sr3, 20, 0s</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    section Fixed-Checkpointing</span></span>
+<span class="line"><span style="color:#E1E4E8">    故障发生          :milestone, fc0, 0, 0s</span></span>
+<span class="line"><span style="color:#E1E4E8">    所有请求打到一个 holder（瓶颈） :fc1, 0, 15s</span></span>
+<span class="line"><span style="color:#E1E4E8">    恢复 worker 空转  :fc2, 0, 15s</span></span>
+<span class="line"><span style="color:#E1E4E8">    集群恢复正常      :milestone, fc3, 15, 0s</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    section LUMEN</span></span>
+<span class="line"><span style="color:#E1E4E8">    故障发生          :milestone, lu0, 0, 0s</span></span>
+<span class="line"><span style="color:#E1E4E8">    checkpoint 分散恢复到多个 holder :lu1, 0, 8s</span></span>
+<span class="line"><span style="color:#E1E4E8">    草稿模型秒级加载  :lu2, 0, 2s</span></span>
+<span class="line"><span style="color:#E1E4E8">    推测辅助减轻幸存 workers 压力 :lu3, 2, 13s</span></span>
+<span class="line"><span style="color:#E1E4E8">    全量模型后台并行加载 :lu4, 0, 15s</span></span>
+<span class="line"><span style="color:#E1E4E8">    集群恢复正常      :milestone, lu5, 15, 0s</span></span></code></pre>
+<hr>
+<h2 id="实验设置">实验设置</h2>
+<h3 id="原型实现">原型实现</h3>
+<p>LUMEN 在 SGLang 基础上实现，主要扩展：</p>
+<ul>
+<li>与 SGLang 调度器协同的 Checkpoint Manager 服务</li>
+<li>Worker 侧 KV 流式传输钩子（异步，使用 ZeroMQ 消息传递）</li>
+<li>故障检测触发 Recovery Coordinator 模块</li>
+<li>草稿模型加载与推测解码协调逻辑</li>
+</ul>
+<h3 id="大规模仿真">大规模仿真</h3>
+<p>对于超出原型规模的评估，使用 Vidur（开源 LLM 服务离散事件仿真器），支持毫秒级粒度的请求生命周期、GPU 计算代价、KV 内存和 worker 间通信建模。</p>
+<p>Vidur 的工作原理类似操作系统仿真器：它以离散事件驱动（discrete-event-driven）的方式模拟每个请求从到达、prefill 调度、decode 到完成的全过程，包括 KV 内存分配/释放、调度队列等待、worker 间网络延迟等。LUMEN 对 Vidur 进行了扩展，加入了 checkpoint 流式传输的延迟模型和故障触发逻辑，使仿真能够准确反映 checkpoint 恢复的时间代价。</p>
+<p>选择 Vidur 仿真而非纯原型实验的原因：原型实验受硬件规模限制（论文最大做到了 8-worker 原型），而仿真可以在单台服务器上模拟 64-worker 集群的行为，代价是仿真精度略低于真实硬件（特别是网络时延、GPU 利用率等细节）。论文同时使用两种方式，是系统论文的标准做法，可以互相补充验证。</p>
+<h3 id="实验模型与负载">实验模型与负载</h3>
+<ul>
+<li><strong>模型：</strong> Qwen3-32B（4-worker 原型）、Qwen3-14B（8-worker 原型）、Llama-3-70B（仿真）</li>
+<li><strong>负载轨迹：</strong> Splitwise-Conv（生产级对话负载），ShareGPT（公开对话数据）</li>
+<li><strong>集群规模：</strong> 仿真中 4–64 worker</li>
+<li><strong>故障场景：</strong> 稳态下单 worker 故障；大规模仿真中 25% worker 同时故障</li>
+</ul>
+<p><strong>表 B：实验规模与配置一览</strong></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>场景</th><th>集群规模</th><th>模型</th><th>负载类型</th><th>故障率</th><th>评估工具</th></tr></thead><tbody><tr><td>4-worker 原型</td><td>4 workers</td><td>Qwen3-32B</td><td>Splitwise-Conv</td><td>单 worker</td><td>SGLang</td></tr><tr><td>8-worker 原型</td><td>8 workers</td><td>Qwen3-14B</td><td>Splitwise-Conv</td><td>单 worker</td><td>SGLang</td></tr><tr><td>大规模仿真</td><td>4–64 workers</td><td>Llama-3-70B</td><td>Splitwise-Conv</td><td>25% workers</td><td>Vidur</td></tr></tbody></table>
+<h3 id="评估指标">评估指标</h3>
+<ul>
+<li><strong>Mean TTFT（首 token 延迟）：</strong> 故障影响窗口内所有请求的均值</li>
+<li><strong>Mean TPOT（每 token 延迟）：</strong> 故障影响窗口内所有 decode 步骤的均值</li>
+<li><strong>恢复时间：</strong> 从故障到集群指标恢复到基线水平的时长</li>
+<li><strong>故障影响窗口：</strong> 从故障发生到指标恢复到无故障水平 10% 以内的时间段</li>
+</ul>
+<hr>
+<h2 id="实验结果">实验结果</h2>
+<h3 id="基准测量stop-and-restart-的代价">基准测量：Stop-and-Restart 的代价</h3>
+<p>论文首先量化了基线方案的代价，结果令人印象深刻：</p>
+<p><strong>4-worker 集群，单 worker 故障：</strong></p>
+<ul>
+<li>平均 TTFT 从 <strong>1.16 s 升至 4.69 s（+4.0×）</strong></li>
+<li>平均 TPOT 从 <strong>138.9 ms 升至 224.6 ms（+1.6×）</strong></li>
+<li>只有 2.7% 的请求运行在故障 worker 上，但全部 97.3% 的幸存 worker 请求也受到影响</li>
+<li>幸存 worker 上的请求 TTFT 约 4.1 s，其中 78–80% 是排队等待时间</li>
+<li>中断请求的 replay TTFT 达 24–29 s（比正常情况下 5.9–8.4×）</li>
+</ul>
+<p><strong>表 1：Stop-and-Restart 对不同集群规模的影响（25% 故障率）</strong></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Worker 数</th><th>未中断请求平均 TTFT (s)</th><th>中断请求 Replay TTFT (s)</th></tr></thead><tbody><tr><td>4</td><td>4.1 ± 0.2</td><td>25.6 ± 7.1</td></tr><tr><td>8</td><td>3.8 ± 1.1</td><td>24.0 ± 1.4</td></tr><tr><td>16</td><td>3.5 ± 1.2</td><td>27.1 ± 1.7</td></tr><tr><td>32</td><td>3.5 ± 0.7</td><td>29.4 ± 2.9</td></tr><tr><td>64</td><td>3.6 ± 0.1</td><td>27.8 ± 0.7</td></tr></tbody></table>
+<p>退化幅度在所有集群规模下几乎恒定：25% 的 worker 故障，使每个幸存 worker 多承担约 33% 的负载，这个比例与集群大小无关。</p>
+<h3 id="lumen-与基线对比原型实验">LUMEN 与基线对比：原型实验</h3>
+<p><strong>4-worker，Qwen3-32B：</strong></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>指标</th><th>Stop-and-Restart</th><th>Fixed-Checkpointing</th><th>LUMEN</th><th>vs. S&#x26;R</th><th>vs. FC</th></tr></thead><tbody><tr><td>平均 TTFT</td><td>4.69 s</td><td>~2.80 s</td><td>~2.61 s</td><td><strong>-44.4%</strong></td><td>-7.1%</td></tr><tr><td>平均 TPOT</td><td>224.6 ms</td><td>~167 ms</td><td>~148 ms</td><td><strong>-15.9%</strong></td><td>-7.0%</td></tr><tr><td>恢复时间</td><td>~20 s</td><td>~13 s</td><td>~10 s</td><td><strong>-50.0%</strong></td><td>-34.9%</td></tr></tbody></table>
+<p><strong>8-worker，Qwen3-14B：</strong></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>指标</th><th>Stop-and-Restart</th><th>Fixed-Checkpointing</th><th>LUMEN</th><th>vs. S&#x26;R</th><th>vs. FC</th></tr></thead><tbody><tr><td>平均 TTFT</td><td>~3.9 s</td><td>~2.9 s</td><td>~2.7 s</td><td><strong>-29.6%</strong></td><td>-15.9%</td></tr><tr><td>平均 TPOT</td><td>~210 ms</td><td>~167 ms</td><td>~152 ms</td><td><strong>-7.1%</strong></td><td>-4.2%</td></tr><tr><td>恢复时间</td><td>~25 s</td><td>~18 s</td><td>~9 s</td><td><strong>-64.1%</strong></td><td>-63.9%</td></tr></tbody></table>
+<p>值得关注的是：<strong>LUMEN 对 Fixed-Checkpointing 的 TTFT/TPOT 改进相对有限（7–16%），但恢复时间改进显著（35–64%）。</strong> TTFT/TPOT 改进主要来自负载感知的 checkpoint 放置和调度（避免 holder 过载）。恢复时间改进主要来自推测辅助的渐进式恢复（恢复 worker 提前贡献算力，加速清除积压）。</p>
+<hr>
+<h2 id="局限性与边界条件">局限性与边界条件</h2>
+<p><strong>1. 假设集群内所有 worker 运行相同的模型变体。</strong> 草稿模型选择依赖 draft-target 兼容性；异构部署（如部分 worker 使用 INT4 量化）需要额外扩展。</p>
+<p><strong>2. 主机内存预算在超长上下文场景下很快耗尽。</strong> 对于 128K token 的请求，单个请求的 KV cache 可达数十 GB，checkpoint 预算很快饱和，覆盖率下降。对于越来越普遍的长上下文场景（8K–128K token），这是一个重要局限。</p>
+<p><strong>3. Checkpoint 流式传输对跨节点带宽有需求。</strong> 多个长上下文请求同时做 checkpoint 流式传输，可能产生数十 GB/s 的带宽需求。如果集群内节点间的 NIC 带宽只有 25 Gbps（3 GB/s），流式传输本身会成为瓶颈。</p>
+<p><strong>4. 推测解码要求 draft-target 模型家族兼容。</strong> 并非所有部署都有合适的草稿模型。如果 draft 和 target 的接受率低（如两个参数量差异不大的模型），推测辅助带来的收益会大幅缩水。</p>
+<p><strong>5. 只处理单 worker 故障场景。</strong> 论文未明确处理同时多 worker 故障（如整机架断电）或”灰色故障”（worker 在线但性能严重退化）。</p>
+<hr>
+<h2 id="批判性分析不足与可改进之处">批判性分析：不足与可改进之处</h2>
+<h3 id="不足与弱点">不足与弱点</h3>
+<h3 id="恢复时间改进的来源分解">恢复时间改进的来源分解</h3>
+<p>50–64% 的恢复时间改进是最引人注目的结果，值得深入拆解。恢复时间 = 从故障检测到集群延迟指标恢复到无故障水平 10% 以内的总时长。它由以下部分组成：</p>
+<ol>
+<li>故障检测延迟（心跳检测，通常 &#x3C; 1 s）</li>
+<li>中断请求的 checkpoint 恢复或 prefill 重算（取决于恢复策略）</li>
+<li>幸存 worker 队列排空（吸收额外负载直到均衡）</li>
+<li>恢复 worker 模型重载并重新加入集群</li>
+</ol>
+<p>LUMEN 的三个机制分别针对不同环节：</p>
+<ul>
+<li><strong>机制一（checkpoint 分散放置）</strong> → 解决环节 2 的瓶颈：避免 holder 过载，加速 checkpoint 恢复完成</li>
+<li><strong>机制二（局部性感知调度）</strong> → 解决环节 3 的不均衡：均匀分配恢复工作，防止单一 holder 成为瓶颈延长整体窗口</li>
+<li><strong>机制三（推测辅助渐进恢复）</strong> → 直接攻击环节 4：不再等待全量模型加载完成，30 s 内就开始贡献算力，提前缩短积压队列</li>
+</ul>
+<p>50%（4-worker）和 64%（8-worker）的改进幅度差异暗示：worker 数越多，恢复 worker 的相对贡献越大，推测辅助的效益越显著。这符合直觉——集群越大，单个 worker 重载期间对全局吞吐的影响越需要快速补偿。</p>
+<p><strong>（一）缺少各机制单独贡献的消融实验。</strong> 这是论文最大的实验缺口。三个机制分别贡献了多少改进？“仅机制 1+2”（无草稿推测辅助）和”仅机制 3”（无负载感知 checkpoint）的效果如何？没有消融实验，读者无法判断哪个机制是核心贡献，也无法在资源受限的场景下决定只实现其中一个。</p>
+<p><strong>（二）恢复场景下草稿接受率未报告。</strong> 推测解码的性能关键在于草稿接受率 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span>（Eq. 3）。恢复 worker 的草稿模型刚启动，上下文是”冷”的（没有历史 KV cache）；而目标 worker 的解码已经进行了数百步。这种上下文不对齐可能导致 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> 从正常场景的 0.7–0.8 降到 0.3–0.5，使每步期望 token 从 3.4 降至 1.4 左右。论文没有报告该场景下的 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> 值，这让推测辅助的实际收益不透明。</p>
+<p><strong>（三）参数 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi></mrow><annotation encoding="application/x-tex">\theta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">θ</span></span></span></span> 和 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>τ</mi></mrow><annotation encoding="application/x-tex">\tau</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span></span></span></span> 缺乏敏感性分析。</strong> 路由决策（Eq. 6）的两个阈值 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi></mrow><annotation encoding="application/x-tex">\theta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">θ</span></span></span></span>（负载阈值）和 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>τ</mi></mrow><annotation encoding="application/x-tex">\tau</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span></span></span></span>（前缀长度阈值）对结果影响大，但论文未给出这两个参数的敏感性分析，也未给出如何根据工作负载特征来设置它们的指导。实际部署时，错误的 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>θ</mi></mrow><annotation encoding="application/x-tex">\theta</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">θ</span></span></span></span> 可能使 LUMEN 退化为纯 KV-reuse 或纯负载均衡方案，失去优势。</p>
+<p><strong>（四）checkpoint 协调器本身的开销未量化。</strong> LUMEN 新增了实时负载监控、checkpoint 分配、故障路由决策等逻辑。在超高 QPS 场景下（如 10K+ 请求/秒），这些协调逻辑可能成为 CPU 侧瓶颈。论文未提供协调器延迟（如”每次路由决策 &#x3C;1 ms”）或在 QPS 峰值下的压力测试数据。对比：SGLang 的 scheduler 在高 QPS 下 CPU 侧就已经是瓶颈，LUMEN 的协调器逻辑叠加在 SGLang scheduler 之上，其影响需要单独量化。</p>
+<p><strong>（五）缺少与 DéjàVu（Fixed-Checkpointing）的详细细节比较。</strong> 论文对 DéjàVu 的描述停留在”静态分配到固定邻居”这一高层次描述。DéjàVu 实际上可能包含了一些简单的负载感知逻辑（如在邻居过载时临时切换 holder）。如果 DéjàVu 的实现比论文描述的更复杂，LUMEN 相对 Fixed-Checkpointing 基线的改进幅度可能被高估了。论文应该明确说明 DéjàVu 的确切配置。</p>
+<h3 id="作者淡化或回避的局限">作者淡化或回避的局限</h3>
+<p><strong>checkpoint holder 本身故障的场景被忽视。</strong> LUMEN 的三个机制都假设 checkpoint holder 是”幸存 worker”。但如果故障是机架级的（同一机架上多 GPU 节点全部宕机），checkpoint holder 也可能同时故障。在这种情况下，LUMEN 会退化为 Stop-and-Restart（checkpoint 不可用），而文中没有说明系统在这种情况下的行为和对比基线的差距。</p>
+<p><strong>对 QinServe（远程存储 checkpoint）的驳斥略显草率。</strong> 论文以”不可预测的网络延迟”一句话否定了远程存储方案。但现代高端存储网络（RDMA over InfiniBand，200–400 Gbps）的读取延迟在百微秒量级，可能优于 LUMEN 在高压环境下的主机内存恢复延迟。一个公平的对比实验会更有说服力。</p>
+<h3 id="可以改进的地方">可以改进的地方</h3>
+<p><strong>1. 增加消融实验（最重要）。</strong> 拆分三个机制的贡献——单独测试”仅负载感知 checkpoint”、“仅局部性感知调度”和”仅推测辅助恢复”——这样既能验证设计合理性，也能帮助实际系统工程师按需实现。</p>
+<p><strong>2. 测试长上下文负载。</strong> 增加 8K–32K 平均 prompt 长度的实验，验证主机内存预算充足性和 LUMEN 在长上下文下的覆盖率降级曲线。</p>
+<p><strong>3. 扩展 checkpoint 到双副本。</strong> 为每个请求分配两个 checkpoint holder（基于负载估计选最优的两个），代价是主机内存翻倍，但可消除 holder 单点故障的风险。算法复杂度仅从 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>W</mi><mi mathvariant="normal">∣</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(|W|)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">O</span><span class="mopen">(</span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.1389em;">W</span><span class="mord">∣</span><span class="mclose">)</span></span></span></span> 增加到 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><mi mathvariant="normal">∣</mi><mi>W</mi><mi mathvariant="normal">∣</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(|W|)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.0278em;">O</span><span class="mopen">(</span><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.1389em;">W</span><span class="mord">∣</span><span class="mclose">)</span></span></span></span>（选两个最小值）。</p>
+<p><strong>4. 增加 checkpoint holder 故障场景的实验。</strong> 在仿真中引入”故障 worker 的 checkpoint holder 也同时故障”场景，测量 LUMEN 的降级行为，确认其不比 Stop-and-Restart 更差。</p>
+<p><strong>5. 报告 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> 的冷启动曲线。</strong> 记录推测辅助过程中，从草稿模型刚加载（冷启动）到逐渐与目标 worker 同步的 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> 变化曲线，量化初期草稿过时带来的真实开销。</p>
+<hr>
+<h2 id="三个机制一览表">三个机制一览表</h2>
+<p><strong>表 C：LUMEN 三个机制汇总</strong></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>机制</th><th>触发时机</th><th>解决的问题</th><th>核心算法</th><th>关键参数</th></tr></thead><tbody><tr><td>负载感知 KV checkpoint 放置</td><td>始终（主动式）</td><td>单一 holder 的恢复瓶颈</td><td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>h</mi><mo>∗</mo></msup><mo>=</mo><mi>arg</mi><mo>⁡</mo><msub><mrow><mi>min</mi><mo>⁡</mo></mrow><mi>w</mi></msub><mover accent="true"><mi>L</mi><mo>^</mo></mover><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">h^* = \arg\min_w \hat{L}(w)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord"><span class="mord mathnormal">h</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6887em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">∗</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.1968em;vertical-align:-0.25em;"></span><span class="mop">ar<span style="margin-right:0.0139em;">g</span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop"><span class="mop">min</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1514em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0269em;">w</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9468em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">L</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.2222em;"><span class="mord">^</span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="mclose">)</span></span></span></span></td><td>内存预算 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>M</mi><mrow><mi>b</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi></mrow></msub></mrow><annotation encoding="application/x-tex">M_{budget}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.109em;">M</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">b</span><span class="mord mathnormal mtight">u</span><span class="mord mathnormal mtight">d</span><span class="mord mathnormal mtight" style="margin-right:0.0359em;">g</span><span class="mord mathnormal mtight">e</span><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span></td></tr><tr><td>局部性感知恢复调度</td><td>故障发生时</td><td>KV 复用 vs. 负载均衡的权衡</td><td>按 $(\hat{L}(h_r),</td><td>C_r</td></tr><tr><td>推测辅助渐进式恢复</td><td>模型重载期间</td><td>恢复 worker 闲置浪费</td><td>先加载草稿模型 → 推测解码辅助</td><td>草稿模型选择，草稿长度 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span></span></span></span></td></tr></tbody></table>
+<p><strong>表 D：LUMEN 与基线的性能改进汇总</strong></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>指标</th><th>vs. Stop-and-Restart</th><th>vs. Fixed-Checkpointing</th></tr></thead><tbody><tr><td>平均 TTFT</td><td>-29% 至 -44%</td><td>-7% 至 -16%</td></tr><tr><td>平均 TPOT</td><td>-7% 至 -16%</td><td>-4% 至 -7%</td></tr><tr><td>恢复时间</td><td>-50% 至 -64%</td><td>-35% 至 -64%</td></tr></tbody></table>
+<p>LUMEN 对 Fixed-Checkpointing 的 TTFT/TPOT 改进（7–16%）相对温和，但恢复时间改进（35–64%）非常显著。这说明 Fixed-Checkpointing 在”恢复 KV，跳过 prefill”的核心逻辑上已经做得不错，LUMEN 的增量改进主要来自：(1) 更好的 checkpoint 分散降低了 holder 过载概率（影响 TTFT/TPOT），(2) 推测辅助填补了恢复窗口的算力空白（大幅缩短恢复时间）。</p>
+<h2 id="复现说明">复现说明</h2>
+<p>论文声明在最终版本中开源原型和仿真器，截至 2026 年 6 月尚未发布。复现所需的现有开源组件：</p>
+<ul>
+<li><strong>SGLang</strong>（开源，LUMEN 原型基础）</li>
+<li><strong>Vidur</strong>（开源仿真器，arXiv 2405.05465）</li>
+<li><strong>Qwen3-14B/32B</strong>（公开可用，Alibaba Cloud）</li>
+<li><strong>Splitwise-Conv 轨迹</strong>（随 Splitwise 论文 arXiv 2311.18677 发布）</li>
+</ul>
+<p>主要实现难点在于：SGLang 调度循环中的 KV 页流式传输钩子（在 GPU 生成每个新 KV 页后异步触发），以及恢复 worker 与幸存 worker 之间的推测解码协调协议（需要跨 worker 共享 decode 上下文）。</p>
+<p>待代码开源后，验证的第一步建议先复现表 1 的 Stop-and-Restart 基线数据，确认仿真设置的正确性，再测试 LUMEN 的三个机制。</p>
+<hr>
+<h2 id="相关工作与位置定位">相关工作与位置定位</h2>
+<h3 id="llm-服务系统脉络">LLM 服务系统脉络</h3>
+<p>理解 LUMEN 的定位，需要对比同期主流 LLM 服务系统：</p>
+<p><strong>vLLM（2023）</strong> 引入了 PagedAttention（分页注意力）和连续批处理（continuous batching），奠定了现代 LLM 服务框架的基础。vLLM 的 Kubernetes 部署版本（vLLM-k8s）以 Stop-and-Restart 作为默认故障恢复策略，是 LUMEN 最主要的对比基线。</p>
+<p><strong>SGLang（2024）</strong> 在 vLLM 基础上引入了 RadixAttention（基数树前缀缓存）、结构化生成（structured generation）和更高效的调度器。LUMEN 在 SGLang 上实现，借助其结构化推理图支持更复杂的 checkpoint 协调逻辑。</p>
+<p><strong>Sarathi-Serve（2024）</strong> 提出分块 prefill（chunked prefill），将长 prompt 的处理分成多个小块与 decode 步骤交替执行，减少大 prompt 引起的延迟尖峰。LUMEN 的 KV 页流式传输与分块 prefill 兼容，以块为粒度追踪 KV 页。</p>
+<p><strong>DistServe（2024）</strong> 提出将 prefill 和 decode 阶段分离到不同的 GPU 集群，以独立扩展各阶段的资源。LUMEN 的机制适用于 prefill-decode 分离架构，checkpoint 和恢复逻辑在服务层独立运行。</p>
+<p><strong>Mooncake（2024）</strong> 聚焦于跨请求的 KV 缓存共享（系统 prompt、少样本示例等公共前缀），将缓存的 KV 页分布到集群主机内存池中。Mooncake 优化的是”多请求间的 KV 复用”，LUMEN 优化的是”单请求跨故障的 KV 保存”，两者互补。</p>
+<h3 id="推测解码在故障容错中的新定位">推测解码在故障容错中的新定位</h3>
+<p>值得单独强调的是 LUMEN 对推测解码的创造性改用。推测解码在 2023 年被提出时，其定位是”用小模型草稿换取大模型 decode 速度的提升”，本质是一种<strong>性能优化技术</strong>。LUMEN 将其重新定位为<strong>故障容错技术</strong>：在正常的推测解码中，draft model 和 target model 都在正常工作、共享上下文；而在 LUMEN 的恢复场景中，draft model（恢复 worker 上）和 target model（幸存 worker 上）处于不同的工作状态（一个刚加载，一个正在处理积压队列）。这种”分离式推测解码”（detached speculative decoding）是 LUMEN 原创的设计点，打开了把推测解码用于其他资源受限场景的可能性。</p>
+<h3 id="与-déjàvufixed-checkpointing的具体对比">与 DéjàVu（Fixed-Checkpointing）的具体对比</h3>
+<p>DéjàVu（strati24）是与 LUMEN 最直接相关的先前工作，也是 Fixed-Checkpointing 基线的来源。DéjàVu 的核心贡献是在 LLM 服务系统中引入主机内存 KV checkpoint：在 decode 过程中将每个 KV 页从 GPU 显存异步流式传输到邻居 worker 的主机内存。</p>
+<p>LUMEN 在此基础上的三点关键扩展：</p>
+<ol>
+<li><strong>静态邻居 → 动态负载感知分配：</strong> 不再固定映射到一个邻居，而是根据实时负载估计动态选择负担最轻的 worker</li>
+<li><strong>故障时全量路由到 holder → 局部性感知的选择性路由：</strong> 对 holder 过载且前缀短的请求，不再强行发给 holder</li>
+<li><strong>恢复 worker 空闲 → 草稿模型推测辅助：</strong> 利用恢复期间的 GPU 空窗口贡献算力，这一机制完全是 LUMEN 原创</li>
+</ol>
+<h3 id="推测解码的故障容错新用途">推测解码的故障容错新用途</h3>
+<p>推测解码（Leviathan et al., 2023；Chen et al., 2023）最初被提出是为了加速内存带宽受限的 decode 阶段。LUMEN 对其应用场景做了创造性拓展：<strong>不是为了加速正常 decode，而是为了在故障恢复期间填补算力空白</strong>。</p>
+<p>这种用法有一个有趣的特性：在正常推测解码中，draft 和 target 模型必须共享 KV 上下文才能高效配合；而在 LUMEN 的故障恢复场景中，draft 模型（恢复 worker）是”冷启动”状态，上下文不完整，接受率 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> 可能比正常场景低。尽管如此，即使 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> 较低（如 0.4），期望每步仍有约 1.7 个 token（相比正常 decode 的 1 个）——仍有可观的加速比，帮助幸存 worker 消化积压队列。</p>
+<hr>
+<h2 id="三个机制为何必须协同运作">三个机制为何必须协同运作</h2>
+<p>论文的一个核心论点是：三个机制不是相互独立的优化，它们之间存在重要的交互依赖。用一个具体场景来理解这个论点：</p>
+<p><strong>场景设定：</strong> 8-worker 集群，Qwen3-32B，每个 worker 处理约 100 个活跃请求，平均序列长度 2000 token。Worker 3 (W3) 突然故障，有 12 个活跃请求被中断。在 Fixed-Checkpointing 下，W3 的静态 checkpoint holder 是 W4（邻居），而 W4 此时已经有自己的 100 个请求在处理。</p>
+<p><strong>三种方案的执行过程：</strong></p>
+<p><em>Stop-and-Restart：</em>
+W3 的 12 个中断请求分散到幸存 worker 重新执行 prefill。每次 prefill 约需 0.8 s 计算时间加排队等待，实际 replay TTFT 约 25 s。W3 重载模型期间（约 12 分钟）完全闲置，每个幸存 worker 额外承担约 14% 的负载。集群 TTFT 全面上涨。</p>
+<p><em>Fixed-Checkpointing（DéjàVu）：</em>
+W3 的全部 12 个中断请求路由到 W4（静态 checkpoint holder）。W4 从主机内存恢复 KV 页（毫秒级），但队列从 100 增至 112 个请求，TPOT 恶化约 12%。其他 worker 反而相对空闲，负载不均衡。W3 重载模型 12 分钟，W4 独自承受瓶颈。</p>
+<p><em>LUMEN（三机制协同）：</em>
+W3 的 12 个请求在故障前就被动态分配了 checkpoint：2 个在 W1，2 个在 W2，3 个在 W5，2 个在 W6，3 个在 W7。故障时，每个 holder 只多了 2–3 个恢复请求（占其队列 2–3%），不构成瓶颈。W3 在约 30 s 内加载草稿模型，开始为最过载的幸存 worker（如 W4，刚好也有 3 个中断请求）做推测辅助——W4 的有效 decode 吞吐提升约 2×，帮助更快清除积压。与此同时，W3 在后台加载全量模型，约 12 分钟后无缝切换为正常 worker。</p>
+<p>关键洞察：<strong>如果没有机制一的负载感知放置，机制二的局部性路由就会变成 Fixed-Checkpointing 的复刻（所有请求集中到一个 holder）；如果没有机制三，12 分钟的模型重载窗口就是纯粹的浪费。三个机制的协同才是 LUMEN 性能优势的来源。</strong></p>
+<hr>
+<h2 id="工程实现要点">工程实现要点</h2>
+<p><strong>KV 页流式传输用 ZeroMQ。</strong> LUMEN 用 ZeroMQ 的 push-pull 模式实现 KV 页从服务 worker 的 GPU 到 checkpoint holder 的 CPU 主机内存的异步传输。ZeroMQ 的非阻塞发送与 GPU decode 计算完全重叠，不影响关键路径延迟。</p>
+<p><strong>控制平面用 gRPC。</strong> LUMEN gateway 协调器用 gRPC 做控制平面通信：worker 状态上报、checkpoint 分配通知、故障检测触发、恢复路由决策。gRPC 的双向流适合心跳和事件通知模式。</p>
+<p><strong>草稿模型的加载时序。</strong> 草稿模型（如 Qwen3-1.5B，约 3B 参数，BF16 下 6 GB）在高速 NVMe SSD 上约需 1 分钟加载；全量模型（如 Qwen3-32B，约 64 GB）约需 10–12 分钟。草稿辅助窗口 ≈ 全量加载时间 - 草稿加载时间 ≈ 9–11 分钟，即恢复 worker 有约 9–11 分钟的时间在做有用的工作。</p>
+<p><strong>无缝切换的实现。</strong> 全量模型在 GPU 显存的另一块区域加载（与草稿模型的显存不重叠）。加载完成后，LUMEN 原子地把活跃模型指针从草稿模型切换到全量模型，然后释放草稿模型占用的显存。整个切换过程耗时毫秒级，对正在进行的推测辅助任务透明（如有正在进行的推测步骤，简单丢弃即可）。</p>
+<hr>
+<h2 id="生产部署的实际考量">生产部署的实际考量</h2>
+<p>把 LUMEN 部署到真实的生产 LLM 服务集群，需要关注论文中未详细讨论的几个工程问题。</p>
+<h3 id="草稿模型的选择">草稿模型的选择</h3>
+<p>推测辅助渐进式恢复的效果高度依赖草稿模型在”冷启动”上下文下的接受率。实际部署中的经验法则：</p>
+<ul>
+<li><strong>同一模型家族：</strong> Draft 和 target 应来自同一家族（如 Qwen3-1.5B 对应 Qwen3-32B），确保 tokenizer 和隐层分布相近</li>
+<li><strong>合适的大小比：</strong> 草稿模型约为目标模型的 1/10–1/20（如 1.5B vs 32B），加载速度足够快（约 30 s），同时保持合理的接受率（约 0.5–0.7）</li>
+<li><strong>冷启动期的接受率退化：</strong> 恢复 worker 初始没有历史 KV，前 100 步左右草稿接受率较低，应保守设置草稿长度 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span></span></span></span>（如 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">k=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span></span></span></span> 而非 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>=</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">k=4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span>），以控制幸存 worker 的验证开销</li>
+</ul>
+<h3 id="checkpoint-内存预算的设置">Checkpoint 内存预算的设置</h3>
+<p>每个 worker 的 checkpoint 主机内存预算 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>M</mi><mrow><mi>b</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi></mrow></msub><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">M_{budget}(w)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.109em;">M</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">b</span><span class="mord mathnormal mtight">u</span><span class="mord mathnormal mtight">d</span><span class="mord mathnormal mtight" style="margin-right:0.0359em;">g</span><span class="mord mathnormal mtight">e</span><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="mclose">)</span></span></span></span> 是关键的部署参数：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mi>M</mi><mrow><mi>b</mi><mi>u</mi><mi>d</mi><mi>g</mi><mi>e</mi><mi>t</mi></mrow></msub><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo><mo>=</mo><mi>ρ</mi><mo>⋅</mo><msub><mi>M</mi><mrow><mi>h</mi><mi>o</mi><mi>s</mi><mi>t</mi><mi mathvariant="normal">_</mi><mi>t</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>l</mi></mrow></msub><mo stretchy="false">(</mo><mi>w</mi><mo stretchy="false">)</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(7)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">M_{budget}(w) = \rho \cdot M_{host\_total}(w) \tag{7}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.109em;">M</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">b</span><span class="mord mathnormal mtight">u</span><span class="mord mathnormal mtight">d</span><span class="mord mathnormal mtight" style="margin-right:0.0359em;">g</span><span class="mord mathnormal mtight">e</span><span class="mord mathnormal mtight">t</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6389em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">ρ</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">⋅</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1.117em;vertical-align:-0.367em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.109em;">M</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.109em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">h</span><span class="mord mathnormal mtight">os</span><span class="mord mathnormal mtight">t</span><span class="mord mtight" style="margin-right:0.0278em;">_</span><span class="mord mathnormal mtight">t</span><span class="mord mathnormal mtight">o</span><span class="mord mathnormal mtight">t</span><span class="mord mathnormal mtight">a</span><span class="mord mathnormal mtight" style="margin-right:0.0197em;">l</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.367em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="mclose">)</span></span><span class="tag"><span class="strut" style="height:1.117em;vertical-align:-0.367em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">7</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>通常 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ρ</mi><mo>=</mo><mn>0.05</mn></mrow><annotation encoding="application/x-tex">\rho = 0.05</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">ρ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.05</span></span></span></span>–<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0.10</mn></mrow><annotation encoding="application/x-tex">0.10</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.10</span></span></span></span>（主机内存的 5–10%）。512 GB 主机内存的服务器，每 worker 可分配 25–51 GB 用于 KV checkpoint。在典型服务配置下（1K–4K token，BF16），可覆盖 30–120 个并发长上下文请求，足够应对中等负载下的单 worker 故障。</p>
+<p>对于超长上下文部署（32K+ token），每个请求占用的预算成倍增加，运营者需要提高 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ρ</mi></mrow><annotation encoding="application/x-tex">\rho</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">ρ</span></span></span></span> 或接受较低的 checkpoint 覆盖率。系统应提供可观测性指标（如”当前活跃请求中有 checkpoint 的比例”），帮助运营者及时调整 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ρ</mi></mrow><annotation encoding="application/x-tex">\rho</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal">ρ</span></span></span></span>。</p>
+<h3 id="checkpoint-驱逐策略">Checkpoint 驱逐策略</h3>
+<p>当 checkpoint 预算满时，系统需要决定驱逐哪个现有 checkpoint 以腾出空间。这类似于操作系统的页面置换策略。合理的选择包括：</p>
+<ul>
+<li><strong>LRU（最久未更新）：</strong> 驱逐最久没有新 KV 页写入的 checkpoint——可能是长上下文请求早期阶段</li>
+<li><strong>最短前缀优先：</strong> 驱逐 KV 页最少的 checkpoint，因为短前缀请求重新 prefill 代价最低</li>
+<li><strong>优先级加权：</strong> 前缀越长的 checkpoint 越受保护，与 LUMEN 局部性感知路由策略（Eq. 6）保持一致</li>
+</ul>
+<h3 id="可观测性指标">可观测性指标</h3>
+<p>生产部署需要监控的核心指标：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>指标</th><th>说明</th><th>参考目标</th></tr></thead><tbody><tr><td>Checkpoint 覆盖率</td><td>有 checkpoint 的活跃请求占比</td><td>正常负载 > 90%</td></tr><tr><td>Holder 负载均衡比</td><td>最大 checkpoint holder 负载 / 最小负载</td><td>&#x3C; 1.5×</td></tr><tr><td>草稿模型接受率 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span></td><td>恢复期间的推测接受率</td><td>> 0.4（否则需检查上下文同步）</td></tr><tr><td>恢复时间</td><td>从故障到集群指标恢复所需时间</td><td>&#x3C; Stop-and-Restart 的 50%</td></tr></tbody></table>
+<hr>
+<h2 id="未来研究方向">未来研究方向</h2>
+<p>LUMEN 的设计也开了几个有趣的后续研究方向：</p>
+<p><strong>1. 分层 checkpoint 存储。</strong> LUMEN 使用两层：GPU HBM（热，但 worker 故障时丢失）和主机 DRAM（温，持久）。引入第三层——通过 RDMA 访问的 NVMe SSD——可以解决超长上下文下主机内存不足的问题。挑战在于三层之间的延迟差异（DRAM 毫秒级，SSD 秒级）需要分层策略：最新的 KV 页放主机 DRAM，较旧的页放 SSD。</p>
+<p><strong>2. 多 worker 协同故障恢复。</strong> LUMEN 目前只处理单 worker 故障。机架级、交换机级的关联故障可能同时打倒多个 worker。扩展 LUMEN 到多 worker 同时故障的情形，需要更复杂的优化：checkpoint 分配必须保证”可能同时故障的两个 worker 不互为 checkpoint holder”，这是一个带约束的分配问题。</p>
+<p><strong>3. Checkpoint 基础设施的复用。</strong> LUMEN 的 checkpoint holder 机制为集群提供了一个分布式主机内存 KV 存储。这个基础设施可以复用于：跨请求前缀缓存（类似 Mooncake）、计划性维护期间的热备份，以及不中断服务的请求在线迁移（用于负载均衡或硬件维护）。</p>
+<p><strong>4. 主动式 checkpoint 预热。</strong> 目前 checkpoint 流式传输在 decode 阶段开始后才触发。对于超长 prompt（如 128K token），prefill 本身就可能需要数分钟，期间没有 checkpoint 保护。主动方案可以在 prefill 期间对已完成的分块结果做增量 checkpoint，提供更早的覆盖。</p>
+<hr>
+<h2 id="总结">总结</h2>
+<p>LUMEN 给分布式 LLM 服务的故障恢复问题带来了一个清晰的新视角：<strong>现有方案忽视了集群当前的负载状态，把恢复工作盲目地路由到可能已经过载的 worker</strong>。LUMEN 的三机制设计——负载感知 checkpoint 放置、局部性感知恢复调度、推测辅助渐进式恢复——分别解决了三个不同层面的恢复代价，组合后实现了比两种基线更好的 TTFT、TPOT 和恢复时间。</p>
+<p>最让人印象深刻的结果是恢复时间缩短 50–64%，这直接对应于生产环境中 SLA 违约窗口的缩短。一个典型 LLM 服务合同要求 99.9% 的可用性，意味着每月允许约 43 分钟的停机。在一个每隔几小时就发生一次故障的万卡集群上，如果每次故障的影响窗口从 20 分钟缩短到 10 分钟，理论上可以把月故障影响时间从约 240 分钟压缩到约 120 分钟，从”几乎无法达到 99.9%“变成”有可能达到”。</p>
+<p>从系统工程的角度看，LUMEN 有一个有趣的设计取舍值得注意：它选择在<strong>服务层</strong>（serving tier）而非<strong>存储层</strong>（storage tier）做 KV checkpoint，用主机 DRAM 而非远程存储。这个选择的代价是主机内存预算有限（对超长上下文不友好），收益是无网络往返延迟（故障时恢复极快，毫秒级）。这与数据库领域的争论（“写前日志放本地还是放远程存储？“）一脉相承，说明系统设计中没有万能答案，正确的选择总是和具体的延迟/吞吐/容量约束绑定的。</p>
+<p>主要不足是缺乏消融实验和对长上下文场景的测试，这两点是判断该系统工程价值的关键依据。从更广的视角看，LUMEN 是把操作系统”资源部分可用时优雅降级”的经典思路，迁移到 GPU LLM 推理特有的代价模型上的一次成功尝试。尤其是<strong>把推测解码从吞吐优化工具转变为故障容错工具</strong>这一创意，在整个 ML 系统领域都是原创性的贡献，值得后续工作深入挖掘。</p>
+<p>如果让我用一句话总结 LUMEN 的本质：它发现了故障恢复决策中被前人忽视的<strong>第三类维度</strong>——不仅要考虑”数据在哪”（checkpoint placement）和”谁来做恢复”（request routing），还要考虑”如何利用恢复过程中的空闲资源”（progressive recovery）。三个维度的协同，才是 LUMEN 性能优势的真正来源。</p>
+<p>对于有志于做 LLM 服务系统研究或工程的读者，LUMEN 是一篇很好的示范：它的研究方法——先通过测量量化问题的根因（第 3 节动机分析），再针对每个根因设计对应机制（第 4 节设计），最后通过原型和仿真两种手段全面验证——是系统论文的经典范式，值得学习借鉴。它的评估指标选取（TTFT、TPOT、recovery time 三者分开报告，而不只报告吞吐量）也更完整，体现了对在线服务系统用户体验的深刻理解。</p>
+<p>从更宏观的视角看，LUMEN 代表了一类越来越重要的 ML 系统研究方向：<strong>不再只关注系统如何更快（performance），而是开始关注系统如何更稳（reliability）</strong>。随着 LLM 服务的商业化部署规模不断扩大，可靠性和故障容忍的重要性将和性能同等重要——在某些场景下（如医疗、金融、法律等高可靠性需求领域）甚至更重要。LUMEN 是这个研究方向的一个扎实起点。</p>
+<p><strong>推荐延伸阅读。</strong> 读完 LUMEN 后，建议沿以下三条线索继续：</p>
+<ul>
+<li><strong>KV cache 管理深入理解</strong>：阅读 vLLM 原始论文（Kwon et al., 2023，“Efficient Memory Management for Large Language Model Serving with PagedAttention”），理解 paged KV cache 的底层机制，LUMEN 的 checkpoint 成本分析与此直接相关。</li>
+<li><strong>推测解码完整理论</strong>：阅读 DeepMind 的 Speculative Decoding 论文（Chen et al., 2023）和 Leviathan et al. 的并行版本，理解 draft-target token 接受率 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.0037em;">α</span></span></span></span> 的统计推导，这是理解 LUMEN 渐进式恢复效率的基础。</li>
+<li><strong>分布式 LLM 调度</strong>：阅读 Sarathi-Serve（Agrawal et al., 2024）和 DistServe（Zhong et al., 2024），理解 prefill-decode 分离带来的新调度维度，LUMEN 在该架构下的故障恢复行为是一个尚未深入研究的开放问题。</li>
+</ul>
+<p>这三条线索分别对应 LUMEN 三个核心机制的理论基础，结合 LUMEN 本身的设计，可以建立对”分布式 LLM 服务系统可靠性”这一研究方向的完整图景。</p>
+<p>最后，从工程实践角度，LUMEN 给出了一个难得的例子：<strong>性能优化和可靠性保障可以共享同一套机制</strong>。推测解码同时提升推理速度和故障恢复速度；负载感知调度同时减少热点和降低恢复延迟。这种”一箭双雕”的设计哲学，是真正成熟的系统工程的标志——好的抽象不只解决当前问题，而是让多个问题在同一个框架内同时变得可解。</p> </div> <footer class="blog-post-footer">  <nav class="blog-post-nav" aria-label="Adjacent posts"> <a class="blog-post-nav-link blog-post-nav-prev" href="/blog/2026-06-18-lumen-technical-review-en/"> <span class="blog-post-nav-label">← Newer</span> <span class="blog-post-nav-title">LUMEN: Load-Aware Coordinated Failure Recovery for Distributed LLM Serving</span> </a> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-06-17-oscar-technical-review-en/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">OScaR: Occam&#39;s Razor for Extreme KV Cache Quantization</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient machine learning, systems and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>
