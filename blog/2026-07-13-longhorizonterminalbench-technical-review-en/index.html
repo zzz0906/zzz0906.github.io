@@ -1,0 +1,766 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Long-Horizon-Terminal-Bench: Dense Reward Grading Exposes Agent Long-Horizon Execution Limits | Zhongzhu / Charlie</title><meta name="description" content="LHTB is a 46-task benchmark that replaces binary pass/fail with subtask-level dense rewards, revealing that even the strongest frontier models (GPT-5.5 at 15.2%) cannot reliably finish long-horizon terminal workflows — with 79% of failures caused by time-budget exhaustion rather than local reasoning errors."><meta property="og:title" content="Long-Horizon-Terminal-Bench: Dense Reward Grading Exposes Agent Long-Horizon Execution Limits | Zhongzhu / Charlie"><meta property="og:description" content="LHTB is a 46-task benchmark that replaces binary pass/fail with subtask-level dense rewards, revealing that even the strongest frontier models (GPT-5.5 at 15.2%) cannot reliably finish long-horizon terminal workflows — with 79% of failures caused by time-budget exhaustion rather than local reasoning errors."><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-07-13-longhorizonterminalbench-technical-review-en/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-07-13-longhorizonterminalbench-technical-review-en/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.DSqoSXlc.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <nav class="page-toc" aria-label="Page outline" data-heading-selector=".blog-post-body h2"> <div class="page-toc-handle" aria-hidden="true"> <span class="page-toc-handle-icon">☰</span> <span class="page-toc-handle-label">Outline</span> </div> <div class="page-toc-panel"> <p class="page-toc-title">On this page</p> <ul class="page-toc-list"></ul> </div> </nav> <script type="module">document.addEventListener("DOMContentLoaded",()=>{const r=document.querySelector(".page-toc-list"),c=document.querySelector(".page-toc");if(!r||!c)return;const l=c.dataset.headingSelector||"main h2",i=document.querySelectorAll(l);if(i.length<2){c.style.display="none";return}const d=e=>e.toLowerCase().trim().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi,"-").replace(/^-+|-+$/g,""),a=[];i.forEach((e,o)=>{const n=(e.textContent||"").trim();if(n){if(!e.id){const t=d(n)||`section-${o}`;let s=t,f=2;for(;document.getElementById(s);)s=`${t}-${f++}`;e.id=s}e.style.scrollMarginTop="84px",a.push({href:`#${e.id}`,text:n})}}),a.forEach(({href:e,text:o})=>{const n=document.createElement("li"),t=document.createElement("a");t.href=e,t.textContent=o,n.appendChild(t),r.appendChild(n)});const u=Array.from(r.querySelectorAll("a")),g=new Map(u.map(e=>[e.getAttribute("href").slice(1),e])),p=new IntersectionObserver(e=>{e.forEach(o=>{const n=o.target.id,t=g.get(n);t&&(o.isIntersecting?t.classList.add("page-toc-active"):t.classList.remove("page-toc-active"))})},{rootMargin:"-40% 0px -50% 0px",threshold:0});i.forEach(e=>p.observe(e))});</script> <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>220</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>25</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-07-13">July 13, 2026</time> <span class="blog-lang blog-lang-en">EN</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/LLM-Agent/">#LLM Agent</a><a class="blog-post-tag-chip" href="/blog/tag/Reasoning/">#Reasoning</a><a class="blog-post-tag-chip" href="/blog/tag/LLM-Inference/">#LLM Inference</a> </span> </p> <h1>Long-Horizon-Terminal-Bench: Dense Reward Grading Exposes Agent Long-Horizon Execution Limits</h1> </header> <div class="blog-post-body"> <p><strong>Review date:</strong> 2026-07-13
+<strong>Review author:</strong> Zhongzhu Zhou
+<strong>Paper reviewed:</strong> Long-Horizon-Terminal-Bench: Testing the Limits of Agents on Long-Horizon Terminal Tasks with Dense Reward-Based Grading
+<strong>Paper authors:</strong> Zongxia Li†, Zhongzhi Li†, Yucheng Shi†, Ruhan Wang, Junyao Yang, Zhichao Liu, Xiyang Wu, Anhao Li, Yue Yu, Ninghao Liu, Lichao Sun, Haotao Mi, Leowei Liang
+<strong>arXiv:</strong> <a href="https://arxiv.org/abs/2607.08964">https://arxiv.org/abs/2607.08964</a>
+<strong>Venue/Status:</strong> Preprint (arXiv, July 2026) — Tencent HY LLM Frontier + UMD, UGA, UMN, IU, Lehigh, NUS, PolyU</p>
+<hr>
+<h2 id="short-answer">Short Answer</h2>
+<p>Long-Horizon-Terminal-Bench (LHTB) is a 46-task benchmark for AI agents operating in containerized terminal environments, designed to stress two capabilities that short-horizon benchmarks barely touch: long-horizon planning (tasks requiring hundreds of episodes and tens of minutes to hours of execution) and progress verification (knowing whether you are done). Rather than scoring agents binary pass/fail, every task is decomposed into semantically meaningful subtasks each with its own grader, and the final score is a weighted average — a dense reward that quantifies how far an agent actually progressed.</p>
+<p>The paper evaluates 15 frontier models under a shared Terminus-2 harness. Even the best model (GPT-5.5) resolves only 15.2% of tasks at a 0.95 reward threshold, and the mean pass rate across all models is 4.3%. Failure analysis reveals that 79% of all failed runs hit the 90-minute timeout while still actively working — not because every local step is wrong, but because agents cannot reliably turn sustained local progress into finished long-horizon artifacts within budget. An additional 19% of failures are “early exits” where agents stop voluntarily before satisfying the hidden verifier, a pattern the paper calls false finishes that implies systematic overconfidence in self-verification. Dense rewards are essential to reveal both patterns: binary grading collapses all partial-progress runs into the same failure bucket, hiding the mechanistic difference between a model that gives up early and one that works hard but runs out of time.</p>
+<hr>
+<h2 id="prerequisites-what-you-need-to-understand-this-paper">Prerequisites: What You Need to Understand This Paper</h2>
+<h3 id="1-llm-agents-and-terminal-environments">1. LLM Agents and Terminal Environments</h3>
+<p>An LLM agent is a language model that takes actions in an environment by issuing tool calls or shell commands, receiving observations (output, file listings, errors), updating its context, and repeating. Terminal-based agents specifically operate inside a containerized shell: they can read and write files, run scripts, inspect partial outputs, and call system utilities — exactly what a human software engineer does when working through a long project.</p>
+<p>The key scaling challenge is that each interaction is a new context window chunk. As the task grows longer, the agent must maintain coherent state, update its plan, avoid revisiting solved steps, and know when it is done. None of these are trivial for current models.</p>
+<h3 id="2-benchmark-taxonomy-short--vs-long-horizon">2. Benchmark Taxonomy: Short- vs. Long-Horizon</h3>
+<p>Short-horizon benchmarks (SWE-Bench, HumanEval, LiveCodeBench) evaluate whether an agent can solve a well-scoped, self-contained task in a few steps or minutes. They are valuable, but they mostly measure whether an agent can reason correctly given a crisp, stationary problem.</p>
+<p>Long-horizon benchmarks add a time dimension: tasks require hundreds of steps, multi-stage planning, error recovery across many sub-goals, and iterative debugging. Completing them requires not just reasoning but budget management — the ability to allocate effort appropriately across sub-goals so that the total progress is maximized within a time budget.</p>
+<h3 id="3-sparse-vs-dense-reward-signals">3. Sparse vs. Dense Reward Signals</h3>
+<p>A binary reward gives 1 if the agent completes the final goal, 0 otherwise. For hard tasks where almost no model passes, this is nearly pure noise: every failure looks the same regardless of how far the agent got. Dense rewards assign partial credit to intermediate steps, making it possible to distinguish an agent that solved 80% of the task from one that solved 5%, even if neither passes.</p>
+<p>In reinforcement learning, the difference between sparse and dense rewards is the difference between an unlearnable and a learnable environment for the same objective. In evaluation, the analogy is direct: sparse rewards cannot distinguish model capability at a fine granularity when all models fail to reach the final goal.</p>
+<h3 id="4-docker--containerization">4. Docker / Containerization</h3>
+<p>Each LHTB task runs inside a Docker container that is pre-loaded with all relevant files, code, data, tools, and helper scripts. The container provides complete isolation: the agent’s actions cannot affect the host environment. Graders run inside the container at the end of each rollout, inspecting the container’s final state. This deterministic setup makes evaluation reproducible.</p>
+<h3 id="5-agent-harnesses">5. Agent Harnesses</h3>
+<p>An agent harness is the scaffolding around a base LLM that provides: (a) environment interaction loop (send command → get output → append to context → generate next command); (b) context management (truncation, summarization); (c) stopping criteria (budget, self-termination). Two harnesses are used: Terminus-2 for most models, and OpenAI’s Codex harness for GPT-5.3 Codex. Harness differences can affect performance substantially, independent of the underlying model.</p>
+<h3 id="6-pass1-and-mean-reward">6. Pass@1 and Mean Reward</h3>
+<p>Two primary metrics appear throughout:</p>
+<ul>
+<li><strong>Pass@1(τ)</strong>: fraction of 46 tasks where the final reward R ≥ τ, for threshold τ ∈ {0.9, 0.95, 1.0}.</li>
+<li><strong>Mean reward R̄</strong>: average of final reward values across all 46 tasks, capturing partial progress even on tasks the model does not pass.</li>
+</ul>
+<p>These measure different things. Pass@1 answers “does the agent finish tasks reliably?” Mean reward answers “how far does the agent typically get?” High mean reward with low pass@1 signals near-complete performance that falls just short of the threshold — a useful leading indicator of progress.</p>
+<hr>
+<h2 id="motivation-what-is-missing-in-existing-benchmarks">Motivation: What is Missing in Existing Benchmarks</h2>
+<h3 id="the-gap-between-benchmark-performance-and-real-world-workflows">The Gap Between Benchmark Performance and Real-World Workflows</h3>
+<p>By mid-2026, frontier models score impressively on SWE-Bench and Terminal-Bench. But real professional workflows look very different:</p>
+<ul>
+<li>Reproducing the results of a published ML paper requires installing dependencies, fixing version mismatches, finding the right hyperparameters, running training for hours, checking that checkpoints match expected metrics, and generating the figures — not 10 steps, but hundreds.</li>
+<li>Auditing a multimodal dataset requires inspecting thousands of samples, running quality-control scripts, diagnosing systematic errors (rotated frames, schema mismatches, corrupted audio), and producing a clean output — open-ended and requiring long-horizon iteration.</li>
+<li>Debugging a robotics SLAM pipeline with renamed fields, missing values, and injected noise requires systematic diagnosis followed by end-to-end repair and verification.</li>
+</ul>
+<p>None of these fit the “crisp problem, 10-step solution” paradigm of existing benchmarks. They require what LHTB calls long-horizon execution: hundreds of episodes, sustained progress across multiple sub-goals, and reliable verification at the end.</p>
+<h3 id="the-sparse-reward-problem-at-extreme-difficulty">The Sparse Reward Problem at Extreme Difficulty</h3>
+<p>At the difficulty level of LHTB, outcome-only grading is nearly useless for model discrimination. Under R ≥ 1.0 (perfect score), 10 of the 15 evaluated models pass exactly zero tasks. Binary grading cannot tell these models apart at all. Dense rewards resolve this: the mean reward (R̄) for these same 10 models spans from 0.08 (Grok 4.20) to 0.32 (GLM 5.2), a 4× spread that captures real capability differences.</p>
+<p>The paper makes a clean argument: sparse rewards are only informative when tasks are not too hard. Once benchmark difficulty exceeds model capability such that the pass rate collapses toward zero, binary grading loses all discriminative power. Dense subtask rewards rescue discriminability.</p>
+<hr>
+<h2 id="benchmark-design">Benchmark Design</h2>
+<h3 id="21-task-formulation">2.1 Task Formulation</h3>
+<p>LHTB inherits the Terminal-Bench task format (Harbor tasks) and extends it. Each task is specified by:</p>
+<ol>
+<li><strong>Natural-language instruction</strong>: describes the overall goal; the only specification the agent sees.</li>
+<li><strong>Docker image</strong>: pre-loaded with all assets, code, data, and tools.</li>
+<li><strong>Task configuration file</strong>: metadata, time limits, harness parameters.</li>
+<li><strong>Oracle implementation or simulator</strong>: used by the grader to produce ground-truth answers or run reference solutions.</li>
+</ol>
+<p>The key departure from Terminal-Bench is the grading scheme: instead of a single pass/fail check at the end, each task is additionally decomposed into K semantically meaningful subtasks {s₁, …, sK}, each with its own deterministic checker.</p>
+<h3 id="22-the-core-reward-formula">2.2 The Core Reward Formula</h3>
+<p>The final task reward is a normalized weighted sum of subtask scores:</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mi>R</mi><mo>=</mo><mfrac><mrow><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>K</mi></munderover><msub><mi>w</mi><mi>k</mi></msub><mtext> </mtext><msub><mi>r</mi><mi>k</mi></msub></mrow><mrow><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>K</mi></munderover><msub><mi>w</mi><mi>k</mi></msub></mrow></mfrac></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(1)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">R = \frac{\sum_{k=1}^{K} w_k \, r_k}{\sum_{k=1}^{K} w_k}
+\tag{1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.0077em;">R</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.8419em;vertical-align:-1.1709em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.6709em;"><span style="top:-2.1288em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.9812em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.2029em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">K</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2997em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.6897em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.9812em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.2029em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">K</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2997em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.1709em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span><span class="tag"><span class="strut" style="height:2.8419em;vertical-align:-1.1709em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">1</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>where:</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.0715em;">K</span></span></span></span> is the number of subtasks in the task,</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>k</mi></msub><mo>≥</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">w_k \geq 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.786em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0</span></span></span></span> is the weight of subtask <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span></span></span></span> (reflecting its relative importance),</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>r</mi><mi>k</mi></msub><mo>∈</mo><mo stretchy="false">[</mo><mn>0</mn><mo separator="true">,</mo><mn>1</mn><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">r_k \in [0, 1]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6891em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord">0</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mclose">]</span></span></span></span> is the score for subtask <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span></span></span></span> from the deterministic grader.</li>
+</ul>
+<p>By default, all weights are equal (<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>k</mi></msub><mo>=</mo><mn>1</mn><mi mathvariant="normal">/</mi><mi>K</mi></mrow><annotation encoding="application/x-tex">w_k = 1/K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1/</span><span class="mord mathnormal" style="margin-right:0.0715em;">K</span></span></span></span>), which simplifies to a plain average:</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mi>R</mi><mo>=</mo><mfrac><mn>1</mn><mi>K</mi></mfrac><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>K</mi></munderover><msub><mi>r</mi><mi>k</mi></msub></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(2)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">R = \frac{1}{K} \sum_{k=1}^{K} r_k
+\tag{2}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.0077em;">R</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3.1304em;vertical-align:-1.3021em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0715em;">K</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8283em;"><span style="top:-1.8479em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">K</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.3021em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span><span class="tag"><span class="strut" style="height:3.1304em;vertical-align:-1.3021em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">2</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>When the final goal is substantially more important than intermediate checkpoints, the paper increases <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>K</mi></msub></mrow><annotation encoding="application/x-tex">w_K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">K</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> to concentrate reward on end-to-end completion while still giving partial credit for reaching intermediate milestones.</p>
+<p><strong>Why this formula?</strong> A plain average is unbiased and easy to interpret. Agents can neither “hack” a single checkpoint to inflate their score nor be unfairly penalized for completing 95% of a task. The weighted variant accommodates tasks where sub-goals are not equally important (e.g., a final pipeline must produce a correct output to be useful, even if intermediate diagnostics were done correctly).</p>
+<h3 id="23-subtask-types">2.3 Subtask Types</h3>
+<p>Three subtask types are defined, each implementing <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>r</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">r_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> differently:</p>
+<p><strong>Type 1 — Binary subtasks.</strong>
+The grader runs a programmatic condition on the container state. Examples: all unit tests pass, a service responds on the expected port, required experiment scripts complete without error.</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mi>r</mi><mi>k</mi></msub><mo>=</mo><mn mathvariant="bold">1</mn><mo stretchy="false">[</mo><mtext>condition</mtext><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mo stretchy="false">]</mo><mo>∈</mo><mo stretchy="false">{</mo><mn>0</mn><mo separator="true">,</mo><mn>1</mn><mo stretchy="false">}</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(3)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">r_k = \mathbf{1}[\text{condition}(s)] \in \{0, 1\}
+\tag{3}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathbf">1</span><span class="mopen">[</span><span class="mord text"><span class="mord">condition</span></span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)]</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">{</span><span class="mord">0</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mclose">}</span></span><span class="tag"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">3</span></span><span class="mord">)</span></span></span></span></span></span>
+<p><strong>Type 2 — Continuous or thresholded subtasks.</strong>
+For quantitative targets (reproducing a metric within tolerance <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ε</mi></mrow><annotation encoding="application/x-tex">\varepsilon</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">ε</span></span></span></span>, achieving a given speedup), the score decays linearly from 1 to 0 as the deviation from the reference grows:</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mi>r</mi><mi>k</mi></msub><mo>=</mo><mi>max</mi><mo>⁡</mo><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mn>0</mn><mo separator="true">,</mo><mtext>  </mtext><mn>1</mn><mo>−</mo><mfrac><mrow><mi mathvariant="normal">∣</mi><msub><mover accent="true"><mi>y</mi><mo>^</mo></mover><mi>k</mi></msub><mo>−</mo><msub><mi>y</mi><mi>k</mi></msub><mi mathvariant="normal">∣</mi></mrow><msub><mi>ε</mi><mi>k</mi></msub></mfrac><mo fence="true">)</mo></mrow></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(4)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">r_k = \max\!\left(0,\; 1 - \frac{|\hat{y}_k - y_k|}{\varepsilon_k}\right)
+\tag{4}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="mop">max</span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">(</span></span><span class="mord">0</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal">ε</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">∣</span><span class="mord"><span class="mord accent"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6944em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.0359em;">y</span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1944em;"><span class="mord">^</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1944em;"><span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord">∣</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.836em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">)</span></span></span></span><span class="tag"><span class="strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">4</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mover accent="true"><mi>y</mi><mo>^</mo></mover><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">\hat{y}_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord accent"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6944em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.0359em;">y</span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1944em;"><span class="mord">^</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1944em;"><span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is the agent’s output value and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>y</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">y_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> is the reference. This gives full credit for exact matches, partial credit for near-misses, and zero for outputs far from the reference.</p>
+<p><strong>Type 3 — Episode-aggregating subtasks.</strong>
+Campaign-style tasks (games, repeated audits) require agents to perform a long-horizon behavior reliably across <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span></span></span></span> episodes. The subtask score is the fraction of episodes in which the environment’s internal success flag fires:</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mi>r</mi><mi>k</mi></msub><mo>=</mo><mfrac><mn>1</mn><mi>N</mi></mfrac><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>N</mi></munderover><mn mathvariant="bold">1</mn><mo stretchy="false">[</mo><msub><mtext>success</mtext><mi>i</mi></msub><mo stretchy="false">]</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(5)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">r_k = \frac{1}{N} \sum_{i=1}^{N} \mathbf{1}[\text{success}_i]
+\tag{5}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3.106em;vertical-align:-1.2777em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.109em;">N</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8283em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.109em;">N</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.2777em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathbf">1</span><span class="mopen">[</span><span class="mord"><span class="mord text"><span class="mord">success</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">]</span></span><span class="tag"><span class="strut" style="height:3.106em;vertical-align:-1.2777em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">5</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>This measures reliability rather than lucky single-trial success.</p>
+<p><strong>Pseudocode for the LHTB Grading Algorithm:</strong></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Algorithm 1: LHTB Task Grader</span></span>
+<span class="line"><span>Input:  final container state S, task definition (w_1..K, grader_1..K), threshold τ</span></span>
+<span class="line"><span>Output: task reward R ∈ [0, 1], pass flag</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>1:  for k = 1 to K do</span></span>
+<span class="line"><span>2:      if task.type[k] == BINARY:</span></span>
+<span class="line"><span>3:          r_k ← 1 if grader_k(S) else 0</span></span>
+<span class="line"><span>4:      else if task.type[k] == CONTINUOUS:</span></span>
+<span class="line"><span>5:          ŷ_k ← extract_value(S, grader_k.target)</span></span>
+<span class="line"><span>6:          r_k ← max(0, 1 - |ŷ_k - y_k| / ε_k)</span></span>
+<span class="line"><span>7:      else if task.type[k] == EPISODE_AGGREGATE:</span></span>
+<span class="line"><span>8:          successes ← 0</span></span>
+<span class="line"><span>9:          for i = 1 to N do</span></span>
+<span class="line"><span>10:             successes += 1 if grader_k.episode_check(S, i) else 0</span></span>
+<span class="line"><span>11:         r_k ← successes / N</span></span>
+<span class="line"><span>12:     end if</span></span>
+<span class="line"><span>13: end for</span></span>
+<span class="line"><span>14: R ← Σ_k (w_k * r_k) / Σ_k w_k   # Eq. (1)</span></span>
+<span class="line"><span>15: pass ← (R >= τ)</span></span>
+<span class="line"><span>16: return R, pass</span></span></code></pre>
+<p>The grader runs once per rollout at the very end, inside the container. The container state S captures the entire file system, running processes, and any simulator outputs. Subtask scores are additive but never more than 1.0 total.</p>
+<h3 id="24-pass1-and-mean-reward">2.4 Pass@1 and Mean Reward</h3>
+<p>The primary evaluation metrics are:</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mtext>pass@1</mtext><mo stretchy="false">(</mo><mi>τ</mi><mo stretchy="false">)</mo><mo>=</mo><mfrac><mn>1</mn><mrow><mi mathvariant="normal">∣</mi><mi>T</mi><mi mathvariant="normal">∣</mi></mrow></mfrac><munder><mo>∑</mo><mrow><mi>t</mi><mo>∈</mo><mi>T</mi></mrow></munder><mn mathvariant="bold">1</mn><mo stretchy="false">[</mo><msub><mi>R</mi><mi>t</mi></msub><mo>≥</mo><mi>τ</mi><mo stretchy="false">]</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(6)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\text{pass@1}(\tau) = \frac{1}{|T|} \sum_{t \in T} \mathbf{1}[R_t \geq \tau]
+\tag{6}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">pass@1</span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.6431em;vertical-align:-1.3217em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord">∣</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.8557em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mrel mtight">∈</span><span class="mord mathnormal mtight" style="margin-right:0.1389em;">T</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.3217em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathbf">1</span><span class="mopen">[</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0077em;">R</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0077em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span><span class="mclose">]</span></span><span class="tag"><span class="strut" style="height:2.6431em;vertical-align:-1.3217em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">6</span></span><span class="mord">)</span></span></span></span></span></span>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mover accent="true"><mi>R</mi><mo>ˉ</mo></mover><mo>=</mo><mfrac><mn>1</mn><mrow><mi mathvariant="normal">∣</mi><mi>T</mi><mi mathvariant="normal">∣</mi></mrow></mfrac><munder><mo>∑</mo><mrow><mi>t</mi><mo>∈</mo><mi>T</mi></mrow></munder><msub><mi>R</mi><mi>t</mi></msub></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(7)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\bar{R} = \frac{1}{|T|} \sum_{t \in T} R_t
+\tag{7}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8201em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8201em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.0077em;">R</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">ˉ</span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.6431em;vertical-align:-1.3217em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord">∣</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.8557em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mrel mtight">∈</span><span class="mord mathnormal mtight" style="margin-right:0.1389em;">T</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.3217em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0077em;">R</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0077em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span><span class="tag"><span class="strut" style="height:2.6431em;vertical-align:-1.3217em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">7</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi></mrow><annotation encoding="application/x-tex">T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span></span></span></span> is the set of 46 tasks. Three thresholds are reported: <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>τ</mi><mo>∈</mo><mo stretchy="false">{</mo><mn>0.9</mn><mo separator="true">,</mo><mn>0.95</mn><mo separator="true">,</mo><mn>1.0</mn><mo stretchy="false">}</mo></mrow><annotation encoding="application/x-tex">\tau \in \{0.9, 0.95, 1.0\}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5782em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">{</span><span class="mord">0.9</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">0.95</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1.0</span><span class="mclose">}</span></span></span></span>. The paper treats <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>τ</mi><mo>=</mo><mn>0.95</mn></mrow><annotation encoding="application/x-tex">\tau = 0.95</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.95</span></span></span></span> as the primary threshold (relaxed enough to give credit for near-perfect runs while excluding clearly incomplete ones).</p>
+<h3 id="figure-1-lhtb-evaluation-pipeline">Figure 1: LHTB Evaluation Pipeline</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A["Natural Language Instruction\n(only visible to agent)"] --> B</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph DockerContainer["Docker Container (isolated)"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B["Agent receives observation\n(shell output, files, errors)"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B --> C["LLM generates next action\n(shell command / file edit)"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        C --> D["Action executes in terminal"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        D --> E{"Budget expired\nor agent exits?"}</span></span>
+<span class="line"><span style="color:#E1E4E8">        E -- No --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">        E -- Yes --> F["LHTB Grader runs\ninside container"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G["Subtask scores r_1...r_K"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H["Weighted average → R = Σw_k r_k / Σw_k"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> I{"R ≥ τ?"}</span></span>
+<span class="line"><span style="color:#E1E4E8">    I -- Yes --> J["Pass@1 +1"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I -- No --> K["Partial progress recorded\nin mean reward"]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    style A fill:#e8f4f8</span></span>
+<span class="line"><span style="color:#E1E4E8">    style F fill:#ffd700</span></span>
+<span class="line"><span style="color:#E1E4E8">    style H fill:#d4edda</span></span></code></pre>
+<h3 id="25-dataset-construction-process">2.5 Dataset Construction Process</h3>
+<p><strong>Pseudocode for LHTB Task Construction:</strong></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Algorithm 2: LHTB Task Construction</span></span>
+<span class="line"><span>Input:  a real professional workflow domain W</span></span>
+<span class="line"><span>Output: a Harbor-format task with hidden verifier</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Phase 1 — Seed workflow</span></span>
+<span class="line"><span>1:  Identify a realistic, long-horizon professional problem in W</span></span>
+<span class="line"><span>    (e.g., NetCDF schema mismatch, SLAM benchmark repair, figure data recovery)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Phase 2 — Build a deliberately broken project</span></span>
+<span class="line"><span>2:  Implement a complete but broken terminal project:</span></span>
+<span class="line"><span>    a. Write a weak baseline implementation (partial, easy to pass visible tests)</span></span>
+<span class="line"><span>    b. Write an official gold solution (achieves verifier score 1.0)</span></span>
+<span class="line"><span>    c. Create a multi-step solve.sh (gold solution workflow)</span></span>
+<span class="line"><span>    d. Inject systematic breaks:</span></span>
+<span class="line"><span>       - Renamed fields, missing values, injected noise</span></span>
+<span class="line"><span>       - Gzip/base64 encoding, schema aliases</span></span>
+<span class="line"><span>       - Rotated/cropped images, anomalous frames</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Phase 3 — Design hidden verifier</span></span>
+<span class="line"><span>3:  Write a grader with:</span></span>
+<span class="line"><span>    a. Public checks: CLI behavior, file formats, simple examples (low weight, visible)</span></span>
+<span class="line"><span>    b. Hidden stress suite: harder inputs, schema variations, edge cases (high weight, invisible)</span></span>
+<span class="line"><span>    c. Calibrate so that gold solution scores exactly 1.0</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Phase 4 — Calibration loop</span></span>
+<span class="line"><span>4:  Repeatedly run DeepSeek-V4-Pro under 1.5-hour budget</span></span>
+<span class="line"><span>5:  Adjust task difficulty until tasks are:</span></span>
+<span class="line"><span>    - Not trivially solvable (model does not always pass)</span></span>
+<span class="line"><span>    - Not completely impossible (model can make partial progress)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Phase 5 — Package as Harbor task</span></span>
+<span class="line"><span>6:  Create task.yaml, Dockerfile, README.md, data/, scripts/, tests/, solve.sh</span></span>
+<span class="line"><span>7:  Add to benchmark with containerized environment + Terminus-2 agent harness</span></span></code></pre>
+<p>The hidden verifier design is crucial: it prevents agents from gaming visible public tests by hard-coding outputs or patching only the simple cases. Robust solutions must generalize to hidden schema variants and stress cases that are never revealed during the agent’s rollout.</p>
+<h3 id="figure-2-task-category-distribution">Figure 2: Task Category Distribution</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">pie title LHTB Task Distribution (46 total)</span></span>
+<span class="line"><span style="color:#E1E4E8">    "Software &#x26; Reverse Engineering (7)" : 7</span></span>
+<span class="line"><span style="color:#E1E4E8">    "Earth, Climate &#x26; Energy (6)" : 6</span></span>
+<span class="line"><span style="color:#E1E4E8">    "Multimodal &#x26; Imaging Analysis (6)" : 6</span></span>
+<span class="line"><span style="color:#E1E4E8">    "Scientific Computing &#x26; Simulation (6)" : 6</span></span>
+<span class="line"><span style="color:#E1E4E8">    "Research Reproduction &#x26; ML (5)" : 5</span></span>
+<span class="line"><span style="color:#E1E4E8">    "Systems, Performance &#x26; Security (5)" : 5</span></span>
+<span class="line"><span style="color:#E1E4E8">    "APEX Professional Workflows (4)" : 4</span></span>
+<span class="line"><span style="color:#E1E4E8">    "Interactive Games (4)" : 4</span></span>
+<span class="line"><span style="color:#E1E4E8">    "Logic &#x26; Constraint Puzzles (3)" : 3</span></span></code></pre>
+<p>The 46 tasks are spread evenly across nine domains — no single domain dominates, which prevents strong domain specialists from achieving high pass rates without general long-horizon capability.</p>
+<hr>
+<h2 id="experiments">Experiments</h2>
+<h3 id="31-models-and-harnesses">3.1 Models and Harnesses</h3>
+<p><strong>Models evaluated (15 total):</strong>
+GPT-5.5, GPT-5.4, GPT-5.3 Codex (via OpenAI Codex harness), DeepSeek V4 Pro, Gemini 3.1 Pro, GLM 5.1, GLM 5.2, Kimi K2.6, Kimi K2.7 Code, MiniMax M3, Qwen3.7 Max, Qwen3.6 Plus, Doubao Seed 2.1 Pro, Hy3, Grok 4.20.</p>
+<p><strong>Harnesses:</strong></p>
+<ul>
+<li><strong>Terminus-2</strong>: standard harness for 14 of 15 models; provides a long-horizon terminal session with a consistent prompt template.</li>
+<li><strong>OpenAI Codex</strong>: used for GPT-5.3 Codex; provides more agentic scaffolding designed for coding tasks.</li>
+</ul>
+<p>Harness differences mean that comparisons between GPT-5.3 Codex and the Terminus-2 group are not perfectly controlled — a limitation the paper acknowledges.</p>
+<p><strong>Budget:</strong> 90 minutes per task per model. Tasks that exceed this budget are terminated as timeouts.</p>
+<p><strong>Metrics reported per model:</strong></p>
+<ul>
+<li>Pass@1 at τ ∈ {0.9, 0.95, 1.0}</li>
+<li>Mean reward R̄</li>
+<li>Average tokens/task, episodes/task, execution time/task</li>
+<li>Estimated cost per task (USD)</li>
+</ul>
+<h3 id="32-average-resource-usage">3.2 Average Resource Usage</h3>
+<p>Across all models, the average per-task statistics are striking:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Metric</th><th>Average</th></tr></thead><tbody><tr><td>Episodes per task</td><td>231</td></tr><tr><td>Tokens per task</td><td>9.9M</td></tr><tr><td>Execution time</td><td>85.3 min</td></tr><tr><td>Cost per task</td><td>~$10.2</td></tr></tbody></table>
+<p>These numbers are substantially larger than Terminal-Bench 2 (most trials finish under 20 minutes). The 85-minute average out of a 90-minute budget suggests most models nearly exhaust the budget on every task, which is direct evidence that long-horizon completion — not local reasoning — is the binding constraint.</p>
+<hr>
+<h2 id="main-results">Main Results</h2>
+<h3 id="41-the-leaderboard">4.1 The Leaderboard</h3>
+<p>The performance ordering at τ = 0.95 (primary metric):</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Model</th><th>Pass@1 (R≥0.95)</th><th>Mean R</th></tr></thead><tbody><tr><td>GPT-5.5</td><td>15.2% (7/46)</td><td>0.44</td></tr><tr><td>MiniMax M3</td><td>6.5% (3/46)</td><td>0.39</td></tr><tr><td>Kimi K2.7 Code</td><td>6.5% (3/46)</td><td>0.37</td></tr><tr><td>DeepSeek V4 Pro</td><td>6.5% (3/46)</td><td>0.32</td></tr><tr><td>Qwen3.7 Max</td><td>4.3% (2/46)</td><td>0.31</td></tr><tr><td>Doubao Seed 2.1 Pro</td><td>4.3% (2/46)</td><td>0.30</td></tr><tr><td>Gemini 3.1 Pro</td><td>4.3% (2/46)</td><td>0.29</td></tr><tr><td>GLM 5.1</td><td>4.3% (2/46)</td><td>0.28</td></tr><tr><td>GPT-5.3 Codex</td><td>4.3% (2/46)</td><td>0.29</td></tr><tr><td>GLM 5.2</td><td>2.2% (1/46)</td><td>0.32</td></tr><tr><td>Qwen3.6 Plus</td><td>2.2% (1/46)</td><td>0.31</td></tr><tr><td>GPT-5.4</td><td>2.2% (1/46)</td><td>0.27</td></tr><tr><td>Hy3</td><td>2.2% (1/46)</td><td>0.25</td></tr><tr><td>Kimi K2.6</td><td>0% (0/46)</td><td>0.25</td></tr><tr><td>Grok 4.20</td><td>0% (0/46)</td><td>0.10</td></tr></tbody></table>
+<p>Several observations:</p>
+<p><strong>GPT-5.5 leads, but by a wide margin over the pack.</strong> At 15.2%, it is more than twice the next tier (6.5%). This suggests GPT-5.5 has a qualitatively different capability for long-horizon task completion — not just marginally better local reasoning, but better horizon management.</p>
+<p><strong>At τ = 1.0 (perfect score), only 5 models pass even one task</strong>, and 10 models pass zero. This near-total collapse at τ = 1.0 reveals how fragile full completion is: even getting 95% of the way through a task but failing the final hidden stress test (strict numerical tolerance, edge-case schema, etc.) results in zero credit under binary grading.</p>
+<p><strong>Dense rewards rescue discriminability.</strong> Mean reward spans 0.10 (Grok 4.20) to 0.44 (GPT-5.5), a 4.4× range even when pass rates cluster near zero. GLM 5.2 achieves a mean reward of 0.32 despite passing only one task, outperforming models with higher pass rates like GPT-5.4 (mean R = 0.27).</p>
+<h3 id="figure-3-reward-distribution-across-all-runs">Figure 3: Reward Distribution Across All Runs</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">xychart-beta</span></span>
+<span class="line"><span style="color:#E1E4E8">    title "Distribution of final rewards (15 models × 46 tasks = 690 runs)"</span></span>
+<span class="line"><span style="color:#E1E4E8">    x-axis ["&#x3C;0.05", "0.05-0.15", "0.15-0.25", "0.25-0.35", "0.35-0.45", "0.45-0.55", "0.55-0.65", "0.65-0.75", "0.75-0.85", "0.85-0.95", "≥0.95"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    y-axis "Number of runs" 0 --> 230</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [224, 117, 66, 55, 37, 24, 38, 54, 20, 23, 30]</span></span></code></pre>
+<p>Key statistics from this distribution:</p>
+<ul>
+<li>30 runs (4.4%) pass at R ≥ 0.95</li>
+<li>224 runs (32.6%) make no meaningful progress (R &#x3C; 0.05)</li>
+<li>433 runs (62.8%) achieve partial reward in [0.05, 0.95) — real progress that binary grading would hide</li>
+<li>180 runs (26.1%) reach R ≥ 0.5</li>
+<li>Near-complete runs (0.85 ≤ R &#x3C; 0.95): 23 runs — nearly as many as full passes</li>
+</ul>
+<p>The bimodal shape — a large pile at R &#x3C; 0.05 and a smaller cluster around R ≥ 0.5 — tells us something important: when frontier models attempt LHTB tasks, they either make very limited progress (&#x3C; 5%) or make substantial progress (> 50%). There is less mass in the middle range than one might expect from a smooth difficulty spectrum. This suggests that early task understanding and setup is critical: models that get the task right in the first few steps often make it most of the way; models that misunderstand the task in early steps stall quickly.</p>
+<h3 id="42-dense-rewards-vs-binary-grading-why-it-matters">4.2 Dense Rewards vs. Binary Grading: Why It Matters</h3>
+<p>The paper makes this argument formally with a simple example: under binary pass/fail at R ≥ 1.0, 10 of 15 models are indistinguishable (all score 0). With mean reward, the same 10 models span from 0.10 to 0.32.</p>
+<p>More concretely, consider Kimi K2.6 (0 tasks passed at R ≥ 0.95, mean R = 0.25) vs. Grok 4.20 (0 tasks passed, mean R = 0.10). Under binary grading, they are tied. Under dense rewards, Kimi K2.6 is 2.5× more capable in terms of partial progress. Kimi K2.6 has five near-misses (R ≥ 0.75), including grammar-fuzz-coverage-hunt (R = 0.94), spot-scheduler-traces (R = 0.90), poc-exploit-craft (R = 0.89), and nbody-accel-iterative (R = 0.89). These are near-complete solutions that fail only the final hidden checks.</p>
+<p><strong>Figure 4: Dense Rewards vs. Binary Grading — Comparison</strong></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph BinaryGrading["Binary Grading (R ≥ 1.0)"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        direction TB</span></span>
+<span class="line"><span style="color:#E1E4E8">        B1["GPT-5.5: 10.9% pass"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B2["MiniMax M3: 0% pass"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B3["Kimi K2.6: 0% pass"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B4["Grok 4.20: 0% pass"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B5["GLM 5.2: 0% pass"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        Note1["⚠ 10 models all\nscore 0 — indistinguishable"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph DenseGrading["Dense Rewards (mean R)"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        direction TB</span></span>
+<span class="line"><span style="color:#E1E4E8">        D1["GPT-5.5: mean R = 0.44"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        D2["MiniMax M3: mean R = 0.39"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        D3["Kimi K2.6: mean R = 0.25"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        D4["Grok 4.20: mean R = 0.10"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        D5["GLM 5.2: mean R = 0.32"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        Note2["✓ 4.4× spread distinguishes\nmodel capability clearly"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    BinaryGrading -->|"LHTB's dense reward\nreplaces this"| DenseGrading</span></span></code></pre>
+<hr>
+<h2 id="failure-mode-analysis">Failure Mode Analysis</h2>
+<h3 id="51-three-failure-types">5.1 Three Failure Types</h3>
+<p>The paper categorizes each failed run (R &#x3C; 0.95) into:</p>
+<ol>
+<li><strong>Timeout</strong>: the agent is still working when the 90-minute budget expires.</li>
+<li><strong>Early exit</strong>: the agent terminates voluntarily before the budget expires, despite not satisfying the hidden verifier.</li>
+<li><strong>Harness error</strong>: a non-timeout exception in the agent–environment loop (API failures, verifier-side errors).</li>
+</ol>
+<p>Distribution across all models: <strong>79% timeout, 19% early exit, 3% harness error</strong>.</p>
+<p>This distribution is the paper’s most important empirical finding. If the dominant failure were “wrong local steps” (bad reasoning), we would expect to see many harness errors or very low mean rewards across the board. Instead:</p>
+<ul>
+<li>Timeouts dominate at 79%, with mean rewards ranging from 0.10–0.35 across models — agents are making meaningful progress but running out of time.</li>
+<li>Early exits account for 19%, often at non-trivial rewards (Kimi K2.7 Code: mean exit R = 0.51, MiniMax M3: mean exit R = 0.42) — agents stop convinced they are done, even though the hidden verifier disagrees.</li>
+</ul>
+<h3 id="52-the-false-finish-pattern">5.2 The False Finish Pattern</h3>
+<p>A false finish is defined as an early exit at R ≥ 0.75 — an agent that has completed most of the task but misjudges completion and stops with time remaining.</p>
+<p>The paper identifies 14 such runs. Examples:</p>
+<ul>
+<li>Kimi K2.7 Code stops on duckdb-optimizer-closure at R = 0.92 with ~20 minutes remaining.</li>
+<li>GLM 5.2 stops on apex-ib244-matter at R = 0.90.</li>
+<li>Seven different models stop on apex-law433-matter between R = 0.80 and 0.87, each with ~20 minutes remaining.</li>
+</ul>
+<p>In all of these, the agent has satisfied the visible public tests but not the hidden stress suite. The agent does not know the hidden tests exist (by design), so it cannot verify against them. It runs the visible tests, sees them pass, and concludes “I am done.” This is a systematic gap in self-verification capability.</p>
+<p><strong>Figure 5: Failure Mode Composition by Model</strong></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">xychart-beta</span></span>
+<span class="line"><span style="color:#E1E4E8">    title "Unresolved runs by failure type per model (of 46 tasks)"</span></span>
+<span class="line"><span style="color:#E1E4E8">    x-axis ["GPT-5.5", "MiniMax M3", "Kimi K2.7", "DeepSeek V4", "Qwen3.7", "GLM 5.1", "Gemini3.1", "GPT-5.4", "GLM 5.2", "Qwen3.6", "GPT-5.3", "Kimi K2.6", "Hy3", "Doubao", "Grok 4.20"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    y-axis "Unresolved runs" 0 --> 50</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [28, 38, 30, 26, 33, 36, 36, 32, 33, 33, 29, 42, 39, 40, 46]</span></span></code></pre>
+<p>The key insight from Figure 5: Grok 4.20 has 46/46 unresolved runs — it fails every single task. But its mean reward is not zero (R̄ = 0.10); it makes some partial progress on most tasks. This distinguishes Grok 4.20’s failure mode (poor but not zero progress) from a model that crashes immediately on every task.</p>
+<h3 id="53-long-horizon-completion-vs-local-reasoning">5.3 Long-Horizon Completion vs. Local Reasoning</h3>
+<p>The paper draws a crisp distinction between two axes of agent capability:</p>
+<ol>
+<li><strong>Local reasoning</strong>: Can the agent execute a single step correctly? Do actions correspond to a sensible plan?</li>
+<li><strong>Long-horizon completion</strong>: Can the agent sustain progress across hundreds of steps, manage context, avoid backtracking, and finish within a time budget?</li>
+</ol>
+<p>Terminal-Bench 2 primarily measures (1). LHTB measures both, and the data suggests (2) is the binding constraint at current frontier model capability levels. Agents on LHTB frequently fail not because their local reasoning is broken, but because they:</p>
+<ul>
+<li>Burn time on unnecessary verification loops,</li>
+<li>Repeat steps they have already completed,</li>
+<li>Fail to track which sub-goals remain,</li>
+<li>Run out of time with most of the task complete.</li>
+</ul>
+<p>This is a different kind of failure than “wrong answer,” and it implies different improvements are needed: better memory/progress tracking, more efficient exploration, and more calibrated stopping criteria.</p>
+<hr>
+<h2 id="cost-analysis">Cost Analysis</h2>
+<h3 id="61-per-task-economics">6.1 Per-Task Economics</h3>
+<p>Table 1 in the paper reports estimated cost (from public API prices as of June 2026):</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Model</th><th>Tokens/task (M)</th><th>Time (min)</th><th>Cost/task ($)</th></tr></thead><tbody><tr><td>GPT-5.5</td><td>4.16</td><td>72.9</td><td>21.46</td></tr><tr><td>GPT-5.4</td><td>10.90</td><td>79.3</td><td>27.57</td></tr><tr><td>GPT-5.3 Codex</td><td>4.57</td><td>80.7</td><td>8.20</td></tr><tr><td>DeepSeek V4 Pro</td><td>14.45</td><td>83.6</td><td>6.32</td></tr><tr><td>MiniMax M3</td><td>20.20</td><td>90.0</td><td>6.13</td></tr><tr><td>Kimi K2.7 Code</td><td>8.54</td><td>85.4</td><td>8.31</td></tr><tr><td>Gemini 3.1 Pro</td><td>3.55</td><td>85.0</td><td>7.61</td></tr><tr><td>GLM 5.1</td><td>5.84</td><td>92.6</td><td>5.13</td></tr><tr><td>Qwen3.7 Max</td><td>6.13</td><td>83.5</td><td>7.78</td></tr><tr><td>Hy3</td><td>17.21</td><td>91.3</td><td>2.47</td></tr><tr><td>Kimi K2.6</td><td>10.27</td><td>92.5</td><td>9.94</td></tr><tr><td>Grok 4.20</td><td>16.23</td><td>69.5</td><td>20.63</td></tr></tbody></table>
+<p><strong>Key observations:</strong></p>
+<ol>
+<li>GPT-5.4 is the most expensive (~<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>28</mn><mi mathvariant="normal">/</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>k</mi><mo stretchy="false">)</mo><mi>b</mi><mi>u</mi><mi>t</mi><mi>u</mi><mi>n</mi><mi>d</mi><mi>e</mi><mi>r</mi><mi>p</mi><mi>e</mi><mi>r</mi><mi>f</mi><mi>o</mi><mi>r</mi><mi>m</mi><mi>s</mi><mi>G</mi><mi>P</mi><mi>T</mi><mo>−</mo><mn>5.5</mn><mo stretchy="false">(</mo><mtext> </mtext></mrow><annotation encoding="application/x-tex">28/task) but underperforms GPT-5.5 (~</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">28/</span><span class="mord mathnormal">t</span><span class="mord mathnormal">a</span><span class="mord mathnormal">s</span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mclose">)</span><span class="mord mathnormal">b</span><span class="mord mathnormal">u</span><span class="mord mathnormal">t</span><span class="mord mathnormal">u</span><span class="mord mathnormal">n</span><span class="mord mathnormal">d</span><span class="mord mathnormal" style="margin-right:0.0278em;">er</span><span class="mord mathnormal">p</span><span class="mord mathnormal" style="margin-right:0.0278em;">er</span><span class="mord mathnormal" style="margin-right:0.1076em;">f</span><span class="mord mathnormal" style="margin-right:0.0278em;">or</span><span class="mord mathnormal">m</span><span class="mord mathnormal">s</span><span class="mord mathnormal" style="margin-right:0.1389em;">GP</span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">5.5</span><span class="mopen">(</span><span class="mspace nobreak"> </span></span></span></span>21/task). This happens because GPT-5.4 requires more episodes (302 vs. 208) at comparable token prices — more episodes = more context management overhead = more tokens per task despite equivalent per-token pricing.</li>
+<li>Hy3 is the cheapest at ~$2.5/task (low token price, modest episodes), and sits on the Pareto frontier despite low pass rates.</li>
+<li>MiniMax M3 achieves 6.5% pass@1 (matching DeepSeek V4 Pro) at ~<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>6</mn><mi mathvariant="normal">/</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi>v</mi><mi>s</mi><mi mathvariant="normal">.</mi><mi>D</mi><mi>e</mi><mi>e</mi><mi>p</mi><mi>S</mi><mi>e</mi><mi>e</mi><mi>k</mi><mi>V</mi><mn>4</mn><mi>P</mi><mi>r</mi><msup><mi>o</mi><mo mathvariant="normal" lspace="0em" rspace="0em">′</mo></msup><mi>s</mi></mrow><annotation encoding="application/x-tex">6/task vs. DeepSeek V4 Pro's </annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0019em;vertical-align:-0.25em;"></span><span class="mord">6/</span><span class="mord mathnormal">t</span><span class="mord mathnormal">a</span><span class="mord mathnormal">s</span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mord mathnormal" style="margin-right:0.0359em;">v</span><span class="mord mathnormal">s</span><span class="mord">.</span><span class="mord mathnormal" style="margin-right:0.0278em;">D</span><span class="mord mathnormal">ee</span><span class="mord mathnormal" style="margin-right:0.0576em;">pS</span><span class="mord mathnormal">ee</span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mord mathnormal" style="margin-right:0.2222em;">V</span><span class="mord">4</span><span class="mord mathnormal" style="margin-right:0.1389em;">P</span><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="mord"><span class="mord mathnormal">o</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7519em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">′</span></span></span></span></span></span></span></span></span><span class="mord mathnormal">s</span></span></span></span>6.3/task — effectively tied on the cost frontier.</li>
+</ol>
+<h3 id="62-the-pareto-frontier">6.2 The Pareto Frontier</h3>
+<p>The cost-reward Pareto frontier (minimizing cost while maximizing pass rate) passes through:</p>
+<ul>
+<li><strong>Hy3</strong>: lowest cost (~$2.5), minimal performance (2.2% pass@1, R̄ = 0.25).</li>
+<li><strong>MiniMax M3</strong> and <strong>Doubao Seed 2.1 Pro</strong>: intermediate cost ($5–6), 4.3–6.5% pass@1.</li>
+<li><strong>GPT-5.5</strong>: highest cost ($21), highest performance (15.2%).</li>
+</ul>
+<p>A striking finding is that higher spending does not guarantee better performance: GPT-5.4 (~<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>28</mn><mo stretchy="false">)</mo><mi>a</mi><mi>c</mi><mi>h</mi><mi>i</mi><mi>e</mi><mi>v</mi><mi>e</mi><mi>s</mi><mi>o</mi><mi>n</mi><mi>l</mi><mi>y</mi><mn>2.2</mn></mrow><annotation encoding="application/x-tex">28) achieves only 2.2% pass@1, while MiniMax M3 (~</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">28</span><span class="mclose">)</span><span class="mord mathnormal">a</span><span class="mord mathnormal">c</span><span class="mord mathnormal">hi</span><span class="mord mathnormal">e</span><span class="mord mathnormal" style="margin-right:0.0359em;">v</span><span class="mord mathnormal">eso</span><span class="mord mathnormal">n</span><span class="mord mathnormal" style="margin-right:0.0197em;">l</span><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="mord">2.2</span></span></span></span>6) achieves 6.5%. The difference is efficiency: a less capable model that needs 3× the episodes to make the same progress will cost more, not less.</p>
+<hr>
+<h2 id="what-lhtb-tells-us-about-frontier-agent-capability">What LHTB Tells Us About Frontier Agent Capability</h2>
+<h3 id="the-long-horizon-gap-is-real-and-large">The Long-Horizon Gap Is Real and Large</h3>
+<p>At 4.3% mean pass rate across 15 frontier models (τ = 0.95), LHTB reveals a substantial unsolved capability gap for long-horizon terminal agents. Short-horizon benchmarks have become saturated (SWE-Bench Verified scores above 70% for top models), but LHTB shows that extending the horizon by an order of magnitude collapses success rates to near-zero for the same models.</p>
+<h3 id="the-binding-constraint-is-not-local-reasoning">The Binding Constraint is Not Local Reasoning</h3>
+<p>Since 79% of failures are timeouts — not early failures or harness errors — the limiting factor is horizon management: allocating attention and effort correctly across hundreds of steps within a fixed budget. Local reasoning improvements (better code generation, more accurate file reading) are unlikely to unlock large gains on LHTB without concurrent improvements in:</p>
+<ul>
+<li><strong>Progress tracking</strong>: knowing which sub-goals are done vs. remaining,</li>
+<li><strong>Redundancy avoidance</strong>: not re-doing steps already completed,</li>
+<li><strong>Early stopping calibration</strong>: knowing when to stop exploring and commit to a solution,</li>
+<li><strong>Context compression</strong>: managing a growing context window without losing critical state.</li>
+</ul>
+<h3 id="self-verification-is-a-fundamental-gap">Self-Verification Is a Fundamental Gap</h3>
+<p>The false-finish pattern (14 runs with R ≥ 0.75 where the agent exits early) indicates that current agents systematically overestimate task completion when only visible tests are available. This is particularly concerning because real-world deployments rarely have perfect verifiers — the agent must judge completion from first principles. Improving agents’ ability to construct adversarial self-tests (beyond the visible public checks) and verify against them before exiting is an important open problem.</p>
+<hr>
+<h2 id="critical-assessment-weaknesses-and-improvements">Critical Assessment: Weaknesses and Improvements</h2>
+<h3 id="weaknesses-and-flaws">Weaknesses and Flaws</h3>
+<p><strong>W1 — Small task count and category imbalance.</strong> LHTB has 46 tasks. This is sufficient to produce statistically meaningful rankings, but individual task variances are high: flipping 2–3 tasks changes a model’s pass@1 by 4–6 percentage points. For a benchmark at this difficulty level, variance in the score estimate itself is a concern. The interactive games category has only 4 tasks, logic puzzles only 3. The paper does not report per-category pass rates, making it impossible to determine whether a model’s overall score reflects broad competence or luck on specific categories.</p>
+<p><strong>W2 — Single harness for all models (mostly).</strong> 14 of 15 models use Terminus-2; GPT-5.3 Codex uses OpenAI’s own Codex harness. The paper acknowledges this but the comparison between GPT-5.3 Codex and Terminus-2 models is confounded. More broadly, no sensitivity analysis shows how much performance varies with harness choice for the same model. Given that harness quality (context management, prompting, action selection) is known to matter substantially for agent benchmarks, the single-harness design conflates model capability with harness quality. A model with a weak harness may score far below its true capability.</p>
+<p><strong>W3 — No ablation on grading design.</strong> The paper chooses subtask weights and grading thresholds (e.g., τ = 0.95 as the primary threshold) without ablations showing how sensitive rankings are to these choices. What happens if τ = 0.85 or τ = 0.9? Does the model ordering change? The sensitivity of pass@1 rankings to the grading design is not studied.</p>
+<p><strong>W4 — Difficulty calibration is model-dependent.</strong> Tasks were calibrated using DeepSeek-V4-Pro specifically (repeatedly run at 1.5-hour budget and adjusted until “challenging but solvable”). This means LHTB is implicitly calibrated to DeepSeek-V4-Pro’s capability level. A future, more capable model might find LHTB too easy; a less capable model (smaller parameter count) would find it completely unsolvable. The benchmark does not include an easy tier or a difficulty gradient that would allow it to remain informative across a wider range of model capability.</p>
+<p><strong>W5 — Hidden verifier transparency.</strong> The paper argues that hidden verifiers prevent gaming, which is correct. But readers cannot fully trust a benchmark whose graders they cannot inspect. The paper mentions releasing the evaluation harness, but the completeness of the public release (whether all hidden stress tests are included or only the framework) is unclear.</p>
+<p><strong>W6 — No multi-run variance.</strong> All results are pass@1 (a single run per model per task). At these low pass rates, single-run variance is substantial. For a model achieving 4.3% pass@1 (2/46), the 95% confidence interval under a binomial model is roughly [0.5%, 14.6%] — which overlaps with models at 2.2% and 6.5%. The paper does not provide confidence intervals, making it difficult to determine which differences in the leaderboard are statistically significant.</p>
+<h3 id="limitations-the-authors-understate-or-omit">Limitations the Authors Understate or Omit</h3>
+<p><strong>L1 — Terminal-only task coverage is narrowly scoped.</strong> LHTB focuses exclusively on terminal-based workflows. Many important long-horizon agent tasks involve web browsing, GUI interaction, API calls, or multi-modal reasoning in non-terminal settings. The benchmark’s findings about “long-horizon completion being the binding constraint” may not generalize to other deployment modalities.</p>
+<p><strong>L2 — Time budget vs. actual real-world deployment.</strong> The 90-minute budget is reasonable for a benchmark but does not reflect all real deployment constraints. Some professional workflows take days; others have hard real-time requirements. The paper’s claim that LHTB “reflects real professional workflows” is partially true but ignores that real deployments have very different time/cost profiles from a fixed 90-minute containerized evaluation.</p>
+<p><strong>L3 — Static benchmark vs. contamination risk.</strong> The benchmark is static (fixed 46 tasks). As frontier models are trained on more data and as the benchmark becomes well-known, contamination risk (models memorizing solution patterns) grows. The paper does not discuss contamination mitigation strategies or plans for benchmark evolution.</p>
+<p><strong>L4 — Cost estimates may be unreliable.</strong> Cost estimates are based on public list prices as of June 2026 and assume no caching discounts. In practice, providers offer volume discounts and prompt caching, which can significantly reduce real costs (especially for long context). The cost analysis should be treated as an approximation, not a precise efficiency ranking.</p>
+<h3 id="concrete-improvement-suggestions">Concrete Improvement Suggestions</h3>
+<p><strong>I1 — Scale to 200+ tasks with stratified difficulty tiers.</strong> A larger, stratified benchmark (easy/medium/hard tiers) would dramatically reduce variance and make the benchmark informative across a wider range of model capability. The easy tier could be drawn from current short-horizon benchmarks; the medium tier from the current LHTB range; the hard tier from tasks requiring multi-day workflows.</p>
+<p><strong>I2 — Provide multi-harness evaluation.</strong> Running each model with at least two harnesses (or computing model × harness interaction effects) would separate model capability from harness quality, giving more interpretable results. The paper could use a “canonical” harness for all models and report raw harness-controlled scores.</p>
+<p><strong>I3 — Add per-category and per-difficulty-tier breakdowns.</strong> Knowing that GPT-5.5 achieves 15.2% overall but fails all games tasks vs. succeeding on 40% of software engineering tasks would reveal category-specific weaknesses and guide model improvement.</p>
+<p><strong>I4 — Report multi-run pass@k and confidence intervals.</strong> Running each model 3 times on each task and reporting pass@3 and confidence intervals would give a much more reliable ranking at low pass rates. The cost of 3 runs at <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>10</mn><mi mathvariant="normal">/</mi><mi>t</mi><mi>a</mi><mi>s</mi><mi>k</mi><mi mathvariant="normal">/</mi><mi>m</mi><mi>o</mi><mi>d</mi><mi>e</mi><mi>l</mi><mi>i</mi><mi>s</mi></mrow><annotation encoding="application/x-tex">10/task/model is </annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">10/</span><span class="mord mathnormal">t</span><span class="mord mathnormal">a</span><span class="mord mathnormal">s</span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mord">/</span><span class="mord mathnormal">m</span><span class="mord mathnormal">o</span><span class="mord mathnormal">d</span><span class="mord mathnormal">e</span><span class="mord mathnormal" style="margin-right:0.0197em;">l</span><span class="mord mathnormal">i</span><span class="mord mathnormal">s</span></span></span></span>1380 per model — high but tractable for a frontier model evaluation.</p>
+<p><strong>I5 — Study the agent self-verification problem directly.</strong> The false-finish analysis is tantalizing but shallow. A deeper study would: (a) present agents with their own passing-visible-tests state and ask them to generate adversarial test cases; (b) compare agents that have this reflection step enabled vs. disabled; (c) measure how often the agent-generated adversarial tests catch the final hidden failures. This would directly characterize and improve the self-verification gap.</p>
+<p><strong>I6 — Analyze intra-task progress trajectories.</strong> The current paper only reports final reward. A richer analysis would plot reward as a function of episode count, identifying whether agents plateau early (fail to continue making progress) or make steady linear progress but run out of time. This distinction has very different implications for which improvements are most impactful.</p>
+<hr>
+<h2 id="limitations-and-boundary-conditions">Limitations and Boundary Conditions</h2>
+<p><strong>Scope:</strong> LHTB measures long-horizon terminal agent capability at the 90-minute/~231-episode scale. Findings do not directly extend to:</p>
+<ul>
+<li>Very short tasks (&#x3C; 10 steps): different failure modes dominate.</li>
+<li>Tasks requiring web browsing or GUI: terminal benchmarks cannot measure these.</li>
+<li>Tasks where the final objective has no deterministic verifier (open-ended writing, research ideation).</li>
+</ul>
+<p><strong>Generalization:</strong> The finding that “long-horizon completion is the binding constraint” is specific to this task distribution and time budget. At shorter time budgets, local reasoning errors may dominate. At much longer budgets (hours to days), entirely different bottlenecks (context compression, long-term memory) would emerge.</p>
+<hr>
+<h2 id="reproducibility-notes">Reproducibility Notes</h2>
+<ul>
+<li><strong>Benchmark release</strong>: the LHTB tasks, Terminus-2 harness, and evaluation code are to be released (project page: <a href="https://zli12321.github.io/LHTB/">https://zli12321.github.io/LHTB/</a>).</li>
+<li><strong>Docker containers</strong>: all tasks are containerized, ensuring fully reproducible evaluation environments.</li>
+<li><strong>Cost estimates</strong>: based on public list prices as of June 2026; actual costs will vary with provider and time.</li>
+<li><strong>Model versions</strong>: exact model versions used are not specified for all models in the paper, which could affect reproducibility as providers update models over time.</li>
+<li><strong>Calibration dataset</strong>: the 120 candidate tasks (before quality filtering to 46) are not publicly released.</li>
+</ul>
+<hr>
+<h2 id="conclusion">Conclusion</h2>
+<p>Long-Horizon-Terminal-Bench is a timely and carefully designed benchmark that exposes a clear capability gap in current AI agents: they can reason well locally but cannot reliably complete long-horizon workflows within a practical time budget. The dense subtask-based grading scheme is its most important methodological contribution — it transforms a nearly-uninformative binary measurement at this difficulty level into a rich, model-discriminating signal. The finding that 79% of failures are timeouts (not reasoning errors) and that 19% are false finishes (not lack of capability) is a precise, actionable diagnosis: the next wave of agent improvements needs to focus on horizon management, progress tracking, and self-verification rather than raw step-level reasoning.</p>
+<p>The benchmark’s limitations (small task count, single harness, no confidence intervals, static design) are real but do not undermine its core contribution. LHTB fills an important gap between the saturated short-horizon benchmarks and the completely open question of how agents perform on day-long or week-long autonomous workflows. The fact that GPT-5.5 — the best model tested — achieves only 15.2% pass@1 on tasks that average 85 minutes suggests there is substantial headroom for improvement, and that current progress estimates based on short-horizon benchmarks are likely too optimistic about real-world agent deployment readiness.</p>
+<hr>
+<hr>
+<h2 id="deep-dive-what-makes-long-horizon-tasks-fundamentally-hard">Deep Dive: What Makes Long-Horizon Tasks Fundamentally Hard</h2>
+<h3 id="the-horizon-length-capability-cliff">The Horizon-Length Capability Cliff</h3>
+<p>The LHTB results reveal something more interesting than “long tasks are harder.” There is a qualitative regime change at long horizons that cannot be explained by simple scaling of short-horizon difficulty. Consider:</p>
+<ul>
+<li>At short horizons (10–20 steps), agents fail mostly on hard reasoning steps: parsing a complex specification, generating the right algorithm, understanding an error message.</li>
+<li>At long horizons (100–500 steps), the local reasoning per step is often easier (individual shell commands are not complex), but agents fail on horizon management: maintaining correct beliefs about what is done vs. undone, prioritizing remaining sub-goals, and avoiding re-doing work.</li>
+</ul>
+<p>This is the distinction between <em>step-level intelligence</em> and <em>horizon-level intelligence</em>. LHTB measures both, and the data says that frontier models have strong step-level intelligence but weak horizon-level intelligence.</p>
+<h3 id="why-context-windows-are-insufficient-for-long-horizon-completion">Why Context Windows Are Insufficient for Long-Horizon Completion</h3>
+<p>One might expect that extending the context window is the solution: if the agent can remember all prior steps, it can avoid re-doing them. But LHTB shows this is not the binding constraint. Most models use 4–20M tokens per task (far more than current context windows allow for a single pass). Harnesses manage this with sliding windows, truncation, or summarization — but these introduce lossy compression of the agent’s prior context.</p>
+<p>The implication is that the problem is not fundamentally about context length but about <em>context compression quality</em>: how well the agent can summarize its progress in a compact representation that preserves the information needed to continue making forward progress. Current agents compress their context poorly: they summarize action history but lose track of sub-goal completion status, verified assumptions, and the structure of the remaining work.</p>
+<h3 id="the-verification-gap-at-long-horizons">The Verification Gap at Long Horizons</h3>
+<p>A human expert completing a long-horizon task does not just execute steps; they periodically verify that prior steps achieved their intended outcomes. If step 50 produced a wrong intermediate output that was not checked, all subsequent steps building on it are wasted. Current agents run verification less rigorously: they check that a command did not produce an error, but rarely verify that the output satisfies the deeper semantic contract required by later steps.</p>
+<p>LHTB’s hidden verifier is designed to exploit this gap: visible tests check surface properties (command ran, file exists), but hidden stress tests check deep semantic properties (numerical tolerances, schema generalization, edge case handling). Agents that pass the visible tests but not the hidden ones have done the work but not verified it deeply enough — exactly what the false-finish analysis reveals.</p>
+<h3 id="pseudocode-why-agents-fail-at-the-90-mark">Pseudocode: Why Agents Fail at the 90% Mark</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Algorithm 3: Typical Long-Horizon Agent Failure Pattern on LHTB</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Given: task T, 90-minute budget, hidden verifier V_hidden, visible verifier V_public</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Phase 1 (0–40 min): Setup and early exploration</span></span>
+<span class="line"><span>1:  agent reads instruction</span></span>
+<span class="line"><span>2:  agent explores directory structure</span></span>
+<span class="line"><span>3:  agent runs visible public tests → most fail (expected, task is broken)</span></span>
+<span class="line"><span>4:  agent identifies 3–5 visible errors to fix</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Phase 2 (40–75 min): Targeted repair</span></span>
+<span class="line"><span>5:  agent fixes the identified errors one by one</span></span>
+<span class="line"><span>6:  after each fix: agent runs V_public to check progress</span></span>
+<span class="line"><span>7:  eventually: V_public passes all visible tests</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Phase 3 (75–90 min): Verification and stopping</span></span>
+<span class="line"><span>8:  agent runs V_public one final time → all pass</span></span>
+<span class="line"><span>9:  agent concludes: "task complete"</span></span>
+<span class="line"><span>10: agent exits with ~10 minutes remaining  ← FALSE FINISH</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>But V_hidden contains:</span></span>
+<span class="line"><span>- Schema variant with renamed fields (agent never saw this variant)</span></span>
+<span class="line"><span>- Numerical tolerance check at 1% (agent only tested to 5%)</span></span>
+<span class="line"><span>- Edge case with gzip+base64 encoding (not in visible test suite)</span></span>
+<span class="line"><span>11: V_hidden evaluates → R = 0.80–0.92 (near-miss, not a pass)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Why this fails:</span></span>
+<span class="line"><span>- Agent did not know V_hidden existed</span></span>
+<span class="line"><span>- Agent did not generate adversarial self-tests</span></span>
+<span class="line"><span>- Agent stopped when V_public said "done"</span></span></code></pre>
+<p>This pattern explains the 14 false-finish runs with R ≥ 0.75. The agent is not incompetent; it completed most of the task correctly. The failure is epistemological: the agent cannot verify what it cannot see.</p>
+<hr>
+<h2 id="extended-related-work">Extended Related Work</h2>
+<h3 id="the-metr-time-horizon-framework">The METR Time-Horizon Framework</h3>
+<p>A useful way to contextualize LHTB is through METR’s time-horizon analysis, which characterizes agent capability as “the typical human-time duration of tasks that the agent can complete at a fixed success rate (e.g., 50%).” Under this framing:</p>
+<ul>
+<li>Current short-horizon benchmarks (SWE-Bench, HumanEval) correspond to tasks that take humans 10–30 minutes.</li>
+<li>LHTB tasks correspond to tasks that take humans 2–8 hours.</li>
+<li>Future long-horizon benchmarks might correspond to tasks that take humans days or weeks.</li>
+</ul>
+<p>The time-horizon framework predicts that agents achieve much lower success rates as horizon length grows, which LHTB validates empirically (from >60% on Terminal-Bench to ~4% mean on LHTB). What LHTB adds is the mechanism: it is not reasoning quality that degrades, but horizon management.</p>
+<h3 id="process-reward-models-vs-dense-environment-graders">Process Reward Models vs. Dense Environment Graders</h3>
+<p>Process reward models (PRMs) provide dense supervision over intermediate reasoning steps in language model training. LHTB’s subtask-based grading provides dense evaluation at test time in a similar spirit. The key difference:</p>
+<ul>
+<li>PRMs use a learned model to score intermediate steps, which introduces learned bias and generalization errors.</li>
+<li>LHTB uses deterministic, environment-grounded graders for each subtask, which are objective and unambiguous.</li>
+</ul>
+<p>This makes LHTB’s grading more reliable for evaluation, but also more expensive to construct (each task requires a carefully designed verifier). The deterministic grader design is a deliberate choice that sacrifices scalability for reliability.</p>
+<h3 id="swe-bench-swe-marathon-and-the-progressive-horizon-stack">SWE-Bench, SWE-Marathon, and the Progressive Horizon Stack</h3>
+<p>LHTB fits into a progressive stack of increasingly long-horizon benchmarks:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Benchmark</th><th>Typical task duration</th><th>Primary metric</th></tr></thead><tbody><tr><td>HumanEval</td><td>&#x3C; 1 min</td><td>Function-level correctness</td></tr><tr><td>SWE-Bench</td><td>10–30 min</td><td>Repository-level issue resolution</td></tr><tr><td>Terminal-Bench 2</td><td>&#x3C; 20 min</td><td>Terminal task completion</td></tr><tr><td>LHTB</td><td>85+ min</td><td>Long-horizon workflow completion</td></tr><tr><td>SWE-Marathon</td><td>Hours</td><td>Ultra-long-horizon software work</td></tr></tbody></table>
+<p>Each step up the stack collapses current best-model pass rates from >60% to near-zero. LHTB occupies the “85+ minutes” tier, which is practically important (real professional workflows take this long) and empirically revealing (frontier models have not solved it).</p>
+<hr>
+<h2 id="deeper-analysis-the-token-efficiency-question">Deeper Analysis: The Token Efficiency Question</h2>
+<h3 id="how-do-models-differ-in-horizon-efficiency">How Do Models Differ in Horizon Efficiency?</h3>
+<p>Looking at the token counts in Table 1, models vary enormously in tokens-per-task:</p>
+<ul>
+<li>GPT-5.5: 4.16M tokens — low token usage, highest pass rate.</li>
+<li>MiniMax M3: 20.20M tokens — high token usage, 6.5% pass rate.</li>
+<li>DeepSeek V4 Pro: 14.45M tokens — high token usage, 6.5% pass rate.</li>
+<li>Hy3: 17.21M tokens — high token usage, 2.2% pass rate.</li>
+</ul>
+<p>This is not a simple efficiency story. GPT-5.5 uses 5× fewer tokens than MiniMax M3 while achieving 2× better pass rate. There are at least three explanations:</p>
+<ol>
+<li><strong>Quality efficiency</strong>: GPT-5.5 makes more progress per token because its reasoning is better.</li>
+<li><strong>Context compression</strong>: GPT-5.5 compresses its context more aggressively, allowing it to cover more steps in the same budget.</li>
+<li><strong>Stopping behavior</strong>: Models that consume more tokens may be more verbose per step, or may re-read their entire context more often.</li>
+</ol>
+<p>The paper does not disentangle these explanations, which is an important gap. Understanding why GPT-5.5 achieves high efficiency while MiniMax M3 does not would be directly actionable for improving other models.</p>
+<h3 id="episode-count-vs-token-count">Episode Count vs. Token Count</h3>
+<p>Episode count (number of actions taken) and token count are not proportional:</p>
+<ul>
+<li>GPT-5.5: 208 episodes, 4.16M tokens → ~20K tokens/episode</li>
+<li>MiniMax M3: 314 episodes, 20.20M tokens → ~64K tokens/episode</li>
+<li>DeepSeek V4 Pro: 321 episodes, 14.45M tokens → ~45K tokens/episode</li>
+</ul>
+<p>MiniMax M3 uses 3× more tokens per episode than GPT-5.5. This suggests that MiniMax M3 is doing much more context reading (or generating longer outputs) per action, which could indicate either more thorough reasoning per step or more inefficient context management.</p>
+<h3 id="the-pareto-efficiency-calculation">The Pareto Efficiency Calculation</h3>
+<p>For a model to be on the cost-reward Pareto frontier, it must satisfy:</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mi mathvariant="normal">∀</mi><mi>j</mi><mo mathvariant="normal">≠</mo><mi>i</mi><mo>:</mo><msub><mtext>cost</mtext><mi>j</mi></msub><mo>≤</mo><msub><mtext>cost</mtext><mi>i</mi></msub><mo>⇒</mo><msub><mtext>passrate</mtext><mi>j</mi></msub><mo>≤</mo><msub><mtext>passrate</mtext><mi>i</mi></msub></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(8)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\forall j \neq i: \text{cost}_j \leq \text{cost}_i \Rightarrow \text{passrate}_j \leq \text{passrate}_i
+\tag{8}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord">∀</span><span class="mord mathnormal" style="margin-right:0.0572em;">j</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel"><span class="mrel"><span class="mord vbox"><span class="thinbox"><span class="rlap"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="inner"><span class="mord"><span class="mrel"></span></span></span><span class="fix"></span></span></span></span></span><span class="mspace nobreak"></span><span class="mrel">=</span></span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">:</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9221em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord text"><span class="mord">cost</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0572em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≤</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7651em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord text"><span class="mord">cost</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">⇒</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0162em;vertical-align:-0.3802em;"></span><span class="mord"><span class="mord text"><span class="mord">passrate</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2175em;"><span style="top:-2.4559em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0572em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3802em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≤</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8592em;vertical-align:-0.2441em;"></span><span class="mord"><span class="mord text"><span class="mord">passrate</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2175em;"><span style="top:-2.4559em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2441em;"><span></span></span></span></span></span></span></span><span class="tag"><span class="strut" style="height:1.1302em;vertical-align:-0.3802em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">8</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>Formally, model <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi></mrow><annotation encoding="application/x-tex">i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span></span></span></span> is Pareto-dominated if there exists model <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>j</mi></mrow><annotation encoding="application/x-tex">j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.854em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.0572em;">j</span></span></span></span> with lower cost AND higher pass rate. The Pareto frontier consists of all non-dominated models.</p>
+<p>From the reported data:</p>
+<ul>
+<li><strong>Hy3</strong> ($2.47, 2.2%): non-dominated (cheapest, any cheaper model would need 0% pass rate to be better)</li>
+<li><strong>Doubao Seed 2.1 Pro</strong> ($5.16, 4.3%): non-dominated (better than Hy3 on pass rate at moderate cost)</li>
+<li><strong>MiniMax M3</strong> ($6.13, 6.5%): non-dominated (better pass rate than Doubao at comparable cost)</li>
+<li><strong>GPT-5.5</strong> ($21.46, 15.2%): non-dominated (highest pass rate, no model dominates it)</li>
+</ul>
+<p>Models like GPT-5.4 ($27.57, 2.2%) are clearly dominated: more expensive than GPT-5.5 with much lower pass rate. This is a qualitative failure: GPT-5.4 reaches higher token counts per task precisely because it needs more attempts to make the same progress as GPT-5.5, but charges comparable prices — resulting in higher total cost for lower outcomes.</p>
+<hr>
+<h2 id="practical-implications-building-better-long-horizon-agents">Practical Implications: Building Better Long-Horizon Agents</h2>
+<h3 id="implication-1--horizon-budgeting-as-a-first-class-problem">Implication 1 — Horizon Budgeting as a First-Class Problem</h3>
+<p>If 79% of failures are timeouts, the practical priority for agent improvement is not smarter per-step reasoning but smarter budgeting. An agent that can allocate its remaining time budget across remaining sub-goals — and stop trying to perfect an already-good enough solution — would directly improve LHTB scores. This is analogous to time management in human problem solving: knowing when to stop polishing and start submitting is as important as knowing how to solve the problem.</p>
+<p>Concrete directions:</p>
+<ul>
+<li>Teach agents to maintain an explicit sub-goal checklist and update it after each action.</li>
+<li>Give agents a running estimate of remaining time budget and train them to make decisions conditioned on it.</li>
+<li>Penalize unnecessary re-verification loops that consume time without adding progress.</li>
+</ul>
+<h3 id="implication-2--adversarial-self-testing-for-verification">Implication 2 — Adversarial Self-Testing for Verification</h3>
+<p>The false-finish pattern implies that agents need to construct their own adversarial tests rather than relying solely on provided visible tests. A useful direction: after passing all visible tests, the agent explicitly reasons about <em>what kinds of inputs the hidden tests might use</em> and generates a small battery of adversarial inputs to self-test against. This reflects the reasoning of an experienced engineer who, after fixing a bug, thinks “what corner cases might still fail?” and probes them before declaring the task done.</p>
+<h3 id="implication-3--long-horizon-memory-architectures">Implication 3 — Long-Horizon Memory Architectures</h3>
+<p>Episode counts of 200–300+ are far beyond what can fit in a single context window without compression. Current harnesses use sliding window truncation, but this loses critical information about early decisions and their rationale. Better architectures might use:</p>
+<ul>
+<li><strong>Hierarchical memory</strong>: summarize completed sub-goals into a compact state representation that is prepended to each new context window.</li>
+<li><strong>Write-ahead logs</strong>: maintain a structured log of verified sub-goal states that the agent can query.</li>
+<li><strong>External state tracking</strong>: store the agent’s current belief about task completion in a structured format (JSON or equivalent) rather than in unstructured text history.</li>
+</ul>
+<h3 id="implication-4--calibrated-stopping-criteria">Implication 4 — Calibrated Stopping Criteria</h3>
+<p>Agents currently stop when they judge the task complete based on visible signals. A better stopping criterion would include:</p>
+<ul>
+<li><strong>Uncertainty-aware stopping</strong>: only stop when the agent’s confidence that hidden stress tests will also pass exceeds a threshold.</li>
+<li><strong>Coverage-based stopping</strong>: generate a checklist of plausible failure modes and verify each one before stopping.</li>
+<li><strong>Conservative default</strong>: by default, use remaining time budget to run further verification before declaring done.</li>
+</ul>
+<h3 id="implication-5--what-lhtb-means-for-the-agents-are-ready-narrative">Implication 5 — What LHTB Means for the “Agents Are Ready” Narrative</h3>
+<p>There is a narrative in the industry (partly fueled by impressive SWE-Bench scores) that AI coding agents are ready for semi-autonomous deployment on real engineering workflows. LHTB provides important pushback: on tasks calibrated to what a competent human expert does in 2–8 hours, the best model (GPT-5.5) succeeds 15.2% of the time. That means 84.8% of the time, a human would need to check the output, detect incompleteness, and re-attempt.</p>
+<p>For deployment contexts where the human is reviewing every output anyway, this is acceptable — the agent is a productivity booster, not a replacement. But for contexts where the expectation is autonomous completion (running a 3-day ML training pipeline, preparing a regulatory audit), the gap between current capability (15%) and required reliability (90–99%) is not a 2× improvement problem; it is a fundamental capability gap that requires new architectures or training paradigms.</p>
+<p>LHTB is valuable not just as a benchmark but as a calibration tool: it gives developers and deployers a realistic estimate of where agents actually stand on the difficulty spectrum that matters for real professional work.</p>
+<hr>
+<h2 id="figure-6-frontier-model-capability-spectrum">Figure 6: Frontier Model Capability Spectrum</h2>
+<p>To put LHTB in context, here is a schematic comparison of how frontier models perform across benchmark difficulty tiers in 2026:</p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">xychart-beta</span></span>
+<span class="line"><span style="color:#E1E4E8">    title "Agent pass rates across benchmark difficulty (approximate, frontier models 2026)"</span></span>
+<span class="line"><span style="color:#E1E4E8">    x-axis ["HumanEval", "SWE-Bench V.", "Terminal-Bench 2", "LHTB (τ=0.95)", "LHTB (τ=1.0)"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    y-axis "Best model pass rate (%)" 0 --> 100</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [96, 71, 52, 15, 11]</span></span></code></pre>
+<p>The cliff from Terminal-Bench 2 (~52%) to LHTB (15.2%) is steep: extending the task horizon by ~4× reduces the best-model pass rate by 3.4×. This is not a smooth degradation but a qualitative transition between regime where local reasoning is sufficient and a regime where horizon management is required.</p>
+<hr>
+<h2 id="references">References</h2>
+<p>[1] Li et al. Long-Horizon-Terminal-Bench: Testing the Limits of Agents on Long-Horizon Terminal Tasks with Dense Reward-Based Grading. arXiv:2607.08964, July 2026.</p>
+<p>[2] Yang et al. SWE-Bench: Can Language Models Resolve Real-World GitHub Issues? arXiv:2310.06770.</p>
+<p>[3] Desai et al. SWE-Marathon: Can Agents Autonomously Complete Ultra-Long-Horizon Software Work? arXiv:2606.07682, 2026.</p>
+<p>[4] Li et al. Terminal-Bench / Terminus-2. Referenced as [22] in the paper.</p>
+<p>[5] METR. Evaluating Long-Horizon Autonomy of AI Agents. METR Technical Report, 2026.</p>
+<p>[6] DeepSeek-AI. DeepSeek-V4: Towards Highly Efficient Million-Token Context Intelligence. arXiv:2606.19348, 2026.</p> </div> <footer class="blog-post-footer">  <nav class="blog-post-nav" aria-label="Adjacent posts"> <span></span> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-07-13-longhorizonterminalbench-阅读笔记-zh/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">Long-Horizon-Terminal-Bench 阅读笔记：密集奖励评估揭露 Agent 长程执行瓶颈</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient machine learning, systems and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>

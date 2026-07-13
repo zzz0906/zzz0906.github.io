@@ -1,0 +1,758 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Long-Horizon-Terminal-Bench 阅读笔记：密集奖励评估揭露 Agent 长程执行瓶颈 | Zhongzhu / Charlie</title><meta name="description" content="LHTB 用 46 个容器化终端任务替代二元通过/失败评分，以子任务级密集奖励量化 Agent 进度——结果发现即使最强模型 GPT-5.5 也只有 15.2% 通过率，79% 的失败源于超时而非单步推理错误。"><meta property="og:title" content="Long-Horizon-Terminal-Bench 阅读笔记：密集奖励评估揭露 Agent 长程执行瓶颈 | Zhongzhu / Charlie"><meta property="og:description" content="LHTB 用 46 个容器化终端任务替代二元通过/失败评分，以子任务级密集奖励量化 Agent 进度——结果发现即使最强模型 GPT-5.5 也只有 15.2% 通过率，79% 的失败源于超时而非单步推理错误。"><meta property="og:type" content="website"><meta property="og:url" content="https://zhongzhuzhou.org/blog/2026-07-13-longhorizonterminalbench-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/"><meta name="twitter:card" content="summary_large_image"><link rel="canonical" href="https://zhongzhuzhou.org/blog/2026-07-13-longhorizonterminalbench-%E9%98%85%E8%AF%BB%E7%AC%94%E8%AE%B0-zh/"><link rel="icon" type="image/png" href="/favicon.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;850;900&family=Newsreader:opsz,wght@6..72,500;6..72,700&display=swap" rel="stylesheet"> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"> <link rel="stylesheet" href="/_astro/PageShell.DSqoSXlc.css"></head> <body>   <header class="site-header"> <nav class="container nav" aria-label="Primary navigation"> <a class="brand" href="/" aria-label="Zhongzhu / Charlie home"> <span class="brand-mark" aria-hidden="true"> <img src="/logo.png" alt="" width="38" height="38"> </span> <span class="brand-text">Zhongzhu / Charlie</span> </a> <div class="nav-end"> <div class="header-social" aria-label="Social links"> <a class="social-icon-link" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> <div class="nav-links"> <a href="/"> Home </a><a href="/research/"> Research </a><a href="/publication/"> Publication </a><a href="/experience-projects/"> Experience </a><a href="/recent-news/"> Recent News </a><a href="/blog/" aria-current="page"> Blog </a><a href="http://111.229.178.83/Resume/2026.03.18_1_Zhongzhu_Zhou_Politic_Resume.pdf" target="_blank" rel="noopener noreferrer"> CV<span class="nav-external" aria-hidden="true"> ↗</span> </a> </div> </div> </nav> </header>   <nav class="page-toc" aria-label="Page outline" data-heading-selector=".blog-post-body h2"> <div class="page-toc-handle" aria-hidden="true"> <span class="page-toc-handle-icon">☰</span> <span class="page-toc-handle-label">Outline</span> </div> <div class="page-toc-panel"> <p class="page-toc-title">On this page</p> <ul class="page-toc-list"></ul> </div> </nav> <script type="module">document.addEventListener("DOMContentLoaded",()=>{const r=document.querySelector(".page-toc-list"),c=document.querySelector(".page-toc");if(!r||!c)return;const l=c.dataset.headingSelector||"main h2",i=document.querySelectorAll(l);if(i.length<2){c.style.display="none";return}const d=e=>e.toLowerCase().trim().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi,"-").replace(/^-+|-+$/g,""),a=[];i.forEach((e,o)=>{const n=(e.textContent||"").trim();if(n){if(!e.id){const t=d(n)||`section-${o}`;let s=t,f=2;for(;document.getElementById(s);)s=`${t}-${f++}`;e.id=s}e.style.scrollMarginTop="84px",a.push({href:`#${e.id}`,text:n})}}),a.forEach(({href:e,text:o})=>{const n=document.createElement("li"),t=document.createElement("a");t.href=e,t.textContent=o,n.appendChild(t),r.appendChild(n)});const u=Array.from(r.querySelectorAll("a")),g=new Map(u.map(e=>[e.getAttribute("href").slice(1),e])),p=new IntersectionObserver(e=>{e.forEach(o=>{const n=o.target.id,t=g.get(n);t&&(o.isIntersecting?t.classList.add("page-toc-active"):t.classList.remove("page-toc-active"))})},{rootMargin:"-40% 0px -50% 0px",threshold:0});i.forEach(e=>p.observe(e))});</script> <main class="blog-page"> <div class="container blog-layout"> <aside class="blog-sidebar"> <div class="blog-card"> <div class="blog-avatar"> <img src="/profile.jpg" alt="Zhongzhu Zhou / Charlie Zhou" onerror="this.onerror=null;this.src='/profile.svg';"> </div> <h2 class="blog-author">Zhongzhu / Charlie Zhou</h2> <p class="blog-author-tagline">Keep</p> <div class="blog-stats"> <a class="blog-stat" href="/blog/"> <strong>220</strong> <span>Posts</span> </a> <a class="blog-stat" href="/blog/tags/"> <strong>25</strong> <span>Tags</span> </a> </div> <nav class="blog-sidebar-nav"> <a href="/blog/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path> </svg> </span>
+Main
+</a> <a href="/blog/tags/"> <span class="blog-nav-icon" aria-hidden="true"> <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path d="M4 11.5V5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 .707.293l8 8a1 1 0 0 1 0 1.414l-6.5 6.5a1 1 0 0 1-1.414 0l-8-8A1 1 0 0 1 4 11.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path> <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"></circle> </svg> </span>
+Tags
+</a> </nav> <p class="blog-sidebar-footer">© 2019 - 2026 Zhongzhu Zhou</p> </div> </aside> <article class="blog-main blog-post"> <header class="blog-post-header"> <p class="blog-post-meta"> <time datetime="2026-07-13">July 13, 2026</time> <span class="blog-lang blog-lang-zh">中</span> <span class="blog-post-tag-line"> <a class="blog-post-tag-chip" href="/blog/tag/LLM-Agent/">#LLM Agent</a><a class="blog-post-tag-chip" href="/blog/tag/Reasoning/">#Reasoning</a><a class="blog-post-tag-chip" href="/blog/tag/LLM-Inference/">#LLM Inference</a> </span> </p> <h1>Long-Horizon-Terminal-Bench 阅读笔记：密集奖励评估揭露 Agent 长程执行瓶颈</h1> </header> <div class="blog-post-body"> <p><strong>笔记日期：</strong> 2026-07-13
+<strong>笔记作者：</strong> Zhongzhu Zhou
+<strong>论文标题：</strong> Long-Horizon-Terminal-Bench: Testing the Limits of Agents on Long-Horizon Terminal Tasks with Dense Reward-Based Grading
+<strong>作者：</strong> Zongxia Li†, Zhongzhi Li†, Yucheng Shi†, Ruhan Wang, Junyao Yang, Zhichao Liu, Xiyang Wu, Anhao Li, Yue Yu, Ninghao Liu, Lichao Sun, Haotao Mi, Leowei Liang
+<strong>arXiv：</strong> <a href="https://arxiv.org/abs/2607.08964">https://arxiv.org/abs/2607.08964</a>
+<strong>状态：</strong> 预印本（arXiv，2026 年 7 月）—— 腾讯混元大模型前沿团队 + UMD/UGA/UMN/IU/Lehigh/NUS/PolyU</p>
+<hr>
+<h2 id="一句话总结">一句话总结</h2>
+<p>Long-Horizon-Terminal-Bench（LHTB）是一个 46 个容器化终端任务的 benchmark，用子任务级加权平均奖励代替二元通过/失败评分，发现当前最强前沿模型（GPT-5.5）的通过率仅为 15.2%，而 79% 的失败来源于时间预算耗尽（Agent 还在工作时就到时了），而不是单步推理出错——这说明长程执行能力、而非局部推理能力，是当前 Agent 的核心瓶颈。</p>
+<hr>
+<h2 id="前置知识">前置知识</h2>
+<p>阅读本文前，需要掌握以下几个基础概念：</p>
+<h3 id="1-llm-agent-与终端环境">1. LLM Agent 与终端环境</h3>
+<p><strong>LLM Agent</strong> 是以语言模型为核心，通过发出工具调用或 Shell 命令与环境交互的系统：模型生成动作 → 执行 → 得到观测（输出、文件列表、错误信息）→ 追加进上下文 → 生成下一个动作。这个循环可以持续数百轮。</p>
+<p><strong>终端型 Agent</strong>（Terminal Agent）在容器化的 Shell 环境中操作：读写文件、运行脚本、查看中间输出、调用系统工具——这与人类软件工程师处理一个长期项目的工作方式完全一样。</p>
+<p>关键的规模化挑战在于：每一轮交互都会让上下文窗口增长。随着任务变长，Agent 必须维持一致的状态、更新执行计划、避免重复已完成的步骤，并且知道何时停下来。这些对当前模型来说都不简单。</p>
+<h3 id="2-稀疏奖励与密集奖励">2. 稀疏奖励与密集奖励</h3>
+<ul>
+<li><strong>稀疏奖励（Sparse Reward）</strong>：任务最终完成给 1，否则给 0。对于极难的任务，所有模型几乎都失败，稀疏奖励无法区分”完成了 90% 的任务”和”完成了 5% 的任务”——它们都得 0 分。</li>
+<li><strong>密集奖励（Dense Reward）</strong>：对中间步骤或子目标分别打分，量化 Agent 到底走了多远。密集奖励让”近似成功”和”完全失败”可以区分开来。</li>
+</ul>
+<p>在强化学习中，稀疏奖励对应几乎无法学习的环境；在评测中，稀疏奖励对应在极难任务上几乎无法区分模型能力的评测方案。LHTB 正是用密集奖励来解决这个问题。</p>
+<h3 id="3-短程-vs-长程-benchmark-的核心差异">3. 短程 vs. 长程 Benchmark 的核心差异</h3>
+<p>短程 benchmark（如 SWE-Bench、HumanEval）衡量的是：Agent 能不能解决一个定义清晰、规模有限的问题？这主要考验的是局部推理能力。</p>
+<p>长程 benchmark 增加了一个时间维度：任务需要数百步、多阶段规划、跨多个子目标的错误恢复以及迭代调试。完成这类任务不仅需要推理，还需要<strong>预算管理</strong>——在固定时间限额内，如何合理分配注意力和工作量，使总体进度最大化。</p>
+<h3 id="4-docker-容器化与评估隔离">4. Docker 容器化与评估隔离</h3>
+<p>LHTB 的每个任务运行在一个 Docker 容器中，预装了所有相关文件、代码、数据、工具和辅助脚本。容器提供完整隔离：Agent 的操作不影响宿主机。评估器（Grader）在每轮 rollout 结束时运行在容器内部，检查容器的最终状态。这种确定性设置使评估可以完全复现。</p>
+<h3 id="5-agent-harness脚手架">5. Agent Harness（脚手架）</h3>
+<p>Agent Harness 是封装在基础 LLM 外层的脚手架，提供：(a) 环境交互循环；(b) 上下文管理（截断、摘要）；(c) 停止标准（时间预算、自我终止）。论文中使用了两种 harness：Terminus-2（用于 14 个模型）和 OpenAI Codex harness（用于 GPT-5.3 Codex）。Harness 质量本身就会显著影响评测结果，这是一个不容忽视的混淆因素。</p>
+<h3 id="6-pass1-与平均奖励">6. Pass@1 与平均奖励</h3>
+<p>论文的两个核心指标：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mtext>pass@1</mtext><mo stretchy="false">(</mo><mi>τ</mi><mo stretchy="false">)</mo><mo>=</mo><mfrac><mn>1</mn><mrow><mi mathvariant="normal">∣</mi><mi>T</mi><mi mathvariant="normal">∣</mi></mrow></mfrac><munder><mo>∑</mo><mrow><mi>t</mi><mo>∈</mo><mi>T</mi></mrow></munder><mn mathvariant="bold">1</mn><mo stretchy="false">[</mo><msub><mi>R</mi><mi>t</mi></msub><mo>≥</mo><mi>τ</mi><mo stretchy="false">]</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(1)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\text{pass@1}(\tau) = \frac{1}{|T|} \sum_{t \in T} \mathbf{1}[R_t \geq \tau]
+\tag{1}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">pass@1</span></span><span class="mopen">(</span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.6431em;vertical-align:-1.3217em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord">∣</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.8557em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mrel mtight">∈</span><span class="mord mathnormal mtight" style="margin-right:0.1389em;">T</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.3217em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathbf">1</span><span class="mopen">[</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0077em;">R</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0077em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span><span class="mclose">]</span></span><span class="tag"><span class="strut" style="height:2.6431em;vertical-align:-1.3217em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">1</span></span><span class="mord">)</span></span></span></span></span></span>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mover accent="true"><mi>R</mi><mo>ˉ</mo></mover><mo>=</mo><mfrac><mn>1</mn><mrow><mi mathvariant="normal">∣</mi><mi>T</mi><mi mathvariant="normal">∣</mi></mrow></mfrac><munder><mo>∑</mo><mrow><mi>t</mi><mo>∈</mo><mi>T</mi></mrow></munder><msub><mi>R</mi><mi>t</mi></msub></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(2)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\bar{R} = \frac{1}{|T|} \sum_{t \in T} R_t
+\tag{2}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8201em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8201em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.0077em;">R</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">ˉ</span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.6431em;vertical-align:-1.3217em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">∣</span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mord">∣</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.05em;"><span style="top:-1.8557em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">t</span><span class="mrel mtight">∈</span><span class="mord mathnormal mtight" style="margin-right:0.1389em;">T</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.3217em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0077em;">R</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2806em;"><span style="top:-2.55em;margin-left:-0.0077em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">t</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span><span class="tag"><span class="strut" style="height:2.6431em;vertical-align:-1.3217em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">2</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>其中 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi></mrow><annotation encoding="application/x-tex">T</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span></span></span></span> 是所有 46 个任务的集合，<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>τ</mi></mrow><annotation encoding="application/x-tex">\tau</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span></span></span></span> 为通过阈值（主要报告 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>τ</mi><mo>=</mo><mn>0.95</mn></mrow><annotation encoding="application/x-tex">\tau = 0.95</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.95</span></span></span></span>）。</p>
+<p>这两个指标衡量不同的东西：pass@1 回答”Agent 能否可靠地完成任务”；平均奖励 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi>R</mi><mo>ˉ</mo></mover></mrow><annotation encoding="application/x-tex">\bar{R}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8201em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8201em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.0077em;">R</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">ˉ</span></span></span></span></span></span></span></span></span></span> 回答”Agent 通常能走多远”。高 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi>R</mi><mo>ˉ</mo></mover></mrow><annotation encoding="application/x-tex">\bar{R}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8201em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8201em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.0077em;">R</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">ˉ</span></span></span></span></span></span></span></span></span></span> 但低 pass@1 意味着近乎完成但总是在最后一步失败——这是一个非常有价值的诊断信号。</p>
+<hr>
+<h2 id="研究动机现有-benchmark-的缺口">研究动机：现有 Benchmark 的缺口</h2>
+<h3 id="从-benchmark-性能到真实工作流的鸿沟">从 Benchmark 性能到真实工作流的鸿沟</h3>
+<p>2026 年中期，前沿模型在 SWE-Bench 和 Terminal-Bench 上的得分已经相当高，但真实的专业工作流与这些 benchmark 的设定差距很大：</p>
+<ul>
+<li><strong>重现已发表 ML 论文的实验结果</strong>：需要安装依赖、修复版本冲突、找到正确的超参数、运行数小时的训练、检查 checkpoint 与预期指标是否匹配，再生成图表——不是 10 步，而是几百步。</li>
+<li><strong>审计多模态数据集</strong>：需要检查数千个样本、运行质量控制脚本、诊断系统性错误（旋转帧、Schema 不匹配、损坏的音频），再输出干净的结果——高度开放且需要长程迭代。</li>
+<li><strong>修复机器人 SLAM 流水线</strong>：字段重命名、缺失值、注入噪声，需要系统性诊断再端到端修复和验证。</li>
+</ul>
+<p>这些任务没有一个符合”清晰问题、10 步解答”的短程 benchmark 范式。它们需要的是 LHTB 所称的<strong>长程执行能力</strong>：数百个 episode、跨多个子目标的持续进展，以及最终的可靠验证。</p>
+<h3 id="极端难度下稀疏奖励几乎无用">极端难度下稀疏奖励几乎无用</h3>
+<p>在 LHTB 这种难度级别下，纯二元评分对模型区分几乎没有用：在 R ≥ 1.0（满分）阈值下，15 个评测模型中有 10 个通过任务数为零。二元评分根本无法区分这 10 个模型。</p>
+<p>但密集奖励可以：这 10 个模型的平均奖励 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi>R</mi><mo>ˉ</mo></mover></mrow><annotation encoding="application/x-tex">\bar{R}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8201em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8201em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.0077em;">R</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">ˉ</span></span></span></span></span></span></span></span></span></span> 从 0.08（Grok 4.20）跨越到 0.32（GLM 5.2），相差 4 倍——密集奖励保留了完全失去的判别信息。</p>
+<hr>
+<h2 id="benchmark-设计">Benchmark 设计</h2>
+<h3 id="31-任务公式">3.1 任务公式</h3>
+<p>LHTB 的每个任务遵循 Terminal-Bench 的 Harbor 格式，包含：</p>
+<ol>
+<li><strong>自然语言指令</strong>：描述整体目标，是 Agent 能看到的唯一规格说明。</li>
+<li><strong>Docker 镜像</strong>：预装了所有资产、代码、数据、工具。</li>
+<li><strong>任务配置文件</strong>：元数据、时间限制、harness 参数。</li>
+<li><strong>Oracle 实现或模拟器</strong>：供评估器生成 ground truth 答案或运行参考解。</li>
+</ol>
+<p>与 Terminal-Bench 的核心区别在于评分机制：LHTB 还额外将每个任务分解为 K 个语义上有意义的子任务 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">{</mo><msub><mi>s</mi><mn>1</mn></msub><mo separator="true">,</mo><mo>…</mo><mo separator="true">,</mo><msub><mi>s</mi><mi>K</mi></msub><mo stretchy="false">}</mo></mrow><annotation encoding="application/x-tex">\{s_1, \ldots, s_K\}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">{</span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3011em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner">…</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">s</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">K</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">}</span></span></span></span>，每个子任务都有自己的确定性检查器。</p>
+<h3 id="32-核心奖励公式">3.2 核心奖励公式</h3>
+<p>最终任务奖励是各子任务得分的加权平均：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mi>R</mi><mo>=</mo><mfrac><mrow><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>K</mi></munderover><msub><mi>w</mi><mi>k</mi></msub><mtext> </mtext><msub><mi>r</mi><mi>k</mi></msub></mrow><mrow><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>K</mi></munderover><msub><mi>w</mi><mi>k</mi></msub></mrow></mfrac></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(3)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">R = \frac{\sum_{k=1}^{K} w_k \, r_k}{\sum_{k=1}^{K} w_k}
+\tag{3}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.0077em;">R</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.8419em;vertical-align:-1.1709em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.6709em;"><span style="top:-2.1288em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.9812em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.2029em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">K</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2997em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.6897em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em;">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.9812em;"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.2029em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">K</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2997em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.1709em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span><span class="tag"><span class="strut" style="height:2.8419em;vertical-align:-1.1709em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">3</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>其中：</p>
+<ul>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.0715em;">K</span></span></span></span> 是该任务的子任务数量，</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>k</mi></msub><mo>≥</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">w_k \geq 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.786em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≥</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0</span></span></span></span> 是第 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span></span></span></span> 个子任务的权重，</li>
+<li><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>r</mi><mi>k</mi></msub><mo>∈</mo><mo stretchy="false">[</mo><mn>0</mn><mo separator="true">,</mo><mn>1</mn><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">r_k \in [0, 1]</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6891em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord">0</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mclose">]</span></span></span></span> 是确定性评估器给出的第 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi></mrow><annotation encoding="application/x-tex">k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em;"></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span></span></span></span> 个子任务得分。</li>
+</ul>
+<p>默认情况下所有权重相等（<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>k</mi></msub><mo>=</mo><mn>1</mn><mi mathvariant="normal">/</mi><mi>K</mi></mrow><annotation encoding="application/x-tex">w_k = 1/K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">1/</span><span class="mord mathnormal" style="margin-right:0.0715em;">K</span></span></span></span>），简化为简单平均：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mi>R</mi><mo>=</mo><mfrac><mn>1</mn><mi>K</mi></mfrac><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>K</mi></munderover><msub><mi>r</mi><mi>k</mi></msub></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(4)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">R = \frac{1}{K} \sum_{k=1}^{K} r_k
+\tag{4}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.0077em;">R</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3.1304em;vertical-align:-1.3021em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0715em;">K</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8283em;"><span style="top:-1.8479em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">K</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.3021em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span><span class="tag"><span class="strut" style="height:3.1304em;vertical-align:-1.3021em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">4</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>当最终目标比中间检查点重要得多时（例如最终流水线必须产出正确输出），可以提高 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>w</mi><mi>K</mi></msub></mrow><annotation encoding="application/x-tex">w_K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0269em;">w</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3283em;"><span style="top:-2.55em;margin-left:-0.0269em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0715em;">K</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 权重——在保留中间进度部分奖励的同时，强调端到端完成。</p>
+<p><strong>为什么这个公式是好设计？</strong> 简单平均无偏、易于解读；Agent 既无法通过只完成一个检查点来虚高得分，也不会因完成了 95% 的任务但最后一步失败而毫无奖励。加权变体为重要性差异大的任务提供了弹性。</p>
+<h3 id="33-三种子任务类型">3.3 三种子任务类型</h3>
+<p>论文定义了三种子任务类型，每种对应不同的 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>r</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">r_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 计算方式：</p>
+<p><strong>类型一：二元子任务</strong></p>
+<p>评估器对容器最终状态运行一个程序性条件：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mi>r</mi><mi>k</mi></msub><mo>=</mo><mn mathvariant="bold">1</mn><mo stretchy="false">[</mo><mtext>condition</mtext><mo stretchy="false">(</mo><mi>s</mi><mo stretchy="false">)</mo><mo stretchy="false">]</mo><mo>∈</mo><mo stretchy="false">{</mo><mn>0</mn><mo separator="true">,</mo><mn>1</mn><mo stretchy="false">}</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(5)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">r_k = \mathbf{1}[\text{condition}(s)] \in \{0, 1\}
+\tag{5}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathbf">1</span><span class="mopen">[</span><span class="mord text"><span class="mord">condition</span></span><span class="mopen">(</span><span class="mord mathnormal">s</span><span class="mclose">)]</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">∈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">{</span><span class="mord">0</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mclose">}</span></span><span class="tag"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">5</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>例子：所有单元测试通过、服务在预期端口响应、必要的实验脚本无报错运行完毕。</p>
+<p><strong>类型二：连续或阈值子任务</strong></p>
+<p>对于定量目标（在误差范围内重现某个指标、实现特定加速比），得分从 1 线性降至 0：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mi>r</mi><mi>k</mi></msub><mo>=</mo><mi>max</mi><mo>⁡</mo><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><mn>0</mn><mo separator="true">,</mo><mtext>  </mtext><mn>1</mn><mo>−</mo><mfrac><mrow><mi mathvariant="normal">∣</mi><msub><mover accent="true"><mi>y</mi><mo>^</mo></mover><mi>k</mi></msub><mo>−</mo><msub><mi>y</mi><mi>k</mi></msub><mi mathvariant="normal">∣</mi></mrow><msub><mi>ε</mi><mi>k</mi></msub></mfrac><mo fence="true">)</mo></mrow></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(6)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">r_k = \max\!\left(0,\; 1 - \frac{|\hat{y}_k - y_k|}{\varepsilon_k}\right)
+\tag{6}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="mop">max</span><span class="mspace" style="margin-right:-0.1667em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="minner"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size3">(</span></span><span class="mord">0</span><span class="mpunct">,</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mord mathnormal">ε</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">∣</span><span class="mord"><span class="mord accent"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6944em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.0359em;">y</span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1944em;"><span class="mord">^</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1944em;"><span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord">∣</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.836em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size3">)</span></span></span></span><span class="tag"><span class="strut" style="height:2.4em;vertical-align:-0.95em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">6</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>其中 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mover accent="true"><mi>y</mi><mo>^</mo></mover><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">\hat{y}_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord accent"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6944em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.0359em;">y</span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1944em;"><span class="mord">^</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1944em;"><span></span></span></span></span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 是 Agent 的输出值，<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>y</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">y_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em;">y</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 是参考值，<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ε</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">\varepsilon_k</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal">ε</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> 是容许偏差。精确匹配得满分，接近但不完全匹配得部分分，偏差过大得零分。</p>
+<p><strong>类型三：Episode 聚合子任务</strong></p>
+<p>游戏或重复审计类任务需要 Agent 在 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.109em;">N</span></span></span></span> 个 episode 中可靠地完成某个行为：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><msub><mi>r</mi><mi>k</mi></msub><mo>=</mo><mfrac><mn>1</mn><mi>N</mi></mfrac><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>N</mi></munderover><mn mathvariant="bold">1</mn><mo stretchy="false">[</mo><msub><mtext>success</mtext><mi>i</mi></msub><mo stretchy="false">]</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(7)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">r_k = \frac{1}{N} \sum_{i=1}^{N} \mathbf{1}[\text{success}_i]
+\tag{7}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0278em;">r</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em;"><span style="top:-2.55em;margin-left:-0.0278em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:3.106em;vertical-align:-1.2777em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.109em;">N</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mop op-limits"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.8283em;"><span style="top:-1.8723em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">i</span><span class="mrel mtight">=</span><span class="mord mtight">1</span></span></span></span><span style="top:-3.05em;"><span class="pstrut" style="height:3.05em;"></span><span><span class="mop op-symbol large-op">∑</span></span></span><span style="top:-4.3em;margin-left:0em;"><span class="pstrut" style="height:3.05em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.109em;">N</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.2777em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathbf">1</span><span class="mopen">[</span><span class="mord"><span class="mord text"><span class="mord">success</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mclose">]</span></span><span class="tag"><span class="strut" style="height:3.106em;vertical-align:-1.2777em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">7</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>这衡量的是可靠性，而不是偶然的单次成功。</p>
+<h3 id="34-评分算法伪代码">3.4 评分算法伪代码</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>算法 1: LHTB 任务评估器</span></span>
+<span class="line"><span>输入: 最终容器状态 S, 任务定义 (w_1..K, grader_1..K), 通过阈值 τ</span></span>
+<span class="line"><span>输出: 任务奖励 R ∈ [0, 1], 通过标志</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>1:  for k = 1 to K do</span></span>
+<span class="line"><span>2:      if task.type[k] == 二元:</span></span>
+<span class="line"><span>3:          r_k ← 1 if grader_k(S) else 0</span></span>
+<span class="line"><span>4:      else if task.type[k] == 连续:</span></span>
+<span class="line"><span>5:          ŷ_k ← extract_value(S, grader_k.target)</span></span>
+<span class="line"><span>6:          r_k ← max(0, 1 - |ŷ_k - y_k| / ε_k)</span></span>
+<span class="line"><span>7:      else if task.type[k] == Episode聚合:</span></span>
+<span class="line"><span>8:          successes ← 0</span></span>
+<span class="line"><span>9:          for i = 1 to N do</span></span>
+<span class="line"><span>10:             successes += 1 if grader_k.episode_check(S, i) else 0</span></span>
+<span class="line"><span>11:         r_k ← successes / N</span></span>
+<span class="line"><span>12:     end if</span></span>
+<span class="line"><span>13: end for</span></span>
+<span class="line"><span>14: R ← Σ_k (w_k × r_k) / Σ_k w_k    # 公式 (3)</span></span>
+<span class="line"><span>15: pass ← (R >= τ)</span></span>
+<span class="line"><span>16: return R, pass</span></span></code></pre>
+<p>评估器在每轮 rollout 结束后在容器内部运行一次。容器状态 S 捕获整个文件系统、运行中的进程以及任何模拟器输出。子任务得分是可加的，但总分永远不超过 1.0。</p>
+<h3 id="图-1lhtb-评估流水线">图 1：LHTB 评估流水线</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart TD</span></span>
+<span class="line"><span style="color:#E1E4E8">    A["自然语言指令\n（Agent 唯一可见的规格）"] --> B</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph DockerContainer["Docker 容器（完全隔离）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B["Agent 接收观测\n（Shell 输出、文件、错误）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B --> C["LLM 生成下一个动作\n（Shell 命令 / 文件编辑）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        C --> D["动作在终端中执行"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        D --> E{"预算耗尽\n或 Agent 主动退出？"}</span></span>
+<span class="line"><span style="color:#E1E4E8">        E -- 否 --> B</span></span>
+<span class="line"><span style="color:#E1E4E8">        E -- 是 --> F["LHTB 评估器\n在容器内运行"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    F --> G["子任务得分 r_1...r_K"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    G --> H["加权平均 → R = Σw_k r_k / Σw_k"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    H --> I{"R ≥ τ？"}</span></span>
+<span class="line"><span style="color:#E1E4E8">    I -- 是 --> J["pass@1 +1"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    I -- 否 --> K["部分进度记录在平均奖励中"]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    style A fill:#e8f4f8</span></span>
+<span class="line"><span style="color:#E1E4E8">    style F fill:#ffd700</span></span>
+<span class="line"><span style="color:#E1E4E8">    style H fill:#d4edda</span></span></code></pre>
+<h3 id="35-数据集构建过程">3.5 数据集构建过程</h3>
+<p><strong>算法 2：LHTB 任务构建流程</strong></p>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>算法 2: LHTB 任务构建</span></span>
+<span class="line"><span>输入: 一个真实专业工作流领域 W</span></span>
+<span class="line"><span>输出: 带隐藏验证器的 Harbor 格式任务</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>第一阶段 — 种子工作流</span></span>
+<span class="line"><span>1:  在 W 中确定一个真实的长程专业问题</span></span>
+<span class="line"><span>    （例如：NetCDF Schema 不匹配、SLAM benchmark 修复、科学图表数据恢复）</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>第二阶段 — 构建一个故意损坏的项目</span></span>
+<span class="line"><span>2:  实现一个完整但已损坏的终端项目：</span></span>
+<span class="line"><span>    a. 编写一个弱基准实现（部分实现，容易通过可见测试）</span></span>
+<span class="line"><span>    b. 编写官方 Gold Solution（评估器得分恰好为 1.0）</span></span>
+<span class="line"><span>    c. 创建多步骤 solve.sh（Gold Solution 工作流）</span></span>
+<span class="line"><span>    d. 注入系统性故障：</span></span>
+<span class="line"><span>       - 字段重命名、缺失值、注入噪声</span></span>
+<span class="line"><span>       - Gzip/Base64 编码、Schema 别名</span></span>
+<span class="line"><span>       - 旋转/裁剪图像、异常帧</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>第三阶段 — 设计隐藏验证器</span></span>
+<span class="line"><span>3:  编写评估器：</span></span>
+<span class="line"><span>    a. 公开检查：命令行行为、文件格式、简单样例（权重低，Agent 可见）</span></span>
+<span class="line"><span>    b. 隐藏压力测试：更难的输入、Schema 变体、边界情况（权重高，Agent 不可见）</span></span>
+<span class="line"><span>    c. 校准使 Gold Solution 得分恰好为 1.0</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>第四阶段 — 难度校准循环</span></span>
+<span class="line"><span>4:  反复用 DeepSeek-V4-Pro 在 1.5 小时预算下运行</span></span>
+<span class="line"><span>5:  调整任务设计，直到任务：</span></span>
+<span class="line"><span>    - 不是微不足道的（模型不会总是通过）</span></span>
+<span class="line"><span>    - 不是完全不可解的（模型能取得部分进展）</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>第五阶段 — 打包为 Harbor 任务</span></span>
+<span class="line"><span>6:  创建 task.yaml、Dockerfile、README.md、data/、scripts/、tests/、solve.sh</span></span>
+<span class="line"><span>7:  加入 benchmark，使用容器化环境 + Terminus-2 harness</span></span></code></pre>
+<p>隐藏验证器设计是关键：它防止 Agent 通过硬编码答案或只修补可见样例来刷分。鲁棒的解法必须能泛化到隐藏的 Schema 变体和压力测试，而这些在 rollout 期间从不暴露给 Agent。</p>
+<h3 id="36-任务类别分布">3.6 任务类别分布</h3>
+<h3 id="图-2lhtb-任务类别分布">图 2：LHTB 任务类别分布</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">pie title LHTB 任务分布（共 46 个任务）</span></span>
+<span class="line"><span style="color:#E1E4E8">    "软件与逆向工程 (7)" : 7</span></span>
+<span class="line"><span style="color:#E1E4E8">    "地球、气候与能源 (6)" : 6</span></span>
+<span class="line"><span style="color:#E1E4E8">    "多模态与图像分析 (6)" : 6</span></span>
+<span class="line"><span style="color:#E1E4E8">    "科学计算与仿真 (6)" : 6</span></span>
+<span class="line"><span style="color:#E1E4E8">    "研究复现与机器学习 (5)" : 5</span></span>
+<span class="line"><span style="color:#E1E4E8">    "系统、性能与安全 (5)" : 5</span></span>
+<span class="line"><span style="color:#E1E4E8">    "APEX 专业工作流 (4)" : 4</span></span>
+<span class="line"><span style="color:#E1E4E8">    "互动游戏 (4)" : 4</span></span>
+<span class="line"><span style="color:#E1E4E8">    "逻辑与约束求解 (3)" : 3</span></span></code></pre>
+<p>46 个任务均匀分布在 9 个领域，没有任何单一领域占主导——这确保了高通过率需要真正的通用长程能力，而非对特定领域的专项优化。</p>
+<hr>
+<h2 id="实验设置">实验设置</h2>
+<h3 id="41-评测模型与-harness">4.1 评测模型与 Harness</h3>
+<p><strong>参与评测的 15 个模型：</strong>
+GPT-5.5、GPT-5.4、GPT-5.3 Codex（使用 OpenAI Codex harness）、DeepSeek V4 Pro、Gemini 3.1 Pro、GLM 5.1、GLM 5.2、Kimi K2.6、Kimi K2.7 Code、MiniMax M3、Qwen3.7 Max、Qwen3.6 Plus、Doubao Seed 2.1 Pro、Hy3、Grok 4.20。</p>
+<p><strong>Harness：</strong></p>
+<ul>
+<li><strong>Terminus-2</strong>：14 个模型的标准 harness，提供一致的 prompt 模板和长程终端交互会话。</li>
+<li><strong>OpenAI Codex harness</strong>：仅用于 GPT-5.3 Codex，具有更多针对编程任务的 agentic 脚手架。</li>
+</ul>
+<p><strong>时间预算：</strong> 每个任务每个模型 90 分钟。超时的任务被标记为超时失败。</p>
+<h3 id="42-平均资源消耗">4.2 平均资源消耗</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>指标</th><th>平均值</th></tr></thead><tbody><tr><td>每任务 Episode 数</td><td>231</td></tr><tr><td>每任务 Token 数</td><td>9.9M</td></tr><tr><td>每任务执行时间</td><td>85.3 分钟</td></tr><tr><td>每任务估计成本</td><td>~$10.2</td></tr></tbody></table>
+<p>85.3 分钟的平均执行时间（接近 90 分钟上限）直接说明了大多数模型几乎把每个任务的预算都用尽——这是长程完成能力（而非局部推理）才是瓶颈的直接证据。</p>
+<hr>
+<h2 id="主要结果">主要结果</h2>
+<h3 id="51-leaderboard">5.1 Leaderboard</h3>
+<p>在 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>τ</mi><mo>=</mo><mn>0.95</mn></mrow><annotation encoding="application/x-tex">\tau = 0.95</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.95</span></span></span></span> 下的性能排名（主要指标）：</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>模型</th><th>Pass@1 (R≥0.95)</th><th>平均奖励 R̄</th></tr></thead><tbody><tr><td>GPT-5.5</td><td>15.2% (7/46)</td><td>0.44</td></tr><tr><td>MiniMax M3</td><td>6.5% (3/46)</td><td>0.39</td></tr><tr><td>Kimi K2.7 Code</td><td>6.5% (3/46)</td><td>0.37</td></tr><tr><td>DeepSeek V4 Pro</td><td>6.5% (3/46)</td><td>0.32</td></tr><tr><td>Qwen3.7 Max</td><td>4.3% (2/46)</td><td>0.31</td></tr><tr><td>Doubao Seed 2.1 Pro</td><td>4.3% (2/46)</td><td>0.30</td></tr><tr><td>Gemini 3.1 Pro</td><td>4.3% (2/46)</td><td>0.29</td></tr><tr><td>GLM 5.1</td><td>4.3% (2/46)</td><td>0.28</td></tr><tr><td>GPT-5.3 Codex</td><td>4.3% (2/46)</td><td>0.29</td></tr><tr><td>GLM 5.2</td><td>2.2% (1/46)</td><td>0.32</td></tr><tr><td>Qwen3.6 Plus</td><td>2.2% (1/46)</td><td>0.31</td></tr><tr><td>GPT-5.4</td><td>2.2% (1/46)</td><td>0.27</td></tr><tr><td>Hy3</td><td>2.2% (1/46)</td><td>0.25</td></tr><tr><td>Kimi K2.6</td><td>0%</td><td>0.25</td></tr><tr><td>Grok 4.20</td><td>0%</td><td>0.10</td></tr></tbody></table>
+<p><strong>几点观察：</strong></p>
+<p>GPT-5.5 领先，但与后续梯队差距悬殊（15.2% vs. 第二梯队的 6.5%）。这说明 GPT-5.5 在长程任务完成上具有质的不同——不仅仅是局部推理稍好，而是在 horizon 管理上有了本质提升。</p>
+<p>在 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>τ</mi><mo>=</mo><mn>1.0</mn></mrow><annotation encoding="application/x-tex">\tau = 1.0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal" style="margin-right:0.1132em;">τ</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1.0</span></span></span></span>（满分）下，15 个模型中只有 5 个能通过哪怕一个任务，10 个模型通过数量为零——说明完美完成任务的难度极高，隐藏压力测试对大多数 near-complete 的 run 都是致命的。</p>
+<h3 id="52-奖励分布">5.2 奖励分布</h3>
+<h3 id="图-3所有-run-的最终奖励分布">图 3：所有 run 的最终奖励分布</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">xychart-beta</span></span>
+<span class="line"><span style="color:#E1E4E8">    title "最终奖励分布（15 模型 × 46 任务 = 690 runs）"</span></span>
+<span class="line"><span style="color:#E1E4E8">    x-axis ["&#x3C;0.05", "0.05-0.15", "0.15-0.25", "0.25-0.35", "0.35-0.45", "0.45-0.55", "0.55-0.65", "0.65-0.75", "0.75-0.85", "0.85-0.95", "≥0.95"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    y-axis "Run 数量" 0 --> 230</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [224, 117, 66, 55, 37, 24, 38, 54, 20, 23, 30]</span></span></code></pre>
+<p>核心统计：</p>
+<ul>
+<li>30 runs（4.4%）在 R ≥ 0.95 下通过</li>
+<li>224 runs（32.6%）几乎没有进展（R &#x3C; 0.05）</li>
+<li>433 runs（62.8%）取得了 [0.05, 0.95) 的部分奖励——真实进展，但二元评分会全部记为失败</li>
+<li>180 runs（26.1%）达到 R ≥ 0.5</li>
+<li>近完成 runs（0.85 ≤ R &#x3C; 0.95）：23 runs，几乎和完全通过的 run 一样多</li>
+</ul>
+<p>分布的双峰形状（大量 R &#x3C; 0.05 和较小的 R ≥ 0.5 簇）说明一个重要现象：前沿模型要么在任务的早期就停滞（进展 &#x3C; 5%），要么取得了相当大的进展（> 50%）。中间段的质量相对较少。这暗示<strong>任务的早期理解和设置是决定性因素</strong>：最初几步做对的模型往往能走很远；最初几步方向错误的模型则很快停滞。</p>
+<h3 id="53-密集奖励-vs-二元评分为什么重要">5.3 密集奖励 vs. 二元评分：为什么重要</h3>
+<h3 id="图-4密集奖励与二元评分的对比">图 4：密集奖励与二元评分的对比</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph BinaryGrading["二元评分（R ≥ 1.0）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        direction TB</span></span>
+<span class="line"><span style="color:#E1E4E8">        B1["GPT-5.5: 10.9% 通过"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B2["MiniMax M3: 0% 通过"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B3["Kimi K2.6: 0% 通过"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B4["Grok 4.20: 0% 通过"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        B5["GLM 5.2: 0% 通过"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        Note1["⚠ 10 个模型全部得 0\n完全无法区分"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    subgraph DenseGrading["密集奖励（平均 R̄）"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        direction TB</span></span>
+<span class="line"><span style="color:#E1E4E8">        D1["GPT-5.5: R̄ = 0.44"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        D2["MiniMax M3: R̄ = 0.39"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        D3["Kimi K2.6: R̄ = 0.25"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        D4["Grok 4.20: R̄ = 0.10"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        D5["GLM 5.2: R̄ = 0.32"]</span></span>
+<span class="line"><span style="color:#E1E4E8">        Note2["✓ 4.4 倍的范围\n清晰区分模型能力"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    end</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    BinaryGrading -->|"LHTB 的密集奖励\n取代了二元评分"| DenseGrading</span></span></code></pre>
+<hr>
+<h2 id="失败模式分析">失败模式分析</h2>
+<h3 id="61-三类失败模式">6.1 三类失败模式</h3>
+<p>论文将每个失败的 run（R &#x3C; 0.95）归类为：</p>
+<ol>
+<li><strong>超时（Timeout）</strong>：90 分钟预算耗尽时 Agent 仍在工作。</li>
+<li><strong>主动退出（Early Exit）</strong>：Agent 在预算耗尽前自行终止，即使没有满足隐藏验证器的要求。</li>
+<li><strong>Harness 错误（Harness Error）</strong>：环境交互循环中的非超时异常（API 失败、验证器错误等）。</li>
+</ol>
+<p><strong>全模型分布：79% 超时、19% 主动退出、3% Harness 错误。</strong></p>
+<p>这个分布是论文最重要的实证发现。如果主要失败原因是”局部步骤推理出错”，我们预期会看到大量 harness 错误或几乎为零的平均奖励。但事实上：</p>
+<ul>
+<li>79% 是超时，平均奖励在 0.10\u20130.35 之间——Agent 在取得有意义的进展之后才耗尽时间。</li>
+<li>19% 是主动退出，通常在非平凡的奖励值下（Kimi K2.7 Code 平均退出奖励 0.51，MiniMax M3 平均退出奖励 0.42）——Agent 相信任务完成了，但隐藏验证器不同意。</li>
+</ul>
+<h3 id="62-虚假完成false-finish模式">6.2 “虚假完成”（False Finish）模式</h3>
+<p><strong>定义：</strong> 主动退出时 R ≥ 0.75——Agent 完成了任务的大部分工作，误判任务完成后带着剩余时间退出。</p>
+<p>论文识别出 <strong>14 个这样的 run</strong>。例子：</p>
+<ul>
+<li>Kimi K2.7 Code 在 <code>duckdb-optimizer-closure</code> 任务上以 R = 0.92 退出，还剩约 20 分钟。</li>
+<li>GLM 5.2 在 <code>apex-ib244-matter</code> 任务上以 R = 0.90 退出。</li>
+<li>7 个不同模型在 <code>apex-law433-matter</code> 任务上以 R = 0.80\u20130.87 退出，每个都还剩约 20 分钟。</li>
+</ul>
+<p>在这些 run 中，Agent 通过了所有可见的公开测试，但没有通过隐藏压力测试。Agent 不知道隐藏测试的存在，因此跑完可见测试、看到全部通过后，就判断”任务完成”。这是<strong>自我验证能力的系统性缺陷</strong>。</p>
+<h3 id="图-5各模型失败模式构成">图 5：各模型失败模式构成</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">xychart-beta</span></span>
+<span class="line"><span style="color:#E1E4E8">    title "各模型未解决 run 数（共 46 个任务）"</span></span>
+<span class="line"><span style="color:#E1E4E8">    x-axis ["GPT-5.5", "MiniMax M3", "Kimi K2.7", "DeepSeek", "Qwen3.7", "GLM 5.1", "Gemini3.1", "GPT-5.4", "GLM 5.2", "Qwen3.6", "GPT-5.3", "Kimi K2.6", "Hy3", "Doubao", "Grok 4.20"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    y-axis "未解决 runs" 0 --> 50</span></span>
+<span class="line"><span style="color:#E1E4E8">    bar [28, 38, 30, 26, 33, 36, 36, 32, 33, 33, 29, 42, 39, 40, 46]</span></span></code></pre>
+<p>Grok 4.20 的 46/46 全部未解决——它在所有任务上都失败了。但平均奖励不为零（<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi>R</mi><mo>ˉ</mo></mover><mo>=</mo><mn>0.10</mn></mrow><annotation encoding="application/x-tex">\bar{R} = 0.10</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8201em;"></span><span class="mord accent"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8201em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal" style="margin-right:0.0077em;">R</span></span><span style="top:-3.2523em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">ˉ</span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">0.10</span></span></span></span>），说明它在大多数任务上还是有部分进展的，这与”立即崩溃”不同。</p>
+<h3 id="63-局部推理-vs-长程完成关键区分">6.3 局部推理 vs. 长程完成：关键区分</h3>
+<p>论文清晰地区分了两类 Agent 能力维度：</p>
+<ol>
+<li><strong>局部推理能力</strong>：Agent 能不能正确执行单步操作？动作是否符合合理的执行计划？</li>
+<li><strong>长程完成能力</strong>：Agent 能不能在数百步内持续推进，管理上下文，避免回头重做，在时间预算内完成任务？</li>
+</ol>
+<p>Terminal-Bench 2 主要衡量（1），LHTB 同时衡量两者，数据表明（2）才是当前前沿模型能力的瓶颈。Agent 在 LHTB 上失败往往不是因为局部推理出了问题，而是因为：</p>
+<ul>
+<li>在不必要的验证循环上浪费了时间；</li>
+<li>重复了已经完成过的步骤；</li>
+<li>无法追踪哪些子目标还未完成；</li>
+<li>任务大部分完成后时间却耗尽了。</li>
+</ul>
+<p>这是与”答案错误”截然不同的失败模式，意味着改进方向也不同：需要更好的记忆/进度追踪、更高效的探索，以及更精准的停止标准。</p>
+<hr>
+<h2 id="成本分析">成本分析</h2>
+<h3 id="71-每任务成本估算">7.1 每任务成本估算</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>模型</th><th>Token/任务 (M)</th><th>时间 (分钟)</th><th>成本/任务 ($)</th></tr></thead><tbody><tr><td>GPT-5.5</td><td>4.16</td><td>72.9</td><td>21.46</td></tr><tr><td>GPT-5.4</td><td>10.90</td><td>79.3</td><td>27.57</td></tr><tr><td>GPT-5.3 Codex</td><td>4.57</td><td>80.7</td><td>8.20</td></tr><tr><td>DeepSeek V4 Pro</td><td>14.45</td><td>83.6</td><td>6.32</td></tr><tr><td>MiniMax M3</td><td>20.20</td><td>90.0</td><td>6.13</td></tr><tr><td>Kimi K2.7 Code</td><td>8.54</td><td>85.4</td><td>8.31</td></tr><tr><td>Gemini 3.1 Pro</td><td>3.55</td><td>85.0</td><td>7.61</td></tr><tr><td>GLM 5.1</td><td>5.84</td><td>92.6</td><td>5.13</td></tr><tr><td>Hy3</td><td>17.21</td><td>91.3</td><td>2.47</td></tr><tr><td>Grok 4.20</td><td>16.23</td><td>69.5</td><td>20.63</td></tr></tbody></table>
+<p><strong>关键发现：</strong></p>
+<p>GPT-5.4（~<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>28</mn><mi mathvariant="normal">/</mi><mtext>任务）比</mtext><mi>G</mi><mi>P</mi><mi>T</mi><mo>−</mo><mn>5.5</mn><mtext>（ </mtext></mrow><annotation encoding="application/x-tex">28/任务）比 GPT-5.5（~</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">28/</span><span class="mord cjk_fallback">任务）比</span><span class="mord mathnormal" style="margin-right:0.1389em;">GP</span><span class="mord mathnormal" style="margin-right:0.1389em;">T</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">5.5</span><span class="mord cjk_fallback">（</span><span class="mspace nobreak"> </span></span></span></span>21/任务）贵，但通过率低很多（2.2% vs. 15.2%）。原因是 GPT-5.4 需要更多 episode（302 次 vs. GPT-5.5 的 208 次）才能达到相同进度——每 episode token 价格相当，但 episode 更多导致总成本更高，同时获得更低的成果。</p>
+<p>MiniMax M3 使用了 20.20M tokens（5× GPT-5.5），但每任务成本只有 $6.13，因为 token 单价很低。它在 token 价格和 token 消耗之间做出了不同的权衡。</p>
+<h3 id="72-pareto-前沿">7.2 Pareto 前沿</h3>
+<p>成本-奖励 Pareto 前沿（最小化成本同时最大化通过率）经过：</p>
+<ul>
+<li><strong>Hy3</strong>（$2.47，2.2%）：最便宜，Pareto 最优的低端点。</li>
+<li><strong>MiniMax M3</strong> 和 <strong>Doubao Seed 2.1 Pro</strong>（$5\u20136，4.3\u20136.5%）：中等成本，中等性能。</li>
+<li><strong>GPT-5.5</strong>（$21，15.2%）：最高性能，Pareto 最优的高端点。</li>
+</ul>
+<h3 id="图-6成本-性能-pareto-前沿示意">图 6：成本-性能 Pareto 前沿示意</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="mermaid"><code><span class="line"><span style="color:#E1E4E8">flowchart LR</span></span>
+<span class="line"><span style="color:#E1E4E8">    A["Hy3\n$2.47 | 2.2%\n✓ Pareto 最优"] </span></span>
+<span class="line"><span style="color:#E1E4E8">    B["Doubao\n$5.16 | 4.3%\n✓ Pareto 最优"] </span></span>
+<span class="line"><span style="color:#E1E4E8">    C["MiniMax M3\n$6.13 | 6.5%\n✓ Pareto 最优"] </span></span>
+<span class="line"><span style="color:#E1E4E8">    D["GPT-5.5\n$21.46 | 15.2%\n✓ Pareto 最优"] </span></span>
+<span class="line"><span style="color:#E1E4E8">    E["GPT-5.4\n$27.57 | 2.2%\n✗ 被 GPT-5.5 支配"]</span></span>
+<span class="line"><span style="color:#E1E4E8">    F["Grok 4.20\n$20.63 | 0%\n✗ 被所有人支配"]</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#E1E4E8">    A --> B --> C --> D</span></span>
+<span class="line"><span style="color:#E1E4E8">    E -.->|"更贵但更差"| D</span></span>
+<span class="line"><span style="color:#E1E4E8">    F -.->|"贵且零通过"| D</span></span></code></pre>
+<hr>
+<h2 id="批判性分析不足与可改进之处">批判性分析：不足与可改进之处</h2>
+<h3 id="不足之处与缺陷">不足之处与缺陷</h3>
+<p><strong>W1 — 任务数量太少，统计方差高。</strong> LHTB 只有 46 个任务。在如此低的通过率下，翻转 2\u20133 个任务就能让模型的 pass@1 变动 4\u20136 个百分点。对于 4.3% pass@1 的模型（通过 2/46），95% 置信区间约为 [0.5%, 14.6%]——与 2.2% 和 6.5% 的区间大量重叠。论文没有报告置信区间，这使得 leaderboard 中许多差异在统计上不显著。</p>
+<p><strong>W2 — 几乎只用了单一 harness。</strong> 14/15 个模型使用 Terminus-2，GPT-5.3 Codex 使用 OpenAI Codex harness。论文承认这一点，但跨 harness 的比较是有混淆因素的。更重要的是，没有对同一模型在不同 harness 下的性能差异进行敏感性分析。在已知 harness 质量对 Agent benchmark 影响很大的背景下，单一 harness 设计使得”模型能力”和”harness 质量”无法区分。</p>
+<p><strong>W3 — 没有 baseline 设计消融。</strong> 论文选择了子任务权重和评分阈值（例如 τ = 0.95 作为主要阈值），但没有消融研究显示 rankings 对这些选择的敏感性。如果改用 τ = 0.85 或 τ = 0.9，模型排名会改变吗？子任务权重分配的合理性没有得到系统性验证。</p>
+<p><strong>W4 — 难度校准依赖特定模型。</strong> 任务校准专门使用 DeepSeek-V4-Pro（反复在 1.5 小时预算下运行，直到任务”有挑战性但可解”）。这意味着 LHTB 隐式地针对 DeepSeek-V4-Pro 的能力水平进行了校准。对于未来更强大的模型，LHTB 可能太简单；对于参数量更小的模型，可能完全无法作答。论文没有包含简单难度梯度层，使得 benchmark 在模型能力谱系中的适用范围受限。</p>
+<p><strong>W5 — 隐藏验证器透明度不足。</strong> 论文声称会发布评估 harness，但隐藏压力测试套件的完整性（是否所有边界情况都被包含）并不清晰。读者无法完全信任一个无法检查评估器的 benchmark。</p>
+<p><strong>W6 — 只有单次运行（pass@1）。</strong> 在这种低通过率下，单次运行方差很大。对于通过 2/46 任务的模型，不清楚是稳定能力还是偶然运气。报告 pass@3 和置信区间会大幅提升结论的可靠性。</p>
+<h3 id="作者淡化或回避的局限">作者淡化或回避的局限</h3>
+<p><strong>L1 — 终端专注范围过窄。</strong> LHTB 完全专注于终端型工作流。许多重要的长程 Agent 任务涉及网页浏览、GUI 交互、API 调用或非终端的多模态推理。论文关于”长程完成是瓶颈”的结论可能无法推广到其他部署模态。</p>
+<p><strong>L2 — 时间预算与真实工作流的偏差。</strong> 90 分钟预算对 benchmark 是合理的，但不反映所有真实部署约束——有些工作流需要数天，有些有实时约束。论文声称 LHTB 反映了”真实专业工作流”，但忽略了真实部署的时间/成本多样性。</p>
+<p><strong>L3 — 静态 benchmark 与污染风险。</strong> LHTB 是固定的 46 个任务。随着 benchmark 的广泛传播以及模型在越来越多数据上训练，污染风险会上升。论文没有讨论防污染策略或 benchmark 演进计划。</p>
+<p><strong>L4 — 成本估算不可靠。</strong> 成本基于 2026 年 6 月公开定价，假设无缓存折扣。实际上提供商提供批量折扣和 Prompt Cache，实际成本会显著不同。成本分析应视为近似，而非精确效率排名。</p>
+<h3 id="可以改进的地方">可以改进的地方</h3>
+<p><strong>I1 — 将规模扩大到 200+ 任务并设置难度梯度。</strong> 分层 benchmark（简单/中等/困难）会大幅降低方差，使 benchmark 在更广泛的模型能力范围内具有区分度。</p>
+<p><strong>I2 — 多 harness 评估。</strong> 每个模型至少在两种 harness 下运行，或计算模型×harness 交互效应，将模型能力与 harness 质量分开。</p>
+<p><strong>I3 — 增加分类别和分难度分析。</strong> 知道 GPT-5.5 在整体上达 15.2% 但在游戏类任务上 0%、在软件工程类任务上 40%，会揭示特定类别的弱点，为改进指明方向。</p>
+<p><strong>I4 — 报告多次运行的 pass@k 和置信区间。</strong> 每个模型每个任务运行 3 次，报告 pass@3 和置信区间。在 $10/任务的成本下，3 次运行费用可控，但会给 rankings 提供远更可靠的统计保障。</p>
+<p><strong>I5 — 直接研究 Agent 自我验证能力。</strong> “虚假完成”分析很有价值，但目前偏浅。更深入的研究应当：(a) 让 Agent 看到它通过可见测试的状态后，要求它生成对抗性自测样例；(b) 对比有/无此反思步骤的性能；(c) 衡量 Agent 生成的对抗性测试捕获隐藏失败的频率。</p>
+<p><strong>I6 — 分析任务内进度轨迹。</strong> 当前论文只报告最终奖励，更丰富的分析应绘制奖励随 episode 数增长的曲线，区分”早期停滞”（推理方向错误后无法继续进展）和”稳定进展但时间不够”（线性增长直到超时）。这两种失败模式有非常不同的改进含义。</p>
+<hr>
+<h2 id="边界条件与局限性">边界条件与局限性</h2>
+<p><strong>适用范围：</strong> LHTB 衡量在 90 分钟/约 231 个 episode 规模下的长程终端 Agent 能力。结论不直接适用于：</p>
+<ul>
+<li>极短任务（&#x3C; 10 步）：不同的失败模式主导。</li>
+<li>需要网页浏览或 GUI 的任务：终端 benchmark 无法衡量这些。</li>
+<li>没有确定性验证器的任务（开放式写作、科研构想）。</li>
+</ul>
+<p><strong>泛化性：</strong> “长程完成是瓶颈”这一发现，是针对这个具体任务分布和时间预算的。在更短的时间预算下，局部推理错误可能主导；在更长的预算（数小时到数天）下，全新的瓶颈（上下文压缩、长期记忆）会出现。</p>
+<hr>
+<h2 id="可复现性说明">可复现性说明</h2>
+<ul>
+<li><strong>Benchmark 发布</strong>：LHTB 任务、Terminus-2 harness 和评估代码计划开源（项目页面：<a href="https://zli12321.github.io/LHTB/%EF%BC%89%E3%80%82">https://zli12321.github.io/LHTB/）。</a></li>
+<li><strong>Docker 容器</strong>：所有任务都已容器化，确保完全可复现的评估环境。</li>
+<li><strong>成本估算</strong>：基于 2026 年 6 月公开价格，实际成本因提供商和时间点而异。</li>
+<li><strong>模型版本</strong>：论文中不是所有模型的确切版本都有明确说明，这可能影响复现性，因为提供商会持续更新模型。</li>
+</ul>
+<hr>
+<h2 id="总结与启示">总结与启示</h2>
+<p>LHTB 是一个设计精心、来得及时的 benchmark，它清晰地暴露了当前 AI Agent 的一个核心能力缺口：可以合理地推理单步操作，但无法在实际时间预算内可靠地完成长程工作流。</p>
+<p><strong>子任务级密集奖励</strong>是其最重要的方法论贡献——它将在这种难度级别下几乎无信息的二元测量转化为丰富的、模型可区分的信号。<strong>79% 的失败是超时、19% 是虚假完成</strong>这一精确诊断直接指向了改进方向：Agent 改进的下一波次需要聚焦于<strong>长程预算管理、进度追踪和自我验证</strong>，而非单纯的单步推理能力提升。</p>
+<p>GPT-5.5 以 15.2% pass@1 领先，但这同时也意味着：在一个人类专家需要 2\u20138 小时完成的任务上，即使最强模型也有 84.8% 的概率无法完成。这对于”Agent 准备好自主部署了”这一叙事，是一个清醒而重要的校准。</p>
+<hr>
+<h2 id="深度解析长程任务为什么本质上更难">深度解析：长程任务为什么本质上更难</h2>
+<h3 id="91-长程执行的能力悬崖">9.1 长程执行的「能力悬崖」</h3>
+<p>LHTB 的结果揭示了一个比「长任务更难」更有意思的现象：在长程情境下有一个质的能力边界，无法单靠短程能力的简单外推来解释。</p>
+<p>短程 Benchmark（SWE-Bench、Terminal-Bench）主要考验的是「步级智能」：Agent 能不能正确执行单个操作？动作是否符合合理的执行计划？</p>
+<p>LHTB 同时考验「步级智能」和「长程完成能力」，数据表明后者是当前前沿模型的能力矶颈。Agent 在 LHTB 上失败往往不是因为局部推理出了问题，而是因为：</p>
+<ul>
+<li>在不必要的验证循环上浪费了时间；</li>
+<li>重复了已经完成的步骤；</li>
+<li>无法追踪哪些子目标尚未完成；</li>
+<li>任务大部分完成后时间却耗尽了。</li>
+</ul>
+<p>这是与「答案错误」截然不同的失败模式，意味着所需的改进方向也不同。</p>
+<h3 id="92-为什么上下文窗口扭大不是解决方案">9.2 为什么上下文窗口扭大不是解决方案</h3>
+<p>有一种直观想法：只要上下文窗口足够大，Agent 就能记住所有先前步骤，自然能避免重复已完成的工作。但 LHTB 表明这不是根本决定因素。</p>
+<p>大多数模型每个任务平均消耗 4–20M tokens（远超单次上下文窗口的分配）。Harness 通过滑动窗口、截断或摘要来管理这一点——但这些处理引入了历史上下文的有损压缩。</p>
+<p>这意味着问题本质上不是上下文长度问题，而是「上下文压缩质量」问题：Agent 能不能将其进度摘要为简洁的表示，且保留继续取得进展所需的关键信息？当前 Agent 对上下文压缩质量较差：它们会摘要动作历史，但会丢失对子目标完成状态、已验证假设和剩余工作结构的追踪。</p>
+<h3 id="93-局部验证-vs-深度验证">9.3 局部验证 vs. 深度验证</h3>
+<p>一个完成长程任务的人类专家，不只是执行步骤，还会定期验证先前步骤是否实现了预期结果。如果第 50 步产生了一个错误的中间输出且没有被核查，建立在它上的所有后续步骤都是在浪费时间。当前 Agent 运行验证的力度不处：他们检查命令没有报错，但很少验证输出是否满足后续步骤所需的更深层语义合同。</p>
+<p>LHTB 的隐藏验证器被设计为专门利用这个缺口：可见测试检查表面属性（命令运行了、文件存在了），但隐藏压力测试检查深层语义属性（数字精度、Schema 泛化能力、边界情况处理）。通过了可见测试却未通过隐藏检查的 Agent，完成了工作但验证得不够深入——这正是「虚假完成」分析所揭示的。</p>
+<h3 id="94-常见失败模式伪代码">9.4 常见失败模式伪代码</h3>
+<pre class="astro-code github-dark" style="background-color:#24292e;color:#e1e4e8; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word;" tabindex="0" data-language="plaintext"><code><span class="line"><span>算法 3: LHTB 上典型的长程 Agent 失败模式</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>给定: 任务 T，90 分钟预算，隐藏验证器 V_hidden，可见验证器 V_public</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>第一阶段（0–40 分钟）: 初始化与早期探索</span></span>
+<span class="line"><span>1: Agent 读取指令</span></span>
+<span class="line"><span>2: Agent 探索目录结构</span></span>
+<span class="line"><span>3: Agent 运行 V_public → 大部分失败（预期内，任务就是已损坏的）</span></span>
+<span class="line"><span>4: Agent 识别 3–5 个可见错误进行修复</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>第二阶段（40–75 分钟）: 针对性修复</span></span>
+<span class="line"><span>5: Agent 逐个修复已识别的错误</span></span>
+<span class="line"><span>6: 每次修复后：Agent 运行 V_public 检查进度</span></span>
+<span class="line"><span>7: 最终 V_public 通过所有可见测试</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>第三阶段（75–90 分钟）: 验证与停止</span></span>
+<span class="line"><span>8: Agent 最后运行 V_public 一次 → 全部通过</span></span>
+<span class="line"><span>9: Agent 判断：「任务完成」</span></span>
+<span class="line"><span>10: Agent 带着约10 分钟剩余时间主动退出  ← 虚假完成！</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>但 V_hidden 包含：</span></span>
+<span class="line"><span>- 重命名字段的 Schema 变体（Agent 从未见过此变体）</span></span>
+<span class="line"><span>- 1% 精度阈值的数字验证（Agent 只测试到 5% 精度）</span></span>
+<span class="line"><span>- Gzip+Base64 编码的边界样例（不在可见测试套件中）</span></span>
+<span class="line"><span>11: V_hidden 评估 → R = 0.80–0.92（接近满分但未通过）</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>为什么会失败？</span></span>
+<span class="line"><span>- Agent 不知道 V_hidden 的存在</span></span>
+<span class="line"><span>- Agent 没有生成对抗性自测样例</span></span>
+<span class="line"><span>- Agent 在 V_public 说「完成」时就停下来了</span></span></code></pre>
+<p>这个模式解释了 14 个 R ≥ 0.75 的虚假完成 run。Agent 并不是没有能力；它正确完成了任务的大部分。失败属于认识论层面：Agent 无法验证它自己看不到的内容。</p>
+<hr>
+<h2 id="lhtb-对-agent-已就绪叙事的校准">LHTB 对「 Agent 已就绪」叙事的校准</h2>
+<p>业界里有一种叙事（部分被令人印象深岈的 SWE-Bench 分数支撑）：AI 编程 Agent 已经准备好在真实工程工作流中半自主地部署了。LHTB 提供了重要的背面组数据：在一个能力水平为人类专家需要 2–8 小时完成的任务上，即使是最强的模型（GPT-5.5）也有 84.8% 的概率无法完成。</p>
+<p>对于人类会审查每个输出的部署场景，Agent 是生产力提升器，而非替代者，这是可接受的。但对于期望完全自主完成的场景（运行 3 天的 ML 训练流水线、准备合规审计），当前能力（15%）与所需可靠性（90–99%）之间的差距不是 2× 改进问题，而是需要新架构或训练范式的根本能力差距。</p>
+<p>LHTB 的价値不仅在于作为 benchmark，还在于作为一个校准工具：它为开发者和部署者提供了对 Agent 在真实专业工作所需难度谱上实际位置的现实估算。</p>
+<h3 id="具体改进方向">具体改进方向</h3>
+<p><strong>改进 1： Horizon 预算管理作为一等问题</strong></p>
+<p>如果 79% 的失败是超时，实际上对 Agent 改进的实用主要不是更超级的单步推理，而是更晚成的<strong>预算分配</strong>。一个能在剩余子目标上合理分配剩余时间预算的 Agent，且能在已完成的子目标分配多少时间和尚未完成的分配多少时间，将直接提升 LHTB 得分。</p>
+<p><strong>改进 2： 对抗性自测与验证</strong></p>
+<p>虚假完成模式表明 Agent 需要自己构建对抗性测试，而不是仅仅依赖可见测试。最理想的场景：在通过所有可见测试后，Agent 主动推理「隐藏测试可能会检查哪种类型的输入」，生成一小组对抗样例进行自测。这反映了一个有经验的工程师在修复 Bug 后的思维：“还有哪种边界情况可能仍然失败？”</p>
+<p><strong>改进 3： 层次化记忆架构</strong></p>
+<p>200–300+ 个 episode 的任务远超展开单次上下文窗口所能容纳的范围。更好的架构应当尝试：</p>
+<ul>
+<li><strong>层次化记忆</strong>：将已完成的子目标摘要为简洁的状态表示，作为每个新上下文窗口的入口。</li>
+<li><strong>写入日志</strong>：维护子目标完成状态的结构化日志（JSON 或等效格式），而不是不结构的文本历史。</li>
+<li><strong>外部状态跟踪</strong>：用结构化格式存储 Agent 对任务完成情况的当前信念，使其可被查询。</li>
+</ul>
+<p><strong>改进 4： 校准停止标准</strong></p>
+<p>Agent 目前当判断可见信号表明任务完成时就停下来。更好的停止标准应包含：</p>
+<ul>
+<li><strong>不确定性感知停止</strong>：只有当 Agent 对隐藏压力测试也能通过的信心超过阈值时，才停止。</li>
+<li><strong>覆盖率停止</strong>：生成可能的失败模式检查表，每一条验证完论再停止。</li>
+<li><strong>保守默认</strong>：在预算还剩时，默认用剩余时间进一步验证而不是实时宣布完成。</li>
+</ul>
+<hr>
+<h2 id="token-效率问题模型在-horizon-上的差异">Token 效率问题：模型在 Horizon 上的差异</h2>
+<h3 id="101-模型-token-消耗差异庄大">10.1 模型 Token 消耗差异庄大</h3>
+<p>表 1 中的 Token 消耗对比很讲意思：</p>
+<ul>
+<li>GPT-5.5：4.16M tokens — Token 消耗最少，通过率最高</li>
+<li>MiniMax M3：20.20M tokens — Token 消耗最多，5× GPT-5.5，但通过率不到 GPT-5.5 的一半</li>
+<li>DeepSeek V4 Pro：14.45M tokens — Token 量大但单价低，因此成本比 MiniMax M3 还低</li>
+</ul>
+<p>这不是一个简单的效率故事。GPT-5.5 使用 5× 更少的 Token 却能实现 2× 更高的通过率。至少有三种解释：</p>
+<ol>
+<li><strong>质量效率</strong>：GPT-5.5 每个 Token 能实现更多有意义的进展，因为其推理能力更强。</li>
+<li><strong>上下文压缩质量</strong>：GPT-5.5 可能对历史上下文进行更有效的压缩，从而在相同预算下覆盖更多步骤。</li>
+<li><strong>停止行为</strong>：消耗更多 Token 的模型可能每步输入更多语言，或者更频繁地重读其整个上下文。</li>
+</ol>
+<h3 id="102-episode-数-vs-token-数的不成比性">10.2 Episode 数 vs. Token 数的不成比性</h3>
+<p>Episode 数（动作次数）和 Token 数并不成比例：</p>
+<ul>
+<li>GPT-5.5：208 episodes，4.16M tokens → ~20K tokens/episode</li>
+<li>MiniMax M3：314 episodes，20.20M tokens → ~64K tokens/episode</li>
+<li>DeepSeek V4 Pro：321 episodes，14.45M tokens → ~45K tokens/episode</li>
+</ul>
+<p>MiniMax M3 每个 episode 使用了 3× 于 GPT-5.5 的 Token。这表明 MiniMax M3 在每个动作时做了多得多的上下文阅读（或输出了更长的内容），这可能意味着更彻底的每步推理，也可能意味着更低效的上下文管理。</p>
+<h3 id="103-pareto-边界的公式化">10.3 Pareto 边界的公式化</h3>
+<p>对于 Pareto 判断，模型 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>i</mi></mrow><annotation encoding="application/x-tex">i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6595em;"></span><span class="mord mathnormal">i</span></span></span></span> 不被支配的条件是：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mi mathvariant="normal">∄</mi><mi>j</mi><mo mathvariant="normal">≠</mo><mi>i</mi><mtext> 使得 </mtext><msub><mtext>cost</mtext><mi>j</mi></msub><mo>≤</mo><msub><mtext>cost</mtext><mi>i</mi></msub><mtext> 且 </mtext><msub><mtext>passrate</mtext><mi>j</mi></msub><mo>></mo><msub><mtext>passrate</mtext><mi>i</mi></msub></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(8)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\nexists j \neq i \text{ 使得 } \text{cost}_j \leq \text{cost}_i \text{ 且 } \text{passrate}_j > \text{passrate}_i
+\tag{8}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord amsrm">∄</span><span class="mord mathnormal" style="margin-right:0.0572em;">j</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel"><span class="mrel"><span class="mord vbox"><span class="thinbox"><span class="rlap"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="inner"><span class="mord"><span class="mrel"></span></span></span><span class="fix"></span></span></span></span></span><span class="mspace nobreak"></span><span class="mrel">=</span></span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.9694em;vertical-align:-0.2861em;"></span><span class="mord mathnormal">i</span><span class="mord text"><span class="mord"> </span><span class="mord cjk_fallback">使得</span><span class="mord"> </span></span><span class="mord"><span class="mord text"><span class="mord">cost</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0572em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≤</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1.0636em;vertical-align:-0.3802em;"></span><span class="mord"><span class="mord text"><span class="mord">cost</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mord text"><span class="mord"> </span><span class="mord cjk_fallback">且</span><span class="mord"> </span></span><span class="mord"><span class="mord text"><span class="mord">passrate</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2175em;"><span style="top:-2.4559em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.0572em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3802em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">></span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8592em;vertical-align:-0.2441em;"></span><span class="mord"><span class="mord text"><span class="mord">passrate</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.2175em;"><span style="top:-2.4559em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2441em;"><span></span></span></span></span></span></span></span><span class="tag"><span class="strut" style="height:1.1302em;vertical-align:-0.3802em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">8</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>从数据中可以明确识别以下 Pareto 支配情况：</p>
+<ul>
+<li>GPT-5.4（~<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>28</mn><mi mathvariant="normal">/</mi><mtext>任务，</mtext><mn>2.2</mn></mrow><annotation encoding="application/x-tex">28/任务，2.2% 通过率）被 GPT-5.5（~</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">28/</span><span class="mord cjk_fallback">任务，</span><span class="mord">2.2</span></span></span></span>21/任务，15.2% 通过率）支配：更贵且更差。原因是 GPT-5.4 每个任务需要更多 episodes（302 vs. 208），在类似 Token 单价的情况下，所需时间和费用就更多，同时获得更差的结果。</li>
+<li>Grok 4.20（~$21/任务，0% 通过率）被几乎所有人支配。</li>
+</ul>
+<p>成本分析最重要的课题：在长程任务上，更高的推断支出并不保证更好的性能。一个局部推理能力较弱却需要 3× episode 才能实现相同进展的模型，成本更高且结果更差。</p>
+<hr>
+<h2 id="深度对比lhtb-在-benchmark-难度谱系中的位置">深度对比：LHTB 在 Benchmark 难度谱系中的位置</h2>
+<h3 id="111-半饱和状态的渐进式崩塌">11.1 半饱和状态的渐进式崩塌</h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Benchmark</th><th>典型任务时长</th><th>最强模型通过率</th></tr></thead><tbody><tr><td>HumanEval</td><td>&#x3C; 1 分钟</td><td>~96%</td></tr><tr><td>SWE-Bench Verified</td><td>10–30 分钟</td><td>~71%</td></tr><tr><td>Terminal-Bench 2</td><td>&#x3C; 20 分钟</td><td>~52%</td></tr><tr><td>LHTB (τ=0.95)</td><td>85+ 分钟</td><td>15.2%</td></tr><tr><td>LHTB (τ=1.0)</td><td>85+ 分钟</td><td>10.9%</td></tr></tbody></table>
+<p>从 Terminal-Bench 2（~52%）到 LHTB（15.2%）的跳变非常陨岁：将任务 horizon 添加大约 4× 就将最强模型的通过率降低了 3.4×。这不是平滑的降展，而是一个质的转变：短程局部推理足够的达山区域，与长程 horizon 管理不可缺少的达山区域。</p>
+<h3 id="112-metr-时间-horizon-框架">11.2 METR 时间 Horizon 框架</h3>
+<p>将 LHTB 联系到 METR 的时间 horizon 分析是一个有用的视角。METR 将 Agent 能力定义为「 Agent 达到固定成功率（如 50%）所需的典型人类时间任务时长」。在此框架下：</p>
+<ul>
+<li>短程 benchmark（SWE-Bench、HumanEval）对应人类 10–30 分钟任务</li>
+<li>LHTB 任务对应人类 2–8 小时任务</li>
+<li>未来的超长程 benchmark 将对应人类数天到数周的任务</li>
+</ul>
+<p>时间 horizon 框架预测 Agent 在 horizon 长度增加时成功率会大幅下降，LHTB 从实验上验证了这一点。LHTB 额外添加的价値是揭示了机制：送山炮不是推理能力变差，而是 horizon 管理能力变差。</p>
+<hr>
+<h2 id="模型排名的统计可靠性讨论">模型排名的统计可靠性讨论</h2>
+<h3 id="121-低通过率下的置信区间">12.1 低通过率下的置信区间</h3>
+<p>在如此低的通过率下，二项模型的置信区间包含了大量的不确定性。对于一个在 46 个任务中通过 2 个的模型（4.3%），95% 置信区间大约为：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mover accent="true"><mi>p</mi><mo>^</mo></mover><mo>±</mo><mn>1.96</mn><msqrt><mfrac><mrow><mover accent="true"><mi>p</mi><mo>^</mo></mover><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><mover accent="true"><mi>p</mi><mo>^</mo></mover><mo stretchy="false">)</mo></mrow><mi>n</mi></mfrac></msqrt><mo>=</mo><mn>0.043</mn><mo>±</mo><mn>1.96</mn><msqrt><mfrac><mrow><mn>0.043</mn><mo>×</mo><mn>0.957</mn></mrow><mn>46</mn></mfrac></msqrt><mo>≈</mo><mo stretchy="false">[</mo><mn>0.5</mn><mi mathvariant="normal">%</mi><mo separator="true">,</mo><mtext> </mtext><mn>14.5</mn><mi mathvariant="normal">%</mi><mo stretchy="false">]</mo></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(9)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\hat{p} \pm 1.96\sqrt{\frac{\hat{p}(1-\hat{p})}{n}} = 0.043 \pm 1.96\sqrt{\frac{0.043 \times 0.957}{46}} \approx [0.5\%,\ 14.5\%]
+\tag{9}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord accent"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6944em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">p</span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">^</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1944em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">±</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.44em;vertical-align:-0.7356em;"></span><span class="mord">1.96</span><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.7044em;"><span class="svg-align" style="top:-4.4em;"><span class="pstrut" style="height:4.4em;"></span><span class="mord" style="padding-left:1em;"><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">n</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord accent"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6944em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">p</span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">^</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1944em;"><span></span></span></span></span></span><span class="mopen">(</span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord accent"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.6944em;"><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="mord mathnormal">p</span></span><span style="top:-3em;"><span class="pstrut" style="height:3em;"></span><span class="accent-body" style="left:-0.1667em;"><span class="mord">^</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.1944em;"><span></span></span></span></span></span><span class="mclose">)</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span><span style="top:-3.6644em;"><span class="pstrut" style="height:4.4em;"></span><span class="hide-tail" style="min-width:1.02em;height:2.48em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="2.48em" viewBox="0 0 400000 2592" preserveAspectRatio="xMinYMin slice"><path d="M424,2478
+c-1.3,-0.7,-38.5,-172,-111.5,-514c-73,-342,-109.8,-513.3,-110.5,-514
+c0,-2,-10.7,14.3,-32,49c-4.7,7.3,-9.8,15.7,-15.5,25c-5.7,9.3,-9.8,16,-12.5,20
+s-5,7,-5,7c-4,-3.3,-8.3,-7.7,-13,-13s-13,-13,-13,-13s76,-122,76,-122s77,-121,77,-121
+s209,968,209,968c0,-2,84.7,-361.7,254,-1079c169.3,-717.3,254.7,-1077.7,256,-1081
+l0 -0c4,-6.7,10,-10,18,-10 H400000
+v40H1014.6
+s-87.3,378.7,-272.6,1166c-185.3,787.3,-279.3,1182.3,-282,1185
+c-2,6,-10,9,-24,9
+c-8,0,-12,-0.7,-12,-2z M1001 80
+h400000v40h-400000z"></path></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.7356em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">0.043</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">±</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.44em;vertical-align:-0.7884em;"></span><span class="mord">1.96</span><span class="mord sqrt"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.6516em;"><span class="svg-align" style="top:-4.4em;"><span class="pstrut" style="height:4.4em;"></span><span class="mord" style="padding-left:1em;"><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">46</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">0.043</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord">0.957</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span><span style="top:-3.6116em;"><span class="pstrut" style="height:4.4em;"></span><span class="hide-tail" style="min-width:1.02em;height:2.48em;"><svg xmlns="http://www.w3.org/2000/svg" width="400em" height="2.48em" viewBox="0 0 400000 2592" preserveAspectRatio="xMinYMin slice"><path d="M424,2478
+c-1.3,-0.7,-38.5,-172,-111.5,-514c-73,-342,-109.8,-513.3,-110.5,-514
+c0,-2,-10.7,14.3,-32,49c-4.7,7.3,-9.8,15.7,-15.5,25c-5.7,9.3,-9.8,16,-12.5,20
+s-5,7,-5,7c-4,-3.3,-8.3,-7.7,-13,-13s-13,-13,-13,-13s76,-122,76,-122s77,-121,77,-121
+s209,968,209,968c0,-2,84.7,-361.7,254,-1079c169.3,-717.3,254.7,-1077.7,256,-1081
+l0 -0c4,-6.7,10,-10,18,-10 H400000
+v40H1014.6
+s-87.3,378.7,-272.6,1166c-185.3,787.3,-279.3,1182.3,-282,1185
+c-2,6,-10,9,-24,9
+c-8,0,-12,-0.7,-12,-2z M1001 80
+h400000v40h-400000z"></path></svg></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.7884em;"><span></span></span></span></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mopen">[</span><span class="mord">0.5%</span><span class="mpunct">,</span><span class="mspace"> </span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord">14.5%</span><span class="mclose">]</span></span><span class="tag"><span class="strut" style="height:2.4928em;vertical-align:-0.7884em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">9</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>这个区间包含了 0% 到 15%！这意味着，在 4.3%、2.2%、6.5% 这些 pass@1 数字之间，统计上并没有用 1 个模型每任务运行 1 次来区分。</p>
+<p>为什么这点重要？因为论文展示的 leaderboard 上的排名差异在统计意义上大多数是不显著的。论文应该明确指出这一点，但它没有。</p>
+<h3 id="122-如何提升统计可靠性">12.2 如何提升统计可靠性</h3>
+<p>最直接的方法是多次运行并报告 pass@k：</p>
+<span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mtable width="100%"><mtr><mtd width="50%"></mtd><mtd><mrow><mtext>pass@</mtext><mi>k</mi><mo>=</mo><mn>1</mn><mo>−</mo><mfrac><mrow><mo fence="true">(</mo><mfrac linethickness="0px"><mrow><mi>n</mi><mo>−</mo><mi>c</mi></mrow><mi>k</mi></mfrac><mo fence="true">)</mo></mrow><mrow><mo fence="true">(</mo><mfrac linethickness="0px"><mi>n</mi><mi>k</mi></mfrac><mo fence="true">)</mo></mrow></mfrac></mrow></mtd><mtd width="50%"></mtd><mtd><mtext>(10)</mtext></mtd></mtr></mtable><annotation encoding="application/x-tex">\text{pass@}k = 1 - \frac{\binom{n-c}{k}}{\binom{n}{k}}
+\tag{10}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord">pass@</span></span><span class="mord mathnormal" style="margin-right:0.0315em;">k</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:2.6824em;vertical-align:-1.09em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.5923em;"><span style="top:-2.26em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size1">(</span></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.7454em;"><span style="top:-2.355em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span style="top:-3.144em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">n</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.345em;"><span></span></span></span></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size1">)</span></span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.74em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord"><span class="mopen delimcenter" style="top:0em;"><span class="delimsizing size1">(</span></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8523em;"><span style="top:-2.355em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight" style="margin-right:0.0315em;">k</span></span></span></span><span style="top:-3.144em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathnormal mtight">n</span><span class="mbin mtight">−</span><span class="mord mathnormal mtight">c</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.345em;"><span></span></span></span></span></span><span class="mclose delimcenter" style="top:0em;"><span class="delimsizing size1">)</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:1.09em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span><span class="tag"><span class="strut" style="height:2.6824em;vertical-align:-1.09em;"></span><span class="mord text"><span class="mord">(</span><span class="mord"><span class="mord">10</span></span><span class="mord">)</span></span></span></span></span></span>
+<p>其中 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span> 是总运行次数，<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>c</mi></mrow><annotation encoding="application/x-tex">c</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">c</span></span></span></span> 是成功运行次数。平均 <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>10</mn><mi mathvariant="normal">/</mi><mtext>任务</mtext><mo>×</mo><mn>46</mn><mtext>任务</mtext><mo>×</mo><mn>3</mn><mtext>次运行</mtext><mo>=</mo><mn>1380</mn></mrow><annotation encoding="application/x-tex">10/任务 \times 46 任务 \times 3 次运行 = 1380</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">10/</span><span class="mord cjk_fallback">任务</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord">46</span><span class="mord cjk_fallback">任务</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord">3</span><span class="mord cjk_fallback">次运行</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1380</span></span></span></span> 美元每模型〔—对于严肃评估来说这个代价是应该就的。</p>
+<hr>
+<h2 id="实验可复现性说明">实验可复现性说明</h2>
+<ul>
+<li><strong>Benchmark 发布</strong>：LHTB 任务、Terminus-2 harness 和评估代码计划开源（项目页面：<a href="https://zli12321.github.io/LHTB/%EF%BC%89%E3%80%82">https://zli12321.github.io/LHTB/）。</a></li>
+<li><strong>Docker 容器</strong>：所有任务已容器化，保证评估环境完全可复现。</li>
+<li><strong>成本估算</strong>：基于 2026 年 6 月平台公开定价，实际成本因提供商不同而得各异。</li>
+<li><strong>模型版本</strong>：论文中并非所有模型的确切版本均有明确说明，这可能影响复现性，因为提供商会持续更新模型。</li>
+<li><strong>校准数据集</strong>：120 个候选任务（质量过滤前）没有公开发布。</li>
+</ul>
+<hr>
+<h2 id="个人思考这篇论文对我的启发">个人思考：这篇论文对我的启发</h2>
+<p>阅读这篇论文最让我印象深刻的是对「虚假完成」现象的量化。在我自己的使用经验中， AI Agent（包括我正在使用的 OpenClaw）确实会在应该继续工作的时候宣布任务完成。LHTB 提供了一个甴石的数据佐证：这不是 个别 Agent 的特有缺欠，而是当前所有前沿模型的系统性问题。</p>
+<p>这也让我重新思考如何设计更好的 Agent 工作流程。以本篇笔记的每日流程为例：我给 Agent 一个时间预算（6 小时），并明确要求不能自行提前结束。下一步可能是尝试建立对 Agent 自评的结构化标准：任务完成的每一个阶段，都需要 Agent 展示具体的证据，而不是只说「已完成」。</p>
+<p>LHTB 的常用已经开始：百度、阔海等公司正在运行自己的长程 Agent 内部测评。随着这类 benchmark 的普及，我期待看到更多针对长程完成能力（而非单步推理）的优化工作，也期待利用子任务级密集奖励训练更长程 执行的 Agent 。</p>
+<hr>
+<h2 id="参考文献">参考文献</h2>
+<p>[1] Li et al. Long-Horizon-Terminal-Bench: Testing the Limits of Agents on Long-Horizon Terminal Tasks with Dense Reward-Based Grading. arXiv:2607.08964，2026 年 7 月。</p>
+<p>[2] Yang et al. SWE-Bench: Can Language Models Resolve Real-World GitHub Issues? arXiv:2310.06770。</p>
+<p>[3] Desai et al. SWE-Marathon: Can Agents Autonomously Complete Ultra-Long-Horizon Software Work? arXiv:2606.07682，2026。</p>
+<p>[4] METR. Evaluating Long-Horizon Autonomy of AI Agents. METR Technical Report, 2026。</p>
+<p>[5] DeepSeek-AI. DeepSeek-V4: Towards Highly Efficient Million-Token Context Intelligence. arXiv:2606.19348，2026。</p> </div> <footer class="blog-post-footer">  <nav class="blog-post-nav" aria-label="Adjacent posts"> <a class="blog-post-nav-link blog-post-nav-prev" href="/blog/2026-07-13-longhorizonterminalbench-technical-review-en/"> <span class="blog-post-nav-label">← Newer</span> <span class="blog-post-nav-title">Long-Horizon-Terminal-Bench: Dense Reward Grading Exposes Agent Long-Horizon Execution Limits</span> </a> <a class="blog-post-nav-link blog-post-nav-next" href="/blog/2026-07-11-dppo-technical-review-en/"> <span class="blog-post-nav-label">Older →</span> <span class="blog-post-nav-title">DPPO: Fixing PPO&#39;s Ratio Clipping by Constraining Divergence Instead of a Single Token&#39;s Probability</span> </a> </nav> </footer> </article> </div> </main>  <footer class="footer"> <div class="container footer-inner"> <div class="footer-brand"> <strong>Zhongzhu Zhou / Charlie Zhou</strong> <div class="small">Efficient machine learning, systems and research notes.</div> <div class="small footer-copy">© 2019 - 2026 Zhongzhu Zhou · All rights reserved.</div> </div> <div class="footer-social" aria-label="Social links"> <a class="social-icon-link md" href="https://github.com/zzz0906" aria-label="GitHub" title="GitHub" target="_blank" rel="noopener noreferrer"> <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1-.02-1.96-3.2.69-3.87-1.54-3.87-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.2.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5Z"></path> </svg>     </a><a class="social-icon-link md" href="https://scholar.google.com.hk/citations?user=BoZKZl4AAAAJ&amp;hl=zh-CN" aria-label="Google Scholar" title="Google Scholar" target="_blank" rel="noopener noreferrer">  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M12 2 .5 8.5 12 15l9.5-5.37V16h1.5V8.5L12 2Zm-6.5 11.4v3.6C5.5 19.21 8.4 21 12 21s6.5-1.79 6.5-4v-3.6L12 17 5.5 13.4Z"></path> </svg>    </a><a class="social-icon-link md" href="https://www.linkedin.com/in/zhongzhu-zhou/" aria-label="LinkedIn" title="LinkedIn" target="_blank" rel="noopener noreferrer">   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13Zm1.78 13.02H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.22.79 24 1.77 24h20.45c.98 0 1.78-.78 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"></path> </svg>   </a><a class="social-icon-link md" href="https://x.com/ZhongzhuZhou" aria-label="X (Twitter)" title="X (Twitter)" target="_blank" rel="noopener noreferrer">     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M18.244 2H21.5l-7.5 8.57L23 22h-6.96l-5.45-7.13L4.3 22H1.04l8.02-9.17L1 2h7.13l4.93 6.51L18.244 2Zm-1.22 18h1.93L7.06 4H5L17.024 20Z"></path> </svg> </a><a class="social-icon-link md" href="mailto:zhongzhu.zhou@sydney.edu.au" aria-label="Email" title="Email" target="_blank" rel="noopener noreferrer">    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"> <path fill="currentColor" d="M3 4h18c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H3c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2Zm0 2v.4l9 6.3 9-6.3V6H3Zm0 2.8V18h18V8.8l-8.4 5.9c-.36.25-.84.25-1.2 0L3 8.8Z"></path> </svg>  </a> </div> </div> <div class="container footer-visitors" aria-label="Visitor map"> <p class="footer-visitors-caption">Where readers visit from</p> <div class="footer-visitors-map" id="footer-visitors-map"> <script type="text/javascript" id="mapmyvisitors" src="//mapmyvisitors.com/map.js?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff&w=a"></script> <noscript> <a href="https://mapmyvisitors.com/web/1c4kz" title="Visit tracker"> <img src="https://mapmyvisitors.com/map.png?d=H4sd4o7UOHlbp1CE912toff3sZ4J32o8MVoVcpTzPVQ&cl=ffffff" alt="Visitor map" loading="lazy"> </a> </noscript> </div> </div> </footer>  </body></html>
