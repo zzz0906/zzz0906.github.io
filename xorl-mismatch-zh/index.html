@@ -1,0 +1,2770 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="XoRL 与 SGLang 如何对齐决定比特的前向计算，以 0 训练-推理不匹配训练开源权重 MoE。">
+    <meta name="color-scheme" content="light">
+    <title>开源权重 MoE RL 的 0 train-infer mismatch：开源代码里的逐字节对齐</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="vendor/katex/katex.min.css">
+    <link rel="stylesheet" href="styles.css?v=20260817-parallelism-figures-v1">
+    <style>
+      :root {
+        --sans: Inter, "Noto Sans SC", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        --serif: "Noto Serif SC", ui-serif, Georgia, Cambria, "Songti SC", "SimSun", serif;
+      }
+      .masthead-subtitle {
+        margin: 0.55rem 0 0;
+        max-width: 42rem;
+        color: var(--ink-soft);
+        font-family: var(--serif);
+        font-size: clamp(1.05rem, 2vw, 1.28rem);
+        line-height: 1.45;
+      }
+      .article-byline {
+        margin: 1.15rem 0 0.2rem;
+        font-family: var(--sans);
+        font-size: 1.02rem;
+        line-height: 1.55;
+      }
+      .article-byline-meta {
+        display: block;
+        margin-top: 0.2rem;
+        color: var(--ink-soft);
+        font-size: 0.92rem;
+        font-weight: 400;
+      }
+      .article-byline-note {
+        margin: 0.45rem 0 1.2rem;
+        max-width: 42rem;
+        color: var(--ink-soft);
+        font-family: var(--sans);
+        font-size: 0.94rem;
+        line-height: 1.55;
+      }
+    </style>
+    <script defer src="vendor/katex/katex.min.js"></script>
+    <script defer src="facts.js?v=20260817-parallelism-figures-v1"></script>
+    <script defer src="app.js?v=20260817-parallelism-figures-v1"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">跳到正文</a>
+    <div class="reading-progress" aria-hidden="true"><span id="reading-progress-bar"></span></div>
+
+    <header class="masthead" id="top">
+      <h1 class="masthead-title" aria-label="开源权重 MoE RL 的 0 train-infer mismatch：开源代码里的逐字节对齐">
+        <span class="masthead-title-line masthead-title-line-primary">
+          <span class="masthead-title-prefix" aria-hidden="true"></span>
+          <span class="masthead-title-core"><span class="masthead-title-anchor masthead-title-anchor-zero">0</span> train-infer mismatch</span>
+        </span>
+        <span class="masthead-title-line">
+          <span class="masthead-title-prefix">for</span>
+          <span class="masthead-title-core"><span class="masthead-title-anchor">O</span>pen-weight MoE RL</span>
+        </span>
+        <span class="masthead-title-line">
+          <span class="masthead-title-prefix">in</span>
+          <span class="masthead-title-core"><span class="masthead-title-anchor">O</span>pen-source code</span>
+        </span>
+      </h1>
+      <p class="masthead-subtitle">开源权重 MoE RL 的逐字节训练-推理对齐</p>
+      <p class="article-byline">
+        <strong>Ashwinee Panda</strong> · <strong>Zhongzhu (Charlie) Zhou</strong>
+        <span class="article-byline-meta">Together AI · 2026 年 8 月</span>
+      </p>
+      <p class="article-byline-note">
+        中文版。交互图与测量与英文原文一致。英文原文：<a href="https://kiddyboots216.github.io/mismatch/">kiddyboots216.github.io/mismatch</a>
+      </p>
+
+      <div class="fig-shell grpo-runs-figure" id="fig-grpo-runs" data-reveal>
+        <div class="grpo-runs-controls" id="grpo-runs-controls">
+          <fieldset class="grpo-runs-series">
+            <legend>显示</legend>
+            <label><input type="checkbox" id="grpo-show-solve" checked> Solve rate（解题率）</label>
+            <label><input type="checkbox" id="grpo-show-k3"> 训练-推理不匹配（K3）</label>
+          </fieldset>
+          <ul class="grpo-runs-legend" id="grpo-legend" aria-hidden="false" aria-label="开或关各条曲线">
+            <li data-series="0-K3"><span class="grpo-legend-swatch grpo-swatch-zerok3"></span><span>0 mismatch<br>（XoRL）</span></li>
+            <li data-series="IS"><span class="grpo-legend-swatch grpo-swatch-xorl-deep"></span><span>Importance Sampling Baseline<br>（XoRL）</span></li>
+            <li data-series="RIVER-IS"><span class="grpo-legend-swatch grpo-swatch-is"></span><span>IS Baseline<br>（River）</span></li>
+            <li data-series="TINKER"><span class="grpo-legend-swatch grpo-swatch-tinker"></span><span>IS Baseline<br>（Tinker）</span></li>
+          </ul>
+        </div>
+        <div class="fig-stage" role="region" aria-label="可滚动的 Wordle GRPO 对比图">
+          <figure>
+            <svg class="fig-svg" id="grpo-runs-svg" viewBox="0 0 960 480" role="img" aria-labelledby="grpo-runs-title grpo-runs-desc" tabindex="0">
+              <title id="grpo-runs-title">四条 Wordle GRPO 曲线的训练解题率、训练-推理不匹配，以及 held-out 评测</title>
+              <desc id="grpo-runs-desc">0 mismatch 的 XoRL 运行在第 128 步达到 70.8% 训练解题率，held-out 评测解题率为 77.4%。River 基线达到 68.4% 训练解题率和 76.4% held-out 评测解题率。XoRL 基线达到 58.1% 训练解题率和 63.9% held-out 评测解题率。Tinker 基线达到 51.4% 训练解题率和 49.2% held-out 评测解题率。图例中的每一项可以开关对应曲线。</desc>
+              <g data-js-layer></g>
+            </svg>
+          </figure>
+        </div>
+        <p class="grpo-comparison-note">
+          我们训练 Qwen3.6-35B-A3B 来玩 Wordle。在我们的训练引擎 XoRL 里，可以以 0 train-infer mismatch 运行（青色），解题率相对我们的基线有明显提升。
+          我们与托管 RL 服务 River 和 Tinker 的基线对比；它们是闭源的，很可能在许多方面与 XoRL 不同。
+          三条基线都使用 vanilla Importance Sampling，测得的训练-推理不匹配（K3）相近，但解题率差别很大。
+        </p>
+        <p class="grpo-comparison-note">
+          <a href="#results-conclusion">点这里跳到经验结果的分析与消融（我们用 CISPO 训练时，Tinker 好得多）</a>。
+        </p>
+      </div>
+
+      <div class="lede lede-problem" data-reveal>
+        <p>
+          开源 RL 栈普遍受 <i>train-infer mismatch</i> 困扰：训练
+          引擎<label for="sn-training-engines" class="sidenote-number"></label><input type="checkbox" id="sn-training-engines" class="margin-toggle"><span class="sidenote"><a href="https://github.com/NVIDIA/Megatron-LM">Megatron-LM</a>、<a href="https://github.com/pytorch/torchtitan">TorchTitan</a> 与 <a href="https://github.com/togethercomputer/xorl">XoRL</a>。</span>
+          和推理引擎<label for="sn-inference-engines" class="sidenote-number"></label><input type="checkbox" id="sn-inference-engines" class="margin-toggle"><span class="sidenote"><a href="https://github.com/sgl-project/sglang">SGLang</a>、<a href="https://github.com/vllm-project/vllm">vLLM</a> 与 <a href="https://github.com/NVIDIA/TensorRT-LLM">TensorRT-LLM</a>。</span>
+          算出的 logprobs <i>对不上</i>。
+        </p>
+      </div>
+
+      <div class="lede" data-reveal>
+        <p>
+          我们训练 Qwen3.6-35B-A3B 来玩 <a href="https://github.com/togethercomputer/xorl-client/pull/13">Wordle</a>，并表明消除训练-推理不匹配后，我们开源 RL 栈的解题率从 63.9% 提升到 77.4%。本文将说明我们如何对齐训练引擎
+          （<a href="https://github.com/togethercomputer/xorl">XoRL</a>）和推理引擎（我们 fork 的
+          <a href="https://github.com/togethercomputer/xorl-sglang">SGLang</a>），从而以 0 mismatch 训练
+          <a href="https://huggingface.co/deepseek-ai/DeepSeek-V4">DeepSeek</a>、
+          <a href="https://huggingface.co/zai-org/GLM-5.2">GLM</a> 与
+          <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B">Qwen</a> 这类开源权重 MoE——也就是让 XoRL 与 SGLang 产出逐字节相同的 logprobs。随后我们会讨论<a href="#results-conclusion">以 0 mismatch 训练的代价与收益</a>，并探讨缓解不匹配的其他方案。
+          </p>
+          <p>
+            <a href="https://github.com/togethercomputer/xorl">我们的全部代码都是开源的</a>。
+        </p>
+      </div>
+    </header>
+
+    <div class="layout">
+      <nav id="toc" aria-label="目录">
+        <p id="toc-title">
+          目录
+        </p>
+        <ul>
+          <li>
+            <a href="#numerical-background">不匹配从哪来，又到哪去？</a>
+            <ul>
+              <li><a href="#background-systems">不匹配的来源</a></li>
+              <li><a href="#background-importance-ratio">GRPO 更新里的不匹配</a></li>
+            </ul>
+          </li>
+          <li>
+            <a href="#contract-map">方法</a>
+            <ul>
+              <li><a href="#alignment-strategies">对齐一个算子的四种做法</a></li>
+              <li><a href="#background-validation">验证阶梯</a></li>
+            </ul>
+          </li>
+          <li class="toc-case-group">
+            <span class="toc-group-label">案例</span>
+            <ul>
+              <li>
+                <a href="#kernels">Qwen3-8B</a>
+                <ul>
+                  <li><a href="#lora">低秩适配器</a></li>
+                  <li><a href="#kernel-rope">旋转位置编码</a></li>
+                  <li><a href="#kernel-norms">RMSNorm</a></li>
+                  <li><a href="#kernel-gemm">矩阵乘累加</a></li>
+                  <li><a href="#kernel-swiglu">SwiGLU 激活</a></li>
+                  <li><a href="#kernel-attention">稠密注意力</a></li>
+                  <li><a href="#kernel-head">语言模型头</a></li>
+                  <li><a href="#sampling-probability">采样变换</a></li>
+                  <li><a href="#dense-result">性能</a></li>
+                </ul>
+              </li>
+              <li>
+                <a href="#parallelism">Parallelism</a>
+                <ul>
+                  <li><a href="#parallel-ep">Expert Parallel</a></li>
+                  <li><a href="#parallel-cp">Context Parallel</a></li>
+                  <li><a href="#parallel-dp">Data Parallel</a></li>
+                  <li><a href="#parallel-pp">Pipeline Parallel</a></li>
+                </ul>
+              </li>
+              <li>
+                <a href="#qwen">Qwen3.5/3.6</a>
+                <ul>
+                  <li><a href="#qwen-gdn">Gated DeltaNet</a></li>
+                  <li><a href="#qwen-moe">MoE 层</a></li>
+                  <li><a href="#qwen-result">性能</a></li>
+                </ul>
+              </li>
+              <li>
+                <a href="#glm">GLM-5.2</a>
+                <ul>
+                  <li><a href="#glm-sparse">稀疏注意力</a></li>
+                  <li><a href="#glm-moe">MoE layers</a></li>
+                  <li><a href="#glm-head">分布式头</a></li>
+                  <li><a href="#glm-result">性能</a></li>
+                </ul>
+              </li>
+              <li>
+                <a href="#dsv4">DeepSeek-V4</a>
+                <ul>
+                  <li><a href="#dsv4-mhc">四路残差混合</a></li>
+                  <li><a href="#dsv4-attention">压缩稀疏注意力</a></li>
+                  <li><a href="#dsv4-moe">MoE layers</a></li>
+                  <li><a href="#dsv4-head">最终混合与头</a></li>
+                  <li><a href="#dsv4-result">性能</a></li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+          <li>
+            <a href="#results-conclusion">代价与收益</a>
+            <ul>
+              <li><a href="#conclusion-tinker">为什么要消除不匹配</a></li>
+              <li><a href="#conclusion-objectives">什么目标函数能缓解它</a></li>
+              <li><a href="#conclusion-router-replay">Total Router Recall</a></li>
+              <li><a href="#conclusion-cost">Async RL</a></li>
+            </ul>
+          </li>
+          <li>
+            <a href="#parting-thoughts">结语</a>
+          </li>
+          <li>
+            <a href="#operation-map">附录 A：算子对照表</a>
+          </li>
+        </ul>
+      </nav>
+
+      <details id="mobile-toc" class="mobile-contents">
+        <summary>目录</summary>
+        <nav aria-label="移动端目录">
+          <ul>
+            <li><a href="#numerical-background">不匹配从哪来，又到哪去？</a></li>
+            <li><a href="#contract-map">方法</a></li>
+            <li>
+              <span>案例</span>
+              <ul>
+                <li><a href="#kernels">Qwen3-8B</a></li>
+                <li><a href="#parallelism">Parallelism</a></li>
+                <li><a href="#qwen">Qwen3.5/3.6</a></li>
+                <li><a href="#glm">GLM-5.2</a></li>
+                <li><a href="#dsv4">DeepSeek-V4</a></li>
+              </ul>
+            </li>
+            <li><a href="#results-conclusion">代价与收益</a></li>
+            <li><a href="#parting-thoughts">结语</a></li>
+            <li><a href="#operation-map">附录 A：算子对照表</a></li>
+          </ul>
+        </nav>
+      </details>
+
+      <main id="main-content" tabindex="-1">
+        <article class="post-content">
+          <section class="background-primer" id="numerical-background" aria-labelledby="numerical-background-title" data-reveal>
+            <h2 id="numerical-background-title">不匹配从哪来，又到哪去？</h2>
+            <p class="background-lede">
+              在 RL 里，我们用推理引擎采样 rollout，再把这些采样序列送进训练引擎做 prefill，用得到的对数概率反传梯度来更新模型。
+              两个引擎可以在前向的许多位置算出不同的 logprobs，而这些 rollout 因此带上的 off-policy 性，也有多种校正办法。
+            </p>
+
+            <h3 id="background-systems">训练端打分、推理 prefill 与 decode</h3>
+
+            <p>
+              推理在 prefill 阶段并行处理 prompt，写入模型的缓存状态，再用一次一个 token 的 decode 生成后续 token。训练端则并行给整条完成序列打分。
+              这些路径上的 kernel 可能对同一组值采用不同的舍入或加法。对循环与压缩注意力而言，prefill 还会写出后续每一步 decode 都要读并更新的状态。
+            </p>
+            <div class="numerical-axes">
+              <article class="axis-association" id="background-association">
+                <svg class="axis-glyph" viewBox="0 0 320 132" role="img" aria-label="在 BF16 中，把 1 与两个 2 的负八次方相加：先从左边累加得到 1，先从右边累加则得到 1 加 2 的负七次方">
+                  <g class="axis-glyph-tree" fill="none" stroke="currentColor" stroke-width="1.45">
+                    <path d="M28 24 L50 52 M72 24 L50 52 M50 52 L84 88 M118 24 L84 88"/>
+                    <path d="M202 24 L236 88 M248 24 L270 52 M292 24 L270 52 M270 52 L236 88"/>
+                  </g>
+                  <g class="axis-glyph-leaves">
+                    <circle cx="28" cy="24" r="4"/><circle cx="72" cy="24" r="4"/><circle cx="118" cy="24" r="4"/>
+                    <circle cx="202" cy="24" r="4"/><circle cx="248" cy="24" r="4"/><circle cx="292" cy="24" r="4"/>
+                  </g>
+                  <g class="axis-glyph-round" fill="currentColor">
+                    <circle cx="50" cy="52" r="8"/><circle cx="84" cy="88" r="9"/>
+                    <circle cx="270" cy="52" r="8"/><circle cx="236" cy="88" r="9"/>
+                  </g>
+                  <g class="axis-glyph-node-text" text-anchor="middle">
+                    <text x="50" y="52">+</text><text x="84" y="88">+</text>
+                    <text x="270" y="52">+</text><text x="236" y="88">+</text>
+                  </g>
+                  <g class="axis-glyph-values" text-anchor="middle">
+                    <text x="28" y="14" class="axis-glyph-value">1</text>
+                    <text x="72" y="14" class="axis-glyph-value">2<tspan class="axis-glyph-exponent" baseline-shift="super">−8</tspan></text>
+                    <text x="118" y="14" class="axis-glyph-value">2<tspan class="axis-glyph-exponent" baseline-shift="super">−8</tspan></text>
+                    <text x="202" y="14" class="axis-glyph-value">1</text>
+                    <text x="248" y="14" class="axis-glyph-value">2<tspan class="axis-glyph-exponent" baseline-shift="super">−8</tspan></text>
+                    <text x="292" y="14" class="axis-glyph-value">2<tspan class="axis-glyph-exponent" baseline-shift="super">−8</tspan></text>
+                  </g>
+                  <text x="84" y="108" text-anchor="middle" class="axis-glyph-result">1</text>
+                  <text x="236" y="108" text-anchor="middle" class="axis-glyph-result">1 + 2<tspan class="axis-glyph-exponent" baseline-shift="super">−7</tspan></text>
+                  <text x="84" y="125" text-anchor="middle">(a + b) + c</text>
+                  <text x="236" y="125" text-anchor="middle">a + (b + c)</text>
+                  <text x="160" y="88" text-anchor="middle" class="axis-glyph-inequality">≠</text>
+                </svg>
+                <h4>舍入取决于加法顺序</h4>
+                <p>
+                  BF16 里比 1 大的最小可表示数是 1 + 2<sup>−7</sup>。若我们计算 (1 + 2<sup>−8</sup>)，会舍入成 1。但若先加 (2<sup>−8</sup> +
+                  2<sup>−8</sup>)，得到的是 2<sup>−7</sup>。只要做 reduction，我们就得让两个引擎使用相同的加法顺序。
+                </p>
+              </article>
+
+              <article id="background-rounding">
+                <svg class="axis-glyph" viewBox="0 0 320 112" role="img" aria-label="两个 kernel 执行同一串运算，但中间值分别用 BF16 与 FP32，因此输出比特可能不同">
+                  <text x="4" y="20" class="axis-glyph-step">KERNEL A</text>
+                  <text x="4" y="64" class="axis-glyph-step">KERNEL B</text>
+                  <g fill="none" stroke="currentColor" stroke-width="1.35">
+                    <rect x="66" y="7" width="48" height="26" rx="4"/>
+                    <rect x="126" y="7" width="48" height="26" rx="4"/>
+                    <rect x="186" y="7" width="48" height="26" rx="4"/>
+                    <path d="M114 20 H126 M174 20 H186 M234 20 H252"/>
+                    <rect x="66" y="51" width="48" height="26" rx="4"/>
+                    <rect x="126" y="51" width="48" height="26" rx="4"/>
+                    <rect x="186" y="51" width="48" height="26" rx="4"/>
+                    <path d="M114 64 H126 M174 64 H186 M234 64 H252"/>
+                    <circle cx="260" cy="20" r="8"/>
+                    <circle cx="260" cy="64" r="8"/>
+                  </g>
+                  <text x="90" y="20" text-anchor="middle">OP 1</text>
+                  <text x="150" y="20" text-anchor="middle" class="axis-glyph-emphasis">BF16</text>
+                  <text x="210" y="20" text-anchor="middle">OP 2</text>
+                  <text x="274" y="20" text-anchor="start" class="axis-glyph-emphasis">OUTPUT A</text>
+                  <text x="90" y="64" text-anchor="middle">OP 1</text>
+                  <text x="150" y="64" text-anchor="middle" class="axis-glyph-emphasis">FP32</text>
+                  <text x="210" y="64" text-anchor="middle">OP 2</text>
+                  <text x="274" y="64" text-anchor="start" class="axis-glyph-emphasis">OUTPUT B</text>
+                  <text x="260" y="45" text-anchor="middle" class="axis-glyph-inequality">≠</text>
+                  <text x="160" y="101" text-anchor="middle">相同运算 · 不同中间精度</text>
+                </svg>
+                <h4>精度</h4>
+                <p>
+                  kernel 计算一串运算时，每个中间值的精度都是计算的一部分。若一个引擎把中间结果舍入到 BF16，另一个保持 FP32，
+                  后续运算就会吃到不同的值，从而写出不同的输出比特。
+                </p>
+              </article>
+
+              <article id="background-shape">
+                <svg class="axis-glyph" viewBox="0 0 320 112" role="img" aria-label="XoRL 并行给完成序列打分，SGLang prefill 写出缓存状态，SGLang decode 再逐 token 读取并更新该状态">
+                  <text x="4" y="14" class="axis-glyph-step">XORL TRAINING</text>
+                  <text x="4" y="50" class="axis-glyph-step">SGLANG PREFILL</text>
+                  <text x="4" y="88" class="axis-glyph-step">SGLANG DECODE</text>
+                  <g fill="none" stroke="currentColor" stroke-width="1.25">
+                    <rect x="96" y="6" width="214" height="18" rx="3"/>
+                    <path d="M121 6 V24 M146 6 V24 M171 6 V24 M196 6 V24 M221 6 V24 M246 6 V24 M271 6 V24" opacity="0.58"/>
+                    <rect x="96" y="42" width="58" height="18" rx="3"/>
+                    <path d="M115 42 V60 M134 42 V60" opacity="0.58"/>
+                    <path d="M154 51 H168"/>
+                    <path d="M164 47 L169 51 L164 55"/>
+                    <path d="M187 61 V76"/>
+                    <path d="M183 72 L187 77 L191 72"/>
+                    <path d="M206 87 H216 M230 87 H239 M273 87 H281 M295 87 H302"/>
+                    <circle cx="223" cy="87" r="7"/>
+                    <circle cx="288" cy="87" r="7"/>
+                  </g>
+                  <g fill="currentColor">
+                    <rect x="170" y="40" width="34" height="22" rx="5"/>
+                    <rect x="170" y="76" width="36" height="22" rx="5"/>
+                    <rect x="239" y="76" width="34" height="22" rx="5"/>
+                  </g>
+                  <text x="203" y="15" text-anchor="middle">COMPLETE SEQUENCE · PARALLEL</text>
+                  <text x="125" y="70" text-anchor="middle">PROMPT</text>
+                  <text x="187" y="51" text-anchor="middle" class="axis-glyph-invert">STATE</text>
+                  <text x="197" y="69" class="axis-glyph-emphasis">HANDOFF</text>
+                  <text x="188" y="87" text-anchor="middle" class="axis-glyph-invert">STATE</text>
+                  <text x="223" y="87" text-anchor="middle">+t</text>
+                  <text x="256" y="87" text-anchor="middle" class="axis-glyph-invert">STATE</text>
+                  <text x="288" y="87" text-anchor="middle">+t</text>
+                  <text x="310" y="87" text-anchor="middle">…</text>
+                </svg>
+                <h4>缓存状态必须在 prefill 与 decode 之间对齐</h4>
+                <p>
+                  Decode 在每个新 token 上读取并更新 cache。要对 Gated DeltaNet 这类带状态的层达成一致，prefill 写出的 cache 以及 decode 的每一次更新，都必须与训练端算出的结果一致。也就是说，我们必须消除 prefill-decode 不匹配。
+                </p>
+              </article>
+
+            </div>
+
+            <h3 id="background-importance-ratio">不匹配如何改变 GRPO 更新</h3>
+            <p data-teaching-step="on-policy-gradient">
+              记 <i class="policy-q">q</i><sub class="policy-q">θ</sub> 为训练端评估的策略，
+              Â<sub>t</sub> 为 GRPO 中 detach 后的组相对优势<a class="ref-mark sidenote-number" href="https://arxiv.org/abs/2402.03300" aria-label="Shao et al., DeepSeekMath"></a><span class="sidenote citation-sidenote"><a href="https://arxiv.org/abs/2402.03300">Shao et al.，「DeepSeekMath」（2024）</a>。引入 GRPO 及其 importance ratio。</span>。
+              对前缀 <i>h</i><sub>t</sub> 之后采样的 token <i>a</i><sub>t</sub>，on-policy 梯度是：
+            </p>
+            <div class="math-display math-display-compact" data-tex="\nabla_\theta J(\theta)=\sum_t\mathbb E_{\substack{h_t\sim d_{{\color{#3e88a6}q_\theta}}\\a_t\sim {\color{#3e88a6}q_\theta}(\cdot\mid h_t)}}\!\left[\widehat A_t\nabla_\theta\log {\color{#3e88a6}q_\theta}(a_t\mid h_t)\right]">
+              <code>∇J(θ) = Σₜ Eₕₜ∼dqθ, ₐₜ∼qθ(·|hₜ)[Âₜ ∇ log qθ(aₜ | hₜ)]</code>
+            </div>
+            <p data-teaching-step="mismatch-sources">
+              每个 token 会被打分多次。
+              推理在采样时会记录该 token 的概率。
+              若再让推理对完成序列做一次 prefill，记录的概率会略有不同；训练端给这条 rollout 打分时，又会算出另一个值。
+              记 <i class="policy-q">q</i><sub class="policy-q">t</sub> 为训练端选中 token 的概率，
+              <i class="policy-mu">s</i><sup class="policy-mu">P</sup><sub class="policy-mu">t</sub> 为当前权重下推理
+              prefill 回放的概率，
+              <i class="policy-mu">s</i><sup class="policy-mu">D</sup><sub class="policy-mu">t</sub> 为同一权重下带 cache 的 decode
+              概率，<i class="policy-mu">μ</i><sub class="policy-mu">t</sub> 为采样时记下的概率。我们可以用这些不同的前向
+              路径来定义 <i>importance sampling ratio</i>。
+            </p>
+            <div class="math-display" data-tex="\rho_t=\frac{{\color{#3e88a6}q_t}}{{\color{#bd6d37}\mu_t}}=\underbrace{\frac{{\color{#3e88a6}q_t}}{{\color{#bd6d37}s_t^{P}}}}_{\text{trainer scoring vs. serving prefill}}\cdot\underbrace{\frac{{\color{#bd6d37}s_t^{P}}}{{\color{#bd6d37}s_t^{D}}}}_{\text{serving prefill vs. serving decode}}\cdot\underbrace{\frac{{\color{#bd6d37}s_t^{D}}}{{\color{#bd6d37}\mu_t}}}_{\text{stale state}}">
+              <code>ρₜ = qₜ / μₜ = [qₜ / sᴾₜ] trainer scoring vs. serving prefill × [sᴾₜ / sᴰₜ] serving prefill vs. serving decode × [sᴰₜ / μₜ] stale state</code>
+            </div>
+            <p>
+              我们在 RL 中优化的目标函数，会用 importance sampling ratio 给梯度加权，以校正这些不匹配来源。
+            </p>
+
+            <details class="deeper background-correction-disclosure">
+              <summary>importance ratio 的细节</summary>
+            <p data-teaching-step="change-of-measure">
+              在固定前缀 <i>h</i><sub>t</sub> 上，用
+              <i class="policy-q">q</i><sub class="policy-q">t</sub> /
+              <i class="policy-mu">μ</i><sub class="policy-mu">t</sub> 给样本加权，可以把
+              <i class="policy-mu">μ</i>(· | <i>h</i><sub>t</sub>) 上的期望改写成
+              <i class="policy-q">q</i><sub class="policy-q">θ</sub>(· | <i>h</i><sub>t</sub>) 上的期望。前缀本身
+              仍然来自 <i class="policy-mu">μ</i>：
+            </p>
+            <div class="math-display" data-tex="\begin{aligned}\rho_t&amp;=\frac{{\color{#3e88a6}q_\theta}(a_t\mid h_t)}{{\color{#bd6d37}\mu}(a_t\mid h_t)},\\[0.35em]\mathbb E_{a_t\sim {\color{#bd6d37}\mu}(\cdot\mid h_t)}\!\left[\rho_t f(h_t,a_t)\right]&amp;=\mathbb E_{a_t\sim {\color{#3e88a6}q_\theta}(\cdot\mid h_t)}[f(h_t,a_t)],\\[0.35em]\mathbb E_{\substack{h_t\sim d_{\color{#bd6d37}\mu}\\a_t\sim {\color{#bd6d37}\mu}(\cdot\mid h_t)}}[\rho_t f(h_t,a_t)]&amp;=\mathbb E_{\substack{h_t\sim d_{\color{#bd6d37}\mu}\\a_t\sim {\color{#3e88a6}q_\theta}(\cdot\mid h_t)}}[f(h_t,a_t)]\neq\mathbb E_{\substack{h_t\sim d_{{\color{#3e88a6}q_\theta}}\\a_t\sim {\color{#3e88a6}q_\theta}(\cdot\mid h_t)}}[f(h_t,a_t)].\end{aligned}">
+              <code>At fixed hₜ, Eμ[ρₜ f] = Eqθ[f]. Across rollouts, Eμ[ρₜ f] keeps hₜ ∼ dμ, not hₜ ∼ dqθ.</code>
+            </div>
+
+            <h4 id="background-stale">过期权重与缓存状态</h4>
+            <p>
+              记 <i class="policy-mu">s̃</i><sup class="policy-mu">D</sup><sub class="policy-mu">t</sub> 为当前权重下、
+              并在该权重上重建 cache 后的 decode。两项分别对应权重变化，
+              以及过期 cache：
+            </p>
+            <div class="math-display" data-tex="\frac{{\color{#bd6d37}s_t^{D}}}{{\color{#bd6d37}\mu_t}}=\underbrace{\frac{{\color{#bd6d37}\tilde{s}_t^{D}}}{{\color{#bd6d37}\mu_t}}}_{\text{stale weights}}\cdot\underbrace{\frac{{\color{#bd6d37}s_t^{D}}}{{\color{#bd6d37}\tilde{s}_t^{D}}}}_{\text{stale cache}}">
+              <code>sᴰₜ / μₜ = [s̃ᴰₜ / μₜ] stale weights × [sᴰₜ / s̃ᴰₜ] stale cache</code>
+            </div>
+            <p>
+              我们在更新推理引擎权重后总会清空 cache，因此第二项
+              是 1。
+            </p>
+
+            <h4 data-teaching-step="importance-sampling-loss">不截断的 importance sampling</h4>
+            <p>
+              不截断的 importance sampling 把 token 梯度乘以 <i>ρ</i><sub>t</sub>。我们把构成该比值的
+              选中 token logprobs detach 掉，只对 log
+              <i class="policy-q">q</i><sub class="policy-q">t</sub> 求导。<a class="ref-mark sidenote-number" href="https://tinker-docs.thinkingmachines.ai/tinker/losses/importance-sampling/" aria-label="Tinker 的 importance-sampling loss"></a><span class="sidenote citation-sidenote"><a href="https://tinker-docs.thinkingmachines.ai/tinker/losses/importance-sampling/">Tinker 的 importance-sampling loss</a> 使用这一形式。</span>
+            </p>
+            <div class="math-display" data-tex="\begin{aligned}\nabla_\theta\mathcal L_{\mathrm{IS},t}&amp;=-\rho_t\widehat A_t\nabla_\theta\log {\color{#3e88a6}q_t},\\[0.35em]\mathbb E_{a_t\sim {\color{#bd6d37}\mu}}\!\left[\lVert g_t\rVert^2\right]&amp;=\mathbb E_{a_t\sim {\color{#bd6d37}\mu}}\!\left[\rho_t^2\widehat A_t^2\left\lVert\nabla_\theta\log {\color{#3e88a6}q_t}\right\rVert^2\right]\end{aligned}">
+              <code>∇Lᴵˢₜ = −ρₜ Âₜ ∇ log qₜ; Eμ[‖gₜ‖²] = Eμ[ρₜ² Âₜ² ‖∇ log qₜ‖²]</code>
+            </div>
+            <p>
+              梯度的二阶矩随 importance ratio 的平方缩放。我们在
+              有限大小的 batch 上训练，因此会出现高方差步：梯度被少数
+              大比值 token 主导。
+            </p>
+
+            <h4 data-teaching-step="ppo-loss">截断后的 importance ratio</h4>
+            <p>
+              GRPO 通常用 PPO<a class="ref-mark sidenote-number" href="https://arxiv.org/abs/1707.06347" aria-label="Schulman et al., proximal policy optimization"></a><span class="sidenote citation-sidenote"><a href="https://arxiv.org/abs/1707.06347">Schulman et al.，「Proximal Policy Optimization Algorithms」（2017）</a>。引入截断代理目标。</span> 目标来截断这一比值：
+            </p>
+            <div class="math-display" data-tex="\begin{aligned}J_{\mathrm{PPO},t}&amp;=\min\!\left(\rho_t\widehat A_t,\operatorname{clip}(\rho_t,1-\epsilon_{\mathrm{low}},1+\epsilon_{\mathrm{high}})\widehat A_t\right),\\[0.4em]\nabla_\theta\mathcal L_{\mathrm{PPO},t}&amp;=-\mathbf 1[\text{not clipped}]\,\rho_t\widehat A_t\nabla_\theta\log {\color{#3e88a6}q_t}\end{aligned}">
+              <code>Jᴾᴾᴼₜ = min(ρₜ Âₜ, clip(ρₜ, 1 − εlow, 1 + εhigh) Âₜ); ∇Lᴾᴾᴼₜ = −1[not clipped] ρₜ Âₜ ∇ log qₜ</code>
+            </div>
+            <p>
+              对优势为正的 token，一旦 <i>ρ</i><sub>t</sub> 超过
+              1 + <i>ε</i><sub>high</sub>，PPO 就丢掉策略梯度。对优势为负的 token，一旦
+              <i>ρ</i><sub>t</sub> 落到 1 − <i>ε</i><sub>low</sub> 以下，同样丢掉梯度。
+            </p>
+            <p>
+              CISPO<a class="ref-mark sidenote-number" href="https://arxiv.org/abs/2506.13585" aria-label="MiniMax-M1 CISPO"></a><span class="sidenote citation-sidenote"><a href="https://arxiv.org/abs/2506.13585">MiniMax-M1</a> 引入 CISPO。</span>
+              在乘到梯度之前截断 <i>ρ</i>，从而限制越过阈值的 token 的贡献，但并不丢掉它们。它的边界是绝对比值，而不是围绕 1 的偏移；默认
+              关闭下界，因此比值只会被从上方封顶。
+            </p>
+            <div class="math-display" data-tex="\bar\rho_t=\operatorname{clip}(\rho_t,\rho_{\min},\rho_{\max}),\qquad \nabla_\theta\mathcal L_{\mathrm{CISPO},t}=-\operatorname{sg}\!\left[\bar\rho_t\right]\widehat A_t\nabla_\theta\log {\color{#3e88a6}q_t},\qquad (\rho_{\min},\rho_{\max})=(0,4)">
+              <code>ρ̄ₜ = clip(ρₜ, ρmin, ρmax); ∇Lᶜⁱˢᵖᵒₜ = −sg[ρ̄ₜ] Âₜ ∇ log qₜ; (ρmin, ρmax) = (0, 4)</code>
+            </div>
+            <p>
+              当每个 token 都有 <i>ρ</i><sub>t</sub> = 1 时，
+              PPO 不会截断，CISPO 也不会封顶，更新就退化成上面的
+              on-policy 梯度。
+            </p>
+
+            </details>
+          </section>
+
+          <section id="contract-map" aria-labelledby="contract-map-title" data-reveal>
+            <h2 id="contract-map-title">如何让训练端与采样端达成一致</h2>
+            <p>
+              我们希望各次前向的 logprobs 对齐，所以从这里出发，再
+              沿训练端与采样端往回走。对每个
+              算子，我们记录它的输入、<a href="#background-rounding">舍入点</a> 与
+              <a href="#background-association">加法顺序</a>。对缓存状态，我们比较 prefill 写出的内容
+              以及 decode 的每一次更新。对分布式算子，我们记录到达了哪些值，以及它们
+              被加在一起的顺序。
+            </p>
+
+            <div class="fig-shell contract-map-figure" id="fig-contract-map" data-reveal data-autoplay="loop">
+              <div class="fig-stage">
+                <figure>
+                  <svg class="fig-svg" id="contract-map-svg" viewBox="0 0 960 530" role="img" aria-labelledby="contract-map-svg-title contract-map-svg-desc" data-seq="idle">
+                    <title id="contract-map-svg-title">从选中 token 的对数概率往回走到第一个数值差异</title>
+                    <desc id="contract-map-svg-desc">训练端打分、推理 prefill 与推理 decode 从相同的输入和权重出发。比较它们选中 token 对数概率的字节，再沿前向往回追踪到第一个不同的算子，并把该算子收缩成一行、一次 reduction 或一次状态更新。对齐它的输入、常数、舍入点、完整加法顺序以及状态交接。只有在生产形状下的字节比较再次通过之后，才允许改调度、布局与传输。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+
+            <p>
+              对每个算子，我们让两个引擎吃同一份输入并比较输出字节。一旦不同，就把问题
+              收缩到仍能复现不匹配的一行、一次 reduction，或一次状态更新，然后再对齐这个算子。
+            </p>
+
+            <h3 id="alignment-strategies">对齐一个算子的四种做法</h3>
+            <ol class="strategy-list">
+              <li>
+                <strong>在训练端前向里调用推理 kernel。</strong>我们从 XoRL 调用 SGLang 的
+                前向 kernel，并为其写一份训练用的自定义反向。
+              </li>
+              <li>
+                <strong>给两个引擎各加同一个 kernel。</strong>我们写一个新 kernel，或扩展已有
+                kernel，并在 XoRL 与 SGLang 中都调用它。
+              </li>
+              <li>
+                <strong>让 reduction 对 batch 不变。</strong>我们钉死决定 reduction 形状的那些量，
+                这样更大的 batch 只是多启动同样的工作，而不会把加法
+                重新分组。
+              </li>
+              <li>
+                <strong>写两个做同一套算术的 kernel。</strong>当两个引擎需要不同的
+                形状或布局时，我们各写一个 kernel，让它们在相同的点舍入，并按相同顺序相加。
+              </li>
+            </ol>
+
+            <div class="math-display" data-tex="\rho_t=\frac{{\color{#3e88a6}q_t}}{{\color{#bd6d37}\mu_t}}=\underbrace{\frac{{\color{#3e88a6}q_t}}{{\color{#bd6d37}s_t^{P}}}}_{\text{trainer scoring vs. serving prefill}}\cdot\underbrace{\frac{{\color{#bd6d37}s_t^{P}}}{{\color{#bd6d37}s_t^{D}}}}_{\text{serving prefill vs. serving decode}}\cdot\underbrace{\frac{{\color{#bd6d37}s_t^{D}}}{{\color{#bd6d37}\mu_t}}}_{\text{stale state}}">
+              <code>ρₜ = qₜ / μₜ = [qₜ / sᴾₜ] trainer scoring vs. serving prefill × [sᴾₜ / sᴰₜ] serving prefill vs. serving decode × [sᴰₜ / μₜ] stale state</code>
+            </div>
+            <p>
+              我们希望每一项都是 1。最后一项，过期状态，对同步 rollout、并且 cache 是现算的情形就是 1。我们的工作是让训练 prefill 与推理 prefill 对齐，再让
+              推理 prefill 与推理 decode 对齐。
+            </p>
+            <p>
+              凡是带 cache 的东西都还要多做一次检查。训练、prefill、eager decode 与 CUDA-graph decode 都会
+              写状态，四者必须在每个 token 边界写出相同的字节。
+            </p>
+            <p>
+              训练模型时，我们把训练-推理不匹配报告为 <i>K</i><sub>3,t</sub> = <i>ρ</i><sub>t</sub> − 1 − log <i>ρ</i><sub>t</sub><a class="ref-mark sidenote-number" href="http://joschu.net/blog/kl-approx.html" aria-label="Schulman, approximating KL divergence"></a><span class="sidenote citation-sidenote"><a href="http://joschu.net/blog/kl-approx.html">Schulman，「Approximating KL Divergence」（2020）</a>。引入 K3 估计量。</span>它处处
+              非负，且仅当 <i>ρ</i><sub>t</sub> = 1 时为零。
+            </p>
+            <p>
+              我们达到的保证比 <i>K</i><sub>3</sub> = 0 更强：<label for="sn-k3-floor" class="sidenote-number"></label><input type="checkbox" id="sn-k3-floor" class="margin-toggle"><span class="sidenote">在 1 附近它的行为像 (<i>ρ</i><sub>t</sub> − 1)<sup>2</sup>/2，因此在 FP32 里已经变成 0，而 logprob 仍可能有微小差异：差 1e-8 就已经精确为零。</span>
+              训练端打分、推理 prefill 与推理 decode 的 FP32 选中 token logprob 字节是逐比特相同的。尽管 SGLang 有开关去触发 batch-invariant kernel，单靠 SGLang 仍拿不到 0 train-infer mismatch。我们必须在 SGLang 之上继续构建。  
+            </p>
+            <h3 id="background-validation">验证阶梯</h3>
+            <p>
+              最终，我们训练完整模型，并在同一权重版本上比较每一个选中 token 的 logprob。测试按难度递增：
+            </p>
+            <ol>
+              <li>把同一段程序跑两遍，比较输出字节。</li>
+              <li>改变 batch 形状与启动配置，比较同一批行。</li>
+              <li>让 XoRL 与 SGLang 吃同一份输入。</li>
+              <li>在同一权重版本的在线采样中比较它们。</li>
+              <li>训练完整模型，并要求 K3 保持为零。</li>
+            </ol>
+            <p>
+              接下来我们用一系列模型上的训练-推理不匹配来展示这套方法，
+              从稠密的 Qwen3-8B 开始。
+            </p>
+          </section>
+
+          <section id="kernels" aria-labelledby="kernels-title" data-reveal>
+            <h2 id="kernels-title">Qwen3-8B：对齐一个稠密 Transformer</h2>
+            <p>
+              在 Qwen3-8B 上，两个引擎可能在常数如何构造、值在何处舍入、以及 reduction 如何排序上对不上。这里消除不匹配相对直接，但会给我们后续更复杂模型留下积木。
+              我们会按模型里的每个算子走一遍，说明不匹配从何而来、如何修，从 LoRA 开始。
+            </p>
+            <h3 id="lora">LoRA：对齐前向的两种做法</h3>
+            <p>
+              <dfn class="term-definition" tabindex="0" data-definition="低秩适配用两块更小的矩阵 A 与 B 来表示权值更新。">LoRA</dfn>
+              把线性层从 <i>W</i>(<i>x</i>) 改成 <i>W</i>(<i>x</i>) + <i>s</i>&thinsp;<i>B</i>(<i>A</i>(<i>x</i>))。我们支持
+              两种 serving 模式。合并模式在推理前把 <i>sBA</i> 加进基座权重。分离
+              模式则保持 <i>A</i> 与 <i>B</i> 分开，并把 adapter 激活加到 <i>W</i>(<i>x</i>) 上。这两条
+              计算在不同的点舍入：合并路径在乘 <i>x</i> 之前先把更新后的权值舍入，
+              分离路径则先分别舍入基座投影与 adapter 投影，再相加。
+            </p>
+            <p>
+              固定 adapter 合并后更快，因为推理不必再做额外的 adapter 投影。在
+              multi-LoRA 训练里，XoRL 为每个实验保留独立参数与优化器状态，而
+              SGLang 则在一次部署里把多个 adapter 的请求打进同一个 batch。
+            </p>
+            <p>
+              在合并模式里，我们在 XoRL 与 SGLang 中构造 <i>W</i>&prime; = <i>W</i> + <i>sBA</i>，并对相同的权值字节跑模型。
+              我们在 XoRL 里缓存 <i>W</i>&prime; 直到 <i>A</i> 或 <i>B</i> 改变，并用自定义 autograd 算子把梯度映回 <i>A</i> 与 <i>B</i>。在分离模式里，我们从 XoRL 调用
+              SGLang 的 LoRA 前向，并实现训练 <i>A</i> 与 <i>B</i> 所需的反向。当量化 expert 需要新的 LoRA 前向时，我们先把 LoRA 运算加进 SGLang，再从 XoRL 调用该前向。
+            </p>
+            <div class="callout">
+              <strong><a href="#alignment-strategies">方法 1</a>：在训练端前向里调用推理 kernel</strong>
+              <p>
+                在 XoRL 的前向里调用推理 kernel、只补一份反向，是消除训练-推理不匹配的有力手段，但训练时可能不如写一个自定义 kernel 高效。
+              </p>
+            </div>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="lora" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/lora/fold.py#L37-L184">
+              XoRL 合并模式 LoRA 前向与反向 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="lora" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/transformers/glm5/exact_qlora.py#L50-L82">
+              XoRL LoRA 反向 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="lora" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/transformers/glm5/exact_qlora.py#L203-L253">
+              XoRL 对 SGLang LoRA kernel 的调用 ↗ </a>
+            </p>
+
+            <h3 id="kernel-rope">RoPE：对齐表与旋转</h3>
+            <h4>CPU 表与 GPU 表会分叉</h4>
+            <p>
+              <dfn class="term-definition" tabindex="0" data-definition="旋转位置编码按与位置相关的角度旋转隐状态中的成对分量。">RoPE</dfn>
+              用与位置相关的正弦、余弦旋转隐状态中的成对分量。两个引擎可能在
+              何处构造正余弦表、以及旋转过程中
+              <a href="#background-rounding">何时舍入</a>上对不上。
+            </p>
+            <p>
+              对 Qwen，
+              <a href="https://github.com/sgl-project/sglang/blob/a59bb931c61bd1314d78e79a857147e0523f2304/python/sglang/srt/layers/rotary_embedding/base.py#L149-L180">SGLang 在 CPU 上构造逆频率，并在 GPU 上完成位置表</a>，
+              以便并行计算大外积与正余弦。它只传输较小的
+              逆频率向量。XoRL 在 CPU 上构造完整表，
+              因为它在 FSDP 给每个 rank 分配执行 GPU 之前，就在 CPU 或 meta tensor 上构造模块与派生常数。
+            </p>
+            <p>
+              CPU 与 CUDA 的正弦、余弦实现不同，因此两个引擎可能产出不同的值。当我们用 Qwen3-30B-A3B decode 一条序列时，表的 BF16 值在位置 592 之前都一致。
+              它们在位置 593 首次不同，下一个 token 上就出现第一次 logprob 不匹配。
+              这是一条重要教训：我们必须在足够长的序列上测不匹配。
+            </p>
+            <div class="fig-shell kernel-story-figure" id="fig-rope-mismatch" data-reveal data-autoplay="loop">
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                <span>CPU 构造的表与 GPU 构造的表在位置 593 首次对不上。从此处起，同一旋转会给出不同输出。</span>
+              </p>
+              <div class="fig-stage">
+                <figure>
+                  <svg class="fig-svg" id="rope-mismatch-svg" viewBox="0 0 960 540" role="img" aria-labelledby="rope-mismatch-title rope-mismatch-desc" data-seq="idle">
+                    <title id="rope-mismatch-title">RoPE 首次分叉的位置</title>
+                    <desc id="rope-mismatch-desc">CPU 构造与 GPU 构造的表在位置 592 之前给出相同的 BF16 值，并在位置 593 首次不同。再施加同一旋转会得到不同的输出对，下一个 token 上出现第一次不匹配的 logprob。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+            <h4>在 CPU 上只构造一次表</h4>
+            <p>
+              我们让两个引擎用同一方式构造 RoPE 表：在 CPU 上构造完整 FP32 表，
+              缓存它，再把成品表传到 GPU。在任一引擎施加旋转之前，表的字节就已经对齐。
+            </p>
+            <p>
+              表字节对齐之后，两个引擎都可以选用两种旋转之一。Class A 把正弦、余弦
+              cast 成 BF16，并在整个旋转过程中舍入。Class B 把旋转保持在 FP32，只在输出处
+              cast。我们用 Class B，因为它
+              更快<label for="sn-rope-speed" class="sidenote-number"></label><input type="checkbox" id="sn-rope-speed" class="margin-toggle"><span class="sidenote">快 1.23&times;。</span>
+              也更准<label for="sn-rope-accuracy" class="sidenote-number"></label><input type="checkbox" id="sn-rope-accuracy" class="margin-toggle"><span class="sidenote">相对 FP64 的 MAE 大约低 40%。</span>。
+            </p>
+            <section class="table-scroll rope-contract-table" aria-label="Class A 与 Class B 的 RoPE 算术路径">
+              <table class="data-table rope-contract-comparison">
+                <caption>两种 RoPE 实现里的算术与舍入。</caption>
+                <thead><tr><th scope="col"></th><th scope="col">Class A</th><th scope="col">Class B</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <th scope="row">算术</th>
+                    <td>把正弦、余弦 cast 成 BF16，再对中间乘积与和舍入</td>
+                    <td>把正弦、余弦与完整旋转保持在 FP32，再把输出舍入到 BF16</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">舍入</th>
+                    <td>每一对旋转做八次 BF16 舍入：六次中间舍入，两次输出舍入</td>
+                    <td>每个输出只做一次最终 BF16 舍入</td>
+                  </tr>
+                </tbody>
+              </table>
+            </section>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="rope" href="https://github.com/togethercomputer/xorl-sglang/pull/8">
+              SGLang RoPE 实现 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="rope" href="https://github.com/togethercomputer/xorl/pull/22">
+              XoRL RoPE kernel ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="rope" href="https://github.com/togethercomputer/xorl/pull/23">
+              XoRL 按模型构造 RoPE ↗ </a>
+            </p>
+
+            <h3 id="kernel-norms">RMSNorm：钉死 reduction 顺序</h3>
+            <p>
+              RMSNorm 暴露出一个新问题：编译器可以改变我们做 reduction 的方式。
+            </p>
+            <h4>为什么会有不匹配？</h4>
+            <p>
+              <dfn class="term-definition" tabindex="0" data-definition="均方根归一化用一行均方值的倒数平方根来缩放该行。">RMSNorm</dfn>
+              把一行里的每个值平方，把平方相加，取均值的倒数平方根，再用它缩放这一行。RMSNorm 在算平方和时做 reduction，因此我们必须在两个引擎之间对齐这次 reduction 的顺序。
+            </p>
+            <p>
+              XoRL 在上一层返回前就把 residual 加上，因此下一层 RMSNorm 收到的是一行 BF16。
+              SGLang 把隐状态与 residual 分开传入，并在 RMSNorm 内部相加。这两种
+              输入签名会派发到不同的 Triton kernel。
+            </p>
+            <p>
+              单输入 kernel 载入一行 BF16 并在寄存器里平方。residual kernel 在 FP32 里把两个输入相加，
+              把和舍入到 BF16 并作为 residual 输出存下来；然后再存储并重载
+              FP32 平方。单输入 kernel 计算 <code>1 / sqrt</code>，residual kernel 则用
+              <code>rsqrt</code>。<label for="sn-norm-families" class="sidenote-number"></label><input type="checkbox" id="sn-norm-families" class="margin-toggle"><span class="sidenote">二者在数学上等价，但可能舍入成不同的 FP32 值。</span>
+            </p>
+            <p>
+              residual kernel 还会为下一层存储 BF16 residual 行。这次存储
+              并不进入 reduction，但它的存在会把 Triton 赋给 reduction 操作数的 layout
+              从 <code>sizePerThread = [4]</code> 改成 <code>[8]</code>。<label for="sn-golden-bits" class="sidenote-number"></label><input type="checkbox" id="sn-golden-bits" class="margin-toggle"><span class="sidenote"><code>sizePerThread</code> 是每个线程拥有的连续段，不是总数。32 线程一个 warp、四个 warp，128 个线程覆盖 1,024 个值，因此两种 layout 下每个线程都拥有 8 个值。</span>
+              无论哪种，每个线程仍然拥有 8 个值。变的是哪 8 个：<code>[4]</code> 下线程取两段长度为 4、相距 512 的段，<code>[8]</code> 下则取一段连续的 8 个。
+              下图把这一效应单独拿出来：同一行 <code>tl.sum</code> 源码，只加上必需的 BF16 store，就会改变加法顺序，8,192 个输出里有 2,854 个发生变化。
+            </p>
+
+            <div class="fig-shell" id="fig-norm-tlsum" data-reveal data-autoplay="loop">
+              <div class="fig-stage">
+                <figure>
+                  <p class="source-line">
+                    <code> mean = tl.sum(x, axis=0) </code>
+                  </p>
+                  <svg class="fig-svg" id="norm-svg-tlsum" viewBox="0 0 960 350" role="img" aria-labelledby="norm-tlsum-title norm-tlsum-desc" data-seq="idle">
+                    <title id="norm-tlsum-title">同一行 tl.sum 源码下编译器选出的 layout</title>
+                    <desc id="norm-tlsum-desc">单输入路径没有 residual store，每个线程拿到 4 个值。residual 路径必须存储 BF16 residual 输出，每个线程拿到 8 个值。源码里的 reduction 与指令条数不变，但新 layout 把值分到不同组里，8,192 个输出中有 2,854 个改变。</desc>
+                    <g data-js-layer></g>
+                    <g class="fig-labels">
+                      <text x="24" y="28" class="fl-key" style="fill:#894816">单输入 · 无 residual store · sizePerThread = [4] · thread 0 ← x[0..3] + x[512..515]</text>
+                      <text x="24" y="188" class="fl-key" style="fill:#9e2f2a">residual 路径 · 必需的 BF16 store · sizePerThread = [8] · thread 0 ← x[0..7]</text>
+                      <text x="24" y="325" class="fl-note" style="fill:#44524f">相同指令条数 · 不同加法顺序</text><text x="936" y="325" text-anchor="end" class="fl-key" style="fill:#9e2f2a">2,854 / 8,192 个输出改变</text>
+                    </g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+            <details class="deeper">
+              <summary>Triton 发出了什么</summary>
+              <p>
+                两个 kernel 都用 <code>triton.compile</code> 对着固定的 sm90 目标、Triton
+                3.7.1、四个 warp、关闭 autotuning 来编译。两份 TTIR 模块都包含同一个覆盖 1,024 个 FP32 值的 <code>tt.reduce</code>
+                运算。layout 分配之后，reduction 操作数在单输入 kernel 里是
+                <code>sizePerThread = [4]</code>，在带 store 的 kernel 里是 <code>[8]</code>。
+                PTX 每个线程发出的 <code>add.f32</code> 条数相同，两种 layout 都是 7 条，只是操作数不同。
+              </p>
+              <pre class="deeper-code"><code>// one-input kernel
+"tt.reduce"(%vals) &lt;{axis = 0}&gt; : tensor&lt;1024xf32, #blocked&gt;
+#blocked = sizePerThread = [4], threadsPerWarp = [32], warpsPerCTA = [4]
+  thread 0 accumulates  x[0]+x[1]+x[2]+x[3] + x[512]+x[513]+x[514]+x[515]
+
+// same line, with the BF16 residual store present
+"tt.reduce"(%vals) &lt;{axis = 0}&gt; : tensor&lt;1024xf32, #blocked&gt;
+#blocked = sizePerThread = [8], threadsPerWarp = [32], warpsPerCTA = [4]
+  thread 0 accumulates  x[0]+x[1]+x[2]+x[3]+x[4]+x[5]+x[6]+x[7]</code></pre>
+              <p>
+                按每种 layout 发出的加法顺序回放，就能复现全部 8,192 行的 GPU 输出。
+              </p>
+            </details>
+
+            <h4>高效的精确一致</h4>
+            <div class="callout">
+              <strong><a href="#alignment-strategies">方法 2</a>：给两个引擎各加同一个 kernel</strong>
+              <p>
+                我们给两个引擎都加上一个新的 RMSNorm kernel。kernel 先形成 BF16 行。若隐状态与 residual 分开传入，就在 FP32 里相加并舍入一次到 BF16。若和已经存在，就直接用那一行 BF16。此后两个引擎都在 FP32 里把该行平方。我们不用 <code>tl.sum</code>，而是写一棵显式的树形 reduction。然后在 FP32 里施加
+                <code>rsqrt</code> 与模型的 scale，再把输出 cast 成 BF16。
+              </p>
+            </div>
+
+            <div class="fig-shell kernel-story-figure" id="fig-norm-exact" data-reveal data-autoplay="loop">
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                <span>我们的 kernel 从两种不同输入类型产出同一份 BF16 tensor。然后让两个引擎都执行这份融合 kernel。</span>
+              </p>
+              <div class="fig-stage">
+                <figure>
+                  <svg class="fig-svg" id="norm-exact-svg" viewBox="0 0 960 490" role="img" aria-labelledby="norm-exact-title norm-exact-desc" data-seq="idle">
+                    <title id="norm-exact-title">两种输入形式共用一次显式 RMSNorm reduction</title>
+                    <desc id="norm-exact-desc">我们的 kernel 从两种不同输入类型产出同一份 BF16 tensor。然后让两个引擎都执行这份融合 kernel。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+
+            <p>
+              大多数形状一次融合启动就能跑完。当只有少量非常宽的行时，我们把同一次计算拆成三次启动，好让更多 GPU block 并行干活。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="norms" href="https://github.com/togethercomputer/xorl/pull/22">
+              XoRL RMSNorm ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="norms" href="https://github.com/togethercomputer/xorl-sglang/pull/21">
+              SGLang RMSNorm ↗ </a>
+            </p>
+
+            <h3 id="kernel-gemm">矩阵乘：沿 K 做同一次 reduction</h3>
+            <p>
+              A <dfn class="term-definition" tabindex="0" data-definition="通用矩阵乘，大多数模型投影背后的分块运算。">GEMM</dfn>
+              沿 <i>K</i> 把乘积加起来得到每个输出。训练会乘上数千行 packed token，
+              而 decode 常常只乘一行。像 cuBLAS 这样的库会为每种形状选不同的 kernel，这些 kernel 可能按
+              <a href="#background-association">不同顺序</a>加同一组 <i>K</i> 乘积。Split-K matmul 是清楚的例子：若干
+              thread block 分别累加 <i>K</i> 的片段，再合并部分和。当 <i>M</i>
+              变化时，库可能选出不同的 split 数，从而改变 reduction 顺序并造成不匹配。
+            </p>
+            <div class="callout">
+              <strong><a href="#alignment-strategies">方法 3</a>：让 reduction 对 batch 不变</strong>
+              <p>
+                我们写一个 Triton kernel：每个 program 计算一块输出 tile，并从左到右累加完整的
+                <i>K</i> 维。BF16 输入使用 64 个值的 slab。kernel 带着一个
+                FP32 累加器从第一块走到最后一块，只 cast 一次输出。现在 <i>M</i>
+                变大时，我们只是多启动同样的工作。这就是一个简单的 <i>batch-invariant</i> kernel。
+              </p>
+            </div>
+            <div class="fig-shell kernel-story-figure" id="fig-gemm-exact" data-reveal data-autoplay="loop">
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                <span>两个 kernel 都从左到右走完 K 上的 slab，并一路带着同一个 FP32 累加器直到最后的 BF16 cast。</span>
+              </p>
+              <div class="fig-stage">
+                <figure>
+                  <svg class="fig-svg" id="gemm-exact-svg" viewBox="0 0 960 470" role="img" aria-labelledby="gemm-exact-title gemm-exact-desc" data-seq="idle">
+                    <title id="gemm-exact-title">每种 batch 大小都用同一次从左到右的 K reduction</title>
+                    <desc id="gemm-exact-desc">训练与 decode kernel 都从左到右处理 K 上的 slab，为每个输出带着一个 FP32 累加器直到最后的 BF16 cast。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+
+            <p>
+              我们把这份 Triton kernel 当作参考；batch-invariant matmul 如今已是熟知问题，不必再自己把它调到极致性能——已经有很好的开源工作可以依靠。对受支持、且能产出与我们 Triton kernel 相同比特、又跑得更快的形状，我们用
+              <a href="https://github.com/deepseek-ai/DeepGEMM">DeepGEMM</a>；否则用我们的 Triton kernel，例如 Qwen3.5 MoE 里的 shared-expert gate 投影。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="gemm" href="https://github.com/togethercomputer/xorl/pull/57">
+              XoRL 固定 K 矩阵乘 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="gemm" href="https://github.com/togethercomputer/xorl-sglang/pull/21">
+              SGLang 固定 K 矩阵乘 ↗ </a>
+            </p>
+
+            <h3 id="kernel-swiglu">SwiGLU：在乘法之后再舍入</h3>
+            <p>
+              <dfn class="term-definition" tabindex="0" data-definition="SwiGLU 对投影的 gate 半边施加 SiLU，再与 up-projection 半边相乘。">SwiGLU</dfn>
+              计算 <code>SiLU(gate) * up</code>，又是
+              <a href="#background-rounding"><i>舍入规则</i></a>的一例。训练与推理可能在是否
+              对中间 SiLU 结果舍入上对不上。
+            </p>
+            <p>
+              我们给两份代码库都加上只舍入一次的 SwiGLU kernel。它把输入转成 FP32，计算 SiLU 与乘法，再把输出一次 cast 成 BF16。去掉中间的 BF16 舍入让结果更准<label for="sn-swiglu-accuracy" class="sidenote-number"></label><input type="checkbox" id="sn-swiglu-accuracy" class="margin-toggle"><span class="sidenote">MAE 为 4e-4，SGLang 原生实现为 6e-4。</span>。
+              把两次运算融合成一次启动，并沿行与隐维分块，也让它
+              更快<label for="sn-swiglu-speed" class="sidenote-number"></label><input type="checkbox" id="sn-swiglu-speed" class="margin-toggle"><span class="sidenote">decode 吞吐提升 2.56%，端到端吞吐提升 2.35%，prefill 吞吐提升 0.45%。</span>。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="swiglu" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/ops/fused_silu_and_mul.py#L240-L260">
+              XoRL 只舍入一次的 SwiGLU kernel ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="swiglu" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/batch_invariant_ops/bi_silu_and_mul.py#L33-L76">
+              SGLang 只舍入一次的 SwiGLU kernel ↗ </a>
+            </p>
+            <h3 id="kernel-attention">稠密注意力：一次流式 reduction</h3>
+            <p>
+              稠密注意力是一种 token 混合算子：它返回我们称为 value 的低维投影的线性组合，线性组合的权重是我们称为 key 与 query 的低维投影点积的 softmax。
+              存在大值时直接算 softmax 可能数值不稳，但 softmax 对平移不变，因此可以从输入里减去最大值来稳定它。朴素取最大值需要对整个向量扫一遍。FlashAttention 改做
+              <em>流式 softmax</em>：它从每一块输入 tile 抽出最大值 <i>m</i>、指数和 <i>l</i>，以及加权 value 和 <i>u</i>。在归约两块 tile 级摘要之前，先把它们缩放到同一个最大值。把许多 tile 级摘要归约起来，就得到注意力输出
+              <i>u</i> / <i>l</i>。
+            </p>
+            <div class="math-display math-display-compact" data-tex="\begin{aligned}m&amp;=\max(m_1,m_2)\\l&amp;=e^{m_1-m}l_1+e^{m_2-m}l_2\\u&amp;=e^{m_1-m}u_1+e^{m_2-m}u_2,\qquad \operatorname{Attention}=u/l\end{aligned}">
+              <code>m = max(m₁, m₂); l = exp(m₁ − m)l₁ + exp(m₂ − m)l₂; u = exp(m₁ − m)u₁ + exp(m₂ − m)u₂; Attention = u / l</code>
+            </div>
+            <p>
+              推理引擎可以通过
+              <a href="https://github.com/sgl-project/sglang/blob/main/docs/advanced_features/attention_backend.md">多种 attention backend</a>
+              来做这件事，例如 FlashAttention 或 FlashInfer；训练端则可能用 FlashAttention、FlexAttention，甚至
+              SDPA。每个 backend 分块与合并摘要的方式都不同。
+            </p>
+            <p>
+              训练处理许多 packed query，decode 则常常用一条 query 对着很长的 key/value
+              cache。推理 backend 可能把 cache 切开，让若干 block 同时处理这条 query，再在第二次 reduction 里合并它们的 (<i>m</i>, <i>l</i>, <i>u</i>) 摘要。改变 split 数
+              就会改变哪些值先被加在一起。不同版本的 FlashAttention 也可能把第一次
+              reduction 分块得不一样。
+            </p>
+            <p>
+              对稠密注意力，我们在两个引擎里都用带
+              <a href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/layers/attention/backend/flash_attention.py#L397-L456"><code>num_splits=1</code></a>
+              的 FlashAttention 4，因此两边都不再做第二次合并。
+            </p>
+            <h3 id="kernel-head">语言模型头：对词表做一次 reduction</h3>
+            <p>
+              语言模型头接收最终隐状态，为词表里的每个 token 算出一个 logit。
+              对选中的 token <i>y</i>，它的 logprob 是选中 logit 减去整个词表上的
+              log-sum-exp：
+            </p>
+            <div class="math-display math-display-compact" data-tex="\log p(y\mid h)=z_y-\log\sum_{j=1}^{V}\exp(z_j)">
+              <code>log p(y | h) = zᵧ − log Σⱼ exp(zⱼ)</code>
+            </div>
+            <p>
+              这个头把固定 <i>K</i> 的矩阵乘与流式 log-sum-exp 合在一起。输出取决于
+              矩阵乘的累加顺序、词表分组边界，以及用来
+              合并各组摘要的树。
+            </p>
+            <p>
+              两个引擎都用上<a href="#kernel-gemm">固定 <i>K</i> 的矩阵乘</a>之后，它们的
+              logits 就对齐了，包括选中 token 的 logit <i>z</i><sub>y</sub>。剩下的不匹配可能来自词表上的
+              <dfn class="term-definition" tabindex="0" data-definition="Log-sum-exp 是把 logits 变成 logprobs 的归一化项。">log-sum-exp</dfn>。
+              每个词表组产出一个最大值与一个指数和 (<i>m</i>,
+              <i>l</i>)，头再合并这些摘要。训练端可以一次分 256 个 logit，而
+              decode 分 128 个。分组不同意味着局部最大值不同，缩放后的和就会按不同顺序相加。
+            </p>
+            <p>
+              我们让两个引擎都使用 256 个 logit 一组，并在组内以及合并各组摘要时使用同一棵显式 reduction 树。
+            </p>
+            <div class="callout">
+              <strong><a href="#alignment-strategies">方法 4</a>：写两个做同一套算术的 kernel</strong>
+              <p>
+                SGLang 需要整行 FP32 logits 来采样 token，而 XoRL 只需要被采样 token 的
+                logprob。于是我们让 XoRL 直接从 GEMM tile 的 FP32 累加器算出选中 logit 以及每一份流式 softmax 摘要，不必物化完整的 [<i>M</i>, <i>V</i>] logits
+                tensor，从而节省大量显存与计算。这就是一例：为了效率可以允许两个引擎用不同 kernel，只要它们做同一套算术，保证逐字节相同的输出。
+              </p>
+            </div>
+            <div class="callout">
+              <strong>什么必须钉死，什么可以自由调</strong>
+              <p>
+                要让两个引擎一致，不必冻结每一个启动参数。必须在两边钉死的，是那些决定 reduction 形状（因而决定顺序）的参数。只影响调度的参数可以自由调。例如在 LM head 里，我们钉死沿词表维的 tile 宽度以及 K slab 的宽度，因为它们决定哪些 tile 会被收进一份摘要、以及我们如何沿 K 归约。但每个引擎仍可按工作负载自行选择行块大小、group size、pipeline stage 与 warp 数。
+              </p>
+            </div>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="head" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/ops/bi_families_v2.py#L357-L695">
+              XoRL 语言模型头 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="head" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/batch_invariant_ops/bi_families_v2.py#L324-L684">
+              SGLang 语言模型头 ↗ </a>
+            </p>
+            <h3 id="sampling-probability">采样变换</h3>
+            <p>
+              我们已经拿到逐字节相同的 logprobs，但推理引擎通常不会直接从
+              这个分布采样。我们可能只想从分布的 top-k 下标采样以防
+              reward hacking，或施加 temperature 来调节探索。这些采样运算改变了
+              我们从中采样的分布，因此需要把 temperature 等参数转给训练端，并
+              回放同一套变换。
+            </p>
+            <p>
+              我们回放整段程序（temperature、top-k、top-p、min-p），而不是它产出的 mask，这样训练端会经由同一套排序与阈值规则到达采样端的 support。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="sampling" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/ops/exact_sampling_transforms.py">
+              XoRL 采样变换 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="sampling" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/layers/exact_sampling_transforms.py">
+              SGLang 采样变换 ↗ </a>
+            </p>
+
+            <h3 id="dense-result">零不匹配与性能</h3>
+            <p>
+              我们在 Wordle 上训练 Qwen3-8B 时，逐字节对齐的前向把采样吞吐降低了
+              16.2%。
+            </p>
+            <section class="table-scroll dense-throughput-table" id="dense-throughput-breakdown" tabindex="0" aria-labelledby="dense-throughput-caption">
+              <table class="data-table performance-table">
+                <caption id="dense-throughput-caption">Qwen3-8B 的采样吞吐：关闭对齐开关、使用逐字节对齐前向，以及从中去掉 batch-invariant 稠密 GEMM。三组都使用相同的 BF16 serving 策略与 CUDA decode graph，任务是 256 条轨迹的 Wordle；每组是一台服务器上丢掉 warmup 后三次计时的均值。</caption>
+                <thead>
+                  <tr><th scope="col">配置</th><th scope="col">吞吐</th><th scope="col">相对关闭开关</th></tr>
+                </thead>
+                <tbody>
+                  <tr><th scope="row">关闭开关</th><td><strong>2,116 tok/s</strong></td><td>1.000×</td></tr>
+                  <tr><th scope="row">逐字节对齐</th><td><strong>1,774 tok/s</strong></td><td>0.839×</td></tr>
+                  <tr><th scope="row">逐字节对齐，去掉 batch-invariant 稠密 GEMM</th><td><strong>1,970 tok/s</strong></td><td>0.931×</td></tr>
+                </tbody>
+              </table>
+            </section>
+            <p>
+              其中大部分来自 batch-invariant 稠密 GEMM。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" href="https://github.com/togethercomputer/xorl/pull/57">
+              XoRL 稠密 Qwen 实现 ↗ </a>
+              <a class="source-link implementation-pr" href="https://github.com/togethercomputer/xorl-sglang/pull/21">
+              SGLang 稠密 Qwen 实现 ↗ </a>
+            </p>
+
+          </section>
+
+          <section id="parallelism" aria-labelledby="parallelism-title" data-reveal>
+            <h2 id="parallelism-title">在不同并行布局下保持同一套算术</h2>
+            <p>
+              用稠密注意力训练稠密模型时，做到 0 mismatch 相对直接。
+              但我们的目标是以 0 mismatch 训练 GLM-5.2 这类模型。
+              在进入各开源权重 MoE 的具体复杂性之前，需要先明确：要在这个规模上训练与 serving，必须做 sharding。训练端可以与采样端用不同的切分，因为训练还要存激活与优化器状态。这会改变每个值归哪张卡、reduction 在哪里跑、缓存状态在何处跨设备。因此对每一种并行，我们都要确保它产出与未切分计算相同的比特。XoRL 使用 CP、PP、EP，以及（对注意力与 expert 的）DP。
+            </p>
+            <div class="fig-shell" id="fig-parallel-axes" data-reveal>
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                <span>我们沿四个轴切分：一次训练许多条 rollout，每条 rollout 可以长达数千 token，模型有许多层，每个 MoE 层可以有数百个 expert。</span>
+              </p>
+              <div class="fig-stage">
+                <figure class="axes-loop">
+<svg class="slide-svg axes-frame" viewBox="-12 64 1272 607" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+
+  <g transform="translate(89.15,23.85) scale(1.1230)">
+
+  
+
+  <!-- ============ "Many rollouts" brace ============ -->
+  <path d="M 88 80 Q 62 80 62 108 V 248 Q 62 266 46 266 Q 62 266 62 284 V 424 Q 62 452 88 452"
+        fill="none" stroke="#1a1a1a" stroke-width="3"/>
+  <text x="-75" y="254" text-anchor="start" font-size="26" font-weight="700" fill="#1a1a1a"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">许多</text>
+  <text x="-75" y="286" text-anchor="start" font-size="26" font-weight="700" fill="#1a1a1a"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">rollout</text>
+
+  <!-- ============ 6 rollout bars ============ -->
+  <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <rect x="100" y="80" width="460" height="44" rx="8" fill="#4285F4" opacity="0.65"/>
+    <text x="120" y="110" font-size="22" font-weight="600" fill="#fff">ok let me think about how to...</text>
+    <rect x="100" y="138" width="460" height="44" rx="8" fill="#0D9488" opacity="0.65"/>
+    <text x="120" y="168" font-size="22" font-weight="600" fill="#fff">import torch; model = GPT2...</text>
+    <rect x="100" y="196" width="460" height="44" rx="8" fill="#7C3AED" opacity="0.65"/>
+    <text x="120" y="226" font-size="22" font-weight="600" fill="#fff">to train gpt2 we must first...</text>
+    <rect x="100" y="254" width="460" height="44" rx="8" fill="#64748B" opacity="0.65"/>
+    <text x="120" y="284" font-size="22" font-weight="600" fill="#fff">here is my code for training...</text>
+    <rect x="100" y="312" width="460" height="44" rx="8" fill="#4285F4" opacity="0.4"/>
+    <text x="120" y="342" font-size="22" font-weight="600" fill="#fff">first we need to tokenize the...</text>
+    <rect x="100" y="370" width="460" height="44" rx="8" fill="#0D9488" opacity="0.4"/>
+    <text x="120" y="400" font-size="22" font-weight="600" fill="#fff">the learning rate should follow...</text>
+  </g>
+
+  </g>
+</svg>
+<svg class="slide-svg axes-frame" viewBox="-12 64 1272 607" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+
+  <g transform="translate(89.15,23.85) scale(1.1230)">
+
+  
+
+  <!-- ============ "Many rollouts" brace ============ -->
+  <path d="M 88 80 Q 62 80 62 108 V 248 Q 62 266 46 266 Q 62 266 62 284 V 424 Q 62 452 88 452"
+        fill="none" stroke="#1a1a1a" stroke-width="3"/>
+  <text x="-75" y="254" text-anchor="start" font-size="26" font-weight="700" fill="#1a1a1a"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">许多</text>
+  <text x="-75" y="286" text-anchor="start" font-size="26" font-weight="700" fill="#1a1a1a"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">rollout</text>
+
+  <!-- ============ 6 rollout bars ============ -->
+  <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <rect x="100" y="80" width="460" height="44" rx="8" fill="#4285F4" opacity="0.65"/>
+    <text x="120" y="110" font-size="22" font-weight="600" fill="#fff">ok let me think about how to...</text>
+    <rect x="100" y="138" width="460" height="44" rx="8" fill="#0D9488" opacity="0.65"/>
+    <text x="120" y="168" font-size="22" font-weight="600" fill="#fff">import torch; model = GPT2...</text>
+    <rect x="100" y="196" width="460" height="44" rx="8" fill="#7C3AED" opacity="0.65"/>
+    <text x="120" y="226" font-size="22" font-weight="600" fill="#fff">to train gpt2 we must first...</text>
+    <rect x="100" y="254" width="460" height="44" rx="8" fill="#64748B" opacity="0.65"/>
+    <text x="120" y="284" font-size="22" font-weight="600" fill="#fff">here is my code for training...</text>
+    <rect x="100" y="312" width="460" height="44" rx="8" fill="#4285F4" opacity="0.4"/>
+    <text x="120" y="342" font-size="22" font-weight="600" fill="#fff">first we need to tokenize the...</text>
+    <rect x="100" y="370" width="460" height="44" rx="8" fill="#0D9488" opacity="0.4"/>
+    <text x="120" y="400" font-size="22" font-weight="600" fill="#fff">the learning rate should follow...</text>
+  </g>
+
+  <!-- ============ "Long sequences" brace (NEW in Frame 1) ============ -->
+  <path d="M 100 426 Q 100 449 125 449 H 310 Q 330 449 330 465 Q 330 449 350 449 H 535 Q 560 449 560 426"
+        fill="none" stroke="#0D9488" stroke-width="3"/>
+  <text x="330" y="498" text-anchor="middle" font-size="28" font-weight="700" fill="#0D9488"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">长序列</text>
+
+  </g>
+</svg>
+<svg class="slide-svg axes-frame" viewBox="-12 64 1272 607" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+
+  <g transform="translate(89.15,23.85) scale(1.1230)">
+
+  
+
+  <!-- ============ "Many rollouts" brace ============ -->
+  <path d="M 88 80 Q 62 80 62 108 V 248 Q 62 266 46 266 Q 62 266 62 284 V 424 Q 62 452 88 452"
+        fill="none" stroke="#1a1a1a" stroke-width="3"/>
+  <text x="-75" y="254" text-anchor="start" font-size="26" font-weight="700" fill="#1a1a1a"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">许多</text>
+  <text x="-75" y="286" text-anchor="start" font-size="26" font-weight="700" fill="#1a1a1a"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">rollout</text>
+
+  <!-- ============ 6 rollout bars ============ -->
+  <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <rect x="100" y="80" width="460" height="44" rx="8" fill="#4285F4" opacity="0.65"/>
+    <text x="120" y="110" font-size="22" font-weight="600" fill="#fff">ok let me think about how to...</text>
+    <rect x="100" y="138" width="460" height="44" rx="8" fill="#0D9488" opacity="0.65"/>
+    <text x="120" y="168" font-size="22" font-weight="600" fill="#fff">import torch; model = GPT2...</text>
+    <rect x="100" y="196" width="460" height="44" rx="8" fill="#7C3AED" opacity="0.65"/>
+    <text x="120" y="226" font-size="22" font-weight="600" fill="#fff">to train gpt2 we must first...</text>
+    <rect x="100" y="254" width="460" height="44" rx="8" fill="#64748B" opacity="0.65"/>
+    <text x="120" y="284" font-size="22" font-weight="600" fill="#fff">here is my code for training...</text>
+    <rect x="100" y="312" width="460" height="44" rx="8" fill="#4285F4" opacity="0.4"/>
+    <text x="120" y="342" font-size="22" font-weight="600" fill="#fff">first we need to tokenize the...</text>
+    <rect x="100" y="370" width="460" height="44" rx="8" fill="#0D9488" opacity="0.4"/>
+    <text x="120" y="400" font-size="22" font-weight="600" fill="#fff">the learning rate should follow...</text>
+  </g>
+
+  <!-- ============ "Long sequences" brace ============ -->
+  <path d="M 100 426 Q 100 449 125 449 H 310 Q 330 449 330 465 Q 330 449 350 449 H 535 Q 560 449 560 426"
+        fill="none" stroke="#0D9488" stroke-width="3"/>
+  <text x="330" y="498" text-anchor="middle" font-size="28" font-weight="700" fill="#0D9488"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">长序列</text>
+
+  <!-- ============ RIGHT SIDE: MODEL LAYERS (unexpanded) (NEW in Frame 2) ============ -->
+  <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <!-- Layer 0 — same position as final -->
+    <rect x="620" y="50" width="260" height="44" rx="10" fill="#E2E8F0" stroke="#94A3B8" stroke-width="2"/>
+    <text x="750" y="80" text-anchor="middle" font-size="24" font-weight="600" fill="#475569">Layer 0</text>
+
+    <!-- Ellipsis -->
+    <text x="750" y="120" text-anchor="middle" font-size="32" font-weight="700" fill="#94A3B8">⋮</text>
+
+    <!-- Layer k — NOT expanded, just a thin block -->
+    <rect x="620" y="250" width="260" height="44" rx="10" fill="#E2E8F0" stroke="#94A3B8" stroke-width="2"/>
+    <text x="750" y="280" text-anchor="middle" font-size="24" font-weight="600" fill="#475569">Layer k</text>
+
+    <!-- Ellipsis -->
+    <text x="750" y="340" text-anchor="middle" font-size="32" font-weight="700" fill="#94A3B8">⋮</text>
+
+    <!-- Layer 99 — same position as final -->
+    <rect x="620" y="518" width="260" height="44" rx="10" fill="#E2E8F0" stroke="#94A3B8" stroke-width="2"/>
+    <text x="750" y="548" text-anchor="middle" font-size="24" font-weight="600" fill="#475569">Layer 99</text>
+  </g>
+
+  <!-- "Many layers" brace — same position as final -->
+  <path d="M 898 50 Q 924 50 924 78 V 277 Q 924 295 940 295 Q 924 295 924 313 V 534 Q 924 562 898 562"
+        fill="none" stroke="#2563EB" stroke-width="3"/>
+  <text x="955" y="285" text-anchor="start" font-size="26" font-weight="700" fill="#2563EB"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">许多</text>
+  <text x="955" y="317" text-anchor="start" font-size="26" font-weight="700" fill="#2563EB"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">层</text>
+
+  </g>
+</svg>
+<svg class="slide-svg axes-frame" viewBox="-12 64 1272 607" role="img" aria-labelledby="parallel-axes-fig-title parallel-axes-fig-desc" xmlns="http://www.w3.org/2000/svg">
+<title id="parallel-axes-fig-title">规模的四个轴</title>
+<desc id="parallel-axes-fig-desc">一叠 rollout，左侧括号标为许多 rollout，底部括号标为长序列。右侧是从第 0 层到第 99 层的层叠，括号标为许多层；第 k 层展开为注意力块以及从 E1 到 E128 的 expert 网格，标为许多 expert。</desc>
+
+  <g transform="translate(89.15,23.85) scale(1.1230)">
+
+  
+
+  <!-- ============ LEFT SIDE: ROLLOUTS × SEQUENCES ============ -->
+
+  <!-- "Many rollouts" vertical brace (visible, inside viewBox) -->
+  <path d="M 88 80 Q 62 80 62 108 V 248 Q 62 266 46 266 Q 62 266 62 284 V 424 Q 62 452 88 452"
+        fill="none" stroke="#1a1a1a" stroke-width="3"/>
+  <text x="-75" y="254" text-anchor="start" font-size="26" font-weight="700" fill="#1a1a1a"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">许多</text>
+  <text x="-75" y="286" text-anchor="start" font-size="26" font-weight="700" fill="#1a1a1a"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">rollout</text>
+
+  <!-- 6 rollout bars — text truncated inside the pill -->
+  <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <rect x="100" y="80" width="460" height="44" rx="8" fill="#4285F4" opacity="0.65"/>
+    <text x="120" y="110" font-size="22" font-weight="600" fill="#fff">ok let me think about how to...</text>
+
+    <rect x="100" y="138" width="460" height="44" rx="8" fill="#0D9488" opacity="0.65"/>
+    <text x="120" y="168" font-size="22" font-weight="600" fill="#fff">import torch; model = GPT2...</text>
+
+    <rect x="100" y="196" width="460" height="44" rx="8" fill="#7C3AED" opacity="0.65"/>
+    <text x="120" y="226" font-size="22" font-weight="600" fill="#fff">to train gpt2 we must first...</text>
+
+    <rect x="100" y="254" width="460" height="44" rx="8" fill="#64748B" opacity="0.65"/>
+    <text x="120" y="284" font-size="22" font-weight="600" fill="#fff">here is my code for training...</text>
+
+    <rect x="100" y="312" width="460" height="44" rx="8" fill="#4285F4" opacity="0.4"/>
+    <text x="120" y="342" font-size="22" font-weight="600" fill="#fff">first we need to tokenize the...</text>
+
+    <rect x="100" y="370" width="460" height="44" rx="8" fill="#0D9488" opacity="0.4"/>
+    <text x="120" y="400" font-size="22" font-weight="600" fill="#fff">the learning rate should follow...</text>
+  </g>
+
+  <!-- "Long sequences" horizontal brace (below rollout bars) -->
+  <path d="M 100 426 Q 100 449 125 449 H 310 Q 330 449 330 465 Q 330 449 350 449 H 535 Q 560 449 560 426"
+        fill="none" stroke="#0D9488" stroke-width="3"/>
+  <text x="330" y="498" text-anchor="middle" font-size="28" font-weight="700" fill="#0D9488"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">长序列</text>
+
+  <!-- ============ RIGHT SIDE: MODEL LAYERS ============ -->
+
+  <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <!-- Layer 0 -->
+    <rect x="620" y="50" width="260" height="44" rx="10" fill="#E2E8F0" stroke="#94A3B8" stroke-width="2"/>
+    <text x="750" y="80" text-anchor="middle" font-size="24" font-weight="600" fill="#475569">Layer 0</text>
+
+    <!-- Ellipsis -->
+    <text x="750" y="120" text-anchor="middle" font-size="32" font-weight="700" fill="#94A3B8">⋮</text>
+
+    <!-- Expanded layer — larger, showing many experts -->
+    <rect x="590" y="138" width="320" height="340" rx="14" fill="#F8FAFC" stroke="#64748B" stroke-width="2.5"/>
+    <text x="750" y="168" text-anchor="middle" font-size="24" font-weight="600" fill="#475569">Layer k</text>
+
+    <!-- Attention sub-block -->
+    <rect x="610" y="180" width="280" height="36" rx="8" fill="#CCFBF1" stroke="#0D9488" stroke-width="1.5"/>
+    <text x="750" y="206" text-anchor="middle" font-size="22" font-weight="600" fill="#115E59">Attention</text>
+
+    <!-- Expert grid: 4 columns × 4 rows = 16 visible, suggesting 128 -->
+    <!-- Row 0 -->
+    <rect x="610" y="228" width="64" height="30" rx="5" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.5"/>
+    <text x="642" y="251" text-anchor="middle" font-size="22" font-weight="600" fill="#1E40AF">E₁</text>
+    <rect x="680" y="228" width="64" height="30" rx="5" fill="#D4D4F8" stroke="#4338CA" stroke-width="1.5"/>
+    <text x="712" y="251" text-anchor="middle" font-size="22" font-weight="600" fill="#3730A3">E₂</text>
+    <rect x="750" y="228" width="64" height="30" rx="5" fill="#E0E7FF" stroke="#4F46E5" stroke-width="1.5"/>
+    <text x="782" y="251" text-anchor="middle" font-size="22" font-weight="600" fill="#3730A3">E₃</text>
+    <rect x="820" y="228" width="64" height="30" rx="5" fill="#EDE9FE" stroke="#7C3AED" stroke-width="1.5"/>
+    <text x="852" y="251" text-anchor="middle" font-size="22" font-weight="600" fill="#5B21B6">E₄</text>
+
+    <!-- Row 1 -->
+    <rect x="610" y="264" width="64" height="30" rx="5" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.5"/>
+    <text x="642" y="287" text-anchor="middle" font-size="22" font-weight="600" fill="#1E40AF">E₅</text>
+    <rect x="680" y="264" width="64" height="30" rx="5" fill="#D4D4F8" stroke="#4338CA" stroke-width="1.5"/>
+    <text x="712" y="287" text-anchor="middle" font-size="22" font-weight="600" fill="#3730A3">E₆</text>
+    <rect x="750" y="264" width="64" height="30" rx="5" fill="#E0E7FF" stroke="#4F46E5" stroke-width="1.5"/>
+    <text x="782" y="287" text-anchor="middle" font-size="22" font-weight="600" fill="#3730A3">E₇</text>
+    <rect x="820" y="264" width="64" height="30" rx="5" fill="#EDE9FE" stroke="#7C3AED" stroke-width="1.5"/>
+    <text x="852" y="287" text-anchor="middle" font-size="22" font-weight="600" fill="#5B21B6">E₈</text>
+
+    <!-- Row 2 -->
+    <rect x="610" y="300" width="64" height="30" rx="5" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.5"/>
+    <text x="642" y="323" text-anchor="middle" font-size="22" font-weight="600" fill="#1E40AF">E₉</text>
+    <rect x="680" y="300" width="64" height="30" rx="5" fill="#D4D4F8" stroke="#4338CA" stroke-width="1.5"/>
+    <text x="712" y="323" text-anchor="middle" font-size="22" font-weight="600" fill="#3730A3">E₁₀</text>
+    <rect x="750" y="300" width="64" height="30" rx="5" fill="#E0E7FF" stroke="#4F46E5" stroke-width="1.5"/>
+    <text x="782" y="323" text-anchor="middle" font-size="22" font-weight="600" fill="#3730A3">E₁₁</text>
+    <rect x="820" y="300" width="64" height="30" rx="5" fill="#EDE9FE" stroke="#7C3AED" stroke-width="1.5"/>
+    <text x="852" y="323" text-anchor="middle" font-size="22" font-weight="600" fill="#5B21B6">E₁₂</text>
+
+    <!-- Row 3 -->
+    <rect x="610" y="336" width="64" height="30" rx="5" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.5"/>
+    <text x="642" y="359" text-anchor="middle" font-size="22" font-weight="600" fill="#1E40AF">E₁₃</text>
+    <rect x="680" y="336" width="64" height="30" rx="5" fill="#D4D4F8" stroke="#4338CA" stroke-width="1.5"/>
+    <text x="712" y="359" text-anchor="middle" font-size="22" font-weight="600" fill="#3730A3">E₁₄</text>
+    <rect x="750" y="336" width="64" height="30" rx="5" fill="#E0E7FF" stroke="#4F46E5" stroke-width="1.5"/>
+    <text x="782" y="359" text-anchor="middle" font-size="22" font-weight="600" fill="#3730A3">E₁₅</text>
+    <rect x="820" y="336" width="64" height="30" rx="5" fill="#EDE9FE" stroke="#7C3AED" stroke-width="1.5"/>
+    <text x="852" y="359" text-anchor="middle" font-size="22" font-weight="600" fill="#5B21B6">E₁₆</text>
+
+    <!-- Row 4: just dots suggesting more -->
+    <rect x="610" y="372" width="64" height="30" rx="5" fill="#F3E8FF" stroke="#9333EA" stroke-width="1"/>
+    <text x="642" y="395" text-anchor="middle" font-size="22" font-weight="600" fill="#94A3B8">…</text>
+    <rect x="680" y="372" width="64" height="30" rx="5" fill="#F3E8FF" stroke="#9333EA" stroke-width="1"/>
+    <text x="712" y="395" text-anchor="middle" font-size="22" font-weight="600" fill="#94A3B8">…</text>
+    <rect x="750" y="372" width="64" height="30" rx="5" fill="#F3E8FF" stroke="#9333EA" stroke-width="1"/>
+    <text x="782" y="395" text-anchor="middle" font-size="22" font-weight="600" fill="#94A3B8">…</text>
+    <rect x="820" y="372" width="64" height="30" rx="5" fill="#F3E8FF" stroke="#9333EA" stroke-width="1"/>
+    <text x="852" y="395" text-anchor="middle" font-size="22" font-weight="600" fill="#6B21A8">E₁₂₈</text>
+
+    <!-- "Many experts" label -->
+    <text x="750" y="454" text-anchor="middle" font-size="26" font-weight="700" fill="#7C3AED">许多 expert</text>
+
+    <!-- Ellipsis -->
+    <text x="750" y="504" text-anchor="middle" font-size="32" font-weight="700" fill="#94A3B8">⋮</text>
+
+    <!-- Layer 99 -->
+    <rect x="620" y="518" width="260" height="44" rx="10" fill="#E2E8F0" stroke="#94A3B8" stroke-width="2"/>
+    <text x="750" y="548" text-anchor="middle" font-size="24" font-weight="600" fill="#475569">Layer 99</text>
+  </g>
+
+  <!-- "Many layers" vertical brace (right of layer stack) -->
+  <path d="M 898 50 Q 924 50 924 78 V 277 Q 924 295 940 295 Q 924 295 924 313 V 534 Q 924 562 898 562"
+        fill="none" stroke="#2563EB" stroke-width="3"/>
+  <text x="955" y="285" text-anchor="start" font-size="26" font-weight="700" fill="#2563EB"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">许多</text>
+  <text x="955" y="317" text-anchor="start" font-size="26" font-weight="700" fill="#2563EB"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">层</text>
+
+  </g>
+</svg>
+                </figure>
+              </div>
+            </div>
+            <h3 id="parallel-ep">切分 expert</h3>
+            <div class="fig-shell" id="fig-parallel-ep" data-reveal>
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                <span>我们把 128 个被路由的 expert 分成四组，对应 4×4 网格的每一列：EP₀ 拥有 expert 0 到 31，EP₃ 拥有 expert 96 到 127。</span>
+              </p>
+              <div class="fig-stage">
+                <figure>
+<svg class="slide-svg" viewBox="4 59 1273 594" role="img" aria-labelledby="parallel-ep-fig-title parallel-ep-fig-desc" xmlns="http://www.w3.org/2000/svg">
+<title id="parallel-ep-fig-title">沿网格列做 Expert Parallel</title>
+<desc id="parallel-ep-fig-desc">四组 expert，从 0–31 到 96–127，颜色分别对应 4×4 GPU 网格中标为 EP0 到 EP3 的各列。</desc>
+
+  <g transform="translate(-54.70,-42.10) scale(1.2450)">
+
+  
+
+  <!-- ============ LEFT: 4 EXPERT GROUPS (blue-to-purple) ============ -->
+  <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <rect x="60" y="165" width="320" height="60" rx="12" fill="#DBEAFE" stroke="#2563EB" stroke-width="2.5"/>
+    <text x="220" y="203" text-anchor="middle" font-size="24" font-weight="700" fill="#1E40AF">Experts 0–31</text>
+
+    <rect x="60" y="257" width="320" height="60" rx="12" fill="#E0E7FF" stroke="#4F46E5" stroke-width="2.5"/>
+    <text x="220" y="295" text-anchor="middle" font-size="24" font-weight="700" fill="#3730A3">Experts 32–63</text>
+
+    <rect x="60" y="349" width="320" height="60" rx="12" fill="#EDE9FE" stroke="#7C3AED" stroke-width="2.5"/>
+    <text x="220" y="387" text-anchor="middle" font-size="24" font-weight="700" fill="#5B21B6">Experts 64–95</text>
+
+    <rect x="60" y="441" width="320" height="60" rx="12" fill="#F3E8FF" stroke="#9333EA" stroke-width="2.5"/>
+    <text x="220" y="479" text-anchor="middle" font-size="24" font-weight="700" fill="#6B21A8">Experts 96–127</text>
+  </g>
+
+  <!-- ============ BRACE: "Many experts" (in whitespace between expert blocks and grid) ============ -->
+  <path d="M 392 165 Q 418 165 418 193 V 315 Q 418 333 434 333 Q 418 333 418 351 V 473 Q 418 501 392 501"
+        fill="none" stroke="#7C3AED" stroke-width="3"/>
+  <text x="434" y="540" text-anchor="middle" font-size="26" font-weight="700" fill="#7C3AED"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">Expert Parallel</text>
+
+  <!-- ============ EP LABELS above columns ============ -->
+  <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <text x="617" y="118" text-anchor="middle" font-size="24" font-weight="600" fill="#2563EB">EP₀</text>
+    <text x="744" y="118" text-anchor="middle" font-size="24" font-weight="600" fill="#4F46E5">EP₁</text>
+    <text x="871" y="118" text-anchor="middle" font-size="24" font-weight="600" fill="#7C3AED">EP₂</text>
+    <text x="998" y="118" text-anchor="middle" font-size="24" font-weight="600" fill="#9333EA">EP₃</text>
+  </g>
+
+  <!-- ============ RIGHT: 4×4 GPU GRID — cells colored by EP column ============ -->
+  <!-- Col 0: blue tint (#DBEAFE), Col 1: indigo tint (#E0E7FF), Col 2: violet tint (#EDE9FE), Col 3: purple tint (#F3E8FF) -->
+  <g font-family="'SF Mono', 'Fira Code', 'Consolas', monospace">
+    <!-- Row 0 -->
+    <rect x="560" y="130" width="115" height="80" rx="12" fill="#DBEAFE" stroke="#2563EB" stroke-width="2"/>
+    <text x="617" y="181" text-anchor="middle" font-size="30" font-weight="600" fill="#1E40AF">0</text>
+    <rect x="687" y="130" width="115" height="80" rx="12" fill="#E0E7FF" stroke="#4F46E5" stroke-width="2"/>
+    <text x="744" y="181" text-anchor="middle" font-size="30" font-weight="600" fill="#3730A3">1</text>
+    <rect x="814" y="130" width="115" height="80" rx="12" fill="#EDE9FE" stroke="#7C3AED" stroke-width="2"/>
+    <text x="871" y="181" text-anchor="middle" font-size="30" font-weight="600" fill="#5B21B6">2</text>
+    <rect x="941" y="130" width="115" height="80" rx="12" fill="#F3E8FF" stroke="#9333EA" stroke-width="2"/>
+    <text x="998" y="181" text-anchor="middle" font-size="30" font-weight="600" fill="#6B21A8">3</text>
+
+    <!-- Row 1 -->
+    <rect x="560" y="222" width="115" height="80" rx="12" fill="#DBEAFE" stroke="#2563EB" stroke-width="2"/>
+    <text x="617" y="273" text-anchor="middle" font-size="30" font-weight="600" fill="#1E40AF">4</text>
+    <rect x="687" y="222" width="115" height="80" rx="12" fill="#E0E7FF" stroke="#4F46E5" stroke-width="2"/>
+    <text x="744" y="273" text-anchor="middle" font-size="30" font-weight="600" fill="#3730A3">5</text>
+    <rect x="814" y="222" width="115" height="80" rx="12" fill="#EDE9FE" stroke="#7C3AED" stroke-width="2"/>
+    <text x="871" y="273" text-anchor="middle" font-size="30" font-weight="600" fill="#5B21B6">6</text>
+    <rect x="941" y="222" width="115" height="80" rx="12" fill="#F3E8FF" stroke="#9333EA" stroke-width="2"/>
+    <text x="998" y="273" text-anchor="middle" font-size="30" font-weight="600" fill="#6B21A8">7</text>
+
+    <!-- Row 2 -->
+    <rect x="560" y="314" width="115" height="80" rx="12" fill="#DBEAFE" stroke="#2563EB" stroke-width="2"/>
+    <text x="617" y="365" text-anchor="middle" font-size="30" font-weight="600" fill="#1E40AF">8</text>
+    <rect x="687" y="314" width="115" height="80" rx="12" fill="#E0E7FF" stroke="#4F46E5" stroke-width="2"/>
+    <text x="744" y="365" text-anchor="middle" font-size="30" font-weight="600" fill="#3730A3">9</text>
+    <rect x="814" y="314" width="115" height="80" rx="12" fill="#EDE9FE" stroke="#7C3AED" stroke-width="2"/>
+    <text x="871" y="365" text-anchor="middle" font-size="30" font-weight="600" fill="#5B21B6">10</text>
+    <rect x="941" y="314" width="115" height="80" rx="12" fill="#F3E8FF" stroke="#9333EA" stroke-width="2"/>
+    <text x="998" y="365" text-anchor="middle" font-size="30" font-weight="600" fill="#6B21A8">11</text>
+
+    <!-- Row 3 -->
+    <rect x="560" y="406" width="115" height="80" rx="12" fill="#DBEAFE" stroke="#2563EB" stroke-width="2"/>
+    <text x="617" y="457" text-anchor="middle" font-size="30" font-weight="600" fill="#1E40AF">12</text>
+    <rect x="687" y="406" width="115" height="80" rx="12" fill="#E0E7FF" stroke="#4F46E5" stroke-width="2"/>
+    <text x="744" y="457" text-anchor="middle" font-size="30" font-weight="600" fill="#3730A3">13</text>
+    <rect x="814" y="406" width="115" height="80" rx="12" fill="#EDE9FE" stroke="#7C3AED" stroke-width="2"/>
+    <text x="871" y="457" text-anchor="middle" font-size="30" font-weight="600" fill="#5B21B6">14</text>
+    <rect x="941" y="406" width="115" height="80" rx="12" fill="#F3E8FF" stroke="#9333EA" stroke-width="2"/>
+    <text x="998" y="457" text-anchor="middle" font-size="30" font-weight="600" fill="#6B21A8">15</text>
+  </g>
+
+  </g>
+</svg>
+                </figure>
+              </div>
+            </div>
+            <p>
+              With <dfn class="term-definition" tabindex="0" data-definition="Expert Parallel 把 expert 切到不同设备上；每台设备算出一份必须再合并的部分 MoE 输出。">expert parallelism</dfn>,
+              每个 rank 计算它拥有的被路由 expert 以及 shared expert 上属于自己的那一份，最终每个 token 得到一份
+              BF16 部分输出。一个 rank 可能拥有某 token 八个被选 expert 中的任意个数，因此
+              expert kernel 按 slot 顺序在 FP32 里累加每一个 routing slot，
+              其他 rank 拥有的 slot 贡献精确的零，最后舍入一次到 BF16。若训练端与推理使用不同的 collective，它们可能用不同的
+              <a href="#background-association">加法树</a>来加各 rank 的输出。
+            </p>
+            <p>
+              我们在各 rank 输出上写一棵显式的树形 reduction。我们
+              先交换 BF16 部分输出而不做 reduction，把它们放进固定的逻辑顺序，再
+              把相邻的配对相加。每一对
+              在 FP64 里累加，奇数个贡献者原样带到下一层，重复直到只剩一个值，
+              最后舍入一次到 BF16。交换本身不必对齐：训练端
+              在 expert 组上做 all-to-all，serving 则在 tensor-parallel 组上用 CUDA graph 可回放的 collective 做 gather。每个引擎只需按相同逻辑顺序交出相同的部分输出。
+            </p>
+            <p>
+              这是我们处理 collective 通信的一般策略。默认情况下，
+              会做 reduction 的 collective 会按拓扑与消息大小选择 reduction 树，从而造成不匹配。我们改用先交换值、不做 reduction 的 collective，
+              再跑显式的 reduction 树，好控制归约顺序。DeepEP kernel
+              在传输途中累加部分和，因此我们无法控制加法顺序。我们只用 DeepEP
+              kernel 传值，reduction 在 DeepEP 之外自己做。显式
+              reduction 树跑在 FP64 里以限制精度损失；若也能对途中就做 reduction 的 collective 这么做当然更好，但那会增大通信体积，因此通常不会这么做。
+            </p>
+            <div class="fig-shell kernel-story-figure" id="fig-moe-combine-tree" data-reveal data-autoplay="loop">
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                <span>我们 gather 八份 BF16 部分输出，按逻辑 rank 顺序摆好，再在 FP64 里归约相邻对，最后舍入一次到 BF16。</span>
+              </p>
+              <div class="fig-stage">
+                <figure>
+                  <svg class="fig-svg" id="moe-combine-tree-svg" viewBox="0 0 960 540" role="img" aria-labelledby="moe-combine-tree-title moe-combine-tree-desc" data-seq="idle">
+                    <title id="moe-combine-tree-title">对八份 rank 输出做一次 batch-invariant reduction</title>
+                    <desc id="moe-combine-tree-desc">我们 gather 八份 BF16 部分输出，按逻辑 rank 顺序摆好，再在 FP64 里归约相邻对，最后舍入一次到 BF16。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="moe" href="https://github.com/togethercomputer/xorl/pull/57">
+              XoRL expert 输出相加 PR ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="moe" href="https://github.com/togethercomputer/xorl-sglang/pull/21">
+              SGLang expert 输出相加 PR ↗ </a>
+            </p>
+
+            <h3 id="parallel-cp">切分序列</h3>
+            <div class="fig-shell" id="fig-parallel-cp" data-reveal>
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                <span>我们把一条 rollout 切成四份，把每一份分给网格同一行里的一块 GPU。</span>
+              </p>
+              <div class="fig-stage">
+                <figure>
+<svg class="slide-svg" viewBox="3 107 1272 494" role="img" aria-labelledby="parallel-cp-fig-title parallel-cp-fig-desc" xmlns="http://www.w3.org/2000/svg">
+<title id="parallel-cp-fig-title">沿网格一行做 Context Parallel</title>
+<desc id="parallel-cp-fig-desc">一条 rollout 被拆成十六块 token tile、四份各四块，每份颜色更浅一档，映射到网格同一行的四块 GPU 上，标注 Context Parallel = 4。</desc>
+
+  <g transform="translate(-50.19,15.97) scale(1.1698)">
+
+  
+
+  <!-- ============ BOTTOM BRACE under tokens: "Long sequences" ============ -->
+  <path d="M 60 365 Q 60 388 85 388 H 250 Q 272 388 272 404 Q 272 388 294 388 H 499 Q 524 388 524 365"
+        fill="none" stroke="#0D9488" stroke-width="3"/>
+  <text x="272" y="435" text-anchor="middle" font-size="28" font-weight="700" fill="#0D9488"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">长序列</text>
+
+  <!-- ============ LEFT: 16 TOKENS IN 4 SHADE-CODED CHUNKS ============ -->
+  <!-- Larger tokens: 110w × 52h, font-size=26 -->
+  <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+
+    <!-- Chunk 0 (darkest teal #0F766E) → GPU 0 -->
+    <rect x="60"  y="120" width="110" height="52" rx="8" fill="#0F766E"/>
+    <text x="115" y="155" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">ok</text>
+    <rect x="60"  y="180" width="110" height="52" rx="8" fill="#0F766E"/>
+    <text x="115" y="215" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">let</text>
+    <rect x="60"  y="240" width="110" height="52" rx="8" fill="#0F766E"/>
+    <text x="115" y="275" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">me</text>
+    <rect x="60"  y="300" width="110" height="52" rx="8" fill="#0F766E"/>
+    <text x="115" y="335" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">think</text>
+
+    <!-- Chunk 1 (#0D9488) → GPU 1 -->
+    <rect x="178" y="120" width="110" height="52" rx="8" fill="#0D9488"/>
+    <text x="233" y="155" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">about</text>
+    <rect x="178" y="180" width="110" height="52" rx="8" fill="#0D9488"/>
+    <text x="233" y="215" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">how</text>
+    <rect x="178" y="240" width="110" height="52" rx="8" fill="#0D9488"/>
+    <text x="233" y="275" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">to</text>
+    <rect x="178" y="300" width="110" height="52" rx="8" fill="#0D9488"/>
+    <text x="233" y="335" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">train</text>
+
+    <!-- Chunk 2 (#2DD4BF) → GPU 2 -->
+    <rect x="296" y="120" width="110" height="52" rx="8" fill="#2DD4BF"/>
+    <text x="351" y="155" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">gpt</text>
+    <rect x="296" y="180" width="110" height="52" rx="8" fill="#2DD4BF"/>
+    <text x="351" y="215" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">two</text>
+    <rect x="296" y="240" width="110" height="52" rx="8" fill="#2DD4BF"/>
+    <text x="351" y="275" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">from</text>
+    <rect x="296" y="300" width="110" height="52" rx="8" fill="#2DD4BF"/>
+    <text x="351" y="335" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">scratch</text>
+
+    <!-- Chunk 3 (lightest teal #5EEAD4) → GPU 3 -->
+    <rect x="414" y="120" width="110" height="52" rx="8" fill="#5EEAD4"/>
+    <text x="469" y="155" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">using</text>
+    <rect x="414" y="180" width="110" height="52" rx="8" fill="#5EEAD4"/>
+    <text x="469" y="215" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">py</text>
+    <rect x="414" y="240" width="110" height="52" rx="8" fill="#5EEAD4"/>
+    <text x="469" y="275" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">torch</text>
+    <rect x="414" y="300" width="110" height="52" rx="8" fill="#5EEAD4"/>
+    <text x="469" y="335" text-anchor="middle" font-size="26" font-weight="600" fill="#fff">...</text>
+  </g>
+
+  <!-- ============ CP row outline around row 0 ============ -->
+  <rect x="548" y="122" width="520" height="96" rx="14" fill="none" stroke="#0D9488" stroke-width="3"/>
+
+  <!-- ============ RIGHT: 4×4 GPU GRID ============ -->
+  <g font-family="'SF Mono', 'Fira Code', 'Consolas', monospace">
+    <!-- Row 0: shade-tinted -->
+    <rect x="560" y="130" width="115" height="80" rx="12" fill="#E6FAF5" stroke="#0F766E" stroke-width="2"/>
+    <text x="617" y="181" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">0</text>
+    <rect x="687" y="130" width="115" height="80" rx="12" fill="#ECFDF8" stroke="#0D9488" stroke-width="2"/>
+    <text x="744" y="181" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">1</text>
+    <rect x="814" y="130" width="115" height="80" rx="12" fill="#F0FFFC" stroke="#2DD4BF" stroke-width="2"/>
+    <text x="871" y="181" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">2</text>
+    <rect x="941" y="130" width="115" height="80" rx="12" fill="#F5FFFE" stroke="#5EEAD4" stroke-width="2"/>
+    <text x="998" y="181" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">3</text>
+
+    <!-- Row 1 (neutral) -->
+    <rect x="560" y="222" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="617" y="273" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">4</text>
+    <rect x="687" y="222" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="744" y="273" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">5</text>
+    <rect x="814" y="222" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="871" y="273" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">6</text>
+    <rect x="941" y="222" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="998" y="273" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">7</text>
+
+    <!-- Row 2 (neutral) -->
+    <rect x="560" y="314" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="617" y="365" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">8</text>
+    <rect x="687" y="314" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="744" y="365" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">9</text>
+    <rect x="814" y="314" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="871" y="365" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">10</text>
+    <rect x="941" y="314" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="998" y="365" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">11</text>
+
+    <!-- Row 3 (neutral) -->
+    <rect x="560" y="406" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="617" y="457" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">12</text>
+    <rect x="687" y="406" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="744" y="457" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">13</text>
+    <rect x="814" y="406" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="871" y="457" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">14</text>
+    <rect x="941" y="406" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="998" y="457" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">15</text>
+  </g>
+
+  <!-- ============ RIGHT BRACE: "CP = 4" ============ -->
+  <path d="M 1078 130 Q 1104 130 1104 158 V 290 Q 1104 308 1120 308 Q 1104 308 1104 326 V 458 Q 1104 486 1078 486"
+        fill="none" stroke="#0D9488" stroke-width="3"/>
+  <text x="808" y="115" text-anchor="middle" font-size="24" font-weight="700" fill="#0D9488"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">Context Parallel = 4</text>
+
+  </g>
+</svg>
+                </figure>
+              </div>
+            </div>
+            <p>
+              我们在 RL 里的主要目标之一是在长上下文上训练。对大模型，
+              这要求沿上下文切分。XoRL 用 Ulysses 与
+              RingAttention 实现 Context Parallel。
+            </p>
+            <p>
+              稠密注意力比较直接。Ulysses 按头把注意力计算切到各 rank。
+              每个 rank 通过 all-to-all 拿到自己那一组头上的全部 token。因此无论训练端是否沿序列切分，输出都一样。
+            </p>
+            <p>
+              不同开源权重 MoE 往往有不同的注意力机制，其中有些会彻底打破
+              这里讨论的不变量。我们稍后会讲到。
+            </p>
+            <h3 id="parallel-dp">切分 batch</h3>
+            <div class="fig-shell" id="fig-parallel-dp" data-reveal>
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                <span>四条 rollout 落到网格的四行上。括号跨过这些行：我们把参数、梯度与优化器状态沿它们切分。</span>
+              </p>
+              <div class="fig-stage">
+                <figure>
+<svg class="slide-svg" viewBox="3 75 1272 563" role="img" aria-labelledby="parallel-dp-fig-title parallel-dp-fig-desc" xmlns="http://www.w3.org/2000/svg">
+<title id="parallel-dp-fig-title">沿网格行做 Fully Sharded Data Parallel</title>
+<desc id="parallel-dp-fig-desc">四条彩色 rollout 映射到 4×4 GPU 网格的四行，标题为 Fully Sharded Data Parallel，括号跨过全部四行。</desc>
+
+  <g transform="translate(-50.19,-15.61) scale(1.1698)">
+
+  
+
+  <!-- ============ LEFT: 4 ROLLOUT BARS ============ -->
+  <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <!-- Rollout 1 (blue) -->
+    <rect x="60" y="168" width="340" height="52" rx="10" fill="#4285F4" opacity="0.6"/>
+    <text x="80" y="202" font-size="22" font-weight="600" fill="#fff">ok let me think about...</text>
+
+    <!-- Rollout 2 (teal) -->
+    <rect x="60" y="260" width="340" height="52" rx="10" fill="#0D9488" opacity="0.6"/>
+    <text x="80" y="294" font-size="22" font-weight="600" fill="#fff">import torch as...</text>
+
+    <!-- Rollout 3 (purple) -->
+    <rect x="60" y="352" width="340" height="52" rx="10" fill="#7C3AED" opacity="0.6"/>
+    <text x="80" y="386" font-size="22" font-weight="600" fill="#fff">to train gpt2 we must...</text>
+
+    <!-- Rollout 4 (grey) -->
+    <rect x="60" y="444" width="340" height="52" rx="10" fill="#64748B" opacity="0.6"/>
+    <text x="80" y="478" font-size="22" font-weight="600" fill="#fff">here is my code for...</text>
+  </g>
+
+  <!-- ============ RIGHT: 4×4 GPU GRID with row tints ============ -->
+  <!-- Grid origin: x=560, y=130 -->
+  <g font-family="'SF Mono', 'Fira Code', 'Consolas', monospace">
+    <!-- Row 0 (blue tint) -->
+    <rect x="560" y="130" width="115" height="80" rx="12" fill="#EBF2FF" stroke="#94A3B8" stroke-width="2"/>
+    <text x="617" y="181" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">0</text>
+    <rect x="687" y="130" width="115" height="80" rx="12" fill="#EBF2FF" stroke="#94A3B8" stroke-width="2"/>
+    <text x="744" y="181" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">1</text>
+    <rect x="814" y="130" width="115" height="80" rx="12" fill="#EBF2FF" stroke="#94A3B8" stroke-width="2"/>
+    <text x="871" y="181" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">2</text>
+    <rect x="941" y="130" width="115" height="80" rx="12" fill="#EBF2FF" stroke="#94A3B8" stroke-width="2"/>
+    <text x="998" y="181" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">3</text>
+
+    <!-- Row 1 (teal tint) -->
+    <rect x="560" y="222" width="115" height="80" rx="12" fill="#F0FDFA" stroke="#94A3B8" stroke-width="2"/>
+    <text x="617" y="273" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">4</text>
+    <rect x="687" y="222" width="115" height="80" rx="12" fill="#F0FDFA" stroke="#94A3B8" stroke-width="2"/>
+    <text x="744" y="273" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">5</text>
+    <rect x="814" y="222" width="115" height="80" rx="12" fill="#F0FDFA" stroke="#94A3B8" stroke-width="2"/>
+    <text x="871" y="273" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">6</text>
+    <rect x="941" y="222" width="115" height="80" rx="12" fill="#F0FDFA" stroke="#94A3B8" stroke-width="2"/>
+    <text x="998" y="273" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">7</text>
+
+    <!-- Row 2 (purple tint) -->
+    <rect x="560" y="314" width="115" height="80" rx="12" fill="#F5F3FF" stroke="#94A3B8" stroke-width="2"/>
+    <text x="617" y="365" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">8</text>
+    <rect x="687" y="314" width="115" height="80" rx="12" fill="#F5F3FF" stroke="#94A3B8" stroke-width="2"/>
+    <text x="744" y="365" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">9</text>
+    <rect x="814" y="314" width="115" height="80" rx="12" fill="#F5F3FF" stroke="#94A3B8" stroke-width="2"/>
+    <text x="871" y="365" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">10</text>
+    <rect x="941" y="314" width="115" height="80" rx="12" fill="#F5F3FF" stroke="#94A3B8" stroke-width="2"/>
+    <text x="998" y="365" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">11</text>
+
+    <!-- Row 3 (grey tint) -->
+    <rect x="560" y="406" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="617" y="457" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">12</text>
+    <rect x="687" y="406" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="744" y="457" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">13</text>
+    <rect x="814" y="406" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="871" y="457" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">14</text>
+    <rect x="941" y="406" width="115" height="80" rx="12" fill="#F1F5F9" stroke="#94A3B8" stroke-width="2"/>
+    <text x="998" y="457" text-anchor="middle" font-size="30" font-weight="600" fill="#475569">15</text>
+  </g>
+
+  <!-- ============ MIDDLE BRACE: "Many rollouts" (in whitespace between tokens and grid) ============ -->
+  <path d="M 412 168 Q 438 168 438 196 V 298 Q 438 316 454 316 Q 438 316 438 334 V 466 Q 438 496 412 496"
+        fill="none" stroke="#1a1a1a" stroke-width="3"/>
+  <text x="435" y="540" text-anchor="middle" font-size="26" font-weight="700" fill="#1a1a1a"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">许多 rollout</text>
+
+  <!-- ============ RIGHT BRACE: "FSDP = 4" ============ -->
+  <path d="M 1078 130 Q 1104 130 1104 158 V 290 Q 1104 308 1120 308 Q 1104 308 1104 326 V 458 Q 1104 486 1078 486"
+        fill="none" stroke="#1a1a1a" stroke-width="3"/>
+  <text x="808" y="115" text-anchor="middle" font-size="24" font-weight="700" fill="#1a1a1a"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">Fully Sharded Data Parallel</text>
+
+  </g>
+</svg>
+                </figure>
+              </div>
+            </div>
+            <p>
+              Data Parallel 切的是 batch：每个 rank 拿走自己的 rollout 并跑完整计算，
+              算术不变。XoRL 把
+              注意力沿 context 与 data parallel 切分，把 expert 层沿 Expert Parallel
+              与 <dfn class="term-definition" tabindex="0" data-definition="Fully Sharded Data Parallel 把参数、梯度与优化器状态切到各 data-parallel rank 上。">FSDP</dfn> 切分。若我们改变注意力切分，某个 token 的行会落到不同 rank 上，我们需要 expert 输出的 reduction 无论哪种切法都产出相同比特。
+            </p>
+            <p>
+              因此我们不能用 rank id 来给<a href="#parallel-ep">expert 输出 reduction</a> 排序。
+              相反，我们给每个贡献者打一个 data-parallel 为主、context-parallel 为次的标签。我们按
+              expert shard 计数贡献者。这样无论注意力跑在 CP 还是 DP 上，reduction 树的叶子都一样。然后按这些标签做 reduction，使每个 token
+              得到与完全不切分时相同的 reduction 树，无论它的行实际上如何被切。
+              Rank 拥有的行数也可以不同，因此每一行带着自己的位置，padding 被标为无效，永不进入 reduction。
+            </p>
+            <h3 id="parallel-pp">按层切分模型</h3>
+            <div class="fig-shell" id="fig-parallel-pp" data-reveal>
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                <span>我们把第 0–49 层放在 stage 0 的十六块 GPU 上，第 50–99 层放在 stage 1。P2P 标记标出激活跨 stage 的位置。</span>
+              </p>
+              <div class="fig-stage">
+                <figure>
+<svg class="slide-svg" viewBox="184 59 912 612" role="img" aria-labelledby="parallel-pp-fig-title parallel-pp-fig-desc" xmlns="http://www.w3.org/2000/svg">
+<title id="parallel-pp-fig-title">跨两个 stage 的 Pipeline Parallel</title>
+<desc id="parallel-pp-fig-desc">模型的两半，第 0–49 层与第 50–99 层，分别映射到拥有 GPU 0–15 的 stage 0 与拥有 GPU 16–31 的 stage 1，由 P2P 标记相连。</desc>
+
+  <g transform="translate(137.40,17.04) scale(1.0493)">
+
+  
+
+  <!-- Pipeline Parallel label -->
+  <text x="60" y="82" text-anchor="start" font-size="26" font-weight="700" fill="#2563EB"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">Pipeline Parallel</text>
+
+  <!-- LEFT: Both model blocks + P2P -->
+  <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <rect x="60" y="100" width="240" height="90" rx="16" fill="#93C5FD" stroke="#2563EB" stroke-width="2.5"/>
+    <text x="180" y="154" text-anchor="middle" font-size="28" font-weight="700" fill="#1E3A8A">Layers 0–49</text>
+
+    <text x="180" y="228" text-anchor="middle" font-size="24" font-weight="600" fill="#2563EB">P2P</text>
+
+    <rect x="60" y="250" width="240" height="90" rx="16" fill="#DBEAFE" stroke="#93C5FD" stroke-width="2.5"/>
+    <text x="180" y="304" text-anchor="middle" font-size="28" font-weight="700" fill="#3B82F6">Layers 50–99</text>
+  </g>
+
+  <rect x="488" y="60" width="410" height="258" rx="14" fill="none" stroke="#2563EB" stroke-width="3"/>
+  <text x="465" y="195" text-anchor="end" font-size="22" font-weight="600" fill="#2563EB"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">Stage 0</text>
+  <g font-family="'SF Mono', 'Fira Code', 'Consolas', monospace">
+    <rect x="500" y="74" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="545" y="106" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">0</text>
+    <rect x="596" y="74" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="641" y="106" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">1</text>
+    <rect x="692" y="74" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="737" y="106" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">2</text>
+    <rect x="788" y="74" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="833" y="106" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">3</text>
+    <rect x="500" y="130" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="545" y="162" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">4</text>
+    <rect x="596" y="130" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="641" y="162" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">5</text>
+    <rect x="692" y="130" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="737" y="162" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">6</text>
+    <rect x="788" y="130" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="833" y="162" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">7</text>
+    <rect x="500" y="186" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="545" y="218" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">8</text>
+    <rect x="596" y="186" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="641" y="218" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">9</text>
+    <rect x="692" y="186" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="737" y="218" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">10</text>
+    <rect x="788" y="186" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="833" y="218" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">11</text>
+    <rect x="500" y="242" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="545" y="274" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">12</text>
+    <rect x="596" y="242" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="641" y="274" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">13</text>
+    <rect x="692" y="242" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="737" y="274" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">14</text>
+    <rect x="788" y="242" width="90" height="48" rx="10" fill="#93C5FD" stroke="#60A5FA" stroke-width="2"/>
+    <text x="833" y="274" text-anchor="middle" font-size="24" font-weight="600" fill="#1E3A8A">15</text>
+  </g>
+
+  <!-- P2P between grids -->
+  <text x="693" y="343" text-anchor="middle" font-size="24" font-weight="600" fill="#2563EB"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">P2P</text>
+
+  <rect x="488" y="350" width="410" height="258" rx="14" fill="none" stroke="#93C5FD" stroke-width="3"/>
+  <text x="465" y="485" text-anchor="end" font-size="22" font-weight="600" fill="#3B82F6"
+        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">Stage 1</text>
+  <g font-family="'SF Mono', 'Fira Code', 'Consolas', monospace">
+    <rect x="500" y="364" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="545" y="396" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">16</text>
+    <rect x="596" y="364" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="641" y="396" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">17</text>
+    <rect x="692" y="364" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="737" y="396" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">18</text>
+    <rect x="788" y="364" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="833" y="396" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">19</text>
+    <rect x="500" y="420" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="545" y="452" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">20</text>
+    <rect x="596" y="420" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="641" y="452" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">21</text>
+    <rect x="692" y="420" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="737" y="452" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">22</text>
+    <rect x="788" y="420" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="833" y="452" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">23</text>
+    <rect x="500" y="476" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="545" y="508" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">24</text>
+    <rect x="596" y="476" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="641" y="508" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">25</text>
+    <rect x="692" y="476" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="737" y="508" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">26</text>
+    <rect x="788" y="476" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="833" y="508" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">27</text>
+    <rect x="500" y="532" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="545" y="564" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">28</text>
+    <rect x="596" y="532" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="641" y="564" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">29</text>
+    <rect x="692" y="532" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="737" y="564" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">30</text>
+    <rect x="788" y="532" width="90" height="48" rx="10" fill="#DBEAFE" stroke="#BFDBFE" stroke-width="2"/>
+    <text x="833" y="564" text-anchor="middle" font-size="24" font-weight="600" fill="#3B82F6">31</text>
+  </g>
+
+  </g>
+</svg>
+                </figure>
+              </div>
+            </div>
+            <p>
+              Pipeline Parallel 按层把模型切到不同设备。在每一层 decoder 里，我们
+              返回已经<a href="#kernel-norms">加上 residual</a> 的 BF16 输出，这样只需把这份存好的 tensor 送过 pipeline 边界，不必再做新的计算或 cast。无论训练端是否用 Pipeline Parallel 切分，输出都一样。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="parallelism" href="https://github.com/togethercomputer/xorl/pull/57">
+              XoRL 头切分与 pipeline stage 对齐 PR ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="parallelism" href="https://github.com/togethercomputer/xorl/tree/gdn-cp-exact">
+              XoRL context-parallel GDN 分支 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="parallelism" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/distributed/canonical_moe.py">
+              XoRL 逻辑行归属 ↗ </a>
+            </p>
+            <p>
+              每次交换之后，接收 rank 得到的是按头的 BF16 值，或跨 stage 的 BF16 行——也就是不切分时它本会算出的那些。
+            </p>
+          </section>
+
+          <section id="qwen" aria-labelledby="qwen-title" data-reveal>
+            <span id="attention" aria-hidden="true"></span>
+            <h2 id="qwen-title">Qwen3.5/3.6：Gated DeltaNet 与 mixture-of-experts 层</h2>
+            <p>
+              Qwen3.5/3.6 系列带来新挑战：循环层。Gated DeltaNet 是循环层。它把一份 FP32 状态从一个 token 带到下一个，这份状态上的任何差异都会沿序列传播。对 Qwen3-8B 我们只需对齐 XoRL 与 SGLang，现在还要对齐 <em>SGLang prefill 与 SGLang decode</em>。这也是我们遇到的第一个 MoE，因此会讨论对齐 MoE 的特殊难点。
+            </p>
+            <h3 id="qwen-gdn">Gated DeltaNet：对齐循环状态</h3>
+            <p>
+              <dfn class="term-definition" tabindex="0" data-definition="Gated DeltaNet 是一种沿 token 携带循环状态的线性注意力层。">Gated DeltaNet</dfn><a class="ref-mark sidenote-number" href="https://arxiv.org/abs/2412.06464" aria-label="Yang et al., gated delta networks"></a><span class="sidenote citation-sidenote"><a href="https://arxiv.org/abs/2412.06464">Yang, Kautz, and Hatamizadeh, “Gated Delta Networks” (2024)</a>。引入本架构使用的循环线性注意力层。</span>
+              维护一份运行中的 FP32 矩阵 <i>H</i>，概括当前 token 之前的全部信息，并每个 token 更新一次。对一个头、一个 token，其循环形式是：
+            </p>
+            <div class="math-display math-display-compact" data-tex="\bar H_t=e^{g_t}H_{t-1},\quad \delta_t=\beta_t\left(v_t-\bar H_t^\top \hat k_t\right),\quad H_t=\bar H_t+\hat k_t\delta_t^\top,\quad o_t=H_t^\top \hat q_t/\sqrt{d_k}">
+              <code>H̄ₜ = exp(gₜ)Hₜ₋₁, δₜ = βₜ(vₜ − H̄ₜᵀk̂ₜ), Hₜ = H̄ₜ + k̂ₜδₜᵀ, oₜ = Hₜᵀq̂ₜ/√dₖ</code>
+            </div>
+            <p>
+              这里 <i>g</i> 是衰减门，<i>β</i> 是更新强度，<i>v</i> 是当前 token 的
+              value，<i>q̂</i> 与 <i>k̂</i> 是 L2 归一化后的 query 与 key。更新
+              <i>H</i><sub>t</sub> = (<i>I</i> − <i>β</i><sub>t</sub><i>k̂</i><sub>t</sub><i>k̂</i><sub>t</sub><sup>ᵀ</sup>)<i>H̄</i><sub>t</sub> + <i>β</i><sub>t</sub><i>k̂</i><sub>t</sub><i>v</i><sub>t</sub><sup>ᵀ</sup>
+              就是 delta rule。
+            </p>
+            <h4>训练与 decode 对循环的分组不同</h4>
+            <p>
+              训练、prefill 与 decode 对循环的分组不同。XoRL 一次算 64 个 token。
+              SGLang 在 prefill 时也用 64-token 的 chunk，但 decode 一次更新一个 token 的 <i>H</i>。
+              64-token 计算与逐 token 计算
+              <a href="#background-association">对 FP32 乘法与加法的分组不同</a>，因此可能在 chunk 边界产出不同状态。下一个 token 读这份状态，差异会沿序列继续传播。
+            </p>
+            <p>
+              64 行的块在内部也不一样。SGLang 自己的 kernel 把运行状态存成
+              [<i>V</i>, <i>K</i>]，并用匹配的转置乘法顺序，再用单独的小块 pass 加上一次 merge 来求逆 64 行三角因子。XoRL 把状态存成
+              [<i>K</i>, <i>V</i>]，并用一次融合 merge。两边算的是同一组和，只是 FP32 分组不同，因此长上下文下会有一小截元素对不上。
+            </p>
+
+            <h4>在 decode 时回放 64 行计算</h4>
+            <p>
+              两个引擎用相同的 reduction 顺序做 q/k 的 L2 归一化，把 <i>g</i> 与 <i>&beta;</i> 保持在 FP32，并在对衰减做指数之前 mask 掉未来位置。Serving 也跑 XoRL 的 [<i>K</i>, <i>V</i>] 状态
+              kernel 及其融合三角 merge，因此两边
+              在构造 chunk 边界的那些阶段执行同一套 kernel 体。对 XoRL 的前向，
+              我们调用 SGLang 的因果卷积 kernel 并实现其反向。
+            </p>
+            <p>
+              XoRL 训练与 SGLang prefill 使用一次 64 行状态更新，prefill 在每个完整 chunk 之后存储 FP32 状态。要 decode token <i>p</i>，我们从该边界出发，按训练顺序重算第 0 到
+              <i>p</i> 行。到达下一个 chunk 边界之前，最多重算 64
+              行。
+            </p>
+            <div class="fig-shell kernel-story-pair" data-reveal role="group" aria-label="Gated DeltaNet 的不匹配与共享的 chunk 计算">
+              <div class="fig-shell kernel-story-figure kernel-story-pair-panel" id="fig-gdn-mismatch" data-autoplay="loop">
+                <p class="fig-reading-guide">
+                  <span class="fig-reading-guide-label">不匹配</span>
+                  <span>XoRL 训练一次算 64 行，而 SGLang decode 一次更新一个 token 的 <i>H</i>。SGLang prefill 共享 64 行分组，但按 serving 方向携带状态。</span>
+                </p>
+                <div class="fig-stage">
+                  <figure>
+                    <svg class="fig-svg" id="gdn-mismatch-svg" viewBox="0 0 960 540" role="img" aria-labelledby="gdn-mismatch-title gdn-mismatch-desc" data-seq="idle">
+                      <title id="gdn-mismatch-title">不同的 chunk 边界状态会改变之后的每一个 chunk</title>
+                  <desc id="gdn-mismatch-desc">XoRL 训练一次算 64 行，而 SGLang decode 一次更新一个 token 的循环状态。SGLang prefill 使用 64 行分组，但按转置后的 serving 方向携带运行状态，并用单独的小块 pass 求逆三角因子。不同的浮点程序可能在 chunk 边界产出不同的 FP32 状态。</desc>
+                      <g data-js-layer></g>
+                    </svg>
+                  </figure>
+                </div>
+              </div>
+              <div class="fig-shell kernel-story-figure kernel-story-pair-panel" id="fig-gdn-recompute" data-autoplay="loop">
+                <p class="fig-reading-guide">
+                  <span class="fig-reading-guide-label">已对齐</span>
+                  <span>要 decode token <i>p</i>，SGLang 从与训练、prefill 相同的 FP32 chunk 边界出发，按相同顺序计算第 0 到 <i>p</i> 行。</span>
+                </p>
+                <div class="fig-stage">
+                  <figure>
+                    <svg class="fig-svg" id="gdn-recompute-svg" viewBox="0 0 960 540" role="img" aria-labelledby="gdn-recompute-title gdn-recompute-desc" data-seq="idle">
+                      <title id="gdn-recompute-title">在 decode 时回放训练用的 chunk</title>
+                      <desc id="gdn-recompute-desc">要 decode token p，SGLang 从与训练、prefill 相同的已完成 FP32 状态边界出发，在做指数之前 mask 掉未来位置，并按相同顺序计算第 0 到 p 行。</desc>
+                      <g data-js-layer></g>
+                    </svg>
+                  </figure>
+                </div>
+              </div>
+            </div>
+
+            <p>
+              循环是因果的，因此更早的行不能依赖更晚的 token。这意味着我们可以在 SGLang 里缓存它们的中间值，只重算新行碰到的部分。prefill 之后，一个 batched initializer 为 prompt 最后一个不完整 chunk 填好 cache。每次 graph replay 加一行。
+            </p>
+            <p>
+              一次 eager decode 之后，我们重跑缓存行的那些阶段，好让 CUDA-graph decode 从它期望的 cache 接着跑。一个 chunk 完成时，我们在 SGLang 里存下下一个 FP32 边界，并开始新的 64 行 slab。
+            </p>
+            <p>
+              CUDA graph 要求固定的 tensor 地址，而请求会在调度 slot 之间移动，每个活着的 chunk 每步会长一行。我们为每个 slot 预留 64 行，并把当前 slot ID 与 chunk 长度放进 GPU tensor。我们确保对 SGLang 的这些改动仍然允许跑 CUDAGraphs。
+            </p>
+            <div class="fig-shell kernel-story-figure" id="fig-gdn-cached" data-reveal data-autoplay="loop">
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                <span>每个调度 slot 预留 64 行。GPU tensor 选出 slot 与当前行。Graph replay 复用缓存行，更新第 <i>p</i> 行，并跑与完整重扫相同的 64 行输出计算。</span>
+              </p>
+              <div class="fig-stage">
+                <figure>
+                  <svg class="fig-svg" id="gdn-cached-svg" viewBox="0 0 960 540" role="img" aria-labelledby="gdn-cached-title gdn-cached-desc" data-seq="idle">
+                    <title id="gdn-cached-title">在 CUDA graph 里更新一行 GDN</title>
+                    <desc id="gdn-cached-desc">每个调度 slot 在固定地址预留 64 行。GPU tensor 选出 slot 与当前行。Graph replay 更新该行，产出与完整重扫相同的输出。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+            <p>
+              我们不能按<a href="#parallel-cp">头</a>来切循环层，因为状态沿序列维走，而不是跨头走。若在 chunk 中间切开序列，就会把循环重新分组，改变 reduction 顺序，从而改变状态，并传播到之后所有 token。因此我们只在每份文档的 64-token chunk 网格上切序列。我们让 collator 在文档之间做 padding，使每次切口都落在边界上。每个 rank 在自己的 shard 上跑未经修改的 64 行计算，并把 FP32 边界状态传给下一个 rank。因果卷积会读切口前的三个 token，因此前一个 rank 送出那些投影后的输入，接收 rank 拿它们来算。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="gdn" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/ops/linear_attention/ops/gated_delta_rule/chunk.py">
+              XoRL GDN chunk 前向与反向 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="gdn" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/kernels/ops/attention/fla/bi_gdn_decode_incr.py">
+              SGLang 增量 GDN decode ↗ </a>
+              <a class="source-link implementation-pr" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/kernels/ops/attention/fla/bi_gdn_decode.py">
+              SGLang 整 chunk GDN decode ↗ </a>
+              <a class="source-link implementation-pr" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/kernels/ops/attention/fla/qwen35_gdn_exact.py">
+              SGLang Qwen GDN 选择 ↗ </a>
+            </p>
+
+            <span id="kernel-moe" aria-hidden="true"></span>
+            <h3 id="qwen-moe">Mixture-of-experts 层</h3>
+            <p>
+              Router 选出八个 expert 并赋权。每个 rank 计算本地被路由的
+              expert 以及 shared expert 的一份 shard。我们收集八份 BF16 部分输出，并按固定顺序归约。
+            </p>
+            <h4 id="qwen-router">Router：对齐 expert id 与权重</h4>
+            <p>
+              Router 用<a href="#kernel-gemm">固定 <i>K</i> 的矩阵乘</a>把每个 token 投影成每个 expert 一个分数，做 FP32 softmax，
+              选出最高的八个概率并重新归一化。expert 选择是离散的：gate 投影上最后一比特的差异就能把第八与第九个 expert 换掉。即便 expert id 一致，按不同顺序加这八个被选概率也会改变 BF16 routing 权重。
+            </p>
+            <p>
+              我们在两个引擎里都跑<a href="#kernel-gemm">固定 K 的投影</a>。然后从左到右加这八个被选的
+              FP32 概率，用该和去除每个概率，再把 routing 权重 cast 成
+              BF16。两个引擎都按概率排序返回被选 expert，因此之后沿八个 slot 走的每一次求和都按同一顺序访问它们。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/layers/moe/router.py">
+              XoRL top-8 路由 ↗ </a>
+              <a class="source-link implementation-pr" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/ops/batch_invariant_ops.py">
+              XoRL router 矩阵乘 ↗ </a>
+            </p>
+
+            <h4 id="qwen-experts">Expert：把 routing 权重留在累加器里</h4>
+            <p>
+              训练端可能在乘 routing 权重之前先把 down-projection 结果舍入到 BF16，而推理把该权重乘在 FP32 down-projection 累加器里面，最后只舍入一次。
+            </p>
+            <p>
+              对 XoRL 的前向，我们跑 SGLang 已有的 Triton expert kernel，并实现训练用的自定义反向算子。我们把 XoRL 的权重以转置 view 传入。routing 权重留在 FP32 累加器里，结果在最后舍入一次。
+            </p>
+            <p>
+              Shared expert 使用稠密情形里的<a href="#kernel-gemm">固定 <i>K</i> 投影</a>与
+              <a href="#kernel-swiglu">SwiGLU</a>。每个 rank 先把自己的
+              shared-expert shard 加到 routed-expert 输出上，再由八个 rank 合并结果。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/transformers/qwen3_5_moe/modeling_qwen3_5_moe.py">
+              XoRL 被路由与 shared expert ↗ </a>
+            </p>
+
+            <p id="qwen-combine">
+              两个引擎现在对每个 token 都持有相同的八份 BF16 部分输出（每个 rank 一份），并用<a href="#parallel-ep">固定的 expert 输出 reduction</a> 把它们相加；八个贡献者需要三层。
+            </p>
+
+            <h3 id="qwen-result">零不匹配与性能</h3>
+            <section class="table-scroll qwen-throughput-table" id="qwen-throughput-breakdown" tabindex="0" aria-labelledby="qwen-throughput-caption">
+              <table class="data-table performance-table">
+                <caption id="qwen-throughput-caption">Wordle 采样吞吐与墙钟时间：关闭开关的基线、除 GDN 外已对齐的前向，以及逐字节对齐的前向。
+                  每种配置是 256 条 Wordle 轨迹上丢掉 warmup 后三次计时的均值。</caption>
+                <thead>
+                  <tr><th scope="col">配置</th><th scope="col">吞吐</th><th scope="col">采样墙钟</th><th scope="col">相对关闭开关</th></tr>
+                </thead>
+                <tbody>
+                  <tr><th scope="row">关闭开关</th><td><strong>7,863 tok/s</strong></td><td>104.0 s</td><td>1.000×</td></tr>
+                  <tr><th scope="row">除 GDN 外已对齐</th><td><strong>5,778 tok/s</strong></td><td>134.4 s</td><td>0.735×</td></tr>
+                  <tr><th scope="row">逐字节对齐</th><td><strong>4,767 tok/s</strong></td><td>164.2 s</td><td>0.606×</td></tr>
+                </tbody>
+              </table>
+            </section>
+            <p>
+              逐字节对齐的前向把采样吞吐降低 <strong>39.4%</strong>，并把采样墙钟时间增加
+              <strong>57.9%</strong>。去掉精确 GDN decode 能收回大约一半新增墙钟，即 49.5%，因此 GDN 是我们能点名的最大单项代价，另一半则摊在对齐前向的其余部分。
+            </p>
+            <p>
+              墙钟时间不能直接比较，因为策略学到的行为不同。逐字节对齐的运行更早开始解开游戏，因此生成的 token 数不同。采样也只是 RL 一步里的一部分，所以这不是一次训练运行真正付出的开销；我们在结语里<a href="#conclusion-cost">端到端测量</a>。
+            </p>
+
+          </section>
+
+          <section id="glm" aria-labelledby="glm-title" data-reveal>
+            <span id="transfer" aria-hidden="true"></span>
+            <h2 id="glm-title">GLM-5.2：稀疏注意力与 FP8 expert</h2>
+            <p>
+              GLM-5.2 带来新的复杂之处，包括稀疏注意力机制以及这些 expert 权值使用的
+              <dfn class="term-definition" tabindex="0" data-definition="FP8 是八位浮点格式，这些 expert 权值按块存储 scale。">FP8</dfn>
+              原生权重。要正确训练 GLM-5.2，我们需要组合多种并行：Context
+              Parallel、Expert Parallel、Tensor Parallel、Fully Sharded Data Parallel 与 Pipeline
+              Parallel。XoRL 支持对 GLM-5.2 做全参数、<a href="#lora">LoRA</a> 与
+              <dfn class="term-definition" tabindex="0" data-definition="QLoRA 在量化基座固定的前提下训练低秩适配器。">QLoRA</dfn>
+              训练。
+            </p>
+            <h3 id="glm-sparse">稀疏注意力</h3>
+            <p>
+              一些 GLM block 会选出更早的位置来做注意力，后续 block 复用这些选择。若 selector 选出不同位置，不匹配会沿序列级联。我们先对齐 selector，再对齐注意力。
+            </p>
+
+            <h4 id="glm-selector">选出稀疏注意力位置</h4>
+            <p>
+              Selector 返回后续稀疏注意力 block 将读取的位置。XoRL 与 SGLang 构造其输入的方式不同。XoRL 分开投影 key 与 head gate，并对 BF16 的 query、key 打分。SGLang 把 key 与 head gate 一起投影，再把 <a href="#kernel-rope">RoPE</a> 之后的 query、key 转成 FP8，各自带自己的 scale。这些差异可以改变被选中的位置。
+            </p>
+            <p>
+              我们让 XoRL 跟随推理端的 selector 计算。我们在 BF16 里一起投影 key 与 head gate，并在 RoPE 之后做 BF16 舍入。然后把 query 与 key 分别按各自的 scale cast 成 FP8。两个引擎都对完整历史打分，分数打平时选更小的位置，并按升序返回位置给后续稀疏注意力 block。
+            </p>
+            <p>
+              Prefill kernel 写入 prompt 的 key，decode 再追加每个生成的 key。Prefill 与 decode 可能把归一化、RoPE 与 BF16 舍入放在不同位置。为在 XoRL 里复现 serving cache，我们标出 prefill 边界，并用对应的 SGLang prefill 或 decode 计算重建每一行。
+            </p>
+            <p>
+              两个引擎可以用不同方式存储历史，只要每个逻辑位置上的值相同。XoRL 把历史存在连续 tensor 里，SGLang 存在 64-token 的 page 里。
+            </p>
+            <div class="fig-shell kernel-story-figure" id="fig-glm-selector-exact" data-reveal data-autoplay="loop">
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                <span>我们在 XoRL 里用匹配的 serving 计算重建每一行 prompt 与生成行。于是 selector 在 XoRL 的连续历史与 SGLang 的 paged 历史里看到相同的值，从而选出相同位置。</span>
+              </p>
+              <div class="fig-stage">
+                <figure>
+                  <svg class="fig-svg" id="glm-selector-exact-svg" viewBox="0 0 960 540" role="img" aria-labelledby="glm-selector-exact-title glm-selector-exact-desc" data-seq="idle">
+                    <title id="glm-selector-exact-title">两种内存布局上的同一个稀疏注意力 selector</title>
+                    <desc id="glm-selector-exact-desc">我们从 XoRL 的连续历史与 SGLang 的 64-token page 构造相同的 FP8 query、key 以及相同的 FP32 head-gate。两个 selector 返回相同位置。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+
+            <p id="glm-attention">
+              我们从 XoRL 调用 SGLang 的 FlashMLA 前向，并在 TileLang 里实现其反向，把选中的行直接从 XoRL 的连续 tensor 传入，而不经过 SGLang 的 page table。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="glm-sparse" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/transformers/glm5/indexer.py">
+              XoRL selector 输入 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="glm-sparse" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/transformers/glm5/sparse_selector.py">
+              XoRL 被选位置 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="glm-sparse" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/ops/glm5_kernels/flashmla_sparse_mla.py">
+              XoRL FlashMLA 前向与反向 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="glm-sparse" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/layers/attention/nsa/glm52_selector.py">
+              SGLang 稀疏 selector ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="glm-sparse" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/layers/attention/nsa/glm52_selector_fast.py">
+              SGLang paged 稀疏 selector ↗ </a>
+            </p>
+
+            <h3 id="glm-moe">Mixture-of-experts 层</h3>
+            <p>
+              在 GLM 里，router 会加校正 bias，expert 从 FP8 权值运行，并且许多 rank（我们最少用 EP=16）
+              对每个 MoE 输出有贡献。适配器训练与全权值训练共用一份 FP8 expert 前向。
+              两种模式只在反向之后如何更新 expert 权值上不同。
+            </p>
+
+            <h4 id="glm-router">选出 GLM 的八个 expert</h4>
+            <p>
+              GLM 只在选 expert 时加校正 bias。它们的权重仍来自加 bias 之前的 sigmoid 分数。训练端可能把这份 bias 载成 BF16，而推理保持 FP32，从而改变被选 expert。训练端也可能在调用 expert 之前把归一化后的 routing 权重舍入到 BF16，而推理把它们留在 FP32，并在 expert kernel 里乘上因子 2.5。
+            </p>
+            <p>
+              为消除这些差异，我们在两个引擎里跑同一份<a href="#kernel-gemm">固定 K 的 gate 投影</a>，并从 XoRL 直接调用 SGLang 的 router。它在选出 top-8 expert 之前加上 FP32 校正 bias。然后从加 bias 之前 gather 对应的 sigmoid 分数，在 FP32 里归一化，再传给 expert kernel。expert kernel 再乘因子 2.5。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="glm-router" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/transformers/glm5/modeling_glm5.py#L81-L116">
+              XoRL GLM router ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="glm-router" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/layers/moe/topk.py#L1670-L1691">
+              SGLang 分组 top-k ↗ </a>
+            </p>
+
+            <h4 id="glm-experts">LoRA 路径：带着 adapter 跑 FP8 expert</h4>
+            <p>
+              训练端可能把 expert 权值转成 BF16 并单独算 LoRA，而推理读取 checkpoint 的 FP8 权值与块 scale，并在自己的 expert kernel 里施加 LoRA。两条前向就会在不同的地方舍入。
+            </p>
+            <p>
+              我们扩展 SGLang 的 FP8 expert kernel，在 gate/up 投影之后、以及 down 投影之后各施加一次 LoRA。基座权值保持 FP8，routing 权重乘法与最终 BF16 舍入仍停在推理端原本的位置。我们从 XoRL 的前向调用这个 kernel，并为 FP32 LoRA 矩阵实现自定义反向。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="glm-experts" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/transformers/glm5/exact_routed_experts_qlora.py">
+              XoRL FP8 expert 与反向 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="glm-experts" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/lora/lora_moe_runners.py#L312-L563">
+              SGLang LoRA MoE ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="glm-experts" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/layers/moe/moe_runner/triton_utils/fused_moe.py#L467-L842">
+              SGLang FP8 expert ↗ </a>
+            </p>
+
+            <h4 id="glm-fullparam">全权值路径：训练 FP8 expert 权值</h4>
+            <p>
+              要训练 FP8 expert，训练端保留 FP32 master 权值，并在前向时量化它们。若推理自己再量化一遍，两个引擎就必须在量化器里的每一个舍入点上对齐。
+            </p>
+            <p>
+              相反，我们在每一步优化器之后，把 XoRL 的 FP32 master 权值按 SGLang 的块 layout 量化一次。直到下一步之前，每一次前向都读这些缓存的 FP8 code 与块 scale。我们把 FP8 code 与块 scale 和上次送出的比较，只送变化的部分。一步里每个块的 scale 动得很小，因此大约只有百分之一的条目会变。
+            </p>
+            <p id="glm-combine">
+              LoRA 或全权值前向之后，我们把十六份部分输出按逻辑 rank 顺序摆好，再施加<a href="#parallel-ep">固定的 expert 输出 reduction</a>；十六个贡献者需要四层。
+            </p>
+
+            <h3 id="glm-head">分布式语言模型头</h3>
+            <p>
+              推理可以把 <a href="https://huggingface.co/zai-org/GLM-5.2">GLM</a> 的 154,880-token
+              词表切到十六个 rank 上，而训练端一次投影完整词表。形状不同的矩阵乘可能按不同
+              <a href="#kernel-gemm">顺序</a>加乘积，从而产出不同的 logits。
+            </p>
+            <p>
+              我们把 XoRL 的头按同样的十六份词表 shard 切开，并把每一行隐状态与目标 token id 送到持有这些 shard 的 rank。每个 rank 施加
+              <a href="#kernel-gemm">固定 K 的投影</a>，我们再按 rank 顺序 gather
+              logits，然后施加<a href="#kernel-head">同一套流式 softmax</a>。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="glm-head" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/transformers/glm5/exact_lm_head_qlora.py">
+              XoRL 分布式语言模型头 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="glm-head" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/layers/xorl_batch_invariant.py#L150-L292">
+              SGLang 分布式语言模型头 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="glm-head" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/layers/logits_processor.py">
+              SGLang logprob 计算 ↗ </a>
+            </p>
+
+            <h3 id="glm-result">零不匹配与性能</h3>
+            <p>
+              用逐字节对齐的前向采样，吞吐从 147.6 降到 107.2 tok/s，降低
+              27.4%。
+            </p>
+            <section class="table-scroll glm-throughput-table" id="glm-throughput-breakdown" tabindex="0" aria-labelledby="glm-throughput-caption">
+              <table class="data-table performance-table">
+                <caption id="glm-throughput-caption">GLM-5.2 采样吞吐：未对齐基线、逐字节对齐前向，以及去掉其中一项对齐后的逐字节对齐前向。每种配置是 TP16/EP16/CP16 上十六个样本、六十四个输出 token、三次计时的均值。</caption>
+                <thead>
+                  <tr><th scope="col">配置</th><th scope="col">吞吐</th><th scope="col">相对关闭开关</th></tr>
+                </thead>
+                <tbody>
+                  <tr><th scope="row">关闭开关</th><td><strong>147.6 tok/s</strong></td><td>1.000×</td></tr>
+                  <tr><th scope="row">逐字节对齐</th><td><strong>107.2 tok/s</strong></td><td>0.726×</td></tr>
+                  <tr><th scope="row">逐字节对齐，去掉 expert 路径对齐</th><td><strong>125.9 tok/s</strong></td><td>0.853×</td></tr>
+                  <tr><th scope="row">逐字节对齐，去掉稀疏注意力 selector</th><td><strong>110.2 tok/s</strong></td><td>0.747×</td></tr>
+                  <tr><th scope="row">逐字节对齐，去掉 batch-invariant 稠密 GEMM</th><td><strong>105.8 tok/s</strong></td><td>0.717×</td></tr>
+                </tbody>
+              </table>
+            </section>
+            <p>
+              代价大多在 expert 路径。若关掉对齐后的 router、FP8 expert 前向以及按 rank 排序的 expert 输出 reduction，吞吐回到 125.9 tok/s，因此对齐代价将近一半单在 expert 路径上。精确稀疏注意力 selector 与 top-k 大约占两个百分点。batch-invariant 的 <code>addmm</code>、<code>bmm</code>、
+              <code>log_softmax</code>、<code>mean</code> 与 <code>mm</code>
+              的代价在噪声范围内，因为它们不改变 expert 投影，只改变稠密 matmul 与注意力投影，而那只占 FLOPS 的一小部分。
+            </p>
+          </section>
+
+          <section id="dsv4" aria-labelledby="dsv4-title" data-reveal>
+            <h2 id="dsv4-title">DeepSeek-V4：四路残差与压缩历史</h2>
+            <p>
+              DeepSeek-V4 引入多路残差流、压缩注意力历史，以及
+              <dfn class="term-definition" tabindex="0" data-definition="MXFP4 把每个被路由 expert 的权值存成四位浮点，并共享块 scale。">MXFP4</dfn>
+              expert 权值；我们用 <a href="#lora">LoRA</a> 跑它们，且不必解包。
+            </p>
+            <h3 id="dsv4-mhc">四路残差混合</h3>
+            <h4>融合会改变残差计算</h4>
+            <p>
+              每个 block 里有四路 BF16 残差流。模型的
+              <dfn class="term-definition" tabindex="0" data-definition="mHC 是 DeepSeek-V4 为四路并行残差流学习的混合器。">mHC mixer</dfn>
+              在每个注意力 / expert 层之前把这些流合成一行 BF16，再把该层输出加回重新混合后的流。这个 mixer 计算每个 token 的 FP32
+              权重以及一份 4×4 的 FP32 混合矩阵。XoRL 与 SGLang 可能在如何融合 mixer、或在 mixer 内部何处舍入与相加上对不上，于是出现不匹配。
+            </p>
+            <h4>共用 serving 前向</h4>
+            <p>
+              在 XoRL 的前向里，我们调用 SGLang 的 pre-mix 与 post-mix kernel。我们的自定义反向把梯度返回给全部四路残差流。训练时对 mixer 系数做 stop-grad，因此没有梯度流入 mixer 的权值。
+            </p>
+            <div class="fig-shell kernel-story-figure" id="fig-dsv4-mhc-exact" data-reveal data-autoplay="loop">
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                <span>我们的 pre-mix kernel 把四路残差流合成该层消费的那一行。我们的 post-mix kernel 再把该层输出加回重新混合后的流。</span>
+              </p>
+              <div class="fig-stage">
+                <figure>
+                  <svg class="fig-svg" id="dsv4-mhc-exact-svg" viewBox="0 0 960 280" role="img" aria-labelledby="dsv4-mhc-exact-title dsv4-mhc-exact-desc" data-seq="idle">
+                    <title id="dsv4-mhc-exact-title">四路残差流如何穿过一层</title>
+                    <desc id="dsv4-mhc-exact-desc">融合的 pre-mix 与 RMSNorm kernel 把四路 BF16 残差流合成一行。注意力或 expert 层之后，融合的 post-mix kernel 再把结果分回四路。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-mhc" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/ops/dsv4/hyper_connection.py">
+              XoRL mHC 前向与反向 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-mhc" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/kernels/ops/layernorm/mhc.py">
+              SGLang 融合 mHC kernel ↗ </a>
+            </p>
+
+            <h3 id="dsv4-attention">压缩稀疏注意力</h3>
+            <p>
+              每一层都使用 128-token 的滑动窗口注意力。C0 层<em>只</em>看这个窗口。
+              C4 层还会看重叠的摘要。这些摘要覆盖八个 token，每四个 token 建一次。C128 层对每个不重叠的 128-token tile 有一份摘要。每个
+              query 在一次 softmax 里同时看自己的摘要与滑动窗口。
+            </p>
+
+            <h4 id="dsv4-compressor">压缩前缀</h4>
+            <p>
+              要构造一行压缩结果，模型在 BF16 里投影隐状态，用 FP32 权重做 pooling，
+              再归一化，施加 <a href="#kernel-rope">RoPE</a> 并存成 FP8。投影用与稠密层相同的
+              <a href="#kernel-gemm">batch-invariant matmul</a> 和同一份 RoPE kernel。
+              训练端看到完整序列，而推理在 prefill 时构造这份状态、在 decode 时更新它。因此两边可能在不同的 token 边界上创建压缩行。我们只在对应的 token 组完成时才创建 C4 与 C128 行，以便对齐 serving 边界，确保后续 query 读到正确的压缩行。
+            </p>
+            <p>
+              在 XoRL 里，我们使用 SGLang 的摘要计算与 FP8 cast。SGLang 的稀疏 prefill kernel 不是字节稳定的，因此我们按每个因果 query 行循环 decode kernel 来回放 prompt。然后用同一个 kernel 一次推进一个 token 的 paged cache。在 token 之间，我们携带最近 token 的 cache、FP32 compressor 状态以及 C4/C128 行，并在与 serving 相同的边界上加入一行压缩结果。
+            </p>
+
+            <h4 id="dsv4-indexer">对压缩行做注意力</h4>
+            <p>
+              我们在 XoRL 里从 SGLang paged cache 暴露的逻辑位置构造 FlashMLA 的输入，把压缩前缀放在最近 128 个 token 之前。我们调用 SGLang 的 FlashMLA 前向，并把反向实现为同一注意力的 FP32 参考。回放一个 token 时，我们直接在 paged cache 上调用 serving 的 decode 入口。
+            </p>
+            <div class="fig-shell kernel-story-figure" id="fig-dsv4-attention-exact" data-reveal data-autoplay="loop">
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                  <span>我们用 decode kernel 回放 prompt 来播种 paged cache。随后每一步 decode 把最近 token cache、FP32 compressor 状态与压缩 cache 带到下一步。</span>
+              </p>
+              <div class="fig-stage">
+                <figure>
+                  <svg class="fig-svg" id="dsv4-attention-exact-svg" viewBox="0 0 960 540" role="img" aria-labelledby="dsv4-attention-exact-title dsv4-attention-exact-desc" data-seq="idle">
+                    <title id="dsv4-attention-exact-title">把压缩注意力状态从 prefill 带到 decode</title>
+                    <desc id="dsv4-attention-exact-desc">对 C4/C128 层，用 decode kernel 回放 prompt 来播种 paged cache。每一步单 token decode，我们推进原始 128-token 窗口，把新 token pool 进 FP32 compressor 状态，并在与 serving 相同的边界把新的 FP8 摘要写入 C4/C128 cache。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-attention" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/ops/dsv4/compressor.py">
+              XoRL DeepSeek-V4 compressor ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-attention" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/ops/dsv4/v4_indexer.py">
+              XoRL C4 indexer ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-attention" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/ops/dsv4/exact_attention.py">
+              XoRL FP8 注意力前向与反向 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-attention" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/layers/attention/dsv4/compressor.py">
+              SGLang DeepSeek-V4 compressor ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-attention" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/layers/attention/dsv4/indexer.py">
+              SGLang C4 indexer 与 page 映射 ↗ </a>
+            </p>
+
+            <h3 id="dsv4-moe">哈希路由与学习到的 expert 路由</h3>
+            <p id="dsv4-router">
+              训练端可能用自己的矩阵乘形成 router logits，并在 PyTorch 里算两套路由方案；推理则可能用 persistent kernel 形成 BF16 gate 投影，再扩成 FP32，交给融合的哈希或学习路由 kernel。路由是离散的，因此在学习层里，gate logit 上 1 ULP 的变化就能改变 sqrt-softplus 权重、哪些 slot 被选中，以及顺序。顺序不同自然导致不匹配。
+            </p>
+            <p>
+              为对齐这两条路径，我们在 XoRL 里用
+              <a href="#kernel-gemm">batch-invariant matmul</a> 形成 gate logits。前三个 block 用一张冻结表把每个 token id 映到六个 expert，因此 logits 只决定权重；后续 block 使用带校正 bias 的学习 router。我们在 expert 前向全程保留返回的权重、expert id 与 slot 顺序。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-router" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/transformers/deepseek_v4/modeling_deepseek_v4.py">
+              XoRL DeepSeek-V4 路由 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-router" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/layers/moe/router.py">
+              XoRL 哈希与校正 bias 选择 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-router" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/kernels/ops/attention/dsv4/moe.py">
+              SGLang token 到 expert 的路由 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-router" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/kernels/ops/moe/moe_fused_gate.py">
+              SGLang 学习路由 ↗ </a>
+            </p>
+
+            <h4 id="dsv4-experts">带着 LoRA 跑 MXFP4 expert</h4>
+            <p>
+              MXFP4 有一个 FP8 没有的约束：Marlin 在不同行数下可能返回不同比特，因此两个引擎都一次跑一行 packed GEMM，与 serving 在 decode 时使用的未 padding 启动相同。训练端的反向把每个 expert 权值解包成 BF16 并单独算 LoRA，而推理在 packed 权值上的 Marlin runner 内部加上 LoRA。
+            </p>
+            <p>
+              与 FP8 expert 一样，我们扩展 SGLang 的 runner，在 packed 的 gate/up 与 down 投影之后施加 BF16 LoRA，这里完全不解包基座权值，并从 XoRL 的前向调用它。我们使用 SGLang 的行分解，保留它的 clamp、SwiGLU 计算与最终 BF16 舍入，并在相加之前用 routing 权重分别乘 packed 基座输出与 LoRA delta。
+            </p>
+            <div class="fig-shell kernel-story-figure" id="fig-dsv4-experts-exact" data-reveal data-autoplay="loop">
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                  <span>注意 routing 权重：它分别乘 packed 基座输出与 LoRA delta；六个 slot 再在 FP32 里累加，并舍入一次到 BF16。两个引擎使用相同的行数。</span>
+              </p>
+              <div class="fig-stage">
+                <figure>
+                  <svg class="fig-svg" id="dsv4-experts-exact-svg" viewBox="0 0 960 420" role="img" aria-labelledby="dsv4-experts-exact-title dsv4-experts-exact-desc" data-seq="idle">
+                    <title id="dsv4-experts-exact-title">Packed MXFP4 expert 前向里的两处 LoRA 插入点</title>
+                    <desc id="dsv4-experts-exact-desc">Marlin expert runner 在 packed gate/up 投影之后加上 BF16 LoRA，MXFP4 基座权值保持 packed。在 down 投影里，它在相加之前用 routing 权重分别乘 packed 基座输出与 LoRA delta；六个被路由的 slot 再在 FP32 里累加，并舍入一次到 BF16。两个引擎使用相同的行数与 clamp，并按返回顺序对 slot 求和。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-experts" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/transformers/deepseek_v4/native_payload.py">
+              XoRL packed MXFP4 权值与前向 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-experts" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/lora/dsv4.py">
+              SGLang DeepSeek-V4 LoRA 映射 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-experts" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/lora/lora_moe_runner_marlin.py">
+              SGLang Marlin LoRA runner ↗ </a>
+            </p>
+
+            <p id="dsv4-combine">
+              每个 rank 收到的行数不同，交换已经按 rank 顺序交出全部八份 rank 输出，因此我们只需用<a href="#parallel-ep">固定的 expert 输出 reduction</a> 把它们相加。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-combine" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/layers/moe/dsv4_native_combine.py">
+              XoRL 可变行交换与 reduction ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-combine" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/distributed/canonical_moe.py">
+              SGLang expert 输出 reduction ↗ </a>
+            </p>
+
+            <h3 id="dsv4-head">最终混合与语言模型头</h3>
+            <p>
+              最后一个 decoder block 之后，<a href="#dsv4-mhc">mixer</a> 产出最后一行 BF16 隐状态，再由最后的 RMSNorm 归一化。
+              LM head 用词表权值投影这一行，按 rank 顺序 gather TP shard，再做 log-softmax。这三步里任何一步，只要两个引擎做法不同，都会导致不匹配。
+            </p>
+            <p>
+              我们复用前面语言模型头里的<a href="#kernel-gemm">固定 <i>K</i> 投影</a>与有序 gather。SGLang 的 LoRA kernel 在普通基座 matmul 之上加上 rank-1 delta。我们按 rank 顺序 gather BF16 logits，从 XoRL 调用 SGLang 的 BF16 log-softmax，并用 FP32 log-softmax 实现 XoRL 的反向。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-head" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/transformers/deepseek_v4/exact_lm_head.py">
+              XoRL DeepSeek-V4 语言模型头 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-head" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/models/deepseek_v4.py">
+              SGLang DeepSeek-V4 模型 ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-head" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/batch_invariant_ops/batch_invariant_ops.py#L386-L497">
+              SGLang BF16 log-softmax ↗ </a>
+            </p>
+
+            <h3 id="dsv4-result">零不匹配与性能</h3>
+            <p>
+              我们在同一 Wordle 任务上用 LoRA 训练 DeepSeek-V4。采样时我们在一个节点上使用 TP8/DP8/EP8，逐字节对齐的前向把 decode 吞吐降低 12.7%。
+            </p>
+            <section class="table-scroll dsv4-throughput-table" id="dsv4-throughput-breakdown" tabindex="0" aria-labelledby="dsv4-throughput-caption">
+              <table class="data-table performance-table">
+                <caption id="dsv4-throughput-caption">DeepSeek-V4 采样吞吐：关闭开关、使用逐字节对齐前向，以及从中去掉已对齐的 expert 几何与 combine；配置为 TP8/DP8/EP8，基座权值冻结。每组是八个请求、六十四个输出 token、三次计时的均值。</caption>
+                <thead>
+                  <tr><th scope="col">配置</th><th scope="col">吞吐</th><th scope="col">相对关闭开关</th></tr>
+                </thead>
+                <tbody>
+                  <tr><th scope="row">关闭开关</th><td><strong>46.0 tok/s</strong></td><td>1.000×</td></tr>
+                  <tr><th scope="row">逐字节对齐</th><td><strong>40.2 tok/s</strong></td><td>0.874×</td></tr>
+                  <tr><th scope="row">逐字节对齐，去掉 expert 路径对齐</th><td><strong>42.5 tok/s</strong></td><td>0.925×</td></tr>
+                </tbody>
+              </table>
+            </section>
+            <p>
+              钱又花在 expert 路径上：去掉已对齐的 expert 几何与 combine，能收回 43.8% 的新增墙钟。这是三个 MoE 里做成逐字节对齐最便宜的一个。
+            </p>
+            <p class="implementation-pr-reference">
+              <span> 代码 </span>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-result" href="https://github.com/togethercomputer/xorl/pull/57">
+              XoRL DeepSeek-V4 PR ↗ </a>
+              <a class="source-link implementation-pr" data-pr-topic="dsv4-result" href="https://github.com/togethercomputer/xorl-sglang/pull/21">
+              SGLang DeepSeek-V4 PR ↗ </a>
+            </p>
+          </section>
+
+          <section id="results-conclusion" aria-labelledby="results-conclusion-title" data-reveal>
+            <h2 id="results-conclusion-title">代价与收益</h2>
+            <p>
+              我们可以以 0 train-infer mismatch 训练 Qwen 3.x、GLM-5.y 与 DeepSeek-V4 这类 MoE，并且有一套容易部署的方法，按需对任何模型做 0 mismatch 训练。可我们为什么要这么做？<label for="sn-empirical-rl" class="sidenote-number"></label><input type="checkbox" id="sn-empirical-rl" class="margin-toggle"><span class="sidenote">读者当心：我们已离开可核验 kernel 的井然王国，走进「经验强化学习」的模糊地带。</span>
+              代价是什么？Async RL 怎么办？难道不能换个目标函数来处理？真的没有更好的替代吗？我们将在 Qwen3.6-35B-A3B 的 Wordle 任务上走一组消融，尽量回答其中一些问题。我们会与托管 RL API <a href="https://tinker-docs.thinkingmachines.ai/tinker/"></a>Tinker</a> 和 <a href="https://docs.river.ai">River</a> 对比，以确认我们基线里测到的不匹配水平、以及训练后模型的最终表现，能与闭源 RL 引擎竞争。当然，我们看不到这些引擎的内部细节，因此不能对它们的表现下定论。
+            </p>
+            <h3 id="conclusion-tinker">为什么要消除不匹配？</h3>
+            <p>
+              要理解为什么应该消除不匹配，先看我们在 Tinker 上的运行。我们在<a href="#fig-grpo-runs">图 1</a> 里展示的其实是 3 次运行里最好的一次；其中 2 次在第 62 步发散。
+            </p>
+<div class="fig-shell branch-runs-figure" id="fig-tinker-branches" data-reveal>
+              <div class="branch-runs-controls">
+                <fieldset class="branch-runs-series">
+                  <legend>显示</legend>
+                  <label><input type="checkbox" id="tinker-show-solve" checked> Solve rate（解题率）</label>
+                  <label><input type="checkbox" id="tinker-show-k3" checked> K3</label>
+                  <label><input type="checkbox" id="tinker-show-logprob" checked> Trainer mean logprob（训练端平均 logprob）</label>
+                </fieldset>
+                <ul class="branch-runs-legend" id="tinker-branches-legend" aria-label="开或关各条曲线">
+                  <li data-series="R1"><span class="branch-legend-swatch branch-swatch-run1"></span><span>Tinker<br>Run 1</span></li>
+                  <li data-series="R1B"><span class="branch-legend-swatch branch-swatch-run2"></span><span>Tinker<br>Run 2</span></li>
+                  <li data-series="A3"><span class="branch-legend-swatch branch-swatch-run3"></span><span>Tinker<br>Run 3</span></li>
+                </ul>
+              </div>
+              <div class="fig-stage" role="region" aria-label="可滚动的三次 Tinker 训练对比">
+                <figure>
+                  <svg class="fig-svg" id="tinker-branches-svg" viewBox="0 0 960 824" role="img" aria-labelledby="tinker-branches-title tinker-branches-desc" tabindex="0">
+                    <title id="tinker-branches-title">从同一个第 56 步 checkpoint 出发的三次 Tinker 运行的解题率、K3 与训练端平均 logprob</title>
+                    <desc id="tinker-branches-desc">Run 1 与 Run 3 在第 62 步把 K3 冲到 0.2466 与 0.2520，同时训练端平均 logprob 落到 −0.461 与 −0.477。该步采样端平均 logprob 在三次运行里都停在约 −0.20。Run 2 保持 K3 0.0178、训练端平均 logprob −0.215。随后 Run 1 与 Run 3 崩溃；Run 2 跑完，并解开 850 局 held-out 里的 418 局。图例中的每一项可以开关对应曲线。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+              <p class="branch-runs-note">
+                从第 56 步同一 checkpoint 出发的三次 Tinker 运行里，有两次在第 62 步发生灾难性发散。
+              </p>
+            </div>
+            <p>
+              第 62 步本身并无特殊之处。就我们所见，Tinker 的基础设施没有系统错误。
+              三次运行里采样端的选中 token 平均 logprob 都停在约 &minus;0.20，采样出的 rollout 看起来也合理。但在崩溃的那两次里，训练端 logprobs 在第 62 步低得多，从而造成灾难性不匹配。
+            </p>
+            <p>
+              因为我们用 importance sampling 训练，这些比值对梯度的影响没有上界。在
+              Run 1 里，单独一个 importance ratio 为 19,276.5 的 <code>&lt;/</code> 就占了 65.7% 的平方系数质量。<label for="sn-coefficient-mass" class="sidenote-number"></label><input type="checkbox" id="sn-coefficient-mass" class="margin-toggle"><span class="sidenote">每个 token 的更新系数是 <i>c</i> = <i>&rho;</i><i>&Acirc;</i>，即 importance ratio 乘以 GRPO 优势。平方系数质量是该 token 的 <i>c</i><sup>2</sup> 占整个 batch 的份额。</span>
+              Run 3 没有这么极端，但前四个 token 仍占 72% 的质量。Run 2 则不然：第 62 步最大的单个 token 只占 0.39% 质量。
+            </p>
+            <p>
+              Run 1 丢掉了格式，大多数回合开始吐出非法动作。Run 3 仍在走合法的 Wordle 步，只是猜得非常差。Run 2 活了下来，但表现并不特别好。
+            </p>
+            <!-- <div class="fig-shell grpo-runs-figure shared-outer-figure" id="fig-shared-outer" data-reveal>
+              <div class="grpo-runs-controls">
+                <fieldset class="grpo-runs-series">
+                  <legend>显示</legend>
+                  <label><input type="checkbox" id="shared-outer-show-solve" checked> Solve rate（解题率）</label>
+                  <label><input type="checkbox" id="shared-outer-show-k3"> K3</label>
+                </fieldset>
+                <ul class="grpo-runs-legend" id="shared-outer-legend" aria-label="开或关各条曲线">
+                  <li data-series="0-K3"><span class="grpo-legend-swatch grpo-swatch-zerok3"></span><span>0 mismatch<br>（XoRL）</span></li>
+                  <li data-series="SHARED-OUTER-ZK3"><span class="grpo-legend-swatch grpo-swatch-shared-outer"></span><span>0 mismatch, shared-outer<br>(XoRL)</span></li>
+                  <li data-series="TINKER"><span class="grpo-legend-swatch grpo-swatch-tinker"></span><span>Baseline<br>（Tinker）</span></li>
+                </ul>
+              </div>
+              <div class="fig-stage" role="region" aria-label="Scrollable shared-outer LoRA comparison chart">
+                <figure>
+                  <svg class="fig-svg" id="shared-outer-svg" viewBox="0 0 960 480" role="img" aria-labelledby="shared-outer-svg-title shared-outer-svg-desc" tabindex="0">
+                    <title id="shared-outer-svg-title">Training solve rate, train-infer mismatch, and held-out evaluation for the two zero-mismatch LoRA parametrizations and the Tinker baseline</title>
+                    <desc id="shared-outer-svg-desc">The 0 mismatch run with per-expert LoRAs reaches 70.8 percent training solve at step 128 and 77.4 percent held-out solve. The 0 mismatch run on Tinker's shared-outer parametrization reaches 69.4 percent training solve and 74.9 percent held-out solve. Both hold K3 at zero throughout. The Tinker baseline reaches 51.4 percent training solve and 49.2 percent held-out solve. Each legend entry toggles its run.</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+            <p>
+              Tinker exclusively uses the
+              <a href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/layers/moe/lora.py">shared-outer</a>
+              LoRA parametrization, and River exclusively uses per-expert LoRAs. Shared-outer has fewer trainable
+              parameters, so we compare XoRL 0-k3 to Tinker IS when using the same shared-outer parametrization and
+              trainable LoRA modules that Tinker does. The performance is slightly worse than per-expert LoRA, which
+              is to be expected.
+            </p> -->
+            <p>
+              当然，不设上界的 importance sampling 有点像被故意放水的基线，对吧？我们总可以在目标函数里把这修好。
+            </p>
+            <h3 id="conclusion-objectives">什么目标函数能缓解不匹配？</h3>
+<div class="fig-shell grpo-runs-figure objectives-figure" id="fig-objectives" data-reveal>
+              <div class="grpo-runs-controls">
+                <fieldset class="grpo-runs-series">
+                  <legend>显示</legend>
+                  <label><input type="checkbox" id="objectives-show-solve" checked> Solve rate（解题率）</label>
+                  <label><input type="checkbox" id="objectives-show-k3"> K3</label>
+                </fieldset>
+                <ul class="grpo-runs-legend" id="objectives-legend" aria-label="开或关各条曲线">
+            <li data-series="0-K3"><span class="grpo-legend-swatch grpo-swatch-zerok3"></span><span>0 mismatch</span></li>
+            <li data-series="IS"><span class="grpo-legend-swatch grpo-swatch-is"></span><span>Unclipped IS（不截断 IS）</span></li>
+            <li data-series="PPO"><span class="grpo-legend-swatch grpo-swatch-ppo"></span><span>PPO clipping（PPO 截断）</span></li>
+            <li data-series="CISPO"><span class="grpo-legend-swatch grpo-swatch-cispo"></span><span>CISPO</span></li>
+            <li data-series="TINKER"><span class="grpo-legend-swatch grpo-swatch-tinker-is"></span><span>Unclipped IS<br>（Tinker）</span></li>
+            <li data-series="TINKER-CISPO"><span class="grpo-legend-swatch grpo-swatch-tinker-cispo"></span><span>CISPO<br>（Tinker）</span></li>
+                </ul>
+              </div>
+              <div class="fig-stage" role="region" aria-label="可滚动的目标函数对比图">
+                <figure>
+                  <svg class="fig-svg" id="objectives-svg" viewBox="0 0 960 480" role="img" aria-labelledby="objectives-svg-title objectives-svg-desc" tabindex="0">
+                    <title id="objectives-svg-title">不截断 importance sampling 与 PPO 截断的 Wordle 运行：训练解题率、训练-推理不匹配与 held-out 评测</title>
+                    <desc id="objectives-svg-desc">精确 0-mismatch 运行在第 128 步达到 70.8% 训练解题率、77.4% held-out 解题率，全程 K3 精确为零。关闭开关时，不截断 importance-sampling 运行在第 128 步达到 58.1% 训练解题率、63.9% held-out 解题率，后期 K3 约 0.017。PPO 截断运行达到 21.9% 训练解题率、20.2% held-out 解题率，后期 K3 约 0.00068。CISPO 运行在第 128 步以 67.4% 训练解题率结束，低于第 58 步 80.5% 的峰值，后期 K3 约 0.012，held-out 解题率为 72.5%。在 Tinker 上，不截断 importance-sampling 达到 51.4% 训练解题率、49.2% held-out 解题率，而 CISPO 达到 67.1% 训练解题率、75.5% held-out 解题率，后期 K3 约 0.0083。图例中的每一项可以开关对应曲线；0-mismatch 曲线默认隐藏。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+            <p>
+              我们在文首简要讨论过不同目标函数如何处理 importance sampling ratio。点开可以再读一遍 IS、PPO 与 CISPO 的定义。
+            </p>
+<details class="deeper objectives-refresher-disclosure" id="objectives-refresher">
+              <summary>Importance sampling、PPO 截断与 CISPO</summary>
+              <p>
+                记 <i>ρ</i><sub>t</sub> = <i class="policy-q">q</i><sub class="policy-q">t</sub> /
+                <i class="policy-mu">μ</i><sub class="policy-mu">t</sub> 为训练端对所采样 token 的概率，与推理在采样时记下的概率之比，
+                Â<sub>t</sub> 为 detach 后的组相对优势。三个目标函数的差别在于：在 <i>ρ</i><sub>t</sub> 乘到梯度之前对它做了什么。它们都不对它求导；我们求的是 log <i class="policy-q">q</i><sub class="policy-q">t</sub> 的导数。
+              </p>
+
+              <h4>不截断的 importance sampling</h4>
+              <p>
+                不截断的 importance sampling 把 token 梯度乘以 <i>ρ</i><sub>t</sub>。我们把构成该比值的
+                选中 token logprobs detach 掉，只对 log
+                <i class="policy-q">q</i><sub class="policy-q">t</sub> 求导。
+              </p>
+              <div class="math-display" data-tex="\begin{aligned}\nabla_\theta\mathcal L_{\mathrm{IS},t}&amp;=-\rho_t\widehat A_t\nabla_\theta\log {\color{#3e88a6}q_t},\\[0.35em]\mathbb E_{a_t\sim {\color{#bd6d37}\mu}}\!\left[\lVert g_t\rVert^2\right]&amp;=\mathbb E_{a_t\sim {\color{#bd6d37}\mu}}\!\left[\rho_t^2\widehat A_t^2\left\lVert\nabla_\theta\log {\color{#3e88a6}q_t}\right\rVert^2\right]\end{aligned}">
+                <code>∇Lᴵˢₜ = −ρₜ Âₜ ∇ log qₜ; Eμ[‖gₜ‖²] = Eμ[ρₜ² Âₜ² ‖∇ log qₜ‖²]</code>
+              </div>
+              <p>
+                梯度的二阶矩随 importance ratio 的平方缩放。我们在
+                有限大小的 batch 上训练，因此会出现高方差步：梯度被少数
+                大比值 token 主导。
+              </p>
+
+              <h4>截断后的 importance ratio</h4>
+              <p>
+                GRPO 通常用 PPO 目标来截断这一比值：
+              </p>
+              <div class="math-display" data-tex="\begin{aligned}J_{\mathrm{PPO},t}&amp;=\min\!\left(\rho_t\widehat A_t,\operatorname{clip}(\rho_t,1-\epsilon_{\mathrm{low}},1+\epsilon_{\mathrm{high}})\widehat A_t\right),\\[0.4em]\nabla_\theta\mathcal L_{\mathrm{PPO},t}&amp;=-\mathbf 1[\text{not clipped}]\,\rho_t\widehat A_t\nabla_\theta\log {\color{#3e88a6}q_t}\end{aligned}">
+                <code>Jᴾᴾᴼₜ = min(ρₜ Âₜ, clip(ρₜ, 1 − εlow, 1 + εhigh) Âₜ); ∇Lᴾᴾᴼₜ = −1[not clipped] ρₜ Âₜ ∇ log qₜ</code>
+              </div>
+              <p>
+                对优势为正的 token，一旦 <i>ρ</i><sub>t</sub> 超过
+                1 + <i>ε</i><sub>high</sub>，PPO 就丢掉策略梯度。对优势为负的 token，一旦
+                <i>ρ</i><sub>t</sub> 落到 1 − <i>ε</i><sub>low</sub> 以下，同样丢掉梯度。
+              </p>
+              <p>
+                CISPO 在乘到梯度之前截断 <i>ρ</i>，从而限制越过阈值的 token 的贡献，但并不丢掉它们。它的边界是绝对比值，而不是围绕 1 的偏移；默认
+                关闭下界，因此比值只会被从上方封顶。
+              </p>
+              <div class="math-display" data-tex="\bar\rho_t=\operatorname{clip}(\rho_t,\rho_{\min},\rho_{\max}),\qquad \nabla_\theta\mathcal L_{\mathrm{CISPO},t}=-\operatorname{sg}\!\left[\bar\rho_t\right]\widehat A_t\nabla_\theta\log {\color{#3e88a6}q_t},\qquad (\rho_{\min},\rho_{\max})=(0,4)">
+                <code>ρ̄ₜ = clip(ρₜ, ρmin, ρmax); ∇Lᶜⁱˢᵖᵒₜ = −sg[ρ̄ₜ] Âₜ ∇ log qₜ; (ρmin, ρmax) = (0, 4)</code>
+              </div>
+              <p>
+                当每个 token 都有 <i>ρ</i><sub>t</sub> = 1 时，
+                PPO 不会截断，CISPO 也不会封顶，更新就退化成上面的
+                on-policy 梯度。
+              </p>
+            </details>
+            <p>
+              我们在 XoRL 里的 IS 比 Tinker 里的 IS 训得更好，但仍落后于逐字节对齐的运行。
+              <a href="https://tinker-docs.thinkingmachines.ai/tinker/losses/importance-sampling/">我们使用与 Tinker 相同的形式</a>。
+              训练后期，IS 每回合比逐字节对齐运行多生成 44% 的 token。
+              这些 token 大多不是正经推理，只是模型在猜之前反复检查格式、词数和是否准备好。
+              如上文所说，大比值带来大梯度时，它会留在优化器状态里，并影响之后许多步。
+              我们发现绝大部分质量来自 IS 比值大于 1 的 token（也就是训练端给出的似然高于采样端）。 
+            </p>
+            <p>
+              我们的 PPO 运行差得多。<a href="https://tinker-docs.thinkingmachines.ai/tinker/losses/ppo/">我们使用与 Tinker 相同的截断阈值</a>。
+              它丢掉了太多重要 token 的梯度，几乎学不到东西。
+              测得的不匹配虽比 IS 低得多，多半是因为策略只在产出退化的 rollout。
+            </p>
+            <p>
+              CISPO 本应是修好这些问题的目标函数。它不允许无上界的 IS 比值，但也不丢掉梯度，只是限制它们的贡献。<a href="https://tinker-docs.thinkingmachines.ai/tinker/losses/cispo/">我们使用默认值</a>。我们发现 CISPO 能有效缓解不匹配。我们在 XoRL 里的 CISPO 运行落到 72.5% held-out 解题率，明显高于不截断 IS 的 63.9%，但仍低于逐字节对齐运行的 77.4%。CISPO 对 Tinker 的效果也很显著，把表现提升 25%，几乎追上 0-mismatch 运行。若比较报告的 K3，Tinker 上的 CISPO 比 Tinker 上的 IS 基线低得多。
+            </p>
+            <p>
+              我们试过的目标函数没有一个能完全追上 0-mismatch 运行的表现，尽管 CISPO 相当接近；但这并不排除：仔细调过的目标函数仍有可能近乎完全校正不匹配。
+            </p>
+<h3 id="conclusion-router-replay">Total Router Recall</h3>
+            <div class="fig-shell grpo-runs-figure router-replay-figure" id="fig-router-replay" data-reveal>
+              <div class="grpo-runs-controls">
+                <fieldset class="grpo-runs-series">
+                  <legend>显示</legend>
+                  <label><input type="checkbox" id="replay-show-solve" checked> Solve rate（解题率）</label>
+                  <label><input type="checkbox" id="replay-show-k3"> K3</label>
+                </fieldset>
+                <ul class="grpo-runs-legend" id="replay-legend" aria-label="开或关各条曲线">
+            <li data-series="0-K3"><span class="grpo-legend-swatch grpo-swatch-zerok3"></span><span>0 mismatch<br>（XoRL）</span></li>
+            <li data-series="R3-FS"><span class="grpo-legend-swatch grpo-swatch-replay"></span><span>Total Router Recall<br>（XoRL）</span></li>
+            <li data-series="RIVER-R3-IS"><span class="grpo-legend-swatch grpo-swatch-river-r3"></span><span>Replay IDs<br>（River）</span></li>
+            <li data-series="RIVER-IS"><span class="grpo-legend-swatch grpo-swatch-river-baseline"></span><span>Baseline<br>（River）</span></li>
+            <li data-series="IS"><span class="grpo-legend-swatch grpo-swatch-xorl-navy"></span><span>Baseline<br>（XoRL）</span></li>
+                </ul>
+              </div>
+              <div class="fig-stage" role="region" aria-label="可滚动的 router replay 对比图">
+                <figure>
+                  <svg class="fig-svg" id="router-replay-svg" viewBox="0 0 960 480" role="img" aria-labelledby="router-replay-svg-title router-replay-svg-desc" tabindex="0">
+                    <title id="router-replay-svg-title">逐字节对齐、router replay 与基线 Wordle 运行的训练解题率、训练-推理不匹配与 held-out 评测</title>
+                    <desc id="router-replay-svg-desc">0 mismatch 运行在第 128 步达到 70.8% 训练解题率、77.4% held-out 解题率，全程 K3 为零。Router replay 运行达到 72.1% 训练解题率、77.2% held-out 解题率，后期 K3 约 0.00027。只回放捕获到的 expert id 的 River 运行达到 67.4% 训练解题率、74.8% held-out 解题率，后期 K3 约 0.0087。不做 router replay 的 River 基线达到 68.4% 训练解题率、76.4% held-out 解题率，后期 K3 约 0.017。XoRL 基线达到 58.1% 训练解题率、63.9% held-out 解题率，后期 K3 约 0.017。图例中的每一项可以开关对应曲线；0 mismatch 曲线默认隐藏。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+            <p>
+              我们大多数实验做在 MoE 上，因为训练-推理不匹配对 MoE 可能比稠密模型更具灾难性。
+              对网络的大部分，不匹配多少是平滑累积的：这里差几比特，那里差几比特。
+              但 MoE 层做的是离散选择。一旦 router 的 top-k 在训练端与采样端选出不同 expert，不匹配就会大得多。
+              我们猜想，这可能就是毁掉 Tinker 那些运行的失败模式。
+            </p>
+            <p>
+              One idea proposed in prior work is <dfn class="term-definition" tabindex="0" data-definition="记录推理时选出的 expert，并用它们覆盖训练端自己的 top-k 选择。">Router Replay</dfn>:
+              在推理时记录被选 expert 下标，并把它们传给训练引擎。<a class="ref-mark sidenote-number" href="https://arxiv.org/abs/2507.18071" aria-label="Router Replay 先前工作"></a><span class="sidenote citation-sidenote"><a href="https://arxiv.org/abs/2507.18071">Group Sequence Policy Optimization</a> 描述了 Qwen 更早的 Routing Replay 策略，<a href="https://arxiv.org/abs/2510.11370">Stabilizing MoE Reinforcement Learning by Aligning Training and Inference Routers</a> 提出 Rollout Routing Replay。</span> 这一做法出现在 <a href="https://arxiv.org/abs/2507.18071">GSPO</a> 与
+              <a href="https://arxiv.org/abs/2510.11370">R3</a> 里。我们没有看到只回放 router 下标的收益（对比上面两次 River 运行）。 
+              
+              Router Replay 确实略微降低不匹配，但设想一下：若我们指望它挽救一条不匹配极高的 rollout，会发生什么。假设推理引擎给 expert 0 打了高分，训练端给 expert 0 打了低分，我们却仍然回放 expert 0。这时会出现严重不匹配：expert 下标一致，routing 权重却不一致，因为训练端仍用自己的 logits 重算该权重。只回放下标：在不匹配很小时什么也不做，在极端不匹配时甚至可能有害，只在「中等」不匹配区间才可能有帮助；我们预期总体效果几乎会抵消。
+            </p>
+            <p>
+              Cursor 在训练 <a href="https://arxiv.org/abs/2603.24477">Composer 2</a> 时修改了 Router Replay。他们滤掉那些在训练端自己的 router 下 gating 分数低得不合理的回放 expert，并用训练端 top-k 里的候选替换。他们报告这能降低基础回放留下的 p99 数值不匹配。这是合理策略；我们再看第三种选项。
+            </p>
+            <p>
+              我们把 Router Replay 扩展为同时记录并传输 routing 权重。<label for="sn-router-replay-note" class="sidenote-number"></label><input type="checkbox" id="sn-router-replay-note" class="margin-toggle"><span class="sidenote">R3 作者特意只传输下标，好让 router 保持可训练，这是值得尊敬的目标。</span> SGLang 每个请求返回两份 payload：被选 expert id（整数），以及归一化后的 FP32 routing 权重，按每个 token、每个 MoE 层、每个被选 expert 一份。XoRL 直接使用传来的权重，而不再重算。<label for="sn-router-replay" class="sidenote-number"></label><input type="checkbox" id="sn-router-replay" class="margin-toggle"><span class="sidenote">这份 payload 随 token × MoE 层 × 被选 expert 增长，因此我们用 handle 经 Mooncake 或文件系统搬运，而不是内嵌进 rollout 记录。</span>
+            </p>
+            <p>
+              我们扩展后的 Router Replay，称为 Total Router Recall，效果很好。它的 held-out 准确率几乎与逐字节对齐运行相同，并且全程 K3 停在 3e-4，而不是像基线那样往上漂。
+            </p>
+            <p>
+              但 Total Router Recall 也有代价。我们无法再正常训练 router。<label for="sn-router-stopgrad" class="sidenote-number"></label><input type="checkbox" id="sn-router-stopgrad" class="margin-toggle"><span class="sidenote">
+                技术上仍可用 stop-gradient 技巧拿到梯度。
+                若前向传 <code>w − sg[w] + w*</code>，前向值仍是采样端权重 <i>w*</i>，反向则是 <code>∂w/∂θ</code>。但后续层跑在 <i>w*</i> 上，因此 <code>∂L/∂w</code> 在回放的 router expert 上求值，而 <code>∂w/∂θ</code> 在训练端 logits 上求值。两个因子来自不同的 router 选择，于是我们优化的是采样端权重附近的损失线性化，梯度误差项对两个 router 的差距是一阶的。</span>
+              训练端现在也耦合到采样端的内部：它需要采样端的 expert id 及其归一化权重，按采样端的 layout，覆盖每个 token 的每一 MoE 层。 
+              每个请求都要从采样端传给训练端的数据量很大；Mooncake 让它多少可管理，但捕获这些元数据并跨设备发送仍是不可忽视的开销。 
+             </p> 
+             <p>
+              我们通过一套与 Tinker 兼容的接口在 <a href="https://github.com/togethercomputer/xorl">XoRL</a> 里跑实验：先启动训练与 <a href="https://github.com/togethercomputer/xorl-sglang">采样服务器</a>，再从 <a href="https://github.com/togethercomputer/xorl-client">轻量客户端</a> 向它们发送采样与训练请求。
+              我们当然不想每个请求都把巨大的 router 元数据从采样端经客户端再送回训练端。
+              但这意味着：若我们要在客户端改动 token / logprobs，例如截掉第一个答案之后的 token，就必须以某种方式在 routing payload 上镜像同样的改动。
+             </p>
+             <p>
+              看到这里你可能觉得这一切有点凑合，确实如此。Tinker 连基础的 Router Replay 都不支持。
+              尽管如此，Total Router Recall 仍是我们目前能想出的、相对逐字节对齐系统最好的替代。
+              若你想要一种容易插入、用来缓解不匹配、又不在乎训练 router 的办法，这是个好选项。
+              任何 0-k3 的替代都有吸引力，因为它可能不必付 0-mismatch 方案必须付的代价。
+            </p>
+<h3 id="conclusion-cost">0-mismatch RL 要付什么代价？</h3>
+            <p>
+              我们已经讲过在采样里强制 0 mismatch 的开销，而且不小。但在步级上，带 0 mismatch 的整次 RL 代价大约只有 20%。
+            </p>
+<section class="table-scroll step-time-table" id="step-time-breakdown" tabindex="0" aria-labelledby="step-time-caption">
+              <table class="data-table performance-table">
+                <caption id="step-time-caption">Qwen3.6-35B-A3B 上关闭开关的 CISPO 运行与 zero-K3 运行的 Wordle 生产步时间，对 100 步取平均。右列两边都去掉了权值同步。</caption>
+                <thead>
+                  <tr><th scope="col">运行</th><th scope="col">每步更新秒数</th><th scope="col">去掉权值同步</th></tr>
+                </thead>
+                <tbody>
+                  <tr><th scope="row">关闭开关，CISPO</th><td><strong>374.3 s</strong></td><td>334.8 s</td></tr>
+                  <tr><th scope="row">Zero K3</th><td><strong>447.0 s</strong></td><td>409.9 s</td></tr>
+                </tbody>
+              </table>
+            </section>
+            <p>
+              20% 是一笔不小的税，但请记住：这笔税在 Qwen 上其实最陡，而且对 Qwen 而言大头花在用精确 GDN decode 对齐 SGLang 内部的 prefill 与 decode。
+            </p>
+            <p>
+              毫无疑问，未来还有许多优化能压低步级开销；我们乐观地认为，很快做 0-mismatch RL 就不会太贵。我们也相信这值得：心里有数，知道运行不是因为不匹配而平台化。但强制 0 mismatch 还有另一项代价。
+            </p>
+            <div class="fig-shell kernel-story-figure schedule-figure" id="fig-async-schedule" data-reveal>
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                  <span>每根采样条是一条轨迹。没有任何东西闲着，但权值更新时仍在生成的轨迹会读到过期 cache。</span>
+              </p>
+              <div class="fig-stage">
+                <figure>
+                  <svg class="fig-svg" id="async-schedule-svg" viewBox="0 0 960 292" role="img" aria-labelledby="async-schedule-svg-title async-schedule-svg-desc">
+                    <title id="async-schedule-svg-title">Async RL 日程、其权值版本与过期 cache</title>
+                    <desc id="async-schedule-svg-desc">采样与训练两条车道持续忙碌。轨迹在比训练端正在产出的版本更旧的权值下采样；跨越一次权值同步的轨迹会继续读在上一版权值下写出的 cache。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+            <p>
+              尽管我们花了很多力气做到零训练-推理不匹配，Async RL 对生产规模运行仍然非常有吸引力。但它会用<a href="#background-stale">过期权重与过期 cache</a>换来一项不小的不匹配。
+            </p>
+            <div class="fig-shell grpo-runs-figure pipeline-run-figure" id="fig-pipeline-streaming" data-reveal>
+              <div class="grpo-runs-controls">
+                <fieldset class="grpo-runs-series">
+                  <legend>显示</legend>
+                  <label><input type="checkbox" id="pipeline-show-solve" checked> Solve rate（解题率）</label>
+                  <label><input type="checkbox" id="pipeline-show-k3"> K3</label>
+                </fieldset>
+                <ul class="grpo-runs-legend" id="pipeline-legend" aria-label="开或关各条曲线">
+            <li data-series="0-K3"><span class="grpo-legend-swatch grpo-swatch-zerok3"></span><span>0 mismatch<br></span></li>
+            <li data-series="ZK3-PIPELINE"><span class="grpo-legend-swatch grpo-swatch-pipeline"></span><span>Async on 0-mismatch base + CISPO<br></span></li>
+            <li data-series="ASYNC-R3-CISPO"><span class="grpo-legend-swatch grpo-swatch-shared-outer"></span><span>Async on 0-mismatch base<br>+ Router Recall + CISPO</span></li>
+                </ul>
+              </div>
+              <div class="fig-stage" role="region" aria-label="可滚动的 pipeline streaming 对比图">
+                <figure>
+                  <svg class="fig-svg" id="pipeline-streaming-svg" viewBox="0 0 960 480" role="img" aria-labelledby="pipeline-streaming-svg-title pipeline-streaming-svg-desc" tabindex="0">
+                    <title id="pipeline-streaming-svg-title">同步与流水线化的零不匹配 Wordle 运行：训练解题率、训练-推理不匹配与 held-out 评测</title>
+                    <desc id="pipeline-streaming-svg-desc">同步 0 mismatch 运行在第 128 步达到 70.8% 训练解题率、77.4% held-out 解题率，全程 K3 为零。使用同一套逐字节对齐 kernel、但带过期权值与 cache 的 PipelineRL 与 Streaming 运行达到 50.4% 训练解题率、59.4% held-out 解题率，来自过期的 K3 峰值约 0.108。给这条流水线运行加上 Total Router Recall 后，恢复到 74.7% 训练解题率、76.6% held-out 解题率，后期 K3 约 0.0002。图例中的每一项可以开关对应曲线。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+            <p>
+              即便用 CISPO 跑 0-mismatch 栈——这是我们找到的<a href="#conclusion-objectives">缓解不匹配的最佳目标函数</a>——异步仍会把表现打崩。来自过期权值与过期 cache 的不匹配迅速冲高，模型很早平台化。但加入 Total Router Recall 能收回很大一块表现，同时吃到 Async RL 的加速。我们的 TRR + CISPO + Async 运行里，报告的 K3 仍会在早期冲高，但之后一路往下走。
+            </p>
+            <p>
+              Streaming / async RL 的目标是让全部训练 GPU 与推理 GPU 始终打满。一种<em>不会引入任何不匹配</em>、又能部分重叠训练与推理的办法，是 Streaming RL。
+            </p>
+            <p>
+              我们让 SGLang 每完成一条轨迹就立刻返回，客户端拼好完成的组再交给 XoRL。XoRL 对一个完成的组做一次前向-反向——因为我们只需在组内归一化优势——并只在最后做一次优化器步进。因此梯度更新与把全部数据一次性打进一个大 batch 完全相同。因为等待分布是几何的，我们能在训练端与采样端之间得到相当好的重叠，而不需要任何异步。
+            </p>
+            <div class="fig-shell kernel-story-figure schedule-figure" id="fig-streaming-schedule" data-reveal>
+              <p class="fig-reading-guide">
+                <span class="fig-reading-guide-label">图</span>
+                  <span>每条轨迹都在同一权值版本下跑。一个组在最后一条轨迹落地的瞬间就交接，因此唯一的空闲出现在第一组之前与最后一组之后。</span>
+              </p>
+              <div class="fig-stage">
+                <figure>
+                  <svg class="fig-svg" id="streaming-schedule-svg" viewBox="0 0 960 392" role="img" aria-labelledby="streaming-schedule-svg-title streaming-schedule-svg-desc">
+                    <title id="streaming-schedule-svg-title">单一权值版本下的 Streaming RL 日程</title>
+                    <desc id="streaming-schedule-svg-desc">每条轨迹都在同一权值版本下采样。已完成的组在后续组仍在生成时就交给训练端，因此训练端只在第一组到达前空闲，采样端只在最后一组期间空闲。最后一次优化器步进与权值同步复现「一个大 batch」的梯度，节省 46% 的串行墙钟。</desc>
+                    <g data-js-layer></g>
+                  </svg>
+                </figure>
+              </div>
+            </div>
+<section class="table-scroll overlap-modes-table" id="overlap-modes-breakdown" tabindex="0" aria-labelledby="overlap-modes-caption">
+              <table class="data-table performance-table">
+                <caption id="overlap-modes-caption">Streaming RL，以及与 PipelineRL 组合后的 Streaming RL，在热循环上的墙钟时间；取我们 Wordle 运行第 2、3 步的均值，每步 1,024 条 rollout。每秒 rollout 数是 1,024 除以循环时间。</caption>
+                <thead>
+                  <tr><th scope="col">模式</th><th scope="col">热循环</th><th scope="col">Rollouts/s</th><th scope="col">相对 Streaming RL</th></tr>
+                </thead>
+                <tbody>
+                  <tr><th scope="row">Streaming RL</th><td><strong>338.5 s</strong></td><td>3.03</td><td>基线</td></tr>
+                  <tr><th scope="row">PipelineRL 与 Streaming RL</th><td><strong>244.0 s</strong></td><td>4.20</td><td>1.39×</td></tr>
+                </tbody>
+              </table>
+            </section>
+            <p>
+              在我们的 Wordle 运行里，Streaming RL 能节省 46% 的串行墙钟。但随着更多轨迹完成，采样端利用率会下降，因此这绝不会有 async RL 那么好。
+            </p>
+            <p>
+              Async RL 用过期策略的新请求填上异构序列长度留下的气泡，以此换不匹配。但我们也可以用不同策略的请求来填这些气泡，办法是做 <a href="#lora">multi-LoRA</a> 训练。若我们想同时跑多个任务，当一个任务只剩最后几条掉队轨迹时，另一个任务可以用新鲜 batch 填满采样队列。每个请求对自己的 adapter 仍是 on-policy，因此这种重叠不会引入不匹配。只有这些任务共享同一基座模型时才做得到。当然，这不会加快单个任务的训练；但若我们想拉起一套 XoRL 训练服务与一套 SGLang 采样服务、同时跑多个实验，multi-LoRA 能有效打满 GPU。
+            </p>
+          </section>
+
+          <section id="parting-thoughts" aria-labelledby="parting-thoughts-title" data-reveal>
+            <h2 id="parting-thoughts-title">结语</h2>
+            <p>
+              我们相信，以 0 mismatch 训练开源权重 MoE，对任何 RL 栈都是非常可达成的目标，而且收益很实在。这些技术今天都用在 XoRL 里，但同样容易移植到其他栈。尽管 XoRL 今天用 SGLang 做推理，我们看不出同一套方法不能用在其他推理引擎上。
+            </p>
+            <p>
+              <em>致谢：本文由 Ashwinee Panda 与 Zhongzhu Zhou 共同撰写。感谢 Core Automation、Recursive、Ricursive 与 River AI 的朋友为本文较早版本提供反馈。感谢 Qingyang Wu 对 XoRL 的贡献，以及他对我们追求 0-mismatch RL 的鼓励。没有 TogetherAI 提供的 GPU 小时与 token，这项工作不可能完成。</em>
+            </p>
+          </section>
+
+          <section id="operation-map" aria-labelledby="operation-map-title" data-reveal>
+            <h2 id="operation-map-title">附录 A：算子对照表</h2>
+            <details class="deeper operation-map-disclosure">
+              <summary>显示每一个算子</summary>
+              <section class="table-scroll accessible-fallback contract-map-table" tabindex="0" aria-label="数值不变量表，可横向滚动">
+                <table class="data-table">
+                  <caption>我们如何对齐每一个算子，以及什么决定输出比特。</caption>
+                  <thead><tr><th scope="col">算子</th><th scope="col">方法</th><th scope="col">决定输出比特的因素</th></tr></thead>
+                  <tbody>
+                    <tr class="table-group"><th scope="rowgroup" colspan="3">共享机制</th></tr>
+                    <tr><th scope="row"><a href="#kernel-rope">RoPE</a></th><td>构造同一张表并对齐旋转</td><td>同一张位置表、同一套 cast 与旋转算术</td></tr>
+                    <tr><th scope="row"><a href="#kernel-norms">归一化</a></th><td>跑同一套 batch-invariant RMSNorm 计算</td><td>residual 在何处相加、固定的 FP32 reduction 顺序、rsqrt、FP32 scale 与最终 cast</td></tr>
+                    <tr><th scope="row"><a href="#kernel-gemm">GEMM</a></th><td>使用我们的 Triton 参考实现，或输出相同的库 kernel</td><td>沿 K 按同一固定顺序累加乘积，不用 split-K</td></tr>
+                    <tr><th scope="row"><a href="#kernel-swiglu">SwiGLU</a></th><td>在两个引擎里跑新的只舍入一次的 SwiGLU kernel</td><td>FP32 SiLU 与乘法，再做一次 BF16 输出 cast</td></tr>
+                    <tr><th scope="row"><a href="#kernel-attention">Attention</a></th><td>两个引擎都调用 FlashAttention 4</td><td>同一 backend 与同一构建、同一参数，以及对 key/value 块做一次 reduction</td></tr>
+                    <tr><th scope="row"><a href="#kernel-head">语言模型头</a></th><td>对齐投影与流式 reduction</td><td>同一 GEMM 累加顺序、256-logit 分组与摘要合并树</td></tr>
+                    <tr><th scope="row"><a href="#lora">LoRA（合并）</a></th><td>在两个引擎里构造相同的合并权值字节</td><td>投影前相同的 W + sBA 字节</td></tr>
+                    <tr><th scope="row"><a href="#lora">LoRA（分离）</a></th><td>从 XoRL 调用 SGLang 的 LoRA 前向并实现反向</td><td>传给 SGLang 前向的同一对 BF16 A、B 矩阵</td></tr>
+                    <tr><th scope="row"><a href="#sampling-probability">采样变换</a></th><td>把采样参数转给训练端并回放变换</td><td>采样前按同一顺序施加相同的 temperature、top-k、min-p 及其他变换</td></tr>
+                  </tbody>
+                  <tbody>
+                    <tr class="table-group"><th scope="rowgroup" colspan="3">Qwen3.5/3.6 组合</th></tr>
+                    <tr><th scope="row"><a href="#qwen-gdn">Gated DeltaNet</a></th><td>对齐训练、prefill、eager decode 与 CUDA graph 上的状态</td><td>同一套归一化与卷积、状态朝向与三角 merge、64 行计算、FP32 边界状态与行 cache</td></tr>
+                    <tr><th scope="row"><a href="#qwen-router">Qwen router</a></th><td>对齐投影与被选权重归一化</td><td>累加 gate 投影并重新归一化被选权重时所使用的顺序</td></tr>
+                    <tr><th scope="row"><a href="#qwen-experts">Qwen expert 前向</a></th><td>从 XoRL 调用 SGLang 的 Triton expert 前向并实现反向</td><td>FP32 down-projection 累加器里的 routing 权重，以及一次最终 BF16 舍入</td></tr>
+                    <tr><th scope="row"><a href="#qwen-combine">Qwen expert 输出相加</a></th><td>对各 rank 输出做 batch-invariant reduction</td><td>按逻辑 rank 顺序摆好的同一八份 BF16 部分输出，同一套括号结构，在 FP64 里累加并舍入一次到 BF16</td></tr>
+                  </tbody>
+                  <tbody>
+                    <tr class="table-group"><th scope="rowgroup" colspan="3">GLM-5.2 组合</th></tr>
+                    <tr><th scope="row"><a href="#glm-selector">GLM 稀疏 selector</a></th><td>用对应的 SGLang prefill 或 decode 计算重建每一行 cache</td><td>相同的编码 query、key 与 scale、合法历史、平局规则与被选位置</td></tr>
+                    <tr><th scope="row"><a href="#glm-attention">GLM 稀疏注意力</a></th><td>调用 FlashMLA 并实现反向</td><td>按升序逻辑顺序的同一批被选行，以及同一份 FlashMLA 前向</td></tr>
+                    <tr><th scope="row"><a href="#glm-router">GLM router</a></th><td>从 XoRL 调用 SGLang 的 router</td><td>选出八个 expert 时使用的同一固定 K gate 投影与校正 bias，以及同一套 FP32 权重归一化</td></tr>
+                    <tr><th scope="row"><a href="#glm-experts">GLM expert 前向</a></th><td>从 XoRL 调用 SGLang 扩展后的 FP8 expert 前向并实现反向</td><td>相同的 FP8 权值与 scale、BF16 LoRA 矩阵以及 routing 权重的放置位置</td></tr>
+                    <tr><th scope="row"><a href="#glm-combine">GLM expert 输出相加</a></th><td>对十六个 rank 跑同一套 batch-invariant reduction</td><td>按逻辑 rank 顺序摆好的同一十六份 BF16 部分输出，同一套括号结构，在 FP64 里累加并舍入一次到 BF16</td></tr>
+                    <tr><th scope="row"><a href="#glm-head">GLM 语言模型头</a></th><td>投影同一十六份 shard 并按 rank 顺序 gather</td><td>相同的输入行、十六份词表 shard、投影 kernel、按 rank 排序的 gather 与最终概率 reduction</td></tr>
+                  </tbody>
+                  <tbody>
+                    <tr class="table-group"><th scope="rowgroup" colspan="3">DeepSeek-V4 组合</th></tr>
+                    <tr><th scope="row"><a href="#dsv4-mhc">DeepSeek-V4 残差混合</a></th><td>从 XoRL 调用 SGLang 的 pre/post-mix kernel 并实现反向</td><td>从四路合成一路时使用的同一套 pre-mix、RMSNorm、post-mix 与最终 mix</td></tr>
+                    <tr><th scope="row"><a href="#dsv4-compressor">DeepSeek-V4 压缩</a></th><td>在 prefill 与 decode 中跑 SGLang 的 compressor</td><td>相同的 C4 与 C128 行、FP32 compressor 状态、块边界与 FP8 cache 存储</td></tr>
+                    <tr><th scope="row"><a href="#dsv4-indexer">DeepSeek-V4 压缩注意力</a></th><td>在 prefill 与 decode 中调用 FlashMLA 并实现反向</td><td>相同的 prefill 与 decode 入口，以及按相同顺序排列的压缩行与最近行</td></tr>
+                    <tr><th scope="row"><a href="#dsv4-router">DeepSeek-V4 路由</a></th><td>从 XoRL 调用 SGLang 的 gate 投影与 selector</td><td>相同的 token 查找或固定 K gate 投影、sqrt-softplus、校正 bias、top-k slot 顺序与权重归一化</td></tr>
+                    <tr><th scope="row"><a href="#dsv4-experts">DeepSeek-V4 expert 前向</a></th><td>从 XoRL 调用 SGLang 扩展后的 Marlin expert runner 并实现反向</td><td>相同的 packed MXFP4 权值、LoRA 插入点、行数、clamp、routing 权重放置与 BF16 输出求和</td></tr>
+                    <tr><th scope="row"><a href="#dsv4-combine">DeepSeek-V4 expert 输出相加</a></th><td>在可变行交换之后跑同一套 batch-invariant reduction</td><td>相加前恢复到逻辑 rank 顺序的同一八份源 rank 输出</td></tr>
+                    <tr><th scope="row"><a href="#dsv4-head">DeepSeek-V4 语言模型头</a></th><td>Gather 词表 shard，并从 XoRL 调用 SGLang 的 log-softmax</td><td>同一套最终 mix、按 rank 排序的 BF16 词表 gather，以及 batch-invariant BF16 log-softmax</td></tr>
+                  </tbody>
+                  <tbody>
+                    <tr class="table-group"><th scope="rowgroup" colspan="3">并行</th></tr>
+                    <tr><th scope="row"><a href="#parallel-cp">Ulysses 注意力</a></th><td>经 all-to-all 原样搬运这些值</td><td>经 all-to-all 的同一批 BF16 值，以及任意头数下同一套按头算术</td></tr>
+                    <tr><th scope="row"><a href="#parallel-cp">Context-parallel Gated DeltaNet</a></th><td>在 64-token chunk 网格上切开并传递 FP32 边界状态</td><td>每次切口上相同的 chunk 网格、边界状态与卷积输入</td></tr>
+                    <tr><th scope="row"><a href="#parallel-pp">Pipeline stage</a></th><td>在 decoder 层之间切开</td><td>交给下一 stage 的 BF16 行，正是下一层本会读到的那一行</td></tr>
+                  </tbody>
+                </table>
+              </section>
+            </details>
+          </section>
+
+        </article>
+      </main>
+    </div>
+
+    <footer class="site-footer">
+      <div><p>开源权重语言模型的零训练-推理不匹配。 · <a href="/">Zhongzhu (Charlie) Zhou</a></p></div>
+      <a href="#top">回到顶部 ↑</a>
+    </footer>
+  </body>
+</html>

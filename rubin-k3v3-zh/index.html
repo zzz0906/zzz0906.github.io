@@ -1,0 +1,1748 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vera Rubin LUT-B：3-bit Weight、Activation 与 KV 的 Accuracy-First 实验</title>
+<meta name="description" content="准确讨论 Vera Rubin LUT-B 的 W3A8 weight、当前不受支持的 A3 路径与 K3V3 cache，包括 K64xN8 分组、实测精度、kernel bound 与 request-level HBM capacity arithmetic。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f6f4ed;
+    --surface: #fcfaf4;
+    --panel: #faf8f0;
+    --ink: #23211b;
+    --ink-2: #3d3a30;
+    --muted: #6e6a5c;
+    --faint: #97927f;
+    --line: #ddd7c4;
+    --line-2: #cfc8b2;
+    --accent: #8a6a14;
+    --accent-2: #a97f19;
+    --accent-soft: #f3edd9;
+    --red: #a33d2f;
+    --green: #3e6b48;
+    --code-bg: #2a2721;
+    --code-ink: #e8e2d2;
+    --serif: "Newsreader", "Noto Serif SC", Georgia, "Songti SC", "SimSun", serif;
+    --sans: "Inter", "Noto Sans SC", -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 16.5px;
+    line-height: 1.9;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 0 24px; }
+
+  /* contents sidebar + narrow column */
+  .layout { display: grid; grid-template-columns: 200px minmax(0, 720px); gap: 48px; justify-content: center; padding: 0 24px; }
+  .toc { position: sticky; top: 36px; align-self: start; max-height: calc(100vh - 72px); overflow-y: auto; font-family: var(--sans); padding-top: 8px; }
+  .toc-title { font-family: var(--serif); font-variant: small-caps; letter-spacing: .08em; font-size: 14px; font-weight: 700; color: var(--ink-2); margin-bottom: 10px; }
+  .toc a { display: block; font-size: 12.5px; font-weight: 500; color: var(--muted); text-decoration: none; padding: 4px 10px; border-left: 2px solid var(--line); line-height: 1.5; }
+  .toc a:hover { color: var(--ink); }
+  .toc a.active { color: var(--accent); border-left-color: var(--accent); font-weight: 600; background: linear-gradient(90deg, rgba(138,106,20,.08), transparent); }
+  .toc a.sub { padding-left: 24px; font-size: 12px; }
+
+  /* ---------- header (academic style) ---------- */
+  header.paper {
+    padding: 64px 0 8px;
+    text-align: center;
+  }
+  header.paper .wrap { max-width: 1200px; padding: 0 12px; }
+  h1.title {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(24px, 3vw, 38px);
+    line-height: 1.25;
+    letter-spacing: -.005em;
+    margin: 0 auto 10px;
+    max-width: 1120px;
+    color: var(--ink);
+  }
+  .meta { font-family: var(--serif); font-size: 14px; color: var(--muted); font-style: italic; }
+  .head-rule { border: 0; border-top: 1.5px solid var(--ink-2); margin: 26px auto 0; opacity: .55; }
+
+  /* ---------- figure card ---------- */
+  .fig-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 22px 24px 18px;
+    margin: 28px 0;
+    font-family: var(--sans);
+  }
+  .fig-head { margin-bottom: 7px; }
+  .fig-tag {
+    font-family: var(--serif); letter-spacing: .06em;
+    display: block; font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 3px;
+  }
+  .fig-title { display: block; font-family: var(--serif); font-size: 20px; line-height: 1.4; font-weight: 600; color: var(--ink); }
+  .fig-sub { font-size: 13.5px; color: var(--muted); margin: 6px 0 18px; line-height: 1.75; }
+  .fig-note { font-size: 12px; color: var(--faint); margin-top: 14px; line-height: 1.65; border-top: 1px dashed var(--line-2); padding-top: 11px; }
+  .fig-note b { color: var(--muted); }
+  .fig-note a { color: var(--muted); }
+
+  /* controls */
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 26px; margin-bottom: 16px; }
+  .ctrl-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--faint); margin-bottom: 6px; }
+  .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .seg button {
+    appearance: none; cursor: pointer;
+    border: 1px solid var(--line-2); background: var(--surface); color: var(--muted);
+    font-family: var(--sans); font-size: 12.5px; font-weight: 500;
+    padding: 5px 11px; border-radius: 6px; transition: all .12s ease; white-space: nowrap;
+  }
+  .seg button:hover:not(.on) { border-color: var(--faint); color: var(--ink-2); }
+  .seg button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .method-select {
+    min-width: 250px; max-width: 100%; padding: 6px 34px 6px 10px;
+    border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface);
+    color: var(--ink-2); font: 500 12.5px var(--sans); cursor: pointer;
+  }
+  .method-select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+
+  /* two-panel figure */
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .panel { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 15px 17px 11px; }
+  .panel-head { margin-bottom: 10px; }
+  .stat-k { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; color: var(--faint); margin-bottom: 3px; }
+  .stat-v { font-family: var(--mono); font-size: 28px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .stat-s { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+  #hxChart, #wxChart { width: 100%; display: block; overflow: visible; }
+  #wxChart { overflow: hidden; }
+  #hxChart text, #wxChart text { font-family: var(--sans); }
+  .chart-hint { font-size: 11px; color: var(--faint); text-align: right; margin-top: 2px; }
+
+  #tip {
+    position: fixed; z-index: 100; pointer-events: none; display: none;
+    background: #2a2721; color: #efeadb; border-radius: 8px; padding: 10px 12px;
+    font-family: var(--sans); font-size: 12px; line-height: 1.55; max-width: 260px;
+    box-shadow: 0 6px 20px rgba(30,26,16,.35);
+  }
+  #tip .t-title { font-weight: 700; margin-bottom: 3px; font-size: 12.5px; }
+  #tip .t-row { display: flex; justify-content: space-between; gap: 16px; color: #c9c2ac; }
+  #tip .t-row b { color: #fff; font-family: var(--mono); font-weight: 600; }
+
+  .bar-row { display: grid; grid-template-columns: 128px minmax(0, 1fr) 96px; gap: 10px; align-items: center; padding: 6px 0; }
+  .bar-name { font-size: 12.5px; font-weight: 600; color: var(--ink-2); line-height: 1.3; font-family: var(--sans); }
+  .bar-track { position: relative; height: 21px; background: #eeeadb; border-radius: 4px; overflow: hidden; }
+  .bar-track.na { background: repeating-linear-gradient(135deg, #efebdd 0 8px, #e6e1cf 8px 16px); }
+  .bar-fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; min-width: 3px; transition: width .35s cubic-bezier(.2,.8,.25,1); }
+  .bar-val {
+    font-family: var(--mono); font-size: 11.5px; font-weight: 600; white-space: nowrap;
+    font-variant-numeric: tabular-nums; text-align: right; color: var(--ink-2);
+  }
+  .speed-caption { font-size: 13.5px; color: var(--ink-2); margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; line-height: 1.75; font-family: var(--serif); }
+  .speed-caption b { font-family: var(--mono); font-size: .92em; font-weight: 600; color: var(--accent); }
+  #wxKernel .method-full { font-family: var(--serif); font-size: 14px; font-weight: 700; color: var(--ink); }
+  #wxKernel .method-line { margin-top: 6px; }
+  #wxKernel .method-line strong { color: var(--accent); }
+  .payload-row { margin: 9px 0 12px; }
+  .payload-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .payload-name { font-size: 12px; font-weight: 650; color: var(--ink-2); }
+  .payload-value { font: 600 11px var(--mono); color: var(--ink-2); white-space: nowrap; }
+  .payload-track { height: 10px; border-radius: 999px; overflow: hidden; background: #ece7d7; }
+  .payload-fill { height: 100%; min-width: 3px; border-radius: inherit; transition: width .3s ease; }
+  .axis-note { font-size: 11px; color: var(--faint); text-align: right; margin-top: 5px; line-height: 1.4; }
+
+  /* ---------- article ---------- */
+  article { padding: 4px 0 40px; }
+  article h2 {
+    font-family: var(--serif); font-size: 21px; font-weight: 700;
+    line-height: 1.4; margin: 48px 0 14px; color: var(--ink);
+  }
+  article h2 .idx { color: var(--accent); margin-right: 10px; }
+  article h3 { font-family: var(--serif); font-size: 18px; font-weight: 700; margin: 34px 0 12px; color: var(--ink); }
+  article h4 { font-family: var(--serif); font-size: 16px; font-weight: 700; margin: 26px 0 10px; color: var(--ink); }
+  article p { margin: 0 0 17px; }
+  article a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(138,106,20,.35); }
+  article a:hover { border-bottom-color: var(--accent); }
+  article strong { font-weight: 700; color: var(--ink); }
+  article ul, article ol { padding-left: 26px; margin: 0 0 17px; }
+  article li { margin-bottom: 6px; }
+  article code, .fig-card code {
+    font-family: var(--mono); font-size: .8em; background: #eee9d7; color: #5c4a10;
+    padding: 1.5px 5px; border-radius: 4px; font-weight: 500;
+  }
+  pre {
+    background: var(--code-bg); color: var(--code-ink); border-radius: 8px;
+    padding: 16px 20px; overflow-x: auto; margin: 0 0 20px;
+    font-family: var(--mono); font-size: 13px; line-height: 1.6;
+  }
+  pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+
+  .tldr {
+    background: var(--surface); border: 1px solid var(--line); border-top: 2.5px solid var(--accent);
+    border-radius: 6px; padding: 20px 26px; margin: 26px 0 8px;
+  }
+  .tldr h2 { margin: 0 0 12px !important; font-size: 19px !important; letter-spacing: .04em; }
+  .tldr ol { margin-bottom: 0; }
+  .tldr li { margin-bottom: 11px; }
+  .tldr li:last-child { margin-bottom: 0; }
+
+  /* booktabs-style tables */
+  .table-wrap { overflow-x: auto; margin: 0 0 20px; }
+  table.data {
+    border-collapse: collapse; width: 100%;
+    font-family: var(--sans); font-size: 13.5px;
+    border-top: 2px solid var(--ink-2); border-bottom: 2px solid var(--ink-2);
+  }
+  table.data caption {
+    caption-side: top; text-align: left; font-family: var(--serif);
+    font-size: 14px; color: var(--muted); padding: 0 0 6px;
+  }
+  table.data th {
+    text-align: left; font-size: 11.5px; font-weight: 600; letter-spacing: .04em;
+    color: var(--ink-2); padding: 9px 12px; border-bottom: 1px solid var(--ink-2);
+    white-space: nowrap; background: none;
+  }
+  table.data td { padding: 8px 12px; border-bottom: 1px solid var(--line); color: var(--ink-2); vertical-align: top; }
+  table.data tr:last-child td { border-bottom: none; }
+  table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
+  table.data th.num { font-family: var(--sans); font-size: 11.5px; }
+  table.data td strong { color: var(--accent); font-weight: 700; }
+  .ok { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .05em; color: var(--green); }
+  .no { font-family: var(--sans); font-size: 11px; font-weight: 700; letter-spacing: .05em; color: var(--red); }
+
+  figure.art { margin: 24px 0; }
+  figure.art .frame { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+  figure.art img { width: 100%; height: auto; display: block; border-radius: 4px; }
+  figure.art figcaption { font-family: var(--serif); font-size: 14px; color: var(--muted); margin-top: 10px; line-height: 1.7; }
+  figure.art figcaption b { color: var(--ink-2); }
+
+  .callout {
+    background: var(--accent-soft); border-left: 3px solid var(--accent-2);
+    border-radius: 0 6px 6px 0;
+    padding: 13px 18px; margin: 0 0 20px; font-size: 15.5px; color: #574a22; line-height: 1.8;
+  }
+
+  .refs { font-family: var(--serif); font-size: 14.5px; }
+  .refs li { margin-bottom: 7px; }
+
+  footer {
+    border-top: 1px solid var(--line-2); margin-top: 26px; padding: 26px 0 44px;
+    font-family: var(--serif); font-size: 13.5px; color: var(--faint); line-height: 1.8;
+  }
+
+  @media (max-width: 1080px) {
+    .layout { display: block; max-width: 780px; margin: 0 auto; }
+    .toc { display: none; }
+  }
+  @media (max-width: 760px) {
+    body { font-size: 15.5px; }
+    header.paper { padding-top: 40px; }
+    .fig-card { padding: 16px 14px 14px; }
+    .duo { grid-template-columns: 1fr; }
+    .bar-row { grid-template-columns: minmax(0, 1fr) 88px; gap: 4px 8px; }
+    .bar-name { grid-column: 1 / -1; }
+    .bar-track { grid-column: 1; }
+    .bar-val { grid-column: 2; }
+    .bar-track { height: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="paper">
+  <div class="wrap">
+    <h1 class="title">Vera Rubin LUT-B：3-bit Weight、Activation 与 KV 的 Accuracy-First Study</h1>
+    <div class="meta">2026 年 8 月 13 日</div>
+    <hr class="head-rule">
+  </div>
+</header>
+
+<main class="layout">
+  <nav class="toc" aria-label="目录">
+    <div class="toc-title">Contents</div>
+    <a href="#weight-explorer">图 1 · Weight</a>
+    <a href="#kv-explorer">图 2 · KV</a>
+    <a href="#tldr">TL;DR</a>
+    <a href="#sec1">1&ensp;Rubin LUT-B</a>
+    <a href="#sec2">2&ensp;Hardware contract</a>
+    <a href="#weight">3&ensp;Weight W3A8</a>
+    <a href="#activation">4&ensp;Activation</a>
+    <a href="#kv">5&ensp;KV Cache</a>
+    <a href="#limitations">6&ensp;Limitations</a>
+    <a href="#takeaways">7&ensp;结论</a>
+    <a href="#repro">Reproducibility</a>
+    <a href="#refs">References</a>
+  </nav>
+  <div class="content">
+
+  <!-- ============================== 图 1：Weight ============================== -->
+  <section class="fig-card" id="weight-explorer" aria-label="Weight 精度与存储交互对比">
+    <div class="fig-head">
+      <span class="fig-tag">图 1 · Interactive Weight</span>
+      <span class="fig-title">W3 methods：K64/two-K32 schedules 与 paired scales</span>
+    </div>
+    <p class="fig-sub">
+      选择 model、context 与 method。“Global” methods 始终同时包含 native SFB block scale 和一个 folded
+      tensor-global FP32 scale。所有实测 methods 都保留在 selector 与 full chart 中。左侧是实测 PPL/KL₅₀，
+      右侧是 payload 与 weight-only byte roofline。
+    </p>
+    <div class="controls">
+      <div class="ctrl"><div class="ctrl-label">Model</div><div class="seg" id="wSegModel"></div></div>
+      <div class="ctrl"><div class="ctrl-label">Context</div><div class="seg" id="wSegCtx"></div></div>
+      <div class="ctrl"><div class="ctrl-label">Method</div><select class="method-select" id="wMethodSelect" aria-label="Weight method"></select></div>
+      <div class="ctrl"><div class="ctrl-label">KL chart view</div><div class="seg" id="wSegView"></div></div>
+    </div>
+    <div class="duo">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="stat-k">Accuracy — KL₅₀ vs native teacher ↓</div>
+          <div class="stat-v" id="wxKl">–</div>
+          <div class="stat-s" id="wxPpl">–</div>
+        </div>
+        <svg id="wxChart" role="img" aria-label="Weight quantization KL comparison"></svg>
+        <div class="axis-note" id="wxChartHint">Linear KL₅₀ axis · 越低越好 · 点击圆点选择</div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <div class="stat-k">Engineering weight-only estimate · 尚未实测</div>
+          <div class="stat-v" id="wxBits">–</div>
+          <div class="stat-s" id="wxRatio">–</div>
+        </div>
+        <div id="wxBars"></div>
+        <div class="speed-caption" id="wxKernel"></div>
+      </div>
+    </div>
+    <div class="fig-note">
+      <b>Contract correction。</b>Linear weight 是 W[N,K]，B=Wᵀ[K,N]。CUDA reference tile 是 512 indices +
+      一个 E4M3 LUT，即 3.125 bits/weight。可选 native block scaling 每个 N row 增加一个 UE8M0 SFB
+      （8 bytes/tile），得到 3.25 bits/weight。PTX 9.4 的 MXFP8 LUT-B 只暴露这个 K64
+      <code>scale_B=1×N</code> path；所有 two-K32/16-factor 结果现在都标为 non-native quality oracle。
+      Global scale 是 folded software metadata，不是 native LUT-B operand。
+    </div>
+  </section>
+
+  <!-- ============================== 图 2：KV ============================== -->
+  <section class="fig-card" id="kv-explorer" aria-label="KV 精度与速度交互对比">
+    <div class="fig-head">
+      <span class="fig-tag">图 2 · Interactive KV</span>
+      <span class="fig-title">3-bit KV 到底能不能用？每种方案的精度代价与速度收益</span>
+    </div>
+    <p class="fig-sub">
+      选择模型与 KV 方案。左：相对 BF16/native teacher 的实测 KL₅₀（8K，PPL 一并标注）；右：Qwen3-4B 显示
+      Rubin attention-only sensitivity scenarios；Kimi K3 显示不同并发 request 下的 TP8 HBM context bound。
+    </p>
+
+    <div class="controls">
+      <div class="ctrl">
+        <div class="ctrl-label">模型</div>
+        <div class="seg" id="segModel"></div>
+      </div>
+      <div class="ctrl">
+        <div class="ctrl-label">KV 位宽 · 方法</div>
+        <div class="seg" id="segPreset"></div>
+      </div>
+      <div class="ctrl" id="ctxCtrl">
+        <div class="ctrl-label">Decode 上下文（速度面板）</div>
+        <div class="seg" id="segCtx"></div>
+      </div>
+      <div class="ctrl" id="layoutCtrl">
+        <div class="ctrl-label">MLA physical layout（HBM bound）</div>
+        <div class="seg" id="segLayout"></div>
+      </div>
+      <div class="ctrl" id="klCtrl">
+        <div class="ctrl-label">KL chart view</div>
+        <div class="seg" id="segKlView"></div>
+      </div>
+    </div>
+
+    <div class="duo">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="stat-k">精度 — KL₅₀ vs BF16 teacher @ 8K ↓</div>
+          <div class="stat-v" id="hxPpl">–</div>
+          <div class="stat-s" id="hxPplSub">–</div>
+        </div>
+        <svg id="hxChart" role="img" aria-label="KV 方案 KL divergence 的 selectable linear range 对比"></svg>
+        <div class="axis-note" id="hxChartHint">Linear KL₅₀ axis · 越低越好 · 点击圆点选择</div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <div class="stat-k" id="hxTokK">速度 — attention-only tok/s @ 8K</div>
+          <div class="stat-v" id="hxTok">–</div>
+          <div class="stat-s" id="hxTokSub">–</div>
+        </div>
+        <div id="hxBars"></div>
+      </div>
+    </div>
+
+    <div class="speed-caption" id="hxCaption"></div>
+
+    <div class="fig-note">
+      <b>协议。</b>KL₅₀：相对 BF16 teacher 的 top-50 bucketed forward KL（nats/token），是 full-vocabulary KL
+      的 data-processing 下界；PPL：WikiText-2 test，16 × 8192-token blocks。Lloyd-Max 与 OSCAR+LM 两行使用
+      Rubin 硬件 Q/P 契约（E4M3 + UE8M0 block32）；Lloyd-Max 已使用 corrected denominator ordering，
+      OSCAR+LM corrected rerun 仍 pending；
+      uniform 与 OSCAR INT2 两行以 BF16 Q/P 测得。Kimi K3 只量化 24 个 Gated-MLA 层的 512-d MLA latent；
+      Kimi PPL 沿用 native 的 last-2048-NLL protocol，不可跨模型比较。<b>速度。</b>针对 Qwen3-4B decode（36 层 · 32 Q / 8 KV heads ·
+      head dim 128）的 attention-only 解析 roofline：K3V3 每值存 3.125 bit 外加 BF16 窗口（8K 下约 3.63 b/val），
+      MXFP8 的 M tile 固定为 128，GQA4 single-token decode 最多填 4 行。因为 LUT-B throughput 未公开，
+      panel 显示从 data path 推导的 40–70% engineering guess，中心为 55%；它不是 Rubin 实测。不含
+      weights、MLP、sampling 与调度。完整消融见 <a href="#sec4">§5.2</a>；完整推导见
+      <a href="#throughput">§5.3</a>。Kimi panel 使用 14.3 GB/GPU runtime reserve，并把固定 HBM pool
+      平均分给并发 requests；这是 allocation arithmetic，不是 supported context claim。
+    </div>
+  </section>
+
+  <!-- ============================== 正文 ============================== -->
+  <article>
+
+    <div class="tldr" id="tldr">
+      <h2>TL;DR</h2>
+      <ol>
+        <li><strong>Weight 是最自然的 LUT-B target，但 scale contract 必须分清。</strong>CUDA 13.4 reference
+          LUT payload 是 K64 3.125 bits/weight，native SFB path 是 K64 3.25 bits/weight。实测的 3.375-bit
+          two-K32 rows 是 non-native quality oracle。根据 data path，我对 native K64 的估计是 dense FP8
+          的 40–70%，中心为 55%；32.33× H100 byte ceiling 需要约 79%。</li>
+        <li><strong>当前 LUT-B MMA 不支持 A3 作为 matrix A。</strong>公开 PTX 只有 B operand 的 lookup
+          decompression；W3 已占用该 operand，因此 W3A3 无法编码。本文支持的 pairing 是 E4M3 A +
+          UE8M0 K32 scale 与 3-bit LUT-B operand。</li>
+        <li><strong>KV 能用同一条指令，但 layout 更难。</strong>QK group 是 8 tokens × 64 head channels；
+          PV group 是 64 tokens × 8 value channels。Offline LM 与可选 OSCAR 把 Qwen K3V3 保持在 PPL
+          约 10.4，而 per-tile uniform K3V3 的 PPL 是 1504。</li>
+        <li><strong>Context capacity 是共享 HBM budget，不是模型支持声明。</strong>在本文 TP8 memory
+          assumptions 下，single-request arithmetic 是 runtime retile 的 10.0M，或 two direct layouts
+          的 6.21M；该 pool 会被并发 requests 平分，而且 checkpoint 自身 positional limit 不变。</li>
+      </ol>
+    </div>
+
+    <h2 id="sec1"><span class="idx">1</span>Intro：Vera Rubin 最近到底变了什么？</h2>
+
+    <h3>1.1 从“faster GPU”变成 agentic inference platform</h3>
+    <p>
+      NVIDIA 对 Rubin 的官方叙事是 agentic AI：更长 context、更多 reasoning steps、更高 decode interactivity，
+      以及 rack-scale orchestration。单张 Rubin GPU 的公开规格包括 224 SM、896 Tensor Cores、288 GB HBM4 和
+      22 TB/s HBM bandwidth；Vera Rubin NVL72 则把 72 张 GPU 连接成一个 NVLink 6 scale-up domain。
+    </p>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Public spec</th><th class="num">1× Rubin GPU</th><th class="num">Vera Rubin NVL72</th></tr></thead>
+      <tbody>
+        <tr><td>GPU count</td><td class="num">1</td><td class="num">72</td></tr>
+        <tr><td>HBM4 capacity</td><td class="num">288 GB</td><td class="num">20.7 TB</td></tr>
+        <tr><td>HBM bandwidth</td><td class="num">22 TB/s</td><td class="num">1,580 TB/s</td></tr>
+        <tr><td>NVFP4 inference</td><td class="num">50 PFLOP/s</td><td class="num">3,600 PFLOP/s</td></tr>
+        <tr><td>FP8/FP6 published peak</td><td class="num">17.5 PFLOP/s</td><td class="num">1,260 PFLOP/s</td></tr>
+        <tr><td>NVLink bandwidth</td><td class="num">3.6 TB/s</td><td class="num">260 TB/s switch bandwidth</td></tr>
+      </tbody>
+    </table></div>
+    <h3>1.2 为什么 Weight 和 KV 都值得关心？</h3>
+    <p>
+      Community 常用一句话概括 inference：<strong>prefill is compute-bound, decode is bandwidth-bound</strong>。
+      Medium 的 <a href="https://medium.com/@asheesh.goja/prefill-is-compute-decode-is-bandwidth-the-architectural-case-for-disaggregated-llm-inference-92c8b36d1a88">disaggregated inference 文章</a>用这个框架解释了为什么
+      HBM traffic 和 prefill/decode separation 会变得越来越重要。
+    </p>
+    <p>
+      Decode 会反复读取两类大数据：每个 linear layer 的 model weights，以及 attention 的历史 K/V。
+      Weight traffic 每个生成 token 大致固定，在 low batch 时尤其重要；KV traffic 则随 context 增长，并在
+      long-context serving 中逐渐占主导。LUT-B 的意义在于，同一个 3-bit B-operand format 可以同时减少
+      static weight 与动态写入 KV cache 的 bytes。
+    </p>
+
+    <h3>1.3 用 CUDA 13.4 探测 Rubin ISA</h3>
+    <p>
+      <a href="https://inferencex.semianalysis.com/blog/vera-rubin-nvl72-vs-gb200-nvl72-inference">SemiAnalysis / InferenceX</a>
+      报道了第一版公开 SM107 software stack：CUDA 13.4、PyTorch、vLLM 和 OpenAI Triton 开始加入 Rubin 支持，
+      同时披露了 3-bit programmable LUT Tensor Core。
+    </p>
+    <p>我们实际安装了 CUDA 13.4.46 Developer Preview，并使用：</p>
+    <ul>
+      <li>PTX ISA 9.4</li>
+      <li><code>sm_107f</code> family target for documented LUT-B/K64 forms</li>
+      <li><code>ptxas</code></li>
+      <li><code>cuobjdump</code></li>
+      <li><code>nvdisasm</code></li>
+    </ul>
+    <p>
+      这让我们至少可以做 compile-time legality check。需要注意，vLLM 的
+      <a href="https://github.com/vllm-project/vllm/issues/49735">SM107 tracking issue</a> 仍然是 open，Triton 也只是
+      <a href="https://github.com/triton-lang/triton/commit/ab592f012f37f2c2ffc9ceda6c5b49b3c37c9036">initial Rubin support</a>；
+      software bring-up 还没有结束。
+    </p>
+
+    <h2 id="sec2"><span class="idx">2</span>最相关的新特性：3-bit programmable LUT-B</h2>
+
+    <h3>2.1 LUT-B 在做什么？</h3>
+    <p>普通 FP8 B matrix 每个值需要 8 bit。Rubin LUT-B 改为：</p>
+    <ol>
+      <li>每个位置只存一个 3-bit index；</li>
+      <li>index 从 8-entry E4M3 LUT 中选择 reconstruction value；</li>
+      <li>Tensor Core 在 <code>tcgen05.mma</code> 内部完成 lookup；</li>
+      <li>kernel 不需要先 materialize 一个 decompressed B matrix。</li>
+    </ol>
+    <p>SemiAnalysis 描述的 granule 是 <code>K=64 × N=8 = 512</code> values：</p>
+<pre><code>512 × 3-bit index = 192 bytes
+8 × E4M3 LUT      =   8 bytes
+--------------------------------
+total             = 200 bytes
+effective         = 3.125 bit/value</code></pre>
+    <p>
+      LUT 不要求 uniform spacing，因此可以放 Lloyd-Max 这种 non-uniform centroids。这也是 3-bit 仍可能保住
+      质量的关键。
+    </p>
+
+    <h3>2.2 CUDA 13.4 compile test 告诉了我们什么？</h3>
+    <p>我们在 clean K8s container 中 compile PTX，并检查生成的 SASS：</p>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Probe</th><th>Compatibility</th><th>Compiler / SASS Evidence</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>sm_107f</code> family target</td><td><span class="faint">REQUIRED</span></td><td>Compile probe updated; rerun pending</td><td>Prior <code>sm_107a</code> syntax pass did not validate documented K64 form</td></tr>
+        <tr><td>UE5M3 conversion</td><td><span class="ok">SUPPORTED</span></td><td><code>F2FP.SATFINITE.UE5M3</code></td><td>The UE5M3 datatype itself exists</td></tr>
+        <tr><td>Dense E4M3 A × LUT-B E4M3 B</td><td><span class="ok">SUPPORTED</span></td><td><code>UTCQMMA.LUTB</code></td><td>The basic QK/PV mapping is legal</td></tr>
+        <tr><td>MXFP8 block32 A × LUT-B B</td><td><span class="ok">SUPPORTED</span></td><td><code>UTCQMMA.LUTB</code> + scale TMEM</td><td>Scaled Q/P can be fused</td></tr>
+        <tr><td>Two independent K32 B scales</td><td><span class="no">NOT NATIVE</span></td><td>PTX Tables 70–71</td><td><code>mxf8f6f4</code> 只暴露 <code>scale_vec::1X</code></td></tr>
+        <tr><td>LUT-B full-tile throughput</td><td><span class="faint">UNKNOWN</span></td><td>No PTX/spec value</td><td>17.5P dense FP8 不是 LUT-B rate</td></tr>
+        <tr><td>LUT-B collector B reuse</td><td><span class="ok">SUPPORTED</span></td><td><code>B_KEEP</code> → <code>B_REUSE</code></td><td>One K/V tile can be reused across GQA heads</td></tr>
+        <tr><td>Sparse A × ordinary B</td><td><span class="ok">SUPPORTED</span></td><td><code>UTCQMMA</code> control</td><td>Sparse-A MMA itself exists</td></tr>
+        <tr><td>Sparse A × LUT-B B</td><td><span class="no">UNSUPPORTED</span></td><td><code>ptxas</code> rejects <code>mma.sp...lut::b</code></td><td>Sparse P cannot be combined with LUT-B V</td></tr>
+        <tr><td>MXFP8 + UE5M3 scale + LUT-B</td><td><span class="no">UNSUPPORTED</span></td><td>PTX 9.4 Table 71</td><td>The FP8 scale must use UE8M0</td></tr>
+        <tr><td>Transposed LUT-B B</td><td><span class="no">UNSUPPORTED</span></td><td>PTX 9.4 restriction</td><td>K must be stored physically as Kᵀ</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      PTX 9.4 规定 <code>mxf8f6f4</code> 的 block scale 为 UE8M0，而 UE5M3 scale 属于 <code>mxf4nvf4</code>。
+      因此 K3V3 attention 的 hardware-valid Q/P contract 是 <strong>E4M3 + UE8M0 block32</strong>。
+    </p>
+    <h3>2.3 3-bit Weight 是最自然的 LUT-B Case；KV 使用同一个 Primitive</h3>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Target</th><th>MXFP8 A</th><th>3-bit LUT-B</th><th>解决的瓶颈</th><th>仍然困难的部分</th></tr></thead>
+      <tbody>
+        <tr><td>Weight W3A8</td><td>activation <code>X</code></td><td>offline-packed <code>Wᵀ</code></td><td>model-weight capacity 与 decode weight bandwidth</td><td>quantization quality 与 small-batch M occupancy</td></tr>
+        <tr><td>KV K3V3</td><td><code>Q</code>，再到 <code>P</code></td><td>dynamic <code>Kᵀ</code>，再到 <code>V</code></td><td>long-context KV capacity 与重复 HBM read</td><td>runtime packing、paged layout、orientation 与 row packing</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      Weight 的 mapping 更简单：<code>Y = X × Wᵀ</code> 天然把 static、可离线 transpose 的 weight matrix
+      放在 B，因此每个 64 × 8 granule 都能提前打包成 512 个 indices 和一个 8-value E4M3 LUT。这是
+      <strong>3-bit storage + E4M3 reconstruction</strong>，不是普通 INT3 arithmetic。
+    </p>
+    <p>
+      同一条 instruction 并不限于 static weight。Dynamic <code>Kᵀ</code> 与 <code>V</code> 也能成为 B
+      operand，因此 Rubin 可以用同一个 in-MMA lookup 减少 long-context decode 反复读取的 KV bytes。
+      KV 更难实现，但它与 weight 使用的是同一个硬件 primitive。
+    </p>
+    <h2 id="weight"><span class="idx">3</span>Weight Quantization：最自然的 W3A8 LUT-B Case</h2>
+    <p>
+      Linear layer 存储 <code>W[N,K]</code>，计算 <code>Y=A×Wᵀ</code>；物理 B operand 天然就是
+      <code>Wᵀ[K,N]</code>。它是 static、可 offline transpose/fit/pack 的，正好位于 Rubin 提供 LUT
+      decompression 的位置。Qwen3-4B 与 Gemma4-12B 量化所有 text linear weights；MiniMax-M3 只量化
+      routed-expert 的 <code>w13</code>（fused gate/up）与 <code>w2</code>（down）weights。“Expert-input A8”
+      指 dispatched hidden 在进入 <code>w13</code> 前做 QDQ；gate/up 后进入 <code>w2</code> 的 intermediate
+      仍是 BF16。Router、shared experts、attention、norms、embeddings 与 <code>lm_head</code> 保持 native。
+    </p>
+
+    <h3>3.1 Accuracy</h3>
+    <p>
+      表格保留原 two-K32 rows，并加入 native one-K64 rows。重新审计 PTX 9.4 后，所有 two-K32 rows
+      都归类为 <strong>non-native quality oracle</strong>；只有 one-K64 SFB rows 映射到 Rubin LUT-B。
+      PPL/KL 使用一个 131072-token block 与 256 个 KL₅₀ samples。方法包括 GPTQ
+      <span class="cite"><a href="#ref-gptq">[4]</a></span>、QuaRot-style H64
+      <span class="cite"><a href="#ref-quarot">[7]</a></span>，以及 RMS²-weighted Lloyd-Max
+      <span class="cite"><a href="#ref-max">[1]</a><a href="#ref-lloyd">[2]</a></span>。
+    </p>
+    <div class="table-wrap"><table class="data">
+      <caption>128K accuracy；one-K64 是 native candidate，two-K32 只作为 quality oracle</caption>
+      <thead><tr><th>128K method</th><th class="num">Qwen PPL / KL₅₀</th><th class="num">Gemma PPL / KL₅₀</th><th class="num">MiniMax routed PPL / KL₅₀</th></tr></thead>
+      <tbody>
+        <tr><td>BF16 W + BF16 A</td><td class="num"><strong>8.482 / 0.00000</strong></td><td class="num"><strong>5.771 / 0.00000</strong></td><td class="num"><strong>4.124 / 0.00000</strong></td></tr>
+        <tr><td>BF16 W + A8</td><td class="num">8.547 / 0.00504</td><td class="num">5.786 / 0.02114</td><td class="num">4.115 / 0.01756</td></tr>
+        <tr><td>Random-H64 + K64 LUT-GPTQ [4,7] (two-K32, no global)</td><td class="num"><strong>10.504 / 0.28601</strong></td><td class="num"><strong>7.034 / 0.37273</strong></td><td class="num"><strong>5.076 / 0.20916</strong></td></tr>
+        <tr><td>Random-H64 + K64 LUT-GPTQ + K64 SFB + global</td><td class="num">10.899 / 0.26852</td><td class="num">7.169 / <strong>0.27815</strong></td><td class="num">5.078 / 0.23976</td></tr>
+        <tr><td>Random-H64 + K64 LUT-GPTQ + two-K32 SFB + global</td><td class="num">10.643 / <strong>0.25499</strong></td><td class="num">7.067 / 0.37087</td><td class="num"><strong>5.032 / 0.21195</strong></td></tr>
+        <tr><td>Activation-RMS²-weighted Lloyd-Max (ours) [1,2] (two-K32, no global)</td><td class="num">11.613 / 0.36921</td><td class="num">7.706 / 0.55274</td><td class="num">6.474 / 0.42795</td></tr>
+        <tr><td>Activation-RMS² Lloyd-Max + K64 SFB + global</td><td class="num">12.188 / 0.43398</td><td class="num">8.395 / 0.65079</td><td class="num">5.014 / <strong>0.17007</strong></td></tr>
+        <tr><td>Activation-RMS² Lloyd-Max + two-K32 SFB + global</td><td class="num">11.653 / 0.39943</td><td class="num">8.247 / 0.61031</td><td class="num"><strong>4.986</strong> / 0.18677</td></tr>
+        <tr><td>K64 block-diagonal LUT-GPTQ [4]</td><td class="num">12.471 / 0.38442</td><td class="num">7.822 / 0.50819</td><td class="num">5.327 / 0.24296</td></tr>
+        <tr><td>UE8M0-scale search + Lloyd-Max (ours) [1,2]</td><td class="num">12.845 / 0.43388</td><td class="num">193.054 / 3.54611</td><td class="num">7.835 / 0.65367</td></tr>
+        <tr><td>Folded AWQ + Lloyd-Max [1,2,5]</td><td class="num">12.666 / 0.45302</td><td class="num">10.719 / 0.83232</td><td class="num">5.404 / 0.29059</td></tr>
+        <tr><td>Lloyd-Max W3A8 [1,2] (MiniMax: routed-expert w13/w2 W3 only; A remains BF16)</td><td class="num">12.703 / 0.48603</td><td class="num">180.144 / 3.67195</td><td class="num">7.488 / 0.58320</td></tr>
+        <tr><td>Dense-only SqueezeLLM [6]</td><td class="num">13.332 / 0.49994</td><td class="num">11.180 / 1.02137</td><td class="num">6.513 / 0.43720</td></tr>
+        <tr><td>Zero-aware NF3 (normal-float adaptation) [8]</td><td class="num">29.646 / 1.26669</td><td class="num">4358.944 / 6.57245</td><td class="num">2032820.392 / 13.30284</td></tr>
+        <tr><td>Uniform scalar quantization [9]</td><td class="num">162.126 / 2.89007</td><td class="num">19733.351 / 7.98959</td><td class="num">535932.314 / 12.15861</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      Two-K32 oracle 说明更细 scaling 可以改善 quality，但它不是 deployable Rubin schedule。Native
+      one-K64 rows 中，H64 在本 sweep 里优于 RMS²，同时仍需在 A 上执行 matching runtime transform。
+    </p>
+
+    <h3>3.2 Kernel Organization</h3>
+<pre><code>A[M,K] × B[K,N], where B = Wᵀ
+one B tile = W[n:n+8, k:k+64]
+reference  = 192 B indices + 8 B LUT             = 200 B = 3.125 bit/W
+native SFB = reference + 8 × UE8M0 (scale_B=1×N) = 208 B = 3.250 bit/W
+global     = one FP32 scale/tensor, folded outside the LUT-B instruction
+two K32    = 216 B = 3.375 bit/W，algorithm oracle only（not native LUT-B）</code></pre>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Method family</th><th>Offline work</th><th>Runtime change beyond MXFP8-A × LUT-B-B</th></tr></thead>
+      <tbody>
+        <tr><td>LM / RMS² / GPTQ / SqueezeLLM</td><td>Fit tile-local LUT and pack indices/scales</td><td>只有 K64-contract rerun 才是 native；原始 rows 是 two-K32 oracle</td></tr>
+        <tr><td>Folded AWQ</td><td>Fold scale into RMSNorm and consumer weights, then fit LUT</td><td>None for supported fold groups</td></tr>
+        <tr><td>Random-H64 + GPTQ</td><td>Rotate every K64 weight block before fitting</td><td>Matching signed H64 on each A K64 block</td></tr>
+        <tr><td>MiniMax routed methods</td><td>Apply the same K64×N8 format to routed experts</td><td>Current simulation changes routed gate input only</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>3.3 Simulation Estimate</h3>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Native Rubin Weight Contract</th><th class="num">Bits/W</th><th class="num">Byte-only vs H100 BF16</th><th class="num">Byte-only vs B200 BF16</th><th class="num">Required LUT-B Rate</th></tr></thead>
+      <tbody>
+        <tr><td>Reference K64 LUT</td><td class="num">3.125</td><td class="num">33.62×</td><td class="num">14.08×</td><td class="num">14.42P = 82.4% dense FP8</td></tr>
+        <tr><td>K64 native SFB + folded global scale</td><td class="num">3.250</td><td class="num">32.33×</td><td class="num">13.54×</td><td class="num">13.86P = 79.2% dense FP8</td></tr>
+      </tbody>
+    </table></div>
+    <div class="table-wrap"><table class="data">
+      <caption>Data-path engineering guess；不是 measured throughput</caption>
+      <thead><tr><th class="num">Full-tile LUT-B judgment</th><th class="num">vs Rubin BF16</th><th class="num">vs H100 BF16</th><th class="num">vs B200 BF16</th></tr></thead>
+      <tbody>
+        <tr><td class="num">40% lower guess</td><td class="num">2.49×</td><td class="num">16.32×</td><td class="num">6.84×</td></tr>
+        <tr><td class="num">55% center guess</td><td class="num">3.42×</td><td class="num">22.45×</td><td class="num">9.40×</td></tr>
+        <tr><td class="num">70% upper guess</td><td class="num">4.35×</td><td class="num">28.57×</td><td class="num">11.96×</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      32.33× 只是最右侧 byte ceiling。达到它要求 LUT-B 先持续提供 13.86 PFLOP/s，也就是 Rubin dense FP8
+      peak 的约 79.2%。我的 40–70% engineering band 更低：integrated lookup 应明显优于 software dequant，
+      但 48B-to-24B descriptor fetch、TMEM LUT staging 与 collector dependency 又应弱于普通 dense FP8。
+      Two-K32 oracle 不分配任何 speed estimate。
+    </p>
+
+    <h2 id="activation"><span class="idx">4</span>Activation Quantization：保留 A8；当前不支持 A3</h2>
+    <h3>4.1 A8 Accuracy</h3>
+    <p>
+      A8 使用 E4M3 values，每个 A row 中连续 32 个 K values 共用一个 UE8M0 scale。W 保持 BF16，以隔离
+      activation error：
+    </p>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Context</th><th class="num">Qwen BF16/A8 PPL</th><th class="num">Qwen KL₅₀</th><th class="num">Gemma BF16/A8 PPL</th><th class="num">Gemma KL₅₀</th><th class="num">MiniMax native/routed-expert-input-A8 PPL</th><th class="num">MiniMax KL₅₀</th></tr></thead>
+      <tbody>
+        <tr><td>8K</td><td class="num">9.447 / 9.508</td><td class="num">0.00559</td><td class="num">6.479 / 6.527</td><td class="num">0.03256</td><td class="num">5.105 / 5.109</td><td class="num">0.05375</td></tr>
+        <tr><td>64K</td><td class="num">8.702 / 8.766</td><td class="num">0.00547</td><td class="num">5.828 / 5.844</td><td class="num">0.00689</td><td class="num">4.306 / 4.293</td><td class="num">0.03330</td></tr>
+        <tr><td>128K</td><td class="num">8.482 / 8.547</td><td class="num">0.00504</td><td class="num">5.771 / 5.786</td><td class="num">0.02114</td><td class="num">4.124 / 4.115</td><td class="num">0.01756</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>4.2 为什么当前 LUT-B 不支持 A3 作为 Matrix A</h3>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Layout</th><th>Matrix A</th><th>Matrix B</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td><strong>W3A8 (target)</strong></td><td>MXFP8 activation</td><td>LUT-B 3-bit weight</td><td>Weight receives the 3-bit capacity/bandwidth benefit</td></tr>
+        <tr><td>W8A3</td><td>FP8 weight</td><td>LUT-B 3-bit activation</td><td>Legal operand placement, but weight falls back to W8</td></tr>
+        <tr><td>W3A3</td><td>3-bit activation</td><td>3-bit weight</td><td><span class="no">UNSUPPORTED</span>: one MMA has no LUT-A</td></tr>
+        <tr><td>Attention A3</td><td>K/V in A8</td><td>Q/P in LUT-B A3</td><td>Loses the intended KV3 cache compression</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout">
+      当前公开 Rubin PTX 没有 LUT-A 或 dual-LUT MMA，所以 A3 不能作为 matrix A 与 B 中的 W3/KV3 配对。
+      Activation 又是动态产生的，还需要 online assignment/packing。这是当前不受支持的 operand configuration，
+      因此没有 performance chart。
+    </div>
+
+    <h2 id="kv"><span class="idx">5</span>KV Cache Quantization <span class="faint">— Accuracy、Speed 与 Capacity Bounds</span></h2>
+    <h3 id="sec3">5.1 Kernel Mapping：把 LUT-B 映射到 Attention</h3>
+    <p>
+      Rubin LUT-B 有一条最重要的规则：<strong>它只在 MMA 内解压 matrix B</strong>。因此我们不把整个 attention
+      都压成 3-bit，而是压缩每个 decode step 都会反复读取的 cache；Q 和 P 仍作为 MXFP8 matrix A。
+    </p>
+
+    <h4>5.1.1 GQA KV 与 MLA latent：同一条配方，两种 cache</h4>
+    <p>两种架构走的是同一条四步路径：</p>
+    <ol>
+      <li><strong>Cache 只写一次。</strong>离线准备 codebook；token 进入低精度区域时，只保存 3-bit index 和
+        8 个 E4M3 lookup values。</li>
+      <li><strong>第一次 LUT-B MMA。</strong>MXFP8 Q 作为 A，压缩 cache 作为 B，计算 attention scores。</li>
+      <li><strong>Softmax 保持 FP32。</strong>max、exp、sum 和 normalization 不降到 INT3；得到的 P 留在片上，
+        再转成 MXFP8。</li>
+      <li><strong>第二次 LUT-B MMA。</strong>MXFP8 P 作为 A，同一类压缩 cache 作为 B，得到 attention output。</li>
+    </ol>
+    <p>差别只在“压缩哪一份 cache”：</p>
+    <ul>
+      <li><strong>GQA / MHA（Qwen、Gemma）</strong>缓存独立的 <code>Kᵀ</code> 和 <code>V</code>，所以每层有 K/V
+        两套 codebook，也可以有独立的 <code>R_k</code> / <code>R_v</code>。sink 64、recent 256 和未满 block
+        保持 BF16。QK tile 是 8 tokens × 64 head channels；PV tile 是 64 tokens × 8 value channels。</li>
+      <li><strong>MLA（Kimi K3）</strong>不展开 K/V，只缓存一份共享的 512-d latent <code>c_KV</code>，所以每层
+        只需一套 codebook 和一个 latent rotation。Kimi 的 69 个 KDA states 与 64-d RoPE suffix 保持原生精度；
+        只有 24 个 Gated-MLA layers 的 latent 进入 K3V3。同一 latent 在 QK 需要 <code>c_KVᵀ</code>、在 PV
+        需要 <code>c_KV</code>；因为 public PTX rejects transposed LUT-B，一份 physical copy 需要 runtime retiling。</li>
+    </ul>
+    <p>
+      上面提到的 <strong>BF16 sink/recent 窗口</strong>值得单独介绍，因为本文所有方案都保留它。cache 中各位置的
+      敏感度并不相同：<em>最前面的 64 个 token</em> 是 attention sink —— 会吸收不成比例注意力权重的位置；
+      <em>最近的 256 个 token</em> 则是 decode 引用最频繁的部分。这两段始终保持 BF16、不进入 3-bit 路径；
+      离开 recent 窗口后，只量化完整 K8 与 V64 blocks。每个 physical tile 都是 512 values，但 K/V 沿不同
+      轴选择这 512 个值。§5.2.2 的消融分别量化了两者的贡献；窗口与 rotation/clipping 配方沿用
+      <a href="https://arxiv.org/abs/2605.17757">OSCAR 论文</a>。
+    </p>
+    <figure class="art" id="fig-window">
+      <div class="frame">
+        <img src="assets/lutb-k3v3-unified.svg" alt="K3V3 示意图。GQA 分别保存 QK 的 8 tokens × 64 channels K tile 与 PV 的 64 tokens × 8 channels V tile。MLA 量化一份逻辑 512-d latent，但需要 runtime retiling 或两份 direct layouts 才能服务两种 operand direction。">
+      </div>
+      <figcaption><b>图 3.</b> 完整的 K3V3 图景。<b>上：</b>沿 token 轴的 cache 布局 —— BF16 sink 与 recent
+      窗口（金色）保护最敏感的位置，token 离开窗口时一次性打包成 3-bit LUT-B granule；decode 通过两次
+      <code>UTCQMMA.LUTB</code> 把压缩主体作为 operand B 读取，中间保持 FP32 softmax，虚线圈标出 3-bit 数据
+      唯一被解压的位置。<b>下：</b>两种架构唯一的差别是哪份 cache 成为 operand B —— GQA/MHA 压缩独立的
+      <code>Kᵀ</code> 和 <code>V</code>（每层两套 codebook）。MLA 量化一份共享的 512-d latent，但单份
+      canonical layout 需要 runtime retiling 才能喂两种 operand direction；两个 direct layouts 会把 latent
+      payload 翻倍。段宽未按比例；8K 时窗口平均只多花约 0.5 bit/value（3.125 → 3.63 b/val）。</figcaption>
+    </figure>
+
+    <h4>5.1.2 Attention 里具体怎么算？</h4>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Architecture</th><th>First Multiply: Scores</th><th>Middle</th><th>Second Multiply: Output</th></tr></thead>
+      <tbody>
+        <tr><td>GQA / MHA</td><td>MXFP8 <code>Q</code> × LUT-B <code>Kᵀ</code></td><td>FP32 softmax produces <code>P</code></td><td>MXFP8 <code>P</code> × LUT-B <code>V</code></td></tr>
+        <tr><td>MLA</td><td>MXFP8 absorbed <code>Q</code> × LUT-B <code>c_KVᵀ</code> plus native RoPE</td><td>FP32 softmax + retile or second direct layout</td><td>MXFP8 <code>P</code> × LUT-B <code>c_KV</code> then value up-projection</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      这里最重要的是：INT3 cache 不需要先解压回 HBM。Tensor Core 在 <code>UTCQMMA.LUTB</code> 内一边 lookup、
+      一边做乘法。Q/P 使用 E4M3 element + UE8M0 block32 scale；Qwen3-4B 的 GQA 还可以通过
+      <code>B_KEEP → B_REUSE</code>，让一个 K/V tile 服务 4 个 Q heads。
+    </p>
+
+    <h4>5.1.3 Lloyd-Max：把 8 个刻度放到真正需要的位置</h4>
+    <p>
+      3-bit 只能表示 8 个值。最简单的 uniform quantization 会把 8 个刻度等距排开；如果大多数值挤在 0 附近、
+      只有少量 outlier 很大，很多刻度会浪费在几乎没有数据的区域，0 附近反而分得太粗。
+    </p>
+    <p>Lloyd-Max 的做法很直接：</p>
+    <ol>
+      <li>在 calibration data 上先放 8 个初始中心。</li>
+      <li>每个数分给离它最近的中心。</li>
+      <li>把每组中心移动到这一组数据的平均值。</li>
+      <li>重复第 2、3 步直到基本不再变化，最后只做一次 E4M3 rounding。</li>
+    </ol>
+    <p>
+      这个过程完全离线进行。Serving 时不再迭代，只需找到最近的一个中心并保存其 3-bit index。GQA 每层分别拟合
+      K/V 两套 8-value codebook；MLA 每层只拟合 latent 的一套 codebook。
+    </p>
+
+    <h4>5.1.4 OSCAR：先把尖峰摊平，再交给 3-bit</h4>
+    <p>
+      Lloyd-Max 解决的是“8 个刻度放在哪里”，但如果少数维度特别大，3-bit 仍然很难表示。
+      <a href="https://arxiv.org/abs/2605.17757">OSCAR</a> 可以理解为：
+      <strong>先旋转坐标系，把集中在少数维度的尖峰摊到更多维度，再量化。</strong>
+    </p>
+    <p>具体只有三步：</p>
+    <ol>
+      <li>在 calibration data 上为每层学习一个 orthogonal rotation。</li>
+      <li>写 cache 前先 rotation，并裁掉极少数最极端的 outliers，然后用 Lloyd-Max K3V3。</li>
+      <li>在 QK/PV 的另一侧做对应变换或 inverse rotation，让原来的 attention 数学关系保持不变。</li>
+    </ol>
+    <p>
+      GQA 可以分别使用 <code>R_k</code> 和 <code>R_v</code>；MLA 因为 K/V 共享同一个 <code>c_KV</code>，只能使用
+      一个 latent rotation，并把对应变换吸收到 absorbed-query 和 value projection。最简单的记法是：
+      <strong>Lloyd-Max 调整尺子的 8 个刻度，OSCAR 先把要量的东西铺平。</strong>
+    </p>
+    <h3 id="sec4">5.2 Accuracy Simulation：K3V3 会不会损伤模型？</h3>
+
+    <h4>5.2.1 Evaluation Setup</h4>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Item</th><th>Setting</th></tr></thead>
+      <tbody>
+        <tr><td>Primary ablation model</td><td>Qwen3-4B-Thinking-2507</td></tr>
+        <tr><td>PPL</td><td>WikiText-2 test，16 × 8192-token blocks</td></tr>
+        <tr><td>KL</td><td>BF16→quantized top-50 bucketed forward KL</td></tr>
+        <tr><td>Cross-model accuracy</td><td>GPQA Diamond full set，3 seeds</td></tr>
+        <tr><td>High-precision window</td><td>sink 64 + recent 256</td></tr>
+        <tr><td>K physical group for QK</td><td>Per layer and KV head: 8 consecutive tokens × 64 consecutive head channels</td></tr>
+        <tr><td>V physical group for PV</td><td>Per layer and KV head: 64 consecutive tokens × 8 consecutive value channels</td></tr>
+        <tr><td>Offline codebook group</td><td>One K LUT and one V LUT fitted per layer, shared across physical tiles and KV heads</td></tr>
+        <tr><td>Q/P scale group</td><td>E4M3 values + one UE8M0 scale per 32 consecutive K values in each A row</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      <code>KL₅₀</code> 在 16 个 WikiText blocks 各取 16 个固定位置，共 256 samples。BF16 top-50 token 各自成桶，
+      其余 vocabulary 合并成 tail bucket；因此它是 full-vocabulary KL 的 data-processing lower bound，
+      单位 nats/token。
+    </p>
+
+    <h4 id="accuracy">5.2.2 Sink/recent Ablation</h4>
+    <p>
+      本节只比较 PPL 和 KL₅₀。PPL 衡量 sequence likelihood，KL₅₀ 则直接衡量 quantized logits 相对 BF16 teacher
+      的分布偏移。主要方案可以在<a href="#kv-explorer">图 2</a> 中并排比较；下方表格覆盖所有测量配置。
+    </p>
+    <p>
+      固定 Qwen3-4B-Thinking-2507，并保持 Q/P 为 BF16，只改变高精度窗口。A 组使用 OSCAR + offline LM K3V3；
+      B 组使用 ordinary uniform K3V3，不使用 OSCAR 或 Lloyd-Max。每组都扫描 <code>64/256</code>、
+      <code>0/256</code>、<code>64/0</code>、<code>0/0</code>，并使用相同的 8K WikiText-2 blocks。
+    </p>
+    <div class="table-wrap"><table class="data">
+      <caption>A. OSCAR + offline LM K3V3</caption>
+      <thead><tr><th class="num">BF16 Sink</th><th class="num">BF16 Recent</th><th class="num">PPL ↓</th><th class="num">KL₅₀ ↓</th></tr></thead>
+      <tbody>
+        <tr><td class="num">64</td><td class="num">256</td><td class="num">10.453</td><td class="num">0.09482</td></tr>
+        <tr><td class="num">0</td><td class="num">256</td><td class="num">15.019</td><td class="num">0.36044</td></tr>
+        <tr><td class="num">64</td><td class="num">0</td><td class="num">10.659</td><td class="num">0.14341</td></tr>
+        <tr><td class="num">0</td><td class="num">0</td><td class="num">16.260</td><td class="num">0.44066</td></tr>
+      </tbody>
+    </table></div>
+    <div class="table-wrap"><table class="data">
+      <caption>B. Ordinary K3V3 (uniform LUT, no OSCAR, no Lloyd-Max)</caption>
+      <thead><tr><th class="num">BF16 Sink</th><th class="num">BF16 Recent</th><th class="num">PPL ↓</th><th class="num">KL₅₀ ↓</th></tr></thead>
+      <tbody>
+        <tr><td class="num">64</td><td class="num">256</td><td class="num">1504.444</td><td class="num">5.14717</td></tr>
+        <tr><td class="num">0</td><td class="num">256</td><td class="num">1875.596</td><td class="num">5.40732</td></tr>
+        <tr><td class="num">64</td><td class="num">0</td><td class="num">1890.707</td><td class="num">5.42792</td></tr>
+        <tr><td class="num">0</td><td class="num">0</td><td class="num">2489.291</td><td class="num">5.59230</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      OSCAR + offline LM 下，保留 sink 64、去掉 recent 的影响相对有限；去掉 sink 则 PPL/KL 明显恶化。
+      ordinary uniform K3V3 在四种窗口下都已经崩溃，说明 window 无法补偿缺少 rotation 和 non-uniform codebook
+      的量化误差。
+    </p>
+
+    <h4>5.2.3 Overall Measurement</h4>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Method</th><th class="num">BF16 Sink</th><th class="num">BF16 Recent</th><th class="num">PPL ↓</th><th class="num">KL₅₀ ↓</th></tr></thead>
+      <tbody>
+        <tr><td>BF16</td><td class="num">all</td><td class="num">all</td><td class="num"><strong>9.468</strong></td><td class="num"><strong>0.0000</strong></td></tr>
+        <tr><td>OSCAR INT2, no LM</td><td class="num">64</td><td class="num">256</td><td class="num">9.893</td><td class="num">0.10791</td></tr>
+        <tr><td>Offline LM K3V3, no OSCAR; Q/P conversion pending</td><td class="num">64</td><td class="num">256</td><td class="num"><strong>10.406</strong></td><td class="num">0.09618</td></tr>
+        <tr><td>Offline LM K3V3, no OSCAR + corrected FP8/UE8M0 Q/P</td><td class="num">64</td><td class="num">256</td><td class="num"><strong>10.407</strong></td><td class="num">0.09665</td></tr>
+        <tr><td>OSCAR + offline LM K3V3 + FP8/UE8M0 P only (legacy denominator ordering)</td><td class="num">64</td><td class="num">256</td><td class="num">10.446</td><td class="num">0.09609</td></tr>
+        <tr><td>OSCAR + offline LM K3V3; Q/P conversion pending</td><td class="num">64</td><td class="num">256</td><td class="num">10.453</td><td class="num"><strong>0.09482</strong></td></tr>
+        <tr><td>OSCAR + offline LM K3V3 + FP8/UE8M0 Q/P (legacy denominator ordering; rerun pending)</td><td class="num">64</td><td class="num">256</td><td class="num">10.465</td><td class="num">0.10090</td></tr>
+        <tr><td>OSCAR + offline LM K3V3 + FP8/UE8M0 Q only</td><td class="num">64</td><td class="num">256</td><td class="num">10.466</td><td class="num">0.09935</td></tr>
+        <tr><td>Ordinary uniform K3V3</td><td class="num">64</td><td class="num">256</td><td class="num">1504.444</td><td class="num">5.14717</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      Corrected P-QDQ 在 prefix/current 两个 stage 都先用未量化 P 计算 FP32 softmax denominator，再只为 PV
+      量化 P。No-OSCAR 从 10.434/0.10447 修正为 <strong>10.407/0.09665</strong>，几乎等于 no-P-QDQ
+      的 10.406/0.09618；此前差距主要是 runtime ordering artifact。OSCAR corrected rerun 仍 pending。
+    </p>
+
+    <h4>5.2.4 Cross-model Measurement</h4>
+    <p>
+      PPL/KL 使用 8K protocol；accuracy 使用 GPQA Diamond 三种子。Qwen3.5 是 hybrid Gated DeltaNet 模型，
+      因此 K3V3 只覆盖 10 个 full-attention layers；Gemma4 的 40 个 sliding-attention layers 使用 256-d head，
+      8 个 full-attention layers 使用 512-d head，两种 geometry 分别拟合 rotation 和 per-layer codebook。
+      Gemma4 的 PPL/KL 使用 base checkpoint，GPQA 使用 instruction-tuned checkpoint。Kimi K3 只量化 24 个
+      Gated-MLA layers 的 512-d latent，69 个 KDA states 与 64-d RoPE suffix 保持原生精度；其 native mode
+      只作为 KL₅₀ teacher。Kimi PPL 沿用 native Kimi protocol：每个 8192-token block 只计最后 2048 个 token
+      的 NLL，context 仍为完整 8K；不同模型的绝对 PPL 不应横向比较。
+    </p>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Model</th><th>Method</th><th class="num">PPL ↓</th><th class="num">KL₅₀ ↓</th><th class="num">GPQA ↑</th></tr></thead>
+      <tbody>
+        <tr><td>Qwen3.5-35B-A3B</td><td>OSCAR + offline LM K3V3 + FP8/UE8M0 Q/P</td><td class="num">6.127</td><td class="num"><strong>0.02295</strong></td><td class="num">82.49%</td></tr>
+        <tr><td>Qwen3.5-35B-A3B</td><td>Offline LM K3V3 + FP8/UE8M0 Q/P (no OSCAR)</td><td class="num"><strong>6.109</strong></td><td class="num">0.02870</td><td class="num"><strong>82.83%</strong></td></tr>
+        <tr><td>Gemma4-12B</td><td>OSCAR + offline LM K3V3 + FP8/UE8M0 Q/P</td><td class="num"><strong>6.120</strong></td><td class="num"><strong>0.04806</strong></td><td class="num">62.29%</td></tr>
+        <tr><td>Gemma4-12B</td><td>Offline LM K3V3 + FP8/UE8M0 Q/P (no OSCAR)</td><td class="num">6.388</td><td class="num">0.07572</td><td class="num">62.29%</td></tr>
+        <tr><td>Kimi K3</td><td>OSCAR + offline LM K3V3 + FP8/UE8M0 Q/P</td><td class="num"><strong>1.564</strong></td><td class="num"><strong>0.00679</strong></td><td class="num"><strong>89.73%</strong></td></tr>
+        <tr><td>Kimi K3</td><td>Offline LM K3V3 + FP8/UE8M0 Q/P (no OSCAR)</td><td class="num">1.601</td><td class="num">0.00800</td><td class="num">83.16%</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      Kimi K3 的公开 checkpoint 是 2.8T-parameter、1.56 TB MXFP4 model。两行结果都基于 MLA latent K3V3，
+      不把 512-d latent 展开成标准 K/V 后再量化；native checkpoint 仅提供 KL teacher distribution，
+      不作为第三条结果。Latent OSCAR 把 PPL 从 1.601 降到 1.564（约 2.3%），把 KL₅₀ 从 0.00800 降到
+      0.00679（约 15.2%），并把 GPQA 三种子均值从 83.16% 提高到 89.73%（+6.57 个百分点）；OSCAR 三个 seed 为
+      89.39% / 89.90% / 89.90%，无 OSCAR 为 84.34% / 84.34% / 80.81%。完整 2.8T 测量在 32 张 H100 上通过 patched SGLang
+      runtime 运行公开的 <code>moonshotai/Kimi-K3</code> checkpoint；H100 在这里是 numerical oracle ——
+      physical cache 仍会 reconstruct 成 BF16（见 <a href="#repro">Reproducibility</a>）。
+    </p>
+
+    <h3 id="throughput">5.3 Kernel Performance Model：Rubin 上理论能到哪里？</h3>
+
+    <h4>5.3.1 Hardware Baseline</h4>
+    <p>
+      先看单 GPU hardware。H100 和 B200 可以作为 bandwidth baseline，但它们没有 SM107 的
+      <code>decompress::lut::b</code>；只有 Rubin 能原生执行本文的 K3V3 LUT-B path。
+      <a href="#kv-explorer">图 2</a> 的速度面板对应本节推导的 sensitivity endpoints。
+    </p>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>GPU</th><th>Memory</th><th class="num">Capacity</th><th class="num">HBM bandwidth</th><th class="num">Dense FP8 ceiling</th><th>Native LUT-B</th></tr></thead>
+      <tbody>
+        <tr><td>H100 SXM</td><td>HBM3</td><td class="num">80 GB</td><td class="num">3.35 TB/s</td><td class="num">1.979 PFLOP/s</td><td><span class="no">No</span></td></tr>
+        <tr><td>B200 SXM</td><td>HBM3e</td><td class="num">180 GB</td><td class="num">up to 8 TB/s</td><td class="num">4.5 PFLOP/s</td><td><span class="no">No</span></td></tr>
+        <tr><td>Rubin</td><td>HBM4</td><td class="num">288 GB</td><td class="num">22 TB/s</td><td class="num">17.5 PFLOP/s published dense</td><td><span class="ok">Yes</span></td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      H100 数据来自 <a href="https://www.nvidia.com/en-us/data-center/h100/">NVIDIA H100 specs</a>；B200 使用
+      <a href="https://docs.nvidia.com/enterprise-reference-architectures/hgx-ai-factory/latest/components.html">NVIDIA HGX component specs</a>
+      的 180 GB / up to 8 TB/s，以及公开 4.5 PFLOP/s dense FP8。NVIDIA 把 Rubin 的 17.5 PFLOP/s FP8/FP6
+      数字列为 dense specification。不过 NVIDIA 没有单独公开 <code>decompress::lut::b</code> throughput，
+      因此本文只给 10%/25%/50%/100%-of-dense sensitivity endpoints；它们不是 expected efficiency。
+    </p>
+    <p>
+      Qwen3-4B-Thinking-2507 有 36 layers、32 Q heads、8 KV heads、head dim 128。每个 decode token 的
+      attention logical FLOPs 为 <code>4 × Q_heads × head_dim × context × layers</code>。
+    </p>
+
+    <h4>5.3.2 如果三张卡都读取 BF16 KV</h4>
+    <p>BF16 KV 下 arithmetic intensity 只有 4 FLOP/B，因此三张卡都明显 HBM-bound。</p>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>GPU</th><th class="num">8K BF16 roofline</th><th class="num">8K attention-only tok/s</th><th class="num">32K BF16 roofline</th><th class="num">32K attention-only tok/s</th></tr></thead>
+      <tbody>
+        <tr><td>H100 SXM</td><td class="num">13.4 TFLOP/s</td><td class="num">2.77K</td><td class="num">13.4 TFLOP/s</td><td class="num">0.69K</td></tr>
+        <tr><td>B200 SXM</td><td class="num">32.0 TFLOP/s</td><td class="num">6.62K</td><td class="num">32.0 TFLOP/s</td><td class="num">1.66K</td></tr>
+        <tr><td>Rubin</td><td class="num">88.0 TFLOP/s</td><td class="num">18.21K</td><td class="num">88.0 TFLOP/s</td><td class="num">4.55K</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      这里 TFLOP/s 随 context 不变，是因为 BF16 arithmetic intensity 固定；token/s 会随 context 变长而下降。
+    </p>
+
+    <h4>5.3.3 K3V3 Roofline：Compressed Bytes 与 B-only Tile</h4>
+    <p>
+      K3V3 加上 BF16 sink/recent 后，8K 的 effective storage 是 3.628 bit/value，32K 是 3.251 bit/value；
+      对应 arithmetic intensity 为 17.64 / 19.69 FLOP/B。
+    </p>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>GPU</th><th class="num">8K Compressed-byte Normalization</th><th class="num">8K tok/s</th><th class="num">32K Compressed-byte Normalization</th><th class="num">32K tok/s</th><th>Native Execution?</th></tr></thead>
+      <tbody>
+        <tr><td>H100 SXM</td><td class="num">59.1 TFLOP/s</td><td class="num">12.23K</td><td class="num">66.0 TFLOP/s</td><td class="num">3.41K</td><td>No: requires software unpack</td></tr>
+        <tr><td>B200 SXM</td><td class="num">141.1 TFLOP/s</td><td class="num">29.21K</td><td class="num">157.5 TFLOP/s</td><td class="num">8.15K</td><td>No: no LUT-B</td></tr>
+        <tr><td>Rubin</td><td class="num">388.1 TFLOP/s</td><td class="num">80.32K</td><td class="num">433.1 TFLOP/s</td><td class="num">22.41K</td><td>仅 byte ceiling；native syntax 存在</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      H100/B200 两行只是“如果 HBM 只搬这些 compressed bytes”的 normalization ceiling，不是可执行的 native
+      K3V3 performance。它们必须先用 software unpack/dequantize，实际会增加 instructions、temporary traffic
+      和 latency。Rubin 的区别是 lookup 发生在 Tensor Core MMA 内，但 Rubin row 同样只是 byte ceiling，
+      不是 kernel prediction。
+    </p>
+
+    <p>
+      在 byte 数字之上，第一个需要补充的 roofline 细节是 operand 方向。把 decode 写成 <code>K × Qᵀ</code> /
+      <code>Vᵀ × Pᵀ</code> 时，长 KV 位于 A 的 M 方向，短 Q/P 位于 B 的 N 方向；对非常 skinny 的 GEMV，
+      这个方向更容易填满不对称的 MMA tile。但是 LUT 解压只支持 B，所以 compressed KV 必须使用
+      <code>Q × Kᵀ</code> / <code>P × V</code> 的方向。
+    </p>
+    <p>
+      有读者向我们指出了最新的 decode kernel，这个观察是对的：
+      <a href="https://github.com/flashinfer-ai/flashinfer/blob/b1d95851675b8799d623df4d5a7d6eac3254b3ff/flashinfer/cute_dsl/attention/gqa_decode_paged.py#L222-L259">FlashInfer SM100 CuTe GQA decode kernel</a>
+      明确设置 <code>mma_tile_m=128</code>；GEMM1 的 A 是 K、B 是 Q，GEMM2 的 A 是 V、B 是 P。它让
+      sequence/head-dim 填满 A 的 M 方向，并把 GQA heads × prediction tokens 填进 B 的 N 方向。需要同时区分
+      其他实现：FlashInfer 旧的 prefill/Tensor Core path 与
+      <a href="https://tridao.me/publications/flash3/flash3.pdf">FlashAttention-3</a> 也存在 Q/P-as-A、KV-as-B
+      的排布。因此 operand 角色不是 GQA 的数学规定，而是 kernel-specific schedule；最新的 CuTe decode kernel
+      确实选择了 KV-as-A —— 而这恰好是 LUT-B 对 compressed KV 禁止的方向。对 LUT-B 来说 Q/P 必须放 A，
+      于是问题变成 <strong>single-token decode 时 A 的 M tile 有多空</strong>。
+    </p>
+    <p>
+      PTX 的 <code>kind::mxf8f6f4</code> shape 是 <code>M=128</code>、<code>N</code> 从 8 起。Qwen3-4B 的
+      GQA ratio 是 4，所以一个共享 K/V tile 最多把 4 个 Q heads 打包成 4 行：
+    </p>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>LUT-B Full-Tile Sensitivity</th><th class="num">Optimistic M Occupancy</th><th class="num">Useful Cap</th><th class="num">8K Bound</th><th class="num">32K Bound</th></tr></thead>
+      <tbody>
+        <tr><td>10% dense FP8：1.75P</td><td class="num">4 / 128 = 3.125%</td><td class="num">54.7 TFLOP/s</td><td class="num">54.7</td><td class="num">54.7</td></tr>
+        <tr><td>25% dense FP8：4.375P</td><td class="num">4 / 128 = 3.125%</td><td class="num">136.7 TFLOP/s</td><td class="num">136.7</td><td class="num">136.7</td></tr>
+        <tr><td>50% dense FP8：8.75P</td><td class="num">4 / 128 = 3.125%</td><td class="num">273.4 TFLOP/s</td><td class="num">273.4</td><td class="num">273.4</td></tr>
+        <tr><td>100% dense endpoint：17.5P</td><td class="num">4 / 128 = 3.125%</td><td class="num">546.9 TFLOP/s</td><td class="num">388.1 HBM-capped</td><td class="num">433.1 HBM-capped</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      为了检查“交换 operand 本身是否总会更快”，我们还在 B300 上用普通 padded dense-E4M3 GEMM 测了相同
+      logical work。Q/P-as-A 与 KV-as-A 的 median latency 分别为：QK 8K <code>39.97 / 40.42 µs</code>、PV 8K
+      <code>43.71 / 46.70 µs</code>、QK 32K <code>52.42 / 53.41 µs</code>、PV 32K <code>57.95 / 57.18 µs</code>，
+      差异在约 7% 以内。这个 cuBLASLt microbench 不包含 FlashInfer 的 persistent decode schedule、TMEM softmax
+      pipeline 或 LUT-B，因此它只能说明“operand 名字本身”不会自动产生巨大 penalty，不能推翻 FlashInfer 对
+      M/N tile 的选择，也不能替代 Rubin measurement。上表的差距来自
+      <strong>MXFP8 固定 M=128 时的 logical tile utilization</strong>。
+    </p>
+    <p>
+      达到 compressed-byte ceiling 需要 full-tile LUT-B throughput 在 8K/32K/1M 分别达到
+      <strong>12.42P / 13.86P / 14.40P</strong>，即 dense FP8 peak 的 71.0% / 79.2% / 82.3%。
+      Public PTX 没有证据说明 LUT-B 能达到这些比例，而且 4/128 本身也只是 optimistic useful-row upper bound。
+      MHA/GQA ratio 1 会更差；multi-token/speculative decode 可以填更多 rows，但必须单独建模。
+    </p>
+
+    <h4>5.3.4 Data-Path Engineering Guess</h4>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th class="num">Context</th><th class="num">Critical LUT-B Rate</th><th class="num">40% Lower Guess</th><th class="num">55% Center Guess</th><th class="num">70% Upper Guess</th></tr></thead>
+      <tbody>
+        <tr><td class="num">8K</td><td class="num">12.42P (71.0%)</td><td class="num">45.27K</td><td class="num">62.25K</td><td class="num">79.23K</td></tr>
+        <tr><td class="num">32K</td><td class="num">13.86P (79.2%)</td><td class="num">11.32K</td><td class="num">15.56K</td><td class="num">19.81K</td></tr>
+        <tr><td class="num">1M</td><td class="num">14.40P (82.3%)</td><td class="num">354</td><td class="num">486</td><td class="num">619</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      中心判断是 dense FP8 full-tile throughput 的 55%：integrated lookup 应优于 software dequant，但
+      48B-to-24B fetch、TMEM LUT staging 与 collector dependency 应使其低于 dense parity。该表仍未计入
+      page walking、softmax、barrier 与 output traffic，因此真实 fused kernel 应低于这里。
+    </p>
+    <div class="callout">
+      如果完全失去 GQA B-tile reuse，8K/32K bandwidth ceiling 会降到约 97.0 / 108.3 TFLOP/s，此时又会变回
+      HBM-bound。所有 token/s 都是 attention-only ceiling，不包含 model weights、MLP、sampling、scheduler、
+      communication 和 power throttling；它们不等于 Qwen3-4B end-to-end output token/s，也不是 Rubin 实机成绩。
+    </div>
+
+    <h4 id="capacity">5.3.5 不同并发 Request 的 HBM Context Bound</h4>
+    <p>
+      对一个 Kimi-K3 TP8 replica，假设每张 GPU 288 GB、sharded weights 占 195 GB、runtime reserve 为
+      14.3 GB，共 24 个 MLA layers，且 requests 等长。每个 request 的算术上限是
+      <code>L ≤ capacity pool ÷ concurrent requests</code>。Single canonical latent 在 BF16 sink/recent
+      window 之后使用 328 B/token/layer 并需要 runtime retiling；two direct layouts 使用 528 B/token/layer。
+    </p>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th class="num">Concurrent requests / TP8 replica</th><th class="num">Single canonical layout</th><th class="num">Two direct layouts</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td class="num">10.00M / request</td><td class="num">6.21M / request</td></tr>
+        <tr><td class="num">2</td><td class="num">5.00M / request</td><td class="num">3.11M / request</td></tr>
+        <tr><td class="num">4</td><td class="num">2.50M / request</td><td class="num">1.55M / request</td></tr>
+        <tr><td class="num">8</td><td class="num">1.25M / request</td><td class="num">0.78M / request</td></tr>
+        <tr><td class="num">16</td><td class="num">0.63M / request</td><td class="num">0.39M / request</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      这只是 HBM allocation bound，不会扩展 checkpoint 的 positional limit，也不验证 long-context quality；
+      allocator fragmentation、communication、page tables 与 retiling work 均未计入。
+    </p>
+
+    <h2 id="limitations"><span class="idx">6</span>Limitations</h2>
+    <ol>
+      <li><strong>Quality 来自 numerical simulation，不是 packed Rubin execution。</strong>H100/B200 在
+        multiply 前恢复 fake-quantized tensors。Index/LUT/SFB format 被显式模拟，但最终 fused Weight/KV
+        kernels 尚未在 Rubin 上运行。</li>
+      <li><strong>Full-tile LUT-B throughput 未知。</strong>10%/25%/50%/100%-of-dense rows 只用于观察
+        sensitivity，不是 expected efficiency。CUDA 13.4 Developer Preview performance data 也不能用于
+        characterize Rubin。</li>
+      <li><strong>Layout work 取决于 architecture 与 deployment。</strong>H64/OSCAR transforms、dynamic
+        cache packing、MLA retiling、tensor/context sharding 与 hybrid non-attention layers 都不在 isolated
+        GEMM roofline 内，end-to-end implementation 必须计入。</li>
+    </ol>
+
+    <h2 id="takeaways"><span class="idx">7</span>Conclusions：Accuracy 与 Performance</h2>
+    <h3>7.1 Accuracy</h3>
+    <ul>
+      <li><strong>A8 稳定；当前所需 operand position 不支持 A3。</strong>8K–128K 的 A8-only KL₅₀ 都不超过
+        0.05375。当前 LUT-B 没有 LUT-A，因此 W3A3/KV3A3 无法用同一条 MMA。</li>
+      <li><strong>W3 quality 更依赖算法，而不是“3-bit”这个名字。</strong>H64+GPTQ 是跨模型最稳健的 family；
+        uniform/NF3 会崩溃。更细 two-K32 scaling 会改善部分 quality，但这些 rows 是 non-native oracle；
+        只有 one-K64 rows 是 Rubin kernel candidate。</li>
+      <li><strong>KV3 需要 nonuniform codebook，困难场景还需要 rotation。</strong>Uniform Qwen K3V3 达到
+        PPL 1504/KL₅₀ 5.15；offline Lloyd-Max 把 PPL 拉回约 10.4。Latent OSCAR 把 Kimi K3 从
+        1.601/0.00800 改善到 1.564/0.00679，并把 GPQA 三种子从 83.16% 提到 89.73%。</li>
+    </ul>
+    <h3>7.2 Performance</h3>
+    <ul>
+      <li><strong>Weight mapping 最干净，但旧 headline 只是 byte ceiling。</strong>我的 data-path guess
+        把 native K64 放在 H100 BF16 weight-only 的 16.32–28.57×，中心为 22.45×；32.33× ceiling 仍要求
+        dense FP8 的 79.2%，且尚未计入 non-weight overhead。</li>
+      <li><strong>KV 随 context 增长节省更多 bytes，但 decode shape 决定 utilization。</strong>GQA4
+        single-token decode 只有 4/128 M-row occupancy；MLA 可让多个 local heads 复用同一 latent，不继承
+        相同的 underfill。</li>
+      <li><strong>Qwen GQA4 engineering guess 低于 byte ceiling。</strong>1M 下 40–70% data-path band 是
+        354–619 attention tok/s，中心为 486；page traversal、Q/P conversion、softmax 与 output movement
+        会继续降低真实 fused kernel。</li>
+    </ul>
+
+    <h2 id="repro">Reproducibility</h2>
+    <p>全部从公开的 OSCAR branch 运行，所有路径相对于 repository root：</p>
+<pre><code>git clone https://github.com/FutureMLS-Lab/OSCAR.git &amp;&amp; cd OSCAR
+git checkout zhongzhu/oscar-int3-rubin-simulate</code></pre>
+    <ul>
+      <li><strong>Weight W3A8 quality：</strong><code>rubin/w3a8_lut_sim.py</code> 与
+        <code>rotation/multimodel/</code> 下的 manifests 重现 8K/64K/128K rows。</li>
+      <li><strong>KV speed tables（§5.3）：</strong><code>python3 rubin/rubin_k3v3_roofline.py --compare-hardware</code>
+        —— 只依赖 Python 标准库。</li>
+      <li><strong>Weight sensitivity table：</strong><code>python3 rubin/lutb_weight_roofline.py</code>。</li>
+      <li><strong>ISA compile proof：</strong><code>rubin/run_compile_probes.py
+        --cuda /usr/local/cuda-13.4</code> —— 需要 CUDA 13.4 preview toolchain；校验生成的 SASS 包含
+        <code>UTCQMMA.LUTB</code>。</li>
+      <li><strong>Operand-orientation microbench：</strong>
+        <code>rubin/benchmark_decode_operand_orientation.py</code> —— 需要支持 FP8 的 PyTorch GPU；
+        block-scaled case 另需 <code>sgl_kernel</code>。</li>
+      <li><strong>Kimi K3 latent K3V3 quality：</strong>runtime patch、codebook fitter、PPL/KL/GPQA clients
+        都在 <code>rubin/</code>；按 <code>rubin/README.md</code> 与 <code>rotation/multimodel/</code> manifests
+        运行，或把 <code>rubin/run_quality_client.sh</code> 指向兼容 SGLang endpoints。</li>
+    </ul>
+    <p>
+      H100/B200 仅作 numerical oracle —— physical cache 仍会 reconstruct 成 BF16，这里没有任何 Rubin 实机
+      latency。大模型 checkpoint、数据集与运行结果不入 branch。
+    </p>
+
+    <h2 id="refs">References</h2>
+    <ol class="refs">
+      <li id="ref-max">J. Max, <a href="https://doi.org/10.1109/TIT.1960.1057548">“Quantizing for Minimum Distortion,”</a> <i>IRE Transactions on Information Theory</i>, 1960.</li>
+      <li id="ref-lloyd">S. P. Lloyd, <a href="https://doi.org/10.1109/TIT.1982.1056489">“Least Squares Quantization in PCM,”</a> <i>IEEE Transactions on Information Theory</i>, 1982.</li>
+      <li id="ref-oscar">Z. Zhou et al., <a href="https://arxiv.org/abs/2605.17757">“OSCAR: Offline Spectral Covariance-Aware Rotation for 2-bit KV Cache Quantization,”</a> arXiv:2605.17757, 2026.</li>
+      <li id="ref-gptq">E. Frantar et al., <a href="https://arxiv.org/abs/2210.17323">“GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers,”</a> ICLR 2023.</li>
+      <li id="ref-awq">J. Lin et al., <a href="https://arxiv.org/abs/2306.00978">“AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration,”</a> MLSys 2024.</li>
+      <li id="ref-squeezellm">S. Kim et al., <a href="https://arxiv.org/abs/2306.07629">“SqueezeLLM: Dense-and-Sparse Quantization,”</a> ICML 2024.</li>
+      <li id="ref-quarot">S. Ashkboos et al., <a href="https://arxiv.org/abs/2404.00456">“QuaRot: Outlier-Free 4-Bit Inference in Rotated LLMs,”</a> NeurIPS 2024.</li>
+      <li id="ref-qlora">T. Dettmers et al., <a href="https://arxiv.org/abs/2305.14314">“QLoRA: Efficient Finetuning of Quantized LLMs,”</a> NeurIPS 2023.</li>
+      <li id="ref-quant">R. M. Gray and D. L. Neuhoff, <a href="https://doi.org/10.1109/18.720541">“Quantization,”</a> <i>IEEE Transactions on Information Theory</i>, 1998.</li>
+      <li><a href="https://developer.nvidia.com/blog/inside-nvidia-rubin-gpu-architecture-powering-the-era-of-agentic-ai/">NVIDIA: Inside NVIDIA Rubin GPU Architecture</a></li>
+      <li><a href="https://developer.nvidia.com/blog/inside-the-nvidia-rubin-platform-six-new-chips-one-ai-supercomputer/">NVIDIA: Inside the Vera Rubin Platform</a></li>
+      <li><a href="https://www.nvidia.com/en-us/data-center/vera-rubin-nvl72/">NVIDIA: Vera Rubin NVL72 specs</a></li>
+      <li><a href="https://www.nvidia.com/en-us/data-center/h100/">NVIDIA: H100 product specifications</a></li>
+      <li><a href="https://docs.nvidia.com/enterprise-reference-architectures/hgx-ai-factory/latest/components.html">NVIDIA: HGX H100/B200/B300 components</a></li>
+      <li><a href="https://inferencex.semianalysis.com/blog/vera-rubin-nvl72-vs-gb200-nvl72-inference">SemiAnalysis / InferenceX: Vera Rubin NVL72 vs GB200 NVL72</a></li>
+      <li><a href="https://medium.com/@asheesh.goja/prefill-is-compute-decode-is-bandwidth-the-architectural-case-for-disaggregated-llm-inference-92c8b36d1a88">Medium: Prefill is Compute, Decode is Bandwidth</a></li>
+      <li><a href="https://docs.nvidia.com/cuda/developer-preview/13.4/cuda-toolkit-release-notes/index.html">CUDA 13.4 Developer Preview release notes</a></li>
+      <li><a href="https://docs.nvidia.com/cuda/developer-preview/13.4/parallel-thread-execution/index.html">PTX ISA 9.4</a></li>
+      <li><a href="https://tridao.me/publications/flash3/flash3.pdf">FlashAttention-3</a></li>
+      <li><a href="https://github.com/flashinfer-ai/flashinfer/blob/b1d95851675b8799d623df4d5a7d6eac3254b3ff/flashinfer/cute_dsl/attention/gqa_decode_paged.py#L222-L259">FlashInfer SM100 CuTe GQA decode kernel</a></li>
+      <li><a href="https://github.com/triton-lang/triton/commit/ab592f012f37f2c2ffc9ceda6c5b49b3c37c9036">OpenAI Triton initial SM107 support</a></li>
+      <li><a href="https://github.com/vllm-project/vllm/issues/49735">vLLM SM107 tracking issue</a></li>
+    </ol>
+  </article>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    所有吞吐数字均为 attention-only 的解析 roofline 上限，不是 Rubin 实机测量。精度数字是在 H100 上对
+    Rubin 精度契约的数值模拟（physical cache 仍为 BF16）。CUDA 13.4 Developer Preview 条款禁止使用
+    preview 性能数据表征硬件。
+  </div>
+</footer>
+
+<div id="tip"></div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Helpers
+   ============================================================ */
+const $ = (id) => document.getElementById(id);
+const svgNS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent) {
+  const n = document.createElementNS(svgNS, tag);
+  if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+const fmtTok = (v) => {
+  if (v >= 1e6) return (v / 1e6).toFixed(2) + "M";
+  if (v >= 1e4) return (v / 1e3).toFixed(1) + "K";
+  if (v >= 1e3) return (v / 1e3).toFixed(2) + "K";
+  return Math.round(v).toString();
+};
+const fmtX = (v) => (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)) + "\u00d7";
+const tip = $("tip");
+function showTip(html, x, y) {
+  tip.innerHTML = html;
+  tip.style.display = "block";
+  const r = tip.getBoundingClientRect();
+  let left = x + 14, top = y + 14;
+  if (left + r.width > window.innerWidth - 10) left = x - r.width - 14;
+  if (top + r.height > window.innerHeight - 10) top = y - r.height - 14;
+  tip.style.left = left + "px";
+  tip.style.top = top + "px";
+}
+function hideTip() { tip.style.display = "none"; }
+
+/* ============================================================
+   Weight explorer data — WikiText-2, ~131K scored tokens/context.
+   W3 rows explicitly identify K64/two-K32 schedules and paired-scale payload.
+   ============================================================ */
+const W_METHODS = {
+  bf16:    { label: "BF16", full: "BF16 Weight + BF16 Activation Baseline", color: "#4a463c", bits: 16, about: "No weight or activation quantization; this is the native accuracy reference.", kernel: "Dense BF16 GEMM with no LUT, SFB, rotation, or global quantization scale." },
+  a8:      { label: "A8-only", full: "BF16 Weight + MXFP8 Activation-Only QDQ", color: "#6e6a5c", bits: 16, about: "Weights remain BF16; activations are quantize-dequantized to E4M3 with one UE8M0 scale per K32 block.", kernel: "Dense BF16 weight GEMM after online A quantization; no LUT-B weight path." },
+  h64:     { label: "H64 · K32 oracle", full: "Hadamard64 + GPTQ + 2K32 Quality Oracle", color: "#3e6b5f", bits: 3.375, nativeLutb: false, about: "A fixed random signed Hadamard64 rotation spreads weight outliers, then K64 block-diagonal LUT-GPTQ applies activation-Hessian error compensation.", kernel: "Non-native oracle: PTX 9.4 LUT-B fixes compressed B at K64 and mxf8f6f4 exposes no scale_vec::2X contract for two independently addressed K32 B scales." },
+  h64_k64g:{ label: "H64 · K64+G", full: "Hadamard64 + GPTQ + K64 + Global Scale", color: "#2f7f6c", bits: 3.25, global: true, nativeLutb: true, about: "The signed Hadamard64 and K64 block-diagonal LUT-GPTQ recipe under the native one-K64 scale schedule.", kernel: "Native candidate: one K64 LUT-B MMA, 8 scale_B=1×N UE8M0 factors per tile, one folded tensor-global FP32 scale, and signed H64 on A." },
+  h64_k32g:{ label: "H64 · 2K32+G oracle", full: "Hadamard64 + GPTQ + 2K32 + Global Scale Quality Oracle", color: "#4d8f68", bits: 3.375, global: true, nativeLutb: false, about: "Signed Hadamard64 first spreads outliers; K64 block-diagonal LUT-GPTQ then compensates quantization error using the calibrated activation Hessian.", kernel: "Non-native oracle with 16 independently fitted K32-local factors; no Rubin LUT-B throughput is assigned." },
+  rms:     { label: "RMS² · K32 oracle", full: "Activation-RMS²-Weighted Lloyd–Max + 2K32 Quality Oracle", color: "#31607f", bits: 3.375, nativeLutb: false, about: "Tile-local Lloyd–Max fitting weights each reconstruction error by the calibrated squared RMS of its activation channel.", kernel: "Non-native oracle with two K32 scale groups; all RMS² weighting is offline." },
+  rms_k64g:{ label: "RMS² · K64+G", full: "Activation-RMS²-Weighted Lloyd–Max + K64 + Global Scale", color: "#4d55a5", bits: 3.25, global: true, nativeLutb: true, about: "The RMS²-weighted Lloyd–Max codebook is fitted offline, then paired with native one-K64 block scaling and a tensor-global scale.", kernel: "Native candidate: one K64 LUT-B MMA, 8 scale_B=1×N UE8M0 factors per tile, and one folded tensor-global FP32 scale." },
+  rms_k32g:{ label: "RMS² · 2K32+G oracle", full: "Activation-RMS²-Weighted Lloyd–Max + 2K32 + Global Scale Quality Oracle", color: "#6971b8", bits: 3.375, global: true, nativeLutb: false, about: "The same offline RMS²-weighted Lloyd–Max fitting, with finer K32-local scaling plus one tensor-global scale.", kernel: "Non-native oracle with 16 independently fitted K32-local factors; no Rubin LUT-B throughput is assigned." },
+  gptq:    { label: "K64 GPTQ oracle", full: "K64 Block-Diagonal LUT-GPTQ Two-K32 Quality Oracle", color: "#5b4b91", bits: 3.375, nativeLutb: false, about: "Activation-Hessian column ordering and error compensation are performed offline while the output remains scalar 3-bit indices into eight E4M3 centroids.", kernel: "The measured row used the non-native two-K32 scale oracle; a native K64 rerun is required before assigning speed." },
+  scale:   { label: "Scale+LM oracle", full: "UE8M0 Scale-Search + Lloyd–Max Two-K32 Quality Oracle", color: "#b07c2b", bits: 3.375, nativeLutb: false, about: "Offline fitting alternates UE8M0 B-scale selection with Lloyd–Max updates of the eight E4M3 centroids.", kernel: "The 16-factor two-K32 descriptor is an algorithm oracle, not a PTX 9.4 mxf8f6f4 LUT-B contract." },
+  awq:     { label: "Folded AWQ oracle", full: "Folded Activation-Aware Weight Quantization + Lloyd–Max Two-K32 Oracle", color: "#a04f2d", bits: 3.375, nativeLutb: false, about: "Activation-aware channel balancing is calibrated first, folded into supported RMSNorm/consumer weights, and followed by tile-local Lloyd–Max fitting.", kernel: "The measured row used non-native two-K32 scaling; supported dense folds add no runtime multiply, but no Rubin LUT-B speed is assigned." },
+  lm:      { label: "Lloyd-Max oracle", full: "Tile-Local Lloyd–Max Two-K32 Quality Oracle", color: "#8a6a14", bits: 3.375, nativeLutb: false, about: "Each K64×N8 weight tile fits eight nonuniform centroids by nearest-center assignment and centroid updates, then rounds the final codebook to E4M3.", kernel: "The measured 16-factor K32-local scale layout is non-native; MiniMax quantizes routed-expert w13/w2 weights only." },
+  squeeze: { label: "SqueezeLLM oracle", full: "Dense-Only Fisher-Weighted SqueezeLLM Two-K32 Oracle", color: "#5d7f79", bits: 3.375, nativeLutb: false, about: "Squared per-sample gradients form a diagonal empirical-Fisher weight for tile-local Lloyd–Max fitting; the sparse outlier residual is intentionally omitted.", kernel: "The result uses the non-native two-K32 quality contract; MiniMax uses a factorized-Fisher proxy." },
+  nf3:     { label: "NF3 oracle", full: "Zero-Aware NormalFloat-3 Two-K32 Quality Oracle", color: "#b55f5f", bits: 3.375, nativeLutb: false, about: "A static normal-distribution-inspired eight-level codebook is adapted to include an exact zero, without per-tile iterative optimization.", kernel: "The measured row uses the non-native 16-factor scale oracle; only the offline centroid rule differs." },
+  uniform: { label: "Uniform oracle", full: "Uniform Scalar LUT Two-K32 Quality Oracle", color: "#a33d2f", bits: 3.375, nativeLutb: false, about: "Each tile uses eight evenly spaced reconstruction levels, providing the simplest 3-bit numerical baseline.", kernel: "The measured row uses the non-native two-K32 scale oracle and receives no Rubin speed estimate." },
+};
+const W_DATA = {
+  qwen: { label: "Qwen3-4B", values: {
+    8192:   { bf16:[9.447,0], a8:[9.508,.00559], h64:[11.504,.24232], h64_k64g:[11.664,.24494], h64_k32g:[11.500,.27527], gptq:[13.057,.34194], rms:[12.890,.38058], rms_k64g:[13.215,.40095], rms_k32g:[12.640,.36268], awq:[13.813,.38270], lm:[13.580,.41725], scale:[14.148,.44276], squeeze:[14.551,.48394], nf3:[30.295,1.35188], uniform:[91.387,2.26996] },
+    65536:  { bf16:[8.702,0], a8:[8.766,.00547], h64:[10.692,.21438], h64_k64g:[10.944,.23894], h64_k32g:[10.744,.25162], rms:[11.813,.32821], rms_k64g:[12.268,.39814], rms_k32g:[11.792,.34422], gptq:[12.451,.36228], scale:[12.930,.40136], awq:[12.764,.41050], lm:[12.701,.43991], squeeze:[13.231,.49338], nf3:[29.279,1.44343], uniform:[113.677,2.79120] },
+    131072: { bf16:[8.482,0], a8:[8.547,.00504], h64:[10.504,.28601], h64_k64g:[10.899,.26852], h64_k32g:[10.643,.25499], rms:[11.613,.36921], rms_k64g:[12.188,.43398], rms_k32g:[11.653,.39943], gptq:[12.471,.38442], scale:[12.845,.43388], awq:[12.666,.45302], lm:[12.703,.48603], squeeze:[13.332,.49994], nf3:[29.646,1.26669], uniform:[162.126,2.89007] },
+  }},
+  gemma: { label: "Gemma4-12B", values: {
+    8192:   { bf16:[6.479,0], a8:[6.527,.03256], h64:[7.924,.34988], h64_k64g:[8.021,.37371], h64_k32g:[7.938,.35687], gptq:[8.724,.47879], rms:[8.811,.51076], rms_k64g:[9.788,.55411], rms_k32g:[9.205,.48147], awq:[11.695,.77928], squeeze:[12.625,.87529], lm:[128.983,3.23424], scale:[156.667,3.49639], nf3:[4617.446,6.32933], uniform:[10701.342,7.45766] },
+    65536:  { bf16:[5.828,0], a8:[5.844,.00689], h64:[7.101,.34171], h64_k64g:[7.208,.44184], h64_k32g:[7.128,.34907], gptq:[7.886,.47953], rms:[7.824,.57771], rms_k64g:[8.515,.65772], rms_k32g:[8.256,.51175], awq:[10.917,.72734], squeeze:[11.146,1.06351], scale:[161.081,3.33806], lm:[168.717,3.55087], nf3:[4017.948,6.40578], uniform:[18271.539,7.89921] },
+    131072: { bf16:[5.771,0], a8:[5.786,.02114], h64:[7.034,.37273], h64_k64g:[7.169,.27815], h64_k32g:[7.067,.37087], gptq:[7.822,.50819], rms:[7.706,.55274], rms_k64g:[8.395,.65079], rms_k32g:[8.247,.61031], awq:[10.719,.83232], squeeze:[11.180,1.02137], scale:[193.054,3.54611], lm:[180.144,3.67195], nf3:[4358.944,6.57245], uniform:[19733.351,7.98959] },
+  }},
+  minimax: { label: "MiniMax-M3 routed", values: {
+    8192:   { bf16:[5.105,0], a8:[5.109,.05375], h64:[6.209,.27195], h64_k64g:[6.130,.23194], h64_k32g:[6.228,.28072], awq:[6.203,.32739], gptq:[6.555,.40402], squeeze:[7.642,.56452], rms:[7.591,.58726], rms_k64g:[5.983,.29160], rms_k32g:[5.978,.30157], lm:[8.611,.67041], scale:[9.206,.74972], uniform:[617957.852,12.18981], nf3:[2104450.529,13.37978] },
+    65536:  { bf16:[4.306,0], a8:[4.293,.03330], h64:[5.299,.31414], h64_k64g:[5.265,.31120], h64_k32g:[5.278,.31379], gptq:[5.593,.37435], awq:[5.555,.41773], rms:[6.651,.54967], rms_k64g:[5.225,.29669], rms_k32g:[5.197,.33921], squeeze:[6.702,.55930], lm:[7.613,.66020], scale:[8.028,.68932], uniform:[536027.492,12.22787], nf3:[2036118.895,13.51801] },
+    131072: { bf16:[4.124,0], a8:[4.115,.01756], h64:[5.076,.20916], h64_k64g:[5.078,.23976], h64_k32g:[5.032,.21195], gptq:[5.327,.24296], awq:[5.404,.29059], rms:[6.474,.42795], rms_k64g:[5.014,.17007], rms_k32g:[4.986,.18677], squeeze:[6.513,.43720], lm:[7.488,.58320], scale:[7.835,.65367], uniform:[535932.314,12.15861], nf3:[2032820.392,13.30284] },
+  }},
+};
+const wState = { model: "qwen", ctx: 131072, method: "h64_k64g", view: "all" };
+
+/* ============================================================
+   Data — Qwen3-4B-Thinking-2507
+   Accuracy: WikiText-2 test, 16 x 8192-token blocks, sink 64 + recent 256.
+   Lloyd-Max / OSCAR+LM rows use the Rubin hardware Q/P contract
+   (E4M3 + UE8M0 block32); uniform and INT2 were measured with BF16 Q/P.
+   ============================================================ */
+const BF16_PPL = 9.468;
+const MODELS = {
+  qwen: {
+    label: "Qwen3-4B", klMax: 5.8, klTicks: [0, 0.1, 0.5, 1, 2, 5], speed: true, refLabel: "BF16",
+    presets: [
+      { key: "bf16",     label: "BF16 \u00b7 16-bit",      color: "#4a463c", bits: 16, ppl: 9.468,    kl: 0.0,     qp: "\u2014",            kind: "bf16",
+        desc: "Full-precision baseline \u2014 no KV quantization." },
+      { key: "uniform",  label: "Uniform \u00b7 3-bit",    color: "#a33d2f", bits: 3,  ppl: 1504.444, kl: 5.14717, qp: "BF16 Q/P",          kind: "k3v3",
+        desc: "Eight evenly spaced levels, no rotation, no fitted codebook \u2014 \u201cjust store INT3\u201d. It collapses." },
+      { key: "lm",       label: "Lloyd-Max \u00b7 3-bit",  color: "#31607f", bits: 3,  ppl: 10.407,   kl: 0.09665, qp: "FP8/UE8M0 Q/P",     kind: "k3v3", hw: true,
+        desc: "Corrected P-QDQ: FP32 denominator first, then quantize P only for PV. The old 10.434/0.10447 gap was largely ordering error." },
+      { key: "oscar_lm", label: "OSCAR+LM \u00b7 3-bit",   color: "#8a6a14", bits: 3,  ppl: 10.465,   kl: 0.10090, qp: "FP8/UE8M0 Q/P",     kind: "k3v3", hw: true,
+        desc: "Legacy prefix-denominator ordering; corrected OSCAR P-QDQ rerun is still pending." },
+      { key: "int2",     label: "OSCAR \u00b7 2-bit",      color: "#3e6b5f", bits: 2,  ppl: 9.893,    kl: 0.10791, qp: "BF16 Q/P",          kind: "ref",
+        desc: "OSCAR INT2 reference recipe (no Lloyd-Max). Rubin's LUT-B index is 3-bit, so this row is accuracy-only." },
+    ],
+  },
+  kimi: {
+    label: "Kimi K3", klMax: 0.0105, klTicks: [0, 0.002, 0.005, 0.01], speed: false, refLabel: "native",
+    presets: [
+      { key: "bf16",     label: "Native \u00b7 MXFP4",     color: "#4a463c", bits: 16, ppl: null,  kl: 0.0,     qp: "\u2014",            kind: "bf16",
+        desc: "Native 2.8T checkpoint \u2014 serves only as the KL teacher, not as a result row." },
+      { key: "lm",       label: "Lloyd-Max \u00b7 3-bit",  color: "#31607f", bits: 3,  ppl: 1.601, kl: 0.00800, gpqa: "83.16%", seeds: "84.34 / 84.34 / 80.81", qp: "FP8/UE8M0 Q/P", kind: "k3v3", hw: true,
+        desc: "Latent K3V3 on the shared 512-d c_KV of the 24 Gated-MLA layers; KDA states and the RoPE suffix stay native." },
+      { key: "oscar_lm", label: "OSCAR+LM \u00b7 3-bit",   color: "#8a6a14", bits: 3,  ppl: 1.564, kl: 0.00679, gpqa: "89.73%", seeds: "89.39 / 89.90 / 89.90", qp: "FP8/UE8M0 Q/P", kind: "k3v3", hw: true,
+        desc: "One latent rotation, absorbed into the projections, in front of the latent codebook. Best PPL, KL\u2085\u2080 and GPQA." },
+    ],
+  },
+};
+
+/* Qwen3-4B attention-only sensitivity scenarios, matching \u00a76 */
+const MODEL = { layers: 36, qHeads: 32, kvHeads: 8, headDim: 128 };
+const HI_WINDOW = 320;                       // BF16 sink 64 + recent 256
+const TILE_UTIL = 4 / 128;                   // optimistic useful-row upper bound
+const RUBIN_DENSE_FP8 = 17.5e15;             // NVIDIA published dense FP8/FP6 rate
+const CTX_LABEL = { 8192: "8K", 32768: "32K", 1048576: "1M" };
+const flopsPerTok = (ctx) => 4 * MODEL.qHeads * MODEL.headDim * ctx * MODEL.layers;
+const bf16Bytes = (ctx) => 2 * MODEL.kvHeads * MODEL.headDim * 2 * ctx * MODEL.layers;
+const effBitsCtx = (ctx) => (HI_WINDOW * 16 + (ctx - HI_WINDOW) * 3.125) / ctx;
+function speedAt(ctx) {
+  const fl = flopsPerTok(ctx);
+  const bB = bf16Bytes(ctx);
+  const bK = bB * effBitsCtx(ctx) / 16;
+  const h100 = 3.35e12 / bB;
+  const rubinBF16 = 22e12 / bB;
+  const byte = 22e12 / bK;
+  const sensitivity = fraction =>
+    Math.min(byte, RUBIN_DENSE_FP8 * fraction * TILE_UTIL / fl);
+  return {
+    fl, bB, bK, h100, rubinBF16, byte,
+    p40: sensitivity(.40),
+    p55: sensitivity(.55),
+    p70: sensitivity(.70),
+    denseEndpoint: sensitivity(1.0),
+  };
+}
+
+const hx = { model: "qwen", preset: "lm", ctx: 1048576, layout: "single", klView: "focus" };
+const curModel = () => MODELS[hx.model];
+const curPreset = () => {
+  const M = curModel();
+  return M.presets.find(p => p.key === hx.preset) || M.presets[M.presets.length - 1];
+};
+
+/* ============================================================
+   Rendering
+   ============================================================ */
+function seg(containerId, items, current, onPick) {
+  const c = $(containerId);
+  c.innerHTML = "";
+  items.forEach(([key, label]) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    if (String(key) === String(current)) b.classList.add("on");
+    b.addEventListener("click", () => onPick(key));
+    c.appendChild(b);
+  });
+}
+
+function selectMenu(containerId, items, current, onPick) {
+  const c = $(containerId);
+  c.innerHTML = "";
+  items.forEach(([key, label]) => {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = label;
+    c.appendChild(option);
+  });
+  c.value = current;
+  c.onchange = () => onPick(c.value);
+}
+
+function weightRows() {
+  const values = W_DATA[wState.model].values[wState.ctx];
+  return Object.entries(values).map(([key, pair]) => ({
+    key, ppl: pair[0], kl: pair[1], ...W_METHODS[key],
+  }));
+}
+
+function renderWeightChart() {
+  const svg = $("wxChart");
+  svg.innerHTML = "";
+  const allRows = weightRows();
+  const focusMax = 1.0;
+  const rows = wState.view === "focus"
+    ? allRows.filter(r => r.kl <= focusMax)
+    : allRows;
+  const width = Math.max(300, svg.parentElement.clientWidth - 36);
+  const H = wState.view === "all" ? 290 : 220, mL = 14, mR = 16, mT = 42, mB = 32;
+  const plotBot = H - mB, innerW = width - mL - mR;
+  const hi = wState.view === "focus"
+    ? focusMax
+    : Math.max(...allRows.map(r => r.kl)) * 1.04 || 1;
+  const X = (v) => mL + (v / hi) * innerW;
+  svg.setAttribute("viewBox", "0 0 " + width + " " + H);
+  svg.style.height = H + "px";
+  [0, hi / 4, hi / 2, 3 * hi / 4, hi].forEach(v => {
+    const x = X(v);
+    el("line", { x1:x, y1:mT-4, x2:x, y2:plotBot, stroke:"#ece7d6", "stroke-width":1 }, svg);
+    const t = el("text", { x, y:plotBot+16, "text-anchor":"middle", "font-size":10, fill:"#97927f", "font-weight":600 }, svg);
+    t.textContent = v === 0 ? "0" : v < .1 ? v.toFixed(3) : v.toFixed(2);
+  });
+  $("wxChartHint").textContent = wState.view === "focus"
+    ? "Linear KL\u2085\u2080 axis: 0\u20131 quality range; NF3/uniform outliers are hidden"
+    : "Linear KL\u2085\u2080 axis: every measured method; lower is better";
+  const dots = rows.map(r => ({ r, x:X(r.kl), lane:0 })).sort((a,b) => a.x-b.x);
+  const laneCount = Math.min(dots.length, wState.view === "all" ? 13 : 9);
+  const laneTop = mT + 10, laneBottom = plotBot - 10;
+  const laneY = Array.from({length:laneCount}, (_,i) =>
+    laneCount === 1 ? (laneTop+laneBottom)/2 : laneTop + i*(laneBottom-laneTop)/(laneCount-1));
+  const laneLastX = Array(laneCount).fill(-Infinity);
+  dots.forEach(d => {
+    let bestLane = 0, bestDistance = -1;
+    laneLastX.forEach((lastX, lane) => {
+      const distance = d.x-lastX;
+      if (distance > bestDistance) { bestDistance=distance; bestLane=lane; }
+    });
+    d.lane=bestLane;
+    laneLastX[bestLane]=d.x;
+  });
+  dots.forEach(d => {
+    const y = laneY[d.lane], selected = d.r.key === wState.method;
+    const c = el("circle", {
+      cx:d.x, cy:y, r:selected ? 9 : 6.5, fill:d.r.color,
+      stroke:"#fcfaf4", "stroke-width":selected ? 2.5 : 1.5, style:"cursor:pointer",
+    }, svg);
+    c.addEventListener("mousemove", ev => showTip(
+      '<div class="t-title">'+d.r.label+'</div>'+
+      '<div class="t-row"><span>KL\u2085\u2080</span><b>'+d.r.kl.toFixed(5)+'</b></div>'+
+      '<div class="t-row"><span>PPL</span><b>'+d.r.ppl.toFixed(3)+'</b></div>'+
+      '<div class="t-row"><span>W payload</span><b>'+d.r.bits+' bit</b></div>',
+      ev.clientX, ev.clientY));
+    c.addEventListener("mouseleave", hideTip);
+    c.addEventListener("click", () => { wState.method=d.r.key; hideTip(); renderWeight(); });
+    if (selected) {
+      el("circle", { cx:d.x, cy:y, r:13, fill:"none", stroke:d.r.color, "stroke-width":1.6, "stroke-dasharray":"2.5 3" }, svg);
+      const labelText = d.r.label+" "+(d.r.kl < .1 ? d.r.kl.toFixed(4) : d.r.kl.toFixed(3));
+      const labelW = Math.min(width-mL-mR, Math.max(88, labelText.length*6.3+16));
+      const tx = Math.min(Math.max(d.x, mL+labelW/2), width-mR-labelW/2);
+      el("line", { x1:tx, y1:25, x2:d.x, y2:y-13, stroke:d.r.color, "stroke-width":1, "stroke-dasharray":"2 3", opacity:.65 }, svg);
+      el("rect", { x:tx-labelW/2, y:4, width:labelW, height:22, rx:6, fill:"#fcfaf4", stroke:d.r.color, "stroke-width":1 }, svg);
+      const label = el("text", { x:tx, y:19, "text-anchor":"middle", "font-size":11, "font-weight":700, fill:d.r.color }, svg);
+      label.textContent = labelText;
+    }
+  });
+}
+
+function payloadRow(host, name, bits, color) {
+  const row = document.createElement("div");
+  row.className = "payload-row";
+  const top = document.createElement("div");
+  top.className = "payload-top";
+  const label = document.createElement("span");
+  label.className = "payload-name";
+  label.textContent = name;
+  const value = document.createElement("span");
+  value.className = "payload-value";
+  value.textContent = bits.toFixed(3) + " bit/W · " + (16 / bits).toFixed(2) + "×";
+  top.append(label, value);
+  const track = document.createElement("div");
+  track.className = "payload-track";
+  const fill = document.createElement("div");
+  fill.className = "payload-fill";
+  fill.style.width = (bits / 16 * 100) + "%";
+  fill.style.background = color;
+  track.appendChild(fill);
+  row.append(top, track);
+  host.appendChild(row);
+}
+
+function renderWeight() {
+  const model = W_DATA[wState.model];
+  const values = model.values[wState.ctx];
+  if (!values[wState.method]) wState.method = values.h64 ? "h64" : Object.keys(values)[0];
+  const row = { key:wState.method, ppl:values[wState.method][0], kl:values[wState.method][1], ...W_METHODS[wState.method] };
+  seg("wSegModel", Object.entries(W_DATA).map(([k,v]) => [k,v.label]), wState.model, k => {
+    wState.model=k; renderWeight();
+  });
+  seg("wSegCtx", [[8192,"8K"],[65536,"64K"],[131072,"128K"]], wState.ctx, k => {
+    wState.ctx=+k; renderWeight();
+  });
+  selectMenu("wMethodSelect", weightRows().map(r => [r.key,r.label]), wState.method, k => {
+    wState.method=k;
+    if (values[k][1] > 1) wState.view="all";
+    renderWeight();
+  });
+  seg("wSegView", [["focus","Quality range (KL\u22641)"],["all","All methods"]], wState.view, k => {
+    wState.view=k;
+    if (k === "focus" && values[wState.method][1] > 1) wState.method = values.h64 ? "h64" : Object.keys(values)[0];
+    renderWeight();
+  });
+  $("wxKl").textContent = row.kl.toFixed(5);
+  $("wxKl").style.color = row.color;
+  $("wxPpl").textContent = "PPL "+row.ppl.toFixed(3)+" · "+model.label+" @ "+(wState.ctx/1024)+"K";
+  const h100Ceiling = 22 / 3.35 * 16 / row.bits;
+  const guessedH100 = fraction => Math.min(
+    h100Ceiling,
+    17.5e15 * fraction / 128 / 3.35e12
+  );
+  $("wxBits").textContent = row.nativeLutb === false
+    ? "N/A"
+    : (
+      row.bits < 16
+        ? "\u2248"+guessedH100(.55).toFixed(1)+"×"
+        : "\u2014"
+    );
+  $("wxBits").style.color = row.color;
+  $("wxRatio").textContent = row.nativeLutb === false
+    ? "quality oracle only · no native PTX 9.4 LUT-B schedule"
+    : (
+      row.bits < 16
+        ? "40\u201370% guess: "+guessedH100(.40).toFixed(1)+"\u2013"+
+          guessedH100(.70).toFixed(1)+"× H100 \u00b7 byte cap \u2264"+
+          h100Ceiling.toFixed(1)+"×"
+        : "raw-bandwidth normalization only"
+    );
+  const host = $("wxBars"); host.innerHTML="";
+  payloadRow(host,"BF16 W",16,"#8d8777");
+  payloadRow(host,"FP8 W",8,"#7b7565");
+  payloadRow(host,row.label,row.bits,row.color);
+  let storage;
+  if (row.bits === 16) {
+    storage = "Dense BF16 weights: 16 bits/weight; no LUT or SFB payload.";
+  } else {
+    const scaleBytes = row.bits === 3.25 ? 8 : 16;
+    storage = "Per K64\u00d7N8 tile: 192 B indices + 8 B LUT + "+scaleBytes+" B SFB = "+
+      (200+scaleBytes)+" B ("+row.bits.toFixed(3)+" bits/weight)."+
+      (row.global ? " One tensor-global FP32 scale is amortized separately." : "");
+  }
+  $("wxKernel").innerHTML =
+    '<div class="method-full">'+row.full+'</div>'+
+    '<div class="method-line">'+row.about+'</div>'+
+    '<div class="method-line"><strong>Kernel.</strong> '+row.kernel+'</div>'+
+    '<div class="method-line"><strong>Storage.</strong> '+storage+'</div>'+
+    '<div class="method-line faint">'+(
+      row.nativeLutb === false
+        ? "This row has no Rubin kernel speed estimate."
+        : "The estimate uses a 40\u201370% full-tile engineering guess centered at 55%; the larger byte-only ceiling still requires LUT-B near the dense-FP8 rate."
+    )+'</div>';
+  renderWeightChart();
+}
+
+function deltaText(p) {
+  if (p.key === "bf16") return "baseline";
+  const r = p.ppl / BF16_PPL;
+  return r < 2 ? "+" + ((r - 1) * 100).toFixed(1) + "% vs BF16" : "\u00d7" + r.toFixed(1) + " vs BF16";
+}
+
+function renderAccuracy() {
+  const p = curPreset();
+  $("hxPpl").textContent = p.kl.toFixed(5);
+  $("hxPpl").style.color = p.color;
+  let sub;
+  if (hx.model === "kimi") {
+    sub = p.ppl === null ? "KL teacher \u00b7 native last-2048-NLL protocol"
+      : "PPL " + p.ppl.toFixed(3) + " \u00b7 GPQA " + p.gpqa + " \u00b7 Q/P " + p.qp;
+  } else {
+    sub = "PPL " + p.ppl.toFixed(3) + " (" + deltaText(p) + ") \u00b7 Q/P " + p.qp;
+  }
+  $("hxPplSub").textContent = sub;
+  renderChart();
+}
+
+function renderChart() {
+  const svg = $("hxChart");
+  svg.innerHTML = "";
+  const width = Math.max(300, svg.parentElement.clientWidth - 36);
+  const H = 148, mL = 14, mR = 16, mT = 30, mB = 32;
+  const innerW = width - mL - mR;
+  svg.setAttribute("viewBox", "0 0 " + width + " " + H);
+  svg.style.height = H + "px";
+
+  const M = curModel();
+  const focusMax = M.speed ? 0.15 : M.klMax;
+  const presets = hx.klView === "focus"
+    ? M.presets.filter(p => p.kl <= focusMax)
+    : M.presets;
+  const hiKL = hx.klView === "focus" ? focusMax : M.klMax;
+  const X = (v) => mL + (v / hiKL) * innerW;
+  const plotBot = H - mB;
+
+  const ticks = hx.klView === "focus" && M.speed
+    ? [0, 0.05, 0.10, 0.15]
+    : M.klTicks;
+  ticks.forEach(t => {
+    const x = X(t);
+    el("line", { x1: x, y1: mT - 4, x2: x, y2: plotBot, stroke: "#ece7d6", "stroke-width": 1 }, svg);
+    const lbl = el("text", { x: x, y: plotBot + 16, "text-anchor": "middle", "font-size": 10.5, fill: "#97927f", "font-weight": 600 }, svg);
+    lbl.textContent = String(t);
+  });
+  $("hxChartHint").textContent = hx.klView === "focus" && M.speed
+    ? "Linear KL\u2085\u2080 axis: 0\u20130.15 quality range; uniform outlier is hidden"
+    : "Linear KL\u2085\u2080 axis: full range; lower is better";
+
+  const bx = X(0);
+  el("line", { x1: bx, y1: mT - 6, x2: bx, y2: plotBot, stroke: "#4a463c", "stroke-width": 1.1, "stroke-dasharray": "3 4", opacity: .5 }, svg);
+  const bl = el("text", { x: bx + 5, y: plotBot - 4, "font-size": 9.5, fill: "#97927f", "font-weight": 700 }, svg);
+  bl.textContent = M.refLabel;
+
+  /* beeswarm dodge for near-identical KL values */
+  const cy = mT + (plotBot - mT) / 2;
+  const dots = presets.map(p => ({ p, x: X(p.kl), lvl: 0 }))
+    .sort((a, b) => a.x - b.x);
+  const placed = [];
+  dots.forEach(d => {
+    let lvl = 0;
+    while (placed.some(q => q.lvl === lvl && Math.abs(q.x - d.x) < 17)) lvl++;
+    d.lvl = lvl;
+    placed.push(d);
+  });
+
+  const sel = curPreset();
+  let selDot = null;
+  dots.forEach(d => {
+    const off = d.lvl === 0 ? 0 : (d.lvl % 2 === 1 ? -1 : 1) * Math.ceil(d.lvl / 2) * 16;
+    d.cy = cy + off;
+    const isSel = d.p === sel;
+    if (isSel) { selDot = d; return; }   // draw selected last
+    drawDot(svg, d, false);
+  });
+  if (selDot) {
+    drawDot(svg, selDot, true);
+    el("circle", { cx: selDot.x, cy: selDot.cy, r: 13, fill: "none", stroke: selDot.p.color, "stroke-width": 1.6, "stroke-dasharray": "2.5 3", opacity: .85 }, svg);
+    const lblX = Math.min(Math.max(selDot.x, mL + 40), width - mR - 46);
+    const g = el("text", { x: lblX, y: mT - 10, "text-anchor": "middle", "font-size": 11.5, "font-weight": 700, fill: selDot.p.color }, svg);
+    g.textContent = selDot.p.label.split(" \u00b7")[0] + " " + (selDot.p.kl < 0.02 ? selDot.p.kl.toFixed(4) : selDot.p.kl.toFixed(3));
+    el("line", { x1: selDot.x, y1: mT - 6, x2: selDot.x, y2: selDot.cy - 13, stroke: selDot.p.color, "stroke-width": 1, "stroke-dasharray": "2 3", opacity: .6 }, svg);
+  }
+}
+
+function drawDot(svg, d, isSel) {
+  const c = el("circle", {
+    cx: d.x, cy: d.cy, r: isSel ? 9 : 7,
+    fill: d.p.color, "fill-opacity": isSel ? 1 : .85,
+    stroke: "#fcfaf4", "stroke-width": isSel ? 2.5 : 1.5,
+    style: "cursor:pointer",
+  }, svg);
+  c.addEventListener("mousemove", (ev) => showTip(
+    '<div class="t-title">' + d.p.label + "</div>" +
+    '<div class="t-row"><span>KL\u2085\u2080</span><b>' + d.p.kl.toFixed(5) + "</b></div>" +
+    '<div class="t-row"><span>PPL</span><b>' + (d.p.ppl === null ? "\u2014" : d.p.ppl.toFixed(3)) + "</b></div>" +
+    (d.p.gpqa ? '<div class="t-row"><span>GPQA</span><b>' + d.p.gpqa + "</b></div>" : "") +
+    '<div class="t-row"><span>Q/P</span><b>' + d.p.qp + "</b></div>",
+    ev.clientX, ev.clientY));
+  c.addEventListener("mouseleave", hideTip);
+  c.addEventListener("click", () => { hx.preset = d.p.key; hideTip(); render(); });
+}
+
+function barRow(host, name, tok, max, color, opts) {
+  const row = document.createElement("div");
+  row.className = "bar-row";
+  const label = document.createElement("div");
+  label.className = "bar-name";
+  label.textContent = name;
+  const track = document.createElement("div");
+  track.className = "bar-track";
+  const val = document.createElement("span");
+  val.className = "bar-val";
+  if (opts && opts.ghost) {
+    track.classList.add("na");
+    val.textContent = opts.ghost;
+    val.style.color = "#97927f";
+  } else {
+    const pct = Math.max(1.2, tok / max * 100);
+    const fill = document.createElement("div");
+    fill.className = "bar-fill";
+    fill.style.width = pct + "%";
+    fill.style.background = "linear-gradient(90deg," + color + "d9," + color + ")";
+    val.textContent = (opts && opts.valText) || fmtTok(tok) + " tok/s";
+    track.appendChild(fill);
+  }
+  row.appendChild(label);
+  row.appendChild(track);
+  row.appendChild(val);
+  host.appendChild(row);
+}
+
+function renderSpeed() {
+  const p = curPreset();
+  const M = curModel();
+  const sp = speedAt(hx.ctx);
+  const ctxL = CTX_LABEL[hx.ctx];
+  if (!M.speed) {
+    $("hxTokK").textContent = "TP8 HBM context bound per request";
+    const host0 = $("hxBars");
+    host0.innerHTML = "";
+    const selected = hx.layout === "single" ? 10.00 : 6.21;
+    $("hxTok").textContent = selected.toFixed(2) + "M @ R=1";
+    $("hxTok").style.color = hx.layout === "single" ? "#8a6a14" : "#6e6a5c";
+    $("hxTokSub").textContent = hx.layout === "single"
+      ? "single canonical c_KV copy \u00b7 runtime retiling required"
+      : "two direct QK/PV layouts \u00b7 400 B latent/token/layer";
+    [1,2,4,8].forEach(r => {
+      const perRequest = selected / r;
+      barRow(host0, r+" request"+(r>1?"s":""), perRequest, selected,
+        hx.layout === "single" ? "#8a6a14" : "#6e6a5c",
+        { valText: perRequest.toFixed(2)+"M / request" });
+    });
+    const hint = document.createElement("div");
+    hint.className = "chart-hint";
+    hint.style.textAlign = "left";
+    hint.textContent = "Equal-length requests; HBM arithmetic only. The checkpoint positional limit remains 1M.";
+    host0.appendChild(hint);
+    return;
+  }
+  $("hxTokK").textContent = "Speed \u2014 attention-only tok/s @ " + ctxL;
+
+  if (p.kind === "k3v3") {
+    $("hxTok").textContent =
+      fmtTok(sp.p40)+" / "+fmtTok(sp.p55)+" / "+fmtTok(sp.p70);
+    $("hxTok").style.color = "#8a6a14";
+    $("hxTokSub").textContent =
+      "40% lower / 55% center / 70% upper engineering guess";
+  } else if (p.kind === "bf16") {
+    $("hxTok").textContent = fmtTok(sp.rubinBF16);
+    $("hxTok").style.color = "#4a463c";
+    $("hxTokSub").textContent = "Rubin BF16 \u00b7 " + fmtX(sp.rubinBF16 / sp.h100) + " H100 \u2014 bandwidth alone, no compression";
+  } else {
+    $("hxTok").textContent = "\u2014";
+    $("hxTok").style.color = "#97927f";
+    $("hxTokSub").textContent = "accuracy reference only \u2014 Rubin LUT-B has no 2-bit path";
+  }
+
+  const host = $("hxBars");
+  host.innerHTML = "";
+  const max = p.kind === "k3v3" ? sp.denseEndpoint : sp.rubinBF16;
+  barRow(host, "H100 \u00b7 BF16 KV", sp.h100, max, "#b3ac94", { valText: fmtTok(sp.h100) + " \u00b7 1.00\u00d7" });
+  barRow(host, "Rubin \u00b7 BF16 KV", sp.rubinBF16, max, "#6e6a5c", { valText: fmtTok(sp.rubinBF16) + " \u00b7 " + fmtX(sp.rubinBF16 / sp.h100) });
+  if (p.kind === "k3v3") {
+    barRow(host, "K3V3 \u00b7 lower guess 40%", sp.p40, max, "#b3ac94",
+      { valText: fmtTok(sp.p40) + " \u00b7 " + fmtX(sp.p40 / sp.h100) });
+    barRow(host, "K3V3 \u00b7 center guess 55%", sp.p55, max, "#8f8978",
+      { valText: fmtTok(sp.p55) + " \u00b7 " + fmtX(sp.p55 / sp.h100) });
+    barRow(host, "K3V3 \u00b7 upper guess 70%", sp.p70, max, "#a97f19",
+      { valText: fmtTok(sp.p70) + " \u00b7 " + fmtX(sp.p70 / sp.h100) });
+    barRow(host, "K3V3 \u00b7 dense endpoint", sp.denseEndpoint, max,
+      p.key === "uniform" ? "#a33d2f" : "#8a6a14",
+      { valText: fmtTok(sp.denseEndpoint) + " \u00b7 " + fmtX(sp.denseEndpoint / sp.h100) });
+  } else if (p.kind === "bf16") {
+    barRow(host, "Rubin \u00b7 K3V3", 0, max, "", { ghost: "N/A" });
+  } else {
+    barRow(host, "Rubin \u00b7 K3V3", 0, max, "", { ghost: "N/A" });
+  }
+}
+
+function renderCaption() {
+  const p = curPreset();
+  if (hx.model === "kimi") {
+    let khtml;
+    if (p.kind === "bf16") {
+      khtml = p.desc;
+    } else {
+      khtml = p.desc + " On the public 2.8T checkpoint (32\u00d7H100, patched SGLang): PPL <b>" + p.ppl.toFixed(3) +
+        "</b> \u00b7 KL\u2085\u2080 <b>" + p.kl.toFixed(5) + "</b> \u00b7 GPQA <b>" + p.gpqa +
+        "</b> (three-seed mean). The right panel separates the 10M single-copy/retiling assumption from the 6.21M " +
+        "dual-direct-layout alternative.";
+    }
+    $("hxCaption").innerHTML = khtml;
+    return;
+  }
+  const sp = speedAt(hx.ctx);
+  const ctxL = CTX_LABEL[hx.ctx];
+  let html;
+  if (p.kind === "k3v3") {
+    html = p.desc + " At " + ctxL + ", the 40% / 55% / 70% data-path engineering guesses give <b>" +
+      fmtTok(sp.p40)+" / "+fmtTok(sp.p55)+" / "+fmtTok(sp.p70) +
+      "</b> attention tok/s. The center guess reflects integrated lookup but discounts dense-FP8 parity for the " +
+      "48B-to-24B descriptor fetch, TMEM LUT staging, and collector dependencies. This remains unmeasured.";
+    if (p.key === "uniform") {
+      html += " <b>Same storage and the same modeled speed scenarios \u2014 but KL\u2085\u2080 explodes to " +
+        p.kl.toFixed(2) + " nats/token (PPL \u00d7" + (p.ppl / BF16_PPL).toFixed(0) +
+        ").</b> Compression alone does not provide an accuracy-safe recipe.";
+    }
+  } else if (p.kind === "bf16") {
+    html = p.desc + " Without compression, Rubin still improves attention decode \u2014 but only through raw HBM bandwidth: <b>" +
+      fmtTok(sp.rubinBF16) + "</b> tok/s at " + ctxL + " \u2248 " + fmtX(sp.rubinBF16 / sp.h100) +
+      " H100 BF16. The LUT-B Tensor Core sits unused.";
+  } else {
+    html = p.desc + " KL\u2085\u2080 0.10791, on par with the 3-bit recipes (PPL 9.893, +4.5%), shows how far rotation alone " +
+      "goes at 2 bits \u2014 but with a 3-bit LUT-B index there is no native execution path and no speed claim on Rubin.";
+  }
+  $("hxCaption").innerHTML = html;
+}
+
+function render() {
+  seg("segModel", Object.keys(MODELS).map(k => [k, MODELS[k].label]), hx.model, (k) => {
+    hx.model = k;
+    hx.klView = "focus";
+    if (!MODELS[k].presets.some(p => p.key === hx.preset)) hx.preset = "oscar_lm";
+    render();
+  });
+  const M = curModel();
+  seg("segPreset", M.presets.map(p => [p.key, p.label]), hx.preset, (k) => {
+    hx.preset = k;
+    if (M.speed && M.presets.find(p => p.key === k).kl > 0.15) hx.klView = "all";
+    render();
+  });
+  seg("segCtx", [[8192, "8K"], [32768, "32K"], [1048576, "1M"]], hx.ctx, (k) => { hx.ctx = +k; render(); });
+  seg("segLayout", [["single", "Single copy + retile"], ["dual", "Two direct layouts"]], hx.layout, (k) => { hx.layout = k; render(); });
+  seg("segKlView", [["focus", "Quality range"], ["all", "All methods"]], hx.klView, (k) => {
+    hx.klView = k;
+    if (k === "focus" && M.speed && curPreset().kl > 0.15) hx.preset = "oscar_lm";
+    render();
+  });
+  $("ctxCtrl").style.display = M.speed ? "" : "none";
+  $("layoutCtrl").style.display = M.speed ? "none" : "";
+  $("klCtrl").style.display = M.speed ? "" : "none";
+  renderAccuracy();
+  renderSpeed();
+  renderCaption();
+}
+
+let rsz;
+window.addEventListener("resize", () => {
+  clearTimeout(rsz);
+  rsz = setTimeout(() => { renderChart(); renderWeightChart(); }, 120);
+});
+
+/* contents sidebar scrollspy */
+const tocLinks = Array.from(document.querySelectorAll(".toc a"));
+const tocTargets = tocLinks.map(a => document.getElementById(a.getAttribute("href").slice(1))).filter(Boolean);
+function tocSpy() {
+  if (!tocTargets.length) return;
+  let cur = tocTargets[0];
+  for (const t of tocTargets) if (t.getBoundingClientRect().top <= 130) cur = t;
+  tocLinks.forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#" + cur.id));
+}
+document.addEventListener("scroll", tocSpy, { passive: true });
+
+renderWeight();
+render();
+tocSpy();
+</script>
+</body>
+</html>

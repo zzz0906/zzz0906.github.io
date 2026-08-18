@@ -1,0 +1,212 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">K3V3 on Rubin LUT-B: token-axis cache layout, the two lookup MMAs, and the GQA/MLA variants</title>
+  <desc id="desc">Top band: the cache along the token axis with a BF16 sink and recent window around a 3-bit LUT-B body. Bottom panels: GQA uses separate K-transpose and V caches with exact 8-token by 64-channel and 64-token by 8-channel tiles; MLA quantizes one logical 512-d latent but needs runtime retiling or two direct physical layouts for the opposite QK and PV orientations.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbf9f1"/>
+      <stop offset="1" stop-color="#f4f1e4"/>
+    </linearGradient>
+    <linearGradient id="rubin" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b21b6"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="cache" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ede9fe"/>
+      <stop offset="1" stop-color="#ddd6fe"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#3a3323" flood-opacity=".10"/>
+    </filter>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#8a8371"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#7c3aed"/>
+    </marker>
+    <style>
+      .title { font: 700 31px Inter, "Noto Sans SC", Arial, sans-serif; fill: #23211b; }
+      .subtitle { font: 500 17px Inter, "Noto Sans SC", Arial, sans-serif; fill: #6e6a5c; }
+      .panel-title { font: 700 22px Inter, "Noto Sans SC", Arial, sans-serif; fill: #2e2b23; }
+      .band-title { font: 700 18px Inter, "Noto Sans SC", Arial, sans-serif; fill: #3d3a30; }
+      .label { font: 700 16px Inter, "Noto Sans SC", Arial, sans-serif; fill: #2e2b23; }
+      .small { font: 500 13px Inter, "Noto Sans SC", Arial, sans-serif; fill: #5f5b4d; }
+      .tiny { font: 500 11.5px Inter, "Noto Sans SC", Arial, sans-serif; fill: #7a7565; }
+      .vlabel { font: 700 16px Inter, "Noto Sans SC", Arial, sans-serif; fill: #4c1d95; }
+      .vsmall { font: 500 13px Inter, "Noto Sans SC", Arial, sans-serif; fill: #5b21b6; }
+      .vtiny { font: 600 12px Inter, "Noto Sans SC", Arial, sans-serif; fill: #6d28d9; }
+      .glabel { font: 700 15px Inter, "Noto Sans SC", Arial, sans-serif; fill: #6b520f; }
+      .gtiny { font: 500 11.5px Inter, "Noto Sans SC", Arial, sans-serif; fill: #8a6a14; }
+      .mono { font: 700 15px "JetBrains Mono", Menlo, monospace; }
+      .white { fill: #fff; }
+      .step { font: 800 15px Inter, Arial, sans-serif; fill: #fff; text-anchor: middle; dominant-baseline: middle; }
+      .line { fill: none; stroke: #8a8371; stroke-width: 1.6; marker-end: url(#arrow); }
+      .purple-line { fill: none; stroke: #7c3aed; stroke-width: 1.8; marker-end: url(#arrowPurple); }
+      .bypass-line { fill: none; stroke: #a89f88; stroke-width: 1.4; stroke-dasharray: 5 4; marker-end: url(#arrow); }
+      .halo { fill: none; stroke: #7c3aed; stroke-width: 2.2; stroke-dasharray: 7 5; }
+      .nbox { fill: #faf8ef; stroke: #b6ae95; stroke-width: 1.5; }
+      .nbox2 { fill: #f1eee0; stroke: #b6ae95; stroke-width: 1.5; }
+      .vbox { fill: url(#cache); stroke: #7c3aed; stroke-width: 1.8; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="900" rx="28" fill="url(#bg)"/>
+  <text x="48" y="54" class="title">K3V3 on Rubin LUT-B: one recipe, two cache architectures</text>
+  <text x="48" y="86" class="subtitle">Violet = LUT-B path (3-bit cache + in-core lookup MMA) | Gold = BF16 sink/recent window | Everything else is a standard step</text>
+
+  <!-- ======================= shared recipe band ======================= -->
+  <rect x="44" y="110" width="1512" height="218" rx="20" fill="#fffdf6" stroke="#cfc8b2" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="70" y="144" class="band-title">SHARED RECIPE &#8212; write the cache once along the token axis, read it with two lookup MMAs</text>
+
+  <text x="1306" y="150" class="vtiny" text-anchor="middle">packed once on exit</text>
+  <path d="M1352 172 C 1328 159, 1286 159, 1262 172" fill="none" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrowPurple)"/>
+
+  <!-- token-axis strip -->
+  <rect x="70" y="174" width="130" height="52" rx="8" fill="#f3edd9" stroke="#a97f19" stroke-width="1.6"/>
+  <text x="135" y="196" text-anchor="middle" class="glabel">sink (BF16)</text>
+  <text x="135" y="214" text-anchor="middle" class="gtiny">first 64 tokens</text>
+  <rect x="204" y="174" width="1102" height="52" rx="8" fill="url(#cache)" stroke="#7c3aed" stroke-width="1.8"/>
+  <text x="755" y="196" text-anchor="middle" class="vlabel">3-bit LUT-B body (K3V3)</text>
+  <text x="755" y="214" text-anchor="middle" class="vsmall">offline Lloyd-Max codebooks (+ optional OSCAR rotation) &#183; 3.125 bit/value</text>
+  <rect x="1310" y="174" width="220" height="52" rx="8" fill="#f3edd9" stroke="#a97f19" stroke-width="1.6"/>
+  <text x="1420" y="196" text-anchor="middle" class="glabel">recent (BF16)</text>
+  <text x="1420" y="214" text-anchor="middle" class="gtiny">last 256 tokens</text>
+
+  <!-- strip feeds the MMAs as operand B -->
+  <path d="M530 226 V257" class="purple-line"/>
+  <text x="544" y="244" class="vtiny">operand B</text>
+
+  <!-- decode row -->
+  <rect x="70" y="258" width="250" height="60" rx="12" class="nbox"/>
+  <text x="195" y="282" class="label" text-anchor="middle">A: Q, then P &#183; MXFP8</text>
+  <text x="195" y="304" class="small" text-anchor="middle">E4M3 + UE8M0 block32 scale</text>
+  <path d="M320 288 H359" class="line"/>
+  <rect x="353" y="251" width="354" height="74" rx="15" class="halo"/>
+  <rect x="360" y="258" width="340" height="60" rx="12" fill="url(#rubin)"/>
+  <text x="530" y="283" class="mono white" text-anchor="middle">UTCQMMA.LUTB &#215; 2</text>
+  <text x="530" y="305" class="small white" text-anchor="middle">the only place 3-bit data is decompressed</text>
+  <path d="M707 288 H743" class="line"/>
+  <rect x="744" y="258" width="280" height="60" rx="12" class="nbox"/>
+  <text x="884" y="282" class="label" text-anchor="middle">FP32 softmax between MMAs</text>
+  <text x="884" y="304" class="small" text-anchor="middle">max / exp / sum &#183; P stays on chip</text>
+  <rect x="1054" y="258" width="476" height="60" rx="12" class="vbox"/>
+  <text x="1292" y="282" class="vlabel" text-anchor="middle">B is the only compressed operand</text>
+  <text x="1292" y="304" class="vsmall" text-anchor="middle">collector reuse B_KEEP &#8594; B_REUSE serves 4 GQA Q heads per K/V tile</text>
+
+  <!-- ======================= GQA panel ======================= -->
+  <rect x="44" y="356" width="736" height="454" rx="22" fill="#fffdf6" stroke="#cfc8b2" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="72" y="394" class="panel-title">GQA / MHA &#8212; two caches, two codebooks</text>
+  <text x="72" y="420" class="small">Qwen &amp; Gemma full attention &#183; optional independent R_k / R_v</text>
+
+  <circle cx="88" cy="476" r="17" fill="#857c66"/>
+  <text x="88" y="476" class="step">1</text>
+  <rect x="116" y="450" width="112" height="52" rx="11" class="nbox2"/>
+  <text x="172" y="473" class="label" text-anchor="middle">K post-RoPE</text>
+  <text x="172" y="493" class="tiny" text-anchor="middle">rotate with R_k</text>
+  <rect x="116" y="516" width="112" height="52" rx="11" class="nbox2"/>
+  <text x="172" y="539" class="label" text-anchor="middle">V</text>
+  <text x="172" y="559" class="tiny" text-anchor="middle">rotate with R_v</text>
+  <path d="M228 476 H288" class="line"/>
+  <path d="M228 542 H252 V498 H288" class="line"/>
+  <rect x="289" y="450" width="196" height="118" rx="14" class="nbox"/>
+  <text x="387" y="482" class="label" text-anchor="middle">quantize offline</text>
+  <text x="387" y="507" class="small" text-anchor="middle">K codebook + R_k</text>
+  <text x="387" y="529" class="small" text-anchor="middle">V codebook + R_v</text>
+  <text x="387" y="553" class="tiny" text-anchor="middle">sink / recent bypass in BF16</text>
+  <path d="M485 509 H525" class="purple-line"/>
+  <rect x="526" y="450" width="228" height="118" rx="14" class="vbox"/>
+  <text x="640" y="480" class="vlabel" text-anchor="middle">two LUT-B caches</text>
+  <text x="640" y="502" class="vsmall" text-anchor="middle">K tile: 8 tokens &#215; 64 channels</text>
+  <text x="640" y="526" class="vsmall" text-anchor="middle">V tile: 64 tokens &#215; 8 channels</text>
+  <text x="640" y="552" class="tiny" text-anchor="middle">separate direct layouts &#183; 512 values/tile</text>
+
+  <path d="M560 568 V584 H312 V609" class="purple-line"/>
+  <path d="M700 568 V609" class="purple-line"/>
+  <text x="436" y="579" class="vtiny" text-anchor="middle">operand B</text>
+
+  <circle cx="88" cy="646" r="17" fill="#857c66"/>
+  <text x="88" y="646" class="step">2</text>
+  <rect x="116" y="620" width="86" height="52" rx="11" class="nbox2"/>
+  <text x="159" y="652" class="label" text-anchor="middle">Q</text>
+  <path d="M202 646 H236" class="line"/>
+  <rect x="230" y="603" width="164" height="86" rx="16" class="halo"/>
+  <rect x="237" y="610" width="150" height="72" rx="13" fill="url(#rubin)"/>
+  <text x="312" y="639" class="label white" text-anchor="middle">Q &#215; K^T</text>
+  <text x="312" y="662" class="tiny white" text-anchor="middle">LUT-B MMA 1</text>
+  <path d="M394 646 H445" class="line"/>
+  <rect x="446" y="620" width="102" height="52" rx="11" class="nbox"/>
+  <text x="497" y="652" class="label" text-anchor="middle">FP32 P</text>
+  <path d="M548 646 H606" class="line"/>
+  <rect x="600" y="603" width="168" height="86" rx="16" class="halo"/>
+  <rect x="607" y="610" width="154" height="72" rx="13" fill="url(#rubin)"/>
+  <text x="684" y="639" class="label white" text-anchor="middle">P &#215; V</text>
+  <text x="684" y="662" class="tiny white" text-anchor="middle">LUT-B MMA 2</text>
+
+  <rect x="116" y="716" width="638" height="66" rx="13" class="nbox2"/>
+  <text x="435" y="743" class="label" text-anchor="middle">Result: standard attention output (optional inverse R_v)</text>
+  <text x="435" y="766" class="small" text-anchor="middle">Two caches per layer &#183; one K/V tile serves 4 Q heads via B_KEEP &#8594; B_REUSE</text>
+
+  <!-- ======================= MLA panel ======================= -->
+  <rect x="820" y="356" width="736" height="454" rx="22" fill="#fffdf6" stroke="#cfc8b2" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="848" y="394" class="panel-title">MLA &#8212; one logical latent, opposite physical orientations</text>
+  <text x="848" y="420" class="small">Kimi K3 &#183; 24 Gated-MLA layers &#183; rotation absorbed into projections</text>
+
+  <circle cx="864" cy="476" r="17" fill="#857c66"/>
+  <text x="864" y="476" class="step">1</text>
+  <rect x="892" y="450" width="160" height="60" rx="11" class="nbox2"/>
+  <text x="972" y="476" class="label" text-anchor="middle">c_KV latent</text>
+  <text x="972" y="498" class="small" text-anchor="middle">512-d, shared by K and V</text>
+  <path d="M1052 480 H1092" class="line"/>
+  <rect x="1093" y="450" width="196" height="60" rx="11" class="nbox"/>
+  <text x="1191" y="476" class="label" text-anchor="middle">quantize offline</text>
+  <text x="1191" y="498" class="small" text-anchor="middle">one codebook + one R_latent</text>
+  <path d="M1289 480 H1329" class="purple-line"/>
+  <rect x="1330" y="444" width="200" height="72" rx="11" class="vbox"/>
+  <text x="1430" y="468" class="vlabel" text-anchor="middle">canonical INT3 latent</text>
+  <text x="1430" y="490" class="vsmall" text-anchor="middle">QK: 8 tokens &#215; 64 latent ch</text>
+  <text x="1430" y="510" class="vsmall" text-anchor="middle">PV requires retile or second layout</text>
+  <rect x="892" y="530" width="408" height="44" rx="10" class="nbox2" stroke-dasharray="6 4"/>
+  <text x="1096" y="548" class="small" text-anchor="middle">Native bypass (not quantized)</text>
+  <text x="1096" y="566" class="tiny" text-anchor="middle">69 KDA states: separate path &#183; 64-d RoPE suffix &#8594; score term</text>
+
+  <!-- The shared compressed latent feeds B of each MMA on separate, unobstructed routes. -->
+  <path d="M1384 516 V590 H1149 V602" class="purple-line"/>
+  <path d="M1465 516 V602" class="purple-line"/>
+  <!-- Only the RoPE suffix joins the absorbed-query score path. -->
+  <path d="M963 574 V613" class="bypass-line"/>
+
+  <circle cx="864" cy="646" r="17" fill="#857c66"/>
+  <text x="864" y="646" class="step">2</text>
+  <rect x="892" y="620" width="142" height="52" rx="11" class="nbox2"/>
+  <text x="963" y="645" class="label" text-anchor="middle">absorbed Q</text>
+  <text x="963" y="665" class="tiny" text-anchor="middle">512-d latent basis</text>
+  <path d="M1034 646 H1054" class="line"/>
+  <rect x="1060" y="603" width="178" height="86" rx="16" class="halo"/>
+  <rect x="1067" y="610" width="164" height="72" rx="13" fill="url(#rubin)"/>
+  <text x="1149" y="639" class="label white" text-anchor="middle">Q_lat &#215; c_KV^T</text>
+  <text x="1149" y="662" class="tiny white" text-anchor="middle">LUT-B MMA 1 + RoPE score</text>
+  <path d="M1238 646 H1251" class="line"/>
+  <rect x="1252" y="620" width="110" height="52" rx="11" class="nbox"/>
+  <text x="1307" y="652" class="label" text-anchor="middle">FP32 P</text>
+  <path d="M1362 646 H1376" class="line"/>
+  <rect x="1376" y="603" width="168" height="86" rx="16" class="halo"/>
+  <rect x="1383" y="610" width="154" height="72" rx="13" fill="url(#rubin)"/>
+  <text x="1460" y="639" class="label white" text-anchor="middle">P &#215; c_KV</text>
+  <text x="1460" y="662" class="tiny white" text-anchor="middle">LUT-B MMA 2</text>
+
+  <rect x="892" y="716" width="638" height="66" rx="13" class="nbox2"/>
+  <text x="1211" y="743" class="label" text-anchor="middle">Value up-projection &#8594; attention output</text>
+  <text x="1211" y="766" class="small" text-anchor="middle">One copy + runtime retile, or two direct layouts &#183; expanded K/V never materialized</text>
+
+  <!-- ======================= footer legend ======================= -->
+  <rect x="130" y="834" width="1340" height="40" rx="11" fill="#fffdf6" stroke="#cfc8b2"/>
+  <rect x="158" y="846" width="16" height="16" rx="4" fill="url(#rubin)"/>
+  <text x="182" y="859" class="tiny">LUT-B MMA &#8212; in-core 3-bit lookup</text>
+  <circle cx="412" cy="854" r="8" fill="none" stroke="#7c3aed" stroke-width="2" stroke-dasharray="4 3"/>
+  <text x="428" y="859" class="tiny">dashed ring = where it runs</text>
+  <rect x="618" y="846" width="16" height="16" rx="4" fill="url(#cache)" stroke="#7c3aed"/>
+  <text x="642" y="859" class="tiny">3-bit compressed cache (operand B)</text>
+  <rect x="882" y="846" width="16" height="16" rx="4" fill="#f3edd9" stroke="#a97f19"/>
+  <text x="906" y="859" class="tiny">BF16 sink / recent window</text>
+  <rect x="1108" y="846" width="16" height="16" rx="4" class="nbox2"/>
+  <text x="1132" y="859" class="tiny">standard-precision step</text>
+</svg>
