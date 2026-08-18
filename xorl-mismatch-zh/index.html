@@ -9,9 +9,9 @@
     <meta name="description" content="XoRL 与 SGLang 如何对齐决定比特的前向计算，以 0 训练-推理不匹配训练开源权重 MoE。">
     <meta name="color-scheme" content="light">
     <title>开源权重 MoE RL 的 0 train-infer mismatch：开源代码里的逐字节对齐</title>
-    <link rel="icon" href="data:,">
+    <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="stylesheet" href="vendor/katex/katex.min.css">
-    <link rel="stylesheet" href="styles.css?v=20260817-parallelism-figures-v1">
+    <link rel="stylesheet" href="styles.css?v=20260818-layout-v2">
     <style>
       :root {
         --sans: Inter, "Noto Sans SC", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
@@ -19,7 +19,7 @@
       }
       .masthead-subtitle {
         margin: 0.55rem 0 0;
-        max-width: 42rem;
+        max-width: var(--measure);
         color: var(--ink-soft);
         font-family: var(--serif);
         font-size: clamp(1.05rem, 2vw, 1.28rem);
@@ -27,7 +27,7 @@
       }
       .article-byline-note {
         margin: 0.85rem 0 1.2rem;
-        max-width: 42rem;
+        max-width: var(--measure);
         color: var(--ink-soft);
         font-family: var(--sans);
         font-size: 0.94rem;
@@ -35,88 +35,28 @@
       }
     </style>
     <script defer src="vendor/katex/katex.min.js"></script>
-    <script defer src="facts.js?v=20260817-parallelism-figures-v1"></script>
-    <script defer src="app.js?v=20260817-parallelism-figures-v1"></script>
+    <script defer src="facts.js?v=20260818-layout-v2"></script>
+    <script defer src="app.js?v=20260818-layout-v2"></script>
   </head>
   <body>
     <a class="skip-link" href="#main-content">跳到正文</a>
     <div class="reading-progress" aria-hidden="true"><span id="reading-progress-bar"></span></div>
 
-    <header class="masthead" id="top">
-      <h1 class="masthead-title" aria-label="开源权重 MoE RL 的 0 train-infer mismatch：开源代码里的逐字节对齐">
-        <span class="masthead-title-line masthead-title-line-primary">
-          <span class="masthead-title-prefix" aria-hidden="true"></span>
-          <span class="masthead-title-core"><span class="masthead-title-anchor masthead-title-anchor-zero">0</span> train-infer mismatch</span>
-        </span>
-        <span class="masthead-title-line">
-          <span class="masthead-title-prefix">for</span>
-          <span class="masthead-title-core"><span class="masthead-title-anchor">O</span>pen-weight MoE RL</span>
-        </span>
-        <span class="masthead-title-line">
-          <span class="masthead-title-prefix">in</span>
-          <span class="masthead-title-core"><span class="masthead-title-anchor">O</span>pen-source code</span>
-        </span>
-      </h1>
-      <p class="masthead-subtitle">开源权重 MoE RL 的逐字节训练-推理对齐</p>
-      <p class="article-byline-note">
-        这是中文版，图和测量跟英文原文一样。英文在这儿：<a href="https://kiddyboots216.github.io/mismatch/">kiddyboots216.github.io/mismatch</a>
-      </p>
-
-      <div class="fig-shell grpo-runs-figure" id="fig-grpo-runs" data-reveal>
-        <div class="grpo-runs-controls" id="grpo-runs-controls">
-          <fieldset class="grpo-runs-series">
-            <legend>显示</legend>
-            <label><input type="checkbox" id="grpo-show-solve" checked> Solve rate（解题率）</label>
-            <label><input type="checkbox" id="grpo-show-k3"> 训练-推理不匹配（K3）</label>
-          </fieldset>
-          <ul class="grpo-runs-legend" id="grpo-legend" aria-hidden="false" aria-label="开或关各条曲线">
-            <li data-series="0-K3"><span class="grpo-legend-swatch grpo-swatch-zerok3"></span><span>0 mismatch<br>（XoRL）</span></li>
-            <li data-series="IS"><span class="grpo-legend-swatch grpo-swatch-xorl-deep"></span><span>Importance Sampling Baseline<br>（XoRL）</span></li>
-            <li data-series="RIVER-IS"><span class="grpo-legend-swatch grpo-swatch-is"></span><span>IS Baseline<br>（River）</span></li>
-            <li data-series="TINKER"><span class="grpo-legend-swatch grpo-swatch-tinker"></span><span>IS Baseline<br>（Tinker）</span></li>
-          </ul>
+    <header class="site-chrome" aria-label="站点导航">
+      <nav class="site-chrome-inner">
+        <a class="brand" href="/" aria-label="Zhongzhu (Charlie) Zhou home">
+          <span class="brand-mark" aria-hidden="true">
+            <img src="/logo.png" alt="" width="38" height="38">
+          </span>
+          <span class="brand-text">Zhongzhu (Charlie) Zhou</span>
+        </a>
+        <div class="site-chrome-links">
+          <a href="/">Home</a>
+          <a href="/research/">Research</a>
+          <a href="/publication/">Publication</a>
+          <a href="/blog/" aria-current="page">Blog</a>
         </div>
-        <div class="fig-stage" role="region" aria-label="可滚动的 Wordle GRPO 对比图">
-          <figure>
-            <svg class="fig-svg" id="grpo-runs-svg" viewBox="0 0 960 480" role="img" aria-labelledby="grpo-runs-title grpo-runs-desc" tabindex="0">
-              <title id="grpo-runs-title">四条 Wordle GRPO 曲线的训练解题率、训练-推理不匹配，以及 held-out 评测</title>
-              <desc id="grpo-runs-desc">0 mismatch 的 XoRL 运行在第 128 步达到 70.8% 训练解题率，held-out 评测解题率为 77.4%。River 基线达到 68.4% 训练解题率和 76.4% held-out 评测解题率。XoRL 基线达到 58.1% 训练解题率和 63.9% held-out 评测解题率。Tinker 基线达到 51.4% 训练解题率和 49.2% held-out 评测解题率。图例中的每一项可以开关对应曲线。</desc>
-              <g data-js-layer></g>
-            </svg>
-          </figure>
-        </div>
-        <p class="grpo-comparison-note">
-          我们训练 Qwen3.6-35B-A3B 来玩 Wordle。在我们的训练引擎 XoRL 里，可以以 0 train-infer mismatch 运行（青色），解题率相对我们的基线有明显提升。
-          我们与托管 RL 服务 River 和 Tinker 的基线对比；它们是闭源的，很可能在许多方面与 XoRL 不同。
-          三条基线都使用 vanilla Importance Sampling，测得的训练-推理不匹配（K3）相近，但解题率差别很大。
-        </p>
-        <p class="grpo-comparison-note">
-          <a href="#results-conclusion">点这里跳到经验结果的分析与消融（我们用 CISPO 训练时，Tinker 好得多）</a>。
-        </p>
-      </div>
-
-      <div class="lede lede-problem" data-reveal>
-        <p>
-          开源 RL 栈普遍受 <i>train-infer mismatch</i> 困扰：训练
-          引擎<label for="sn-training-engines" class="sidenote-number"></label><input type="checkbox" id="sn-training-engines" class="margin-toggle"><span class="sidenote"><a href="https://github.com/NVIDIA/Megatron-LM">Megatron-LM</a>、<a href="https://github.com/pytorch/torchtitan">TorchTitan</a> 与 <a href="https://github.com/togethercomputer/xorl">XoRL</a>。</span>
-          和推理引擎<label for="sn-inference-engines" class="sidenote-number"></label><input type="checkbox" id="sn-inference-engines" class="margin-toggle"><span class="sidenote"><a href="https://github.com/sgl-project/sglang">SGLang</a>、<a href="https://github.com/vllm-project/vllm">vLLM</a> 与 <a href="https://github.com/NVIDIA/TensorRT-LLM">TensorRT-LLM</a>。</span>
-          算出的 logprobs <i>对不上</i>。
-        </p>
-      </div>
-
-      <div class="lede" data-reveal>
-        <p>
-          我们训练 Qwen3.6-35B-A3B 来玩 <a href="https://github.com/togethercomputer/xorl-client/pull/13">Wordle</a>，并表明消除训练-推理不匹配后，我们开源 RL 栈的解题率从 63.9% 提升到 77.4%。本文将说明我们如何对齐训练引擎
-          （<a href="https://github.com/togethercomputer/xorl">XoRL</a>）和推理引擎（我们 fork 的
-          <a href="https://github.com/togethercomputer/xorl-sglang">SGLang</a>），从而以 0 mismatch 训练
-          <a href="https://huggingface.co/deepseek-ai/DeepSeek-V4">DeepSeek</a>、
-          <a href="https://huggingface.co/zai-org/GLM-5.2">GLM</a> 与
-          <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B">Qwen</a> 这类开源权重 MoE——也就是让 XoRL 与 SGLang 产出逐字节相同的 logprobs。随后我们会讨论<a href="#results-conclusion">以 0 mismatch 训练的代价与收益</a>，并探讨缓解不匹配的其他方案。
-          </p>
-          <p>
-            <a href="https://github.com/togethercomputer/xorl">我们的全部代码都是开源的</a>。
-        </p>
-      </div>
+      </nav>
     </header>
 
     <div class="layout">
@@ -234,6 +174,83 @@
           </ul>
         </nav>
       </details>
+
+    <header class="masthead" id="top">
+      <h1 class="masthead-title" aria-label="开源权重 MoE RL 的 0 train-infer mismatch：开源代码里的逐字节对齐">
+        <span class="masthead-title-line masthead-title-line-primary">
+          <span class="masthead-title-prefix" aria-hidden="true"></span>
+          <span class="masthead-title-core"><span class="masthead-title-anchor masthead-title-anchor-zero">0</span> train-infer mismatch</span>
+        </span>
+        <span class="masthead-title-line">
+          <span class="masthead-title-prefix">for</span>
+          <span class="masthead-title-core"><span class="masthead-title-anchor">O</span>pen-weight MoE RL</span>
+        </span>
+        <span class="masthead-title-line">
+          <span class="masthead-title-prefix">in</span>
+          <span class="masthead-title-core"><span class="masthead-title-anchor">O</span>pen-source code</span>
+        </span>
+      </h1>
+      <p class="masthead-subtitle">开源权重 MoE RL 的逐字节训练-推理对齐</p>
+      <p class="article-byline-note">
+        这是中文版，图和测量跟英文原文一样。英文在这儿：<a href="https://kiddyboots216.github.io/mismatch/">kiddyboots216.github.io/mismatch</a>
+      </p>
+
+      <div class="fig-shell grpo-runs-figure" id="fig-grpo-runs" data-reveal>
+        <div class="grpo-runs-controls" id="grpo-runs-controls">
+          <fieldset class="grpo-runs-series">
+            <legend>显示</legend>
+            <label><input type="checkbox" id="grpo-show-solve" checked> Solve rate（解题率）</label>
+            <label><input type="checkbox" id="grpo-show-k3"> 训练-推理不匹配（K3）</label>
+          </fieldset>
+          <ul class="grpo-runs-legend" id="grpo-legend" aria-hidden="false" aria-label="开或关各条曲线">
+            <li data-series="0-K3"><span class="grpo-legend-swatch grpo-swatch-zerok3"></span><span>0 mismatch<br>（XoRL）</span></li>
+            <li data-series="IS"><span class="grpo-legend-swatch grpo-swatch-xorl-deep"></span><span>Importance Sampling Baseline<br>（XoRL）</span></li>
+            <li data-series="RIVER-IS"><span class="grpo-legend-swatch grpo-swatch-is"></span><span>IS Baseline<br>（River）</span></li>
+            <li data-series="TINKER"><span class="grpo-legend-swatch grpo-swatch-tinker"></span><span>IS Baseline<br>（Tinker）</span></li>
+          </ul>
+        </div>
+        <div class="fig-stage" role="region" aria-label="可滚动的 Wordle GRPO 对比图">
+          <figure>
+            <svg class="fig-svg" id="grpo-runs-svg" viewBox="0 0 960 480" role="img" aria-labelledby="grpo-runs-title grpo-runs-desc" tabindex="0">
+              <title id="grpo-runs-title">四条 Wordle GRPO 曲线的训练解题率、训练-推理不匹配，以及 held-out 评测</title>
+              <desc id="grpo-runs-desc">0 mismatch 的 XoRL 运行在第 128 步达到 70.8% 训练解题率，held-out 评测解题率为 77.4%。River 基线达到 68.4% 训练解题率和 76.4% held-out 评测解题率。XoRL 基线达到 58.1% 训练解题率和 63.9% held-out 评测解题率。Tinker 基线达到 51.4% 训练解题率和 49.2% held-out 评测解题率。图例中的每一项可以开关对应曲线。</desc>
+              <g data-js-layer></g>
+            </svg>
+          </figure>
+        </div>
+        <p class="grpo-comparison-note">
+          我们训练 Qwen3.6-35B-A3B 来玩 Wordle。在我们的训练引擎 XoRL 里，可以以 0 train-infer mismatch 运行（青色），解题率相对我们的基线有明显提升。
+          我们与托管 RL 服务 River 和 Tinker 的基线对比；它们是闭源的，很可能在许多方面与 XoRL 不同。
+          三条基线都使用 vanilla Importance Sampling，测得的训练-推理不匹配（K3）相近，但解题率差别很大。
+        </p>
+        <p class="grpo-comparison-note">
+          <a href="#results-conclusion">点这里跳到经验结果的分析与消融（我们用 CISPO 训练时，Tinker 好得多）</a>。
+        </p>
+      </div>
+
+      <div class="lede lede-problem" data-reveal>
+        <p>
+          开源 RL 栈普遍受 <i>train-infer mismatch</i> 困扰：训练
+          引擎<label for="sn-training-engines" class="sidenote-number"></label><input type="checkbox" id="sn-training-engines" class="margin-toggle"><span class="sidenote"><a href="https://github.com/NVIDIA/Megatron-LM">Megatron-LM</a>、<a href="https://github.com/pytorch/torchtitan">TorchTitan</a> 与 <a href="https://github.com/togethercomputer/xorl">XoRL</a>。</span>
+          和推理引擎<label for="sn-inference-engines" class="sidenote-number"></label><input type="checkbox" id="sn-inference-engines" class="margin-toggle"><span class="sidenote"><a href="https://github.com/sgl-project/sglang">SGLang</a>、<a href="https://github.com/vllm-project/vllm">vLLM</a> 与 <a href="https://github.com/NVIDIA/TensorRT-LLM">TensorRT-LLM</a>。</span>
+          算出的 logprobs <i>对不上</i>。
+        </p>
+      </div>
+
+      <div class="lede" data-reveal>
+        <p>
+          我们训练 Qwen3.6-35B-A3B 来玩 <a href="https://github.com/togethercomputer/xorl-client/pull/13">Wordle</a>，并表明消除训练-推理不匹配后，我们开源 RL 栈的解题率从 63.9% 提升到 77.4%。本文将说明我们如何对齐训练引擎
+          （<a href="https://github.com/togethercomputer/xorl">XoRL</a>）和推理引擎（我们 fork 的
+          <a href="https://github.com/togethercomputer/xorl-sglang">SGLang</a>），从而以 0 mismatch 训练
+          <a href="https://huggingface.co/deepseek-ai/DeepSeek-V4">DeepSeek</a>、
+          <a href="https://huggingface.co/zai-org/GLM-5.2">GLM</a> 与
+          <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B">Qwen</a> 这类开源权重 MoE——也就是让 XoRL 与 SGLang 产出逐字节相同的 logprobs。随后我们会讨论<a href="#results-conclusion">以 0 mismatch 训练的代价与收益</a>，并探讨缓解不匹配的其他方案。
+          </p>
+          <p>
+            <a href="https://github.com/togethercomputer/xorl">我们的全部代码都是开源的</a>。
+        </p>
+      </div>
+    </header>
 
       <main id="main-content" tabindex="-1">
         <article class="post-content">
