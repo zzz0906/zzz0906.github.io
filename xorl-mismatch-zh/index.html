@@ -6,12 +6,12 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="XoRL 与 SGLang 如何对齐决定比特的前向计算，以 0 训练-推理不匹配训练开源权重 MoE。">
+    <meta name="description" content="XoRL 与 SGLang 如何对齐决定比特的前向，以 0 train-infer mismatch 训练开源 MoE。">
     <meta name="color-scheme" content="light">
-    <title>开源权重 MoE RL 的 0 train-infer mismatch：开源代码里的逐字节对齐</title>
+    <title>开源 MoE 的 0 train-infer mismatch</title>
     <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="stylesheet" href="vendor/katex/katex.min.css">
-    <link rel="stylesheet" href="styles.css?v=20260818-textwidth-v1">
+    <link rel="stylesheet" href="styles.css?v=20260819-title-v1">
     <style>
       :root {
         --sans: Inter, "Noto Sans SC", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
@@ -46,12 +46,72 @@
           <a href="/">Home</a>
           <a href="/research/">Research</a>
           <a href="/publication/">Publication</a>
-          <a href="/blog/" aria-current="page">Blog</a>
+          <a href="/xorl-mismatch-zh/" aria-current="page">Blog</a>
         </div>
       </nav>
     </header>
 
     <div class="layout">
+    <header class="masthead" id="top">
+      <h1 class="masthead-title">开源 MoE 的 0 train-infer mismatch</h1>
+
+      <div class="fig-shell grpo-runs-figure" id="fig-grpo-runs" data-reveal>
+        <div class="grpo-runs-controls" id="grpo-runs-controls">
+          <fieldset class="grpo-runs-series">
+            <legend>显示</legend>
+            <label><input type="checkbox" id="grpo-show-solve" checked> solve rate</label>
+            <label><input type="checkbox" id="grpo-show-k3"> train-infer mismatch（K3）</label>
+          </fieldset>
+          <ul class="grpo-runs-legend" id="grpo-legend" aria-hidden="false" aria-label="开或关各条曲线">
+            <li data-series="0-K3"><span class="grpo-legend-swatch grpo-swatch-zerok3"></span><span>0 mismatch<br>（XoRL）</span></li>
+            <li data-series="IS"><span class="grpo-legend-swatch grpo-swatch-xorl-deep"></span><span>Importance Sampling Baseline<br>（XoRL）</span></li>
+            <li data-series="RIVER-IS"><span class="grpo-legend-swatch grpo-swatch-is"></span><span>IS Baseline<br>（River）</span></li>
+            <li data-series="TINKER"><span class="grpo-legend-swatch grpo-swatch-tinker"></span><span>IS Baseline<br>（Tinker）</span></li>
+          </ul>
+        </div>
+        <div class="fig-stage" role="region" aria-label="可滚动的 Wordle GRPO 对比图">
+          <figure>
+            <svg class="fig-svg" id="grpo-runs-svg" viewBox="0 0 960 480" role="img" aria-labelledby="grpo-runs-title grpo-runs-desc" tabindex="0">
+              <title id="grpo-runs-title">四条 Wordle GRPO 曲线的训练解题率、训练-推理不匹配，以及 held-out 评测</title>
+              <desc id="grpo-runs-desc">0 mismatch 的 XoRL 运行在第 128 步达到 70.8% 训练解题率，held-out 评测解题率为 77.4%。River 基线达到 68.4% 训练解题率和 76.4% held-out 评测解题率。XoRL 基线达到 58.1% 训练解题率和 63.9% held-out 评测解题率。Tinker 基线达到 51.4% 训练解题率和 49.2% held-out 评测解题率。图例中的每一项可以开关对应曲线。</desc>
+              <g data-js-layer></g>
+            </svg>
+          </figure>
+        </div>
+        <p class="grpo-comparison-note">
+          我们训练 Qwen3.6-35B-A3B 来玩 Wordle。在我们的训练引擎 XoRL 里，可以以 0 train-infer mismatch 运行（青色），solve rate 相对我们的基线有明显提升。
+          我们与托管 RL 服务 River 和 Tinker 的基线对比；它们是闭源的，很可能在许多方面与 XoRL 不同。
+          三条基线都使用 vanilla Importance Sampling，测得的 train-infer mismatch（K3）相近，但 solve rate 差别很大。
+        </p>
+        <p class="grpo-comparison-note">
+          <a href="#results-conclusion">详见经验结果的分析与消融（我们用 CISPO 训练时，Tinker 明显更好）</a>。
+        </p>
+      </div>
+
+      <div class="lede lede-problem" data-reveal>
+        <p>
+          开源 RL 栈普遍受 <i>train-infer mismatch</i> 困扰：训练
+          引擎<label for="sn-training-engines" class="sidenote-number"></label><input type="checkbox" id="sn-training-engines" class="margin-toggle"><span class="sidenote"><a href="https://github.com/NVIDIA/Megatron-LM">Megatron-LM</a>、<a href="https://github.com/pytorch/torchtitan">TorchTitan</a> 与 <a href="https://github.com/togethercomputer/xorl">XoRL</a>。</span>
+          和推理引擎<label for="sn-inference-engines" class="sidenote-number"></label><input type="checkbox" id="sn-inference-engines" class="margin-toggle"><span class="sidenote"><a href="https://github.com/sgl-project/sglang">SGLang</a>、<a href="https://github.com/vllm-project/vllm">vLLM</a> 与 <a href="https://github.com/NVIDIA/TensorRT-LLM">TensorRT-LLM</a>。</span>
+          算出的 logprobs <i>无法对齐</i>。
+        </p>
+      </div>
+
+      <div class="lede" data-reveal>
+        <p>
+          我们训练 Qwen3.6-35B-A3B 来玩 <a href="https://github.com/togethercomputer/xorl-client/pull/13">Wordle</a>，并表明消除 train-infer mismatch 后，我们开源 RL 栈的 solve rate 从 63.9% 提升到 77.4%。本文将说明我们如何对齐训练引擎
+          （<a href="https://github.com/togethercomputer/xorl">XoRL</a>）和推理引擎（我们 fork 的
+          <a href="https://github.com/togethercomputer/xorl-sglang">SGLang</a>），从而以 0 mismatch 训练
+          <a href="https://huggingface.co/deepseek-ai/DeepSeek-V4">DeepSeek</a>、
+          <a href="https://huggingface.co/zai-org/GLM-5.2">GLM</a> 与
+          <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B">Qwen</a> 这类开源权重 MoE——也就是让 XoRL 与 SGLang 产出 bitwise-identical 的 logprobs。随后我们会讨论<a href="#results-conclusion">以 0 mismatch 训练的代价与收益</a>，并探讨缓解 mismatch 的其他方案。
+          </p>
+          <p>
+            <a href="https://github.com/togethercomputer/xorl">我们的全部代码都是开源的</a>。
+        </p>
+      </div>
+    </header>
+
       <nav id="toc" aria-label="目录">
         <p id="toc-title">
           目录
@@ -77,13 +137,13 @@
               <li>
                 <a href="#kernels">Qwen3-8B</a>
                 <ul>
-                  <li><a href="#lora">低秩适配器</a></li>
-                  <li><a href="#kernel-rope">旋转位置编码</a></li>
+                  <li><a href="#lora">LoRA</a></li>
+                  <li><a href="#kernel-rope">RoPE</a></li>
                   <li><a href="#kernel-norms">RMSNorm</a></li>
-                  <li><a href="#kernel-gemm">矩阵乘累加</a></li>
+                  <li><a href="#kernel-gemm">GEMM</a></li>
                   <li><a href="#kernel-swiglu">SwiGLU 激活</a></li>
-                  <li><a href="#kernel-attention">稠密注意力</a></li>
-                  <li><a href="#kernel-head">语言模型头</a></li>
+                  <li><a href="#kernel-attention">Dense attention</a></li>
+                  <li><a href="#kernel-head">LM head</a></li>
                   <li><a href="#sampling-probability">采样变换</a></li>
                   <li><a href="#dense-result">性能</a></li>
                 </ul>
@@ -110,7 +170,7 @@
                 <ul>
                   <li><a href="#glm-sparse">稀疏注意力</a></li>
                   <li><a href="#glm-moe">MoE layers</a></li>
-                  <li><a href="#glm-head">分布式头</a></li>
+                  <li><a href="#glm-head">Distributed LM head</a></li>
                   <li><a href="#glm-result">性能</a></li>
                 </ul>
               </li>
@@ -120,7 +180,7 @@
                   <li><a href="#dsv4-mhc">四路残差混合</a></li>
                   <li><a href="#dsv4-attention">压缩稀疏注意力</a></li>
                   <li><a href="#dsv4-moe">MoE layers</a></li>
-                  <li><a href="#dsv4-head">最终混合与头</a></li>
+                  <li><a href="#dsv4-head">最终混合与 LM head</a></li>
                   <li><a href="#dsv4-result">性能</a></li>
                 </ul>
               </li>
@@ -167,86 +227,12 @@
         </nav>
       </details>
 
-    <header class="masthead" id="top">
-      <h1 class="masthead-title" aria-label="开源权重 MoE RL 的 0 train-infer mismatch：开源代码里的逐字节对齐">
-        <span class="masthead-title-line masthead-title-line-primary">
-          <span class="masthead-title-prefix" aria-hidden="true"></span>
-          <span class="masthead-title-core"><span class="masthead-title-anchor masthead-title-anchor-zero">0</span> train-infer mismatch</span>
-        </span>
-        <span class="masthead-title-line">
-          <span class="masthead-title-prefix">for</span>
-          <span class="masthead-title-core"><span class="masthead-title-anchor">O</span>pen-weight MoE RL</span>
-        </span>
-        <span class="masthead-title-line">
-          <span class="masthead-title-prefix">in</span>
-          <span class="masthead-title-core"><span class="masthead-title-anchor">O</span>pen-source code</span>
-        </span>
-      </h1>
-      <p class="masthead-subtitle">开源权重 MoE RL 的逐字节训练-推理对齐</p>
-
-      <div class="fig-shell grpo-runs-figure" id="fig-grpo-runs" data-reveal>
-        <div class="grpo-runs-controls" id="grpo-runs-controls">
-          <fieldset class="grpo-runs-series">
-            <legend>显示</legend>
-            <label><input type="checkbox" id="grpo-show-solve" checked> Solve rate（解题率）</label>
-            <label><input type="checkbox" id="grpo-show-k3"> 训练-推理不匹配（K3）</label>
-          </fieldset>
-          <ul class="grpo-runs-legend" id="grpo-legend" aria-hidden="false" aria-label="开或关各条曲线">
-            <li data-series="0-K3"><span class="grpo-legend-swatch grpo-swatch-zerok3"></span><span>0 mismatch<br>（XoRL）</span></li>
-            <li data-series="IS"><span class="grpo-legend-swatch grpo-swatch-xorl-deep"></span><span>Importance Sampling Baseline<br>（XoRL）</span></li>
-            <li data-series="RIVER-IS"><span class="grpo-legend-swatch grpo-swatch-is"></span><span>IS Baseline<br>（River）</span></li>
-            <li data-series="TINKER"><span class="grpo-legend-swatch grpo-swatch-tinker"></span><span>IS Baseline<br>（Tinker）</span></li>
-          </ul>
-        </div>
-        <div class="fig-stage" role="region" aria-label="可滚动的 Wordle GRPO 对比图">
-          <figure>
-            <svg class="fig-svg" id="grpo-runs-svg" viewBox="0 0 960 480" role="img" aria-labelledby="grpo-runs-title grpo-runs-desc" tabindex="0">
-              <title id="grpo-runs-title">四条 Wordle GRPO 曲线的训练解题率、训练-推理不匹配，以及 held-out 评测</title>
-              <desc id="grpo-runs-desc">0 mismatch 的 XoRL 运行在第 128 步达到 70.8% 训练解题率，held-out 评测解题率为 77.4%。River 基线达到 68.4% 训练解题率和 76.4% held-out 评测解题率。XoRL 基线达到 58.1% 训练解题率和 63.9% held-out 评测解题率。Tinker 基线达到 51.4% 训练解题率和 49.2% held-out 评测解题率。图例中的每一项可以开关对应曲线。</desc>
-              <g data-js-layer></g>
-            </svg>
-          </figure>
-        </div>
-        <p class="grpo-comparison-note">
-          我们训练 Qwen3.6-35B-A3B 来玩 Wordle。在我们的训练引擎 XoRL 里，可以以 0 train-infer mismatch 运行（青色），解题率相对我们的基线有明显提升。
-          我们与托管 RL 服务 River 和 Tinker 的基线对比；它们是闭源的，很可能在许多方面与 XoRL 不同。
-          三条基线都使用 vanilla Importance Sampling，测得的训练-推理不匹配（K3）相近，但解题率差别很大。
-        </p>
-        <p class="grpo-comparison-note">
-          <a href="#results-conclusion">详见经验结果的分析与消融（我们用 CISPO 训练时，Tinker 明显更好）</a>。
-        </p>
-      </div>
-
-      <div class="lede lede-problem" data-reveal>
-        <p>
-          开源 RL 栈普遍受 <i>train-infer mismatch</i> 困扰：训练
-          引擎<label for="sn-training-engines" class="sidenote-number"></label><input type="checkbox" id="sn-training-engines" class="margin-toggle"><span class="sidenote"><a href="https://github.com/NVIDIA/Megatron-LM">Megatron-LM</a>、<a href="https://github.com/pytorch/torchtitan">TorchTitan</a> 与 <a href="https://github.com/togethercomputer/xorl">XoRL</a>。</span>
-          和推理引擎<label for="sn-inference-engines" class="sidenote-number"></label><input type="checkbox" id="sn-inference-engines" class="margin-toggle"><span class="sidenote"><a href="https://github.com/sgl-project/sglang">SGLang</a>、<a href="https://github.com/vllm-project/vllm">vLLM</a> 与 <a href="https://github.com/NVIDIA/TensorRT-LLM">TensorRT-LLM</a>。</span>
-          算出的 logprobs <i>无法对齐</i>。
-        </p>
-      </div>
-
-      <div class="lede" data-reveal>
-        <p>
-          我们训练 Qwen3.6-35B-A3B 来玩 <a href="https://github.com/togethercomputer/xorl-client/pull/13">Wordle</a>，并表明消除训练-推理不匹配后，我们开源 RL 栈的解题率从 63.9% 提升到 77.4%。本文将说明我们如何对齐训练引擎
-          （<a href="https://github.com/togethercomputer/xorl">XoRL</a>）和推理引擎（我们 fork 的
-          <a href="https://github.com/togethercomputer/xorl-sglang">SGLang</a>），从而以 0 mismatch 训练
-          <a href="https://huggingface.co/deepseek-ai/DeepSeek-V4">DeepSeek</a>、
-          <a href="https://huggingface.co/zai-org/GLM-5.2">GLM</a> 与
-          <a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B">Qwen</a> 这类开源权重 MoE——也就是让 XoRL 与 SGLang 产出逐字节相同的 logprobs。随后我们会讨论<a href="#results-conclusion">以 0 mismatch 训练的代价与收益</a>，并探讨缓解不匹配的其他方案。
-          </p>
-          <p>
-            <a href="https://github.com/togethercomputer/xorl">我们的全部代码都是开源的</a>。
-        </p>
-      </div>
-    </header>
-
       <main id="main-content" tabindex="-1">
         <article class="post-content">
           <section class="background-primer" id="numerical-background" aria-labelledby="numerical-background-title" data-reveal>
             <h2 id="numerical-background-title">不匹配从哪来，又到哪去？</h2>
             <p class="background-lede">
-              在 RL 里，我们用推理引擎采样 rollout，再把这些采样序列送进训练引擎做 prefill，用得到的对数概率反传梯度来更新模型。
+              在 RL 里，我们用推理引擎采样 rollout，再把这些采样序列送进训练引擎做 prefill，用得到的 logprob 反传梯度来更新模型。
               两个引擎可以在前向的许多位置算出不同的 logprobs，而这些 rollout 因此带上的 off-policy 性，也有多种校正办法。
             </p>
 
@@ -374,7 +360,7 @@
             <h3 id="background-importance-ratio">不匹配如何改变 GRPO 更新</h3>
             <p data-teaching-step="on-policy-gradient">
               记 <i class="policy-q">q</i><sub class="policy-q">θ</sub> 为训练端评估的策略，
-              Â<sub>t</sub> 为 GRPO 中 detach 后的组相对优势<a class="ref-mark sidenote-number" href="https://arxiv.org/abs/2402.03300" aria-label="Shao et al., DeepSeekMath"></a><span class="sidenote citation-sidenote"><a href="https://arxiv.org/abs/2402.03300">Shao et al.，「DeepSeekMath」（2024）</a>。引入 GRPO 及其 importance ratio。</span>。
+              Â<sub>t</sub> 为 GRPO 中 detach 后的group-relative advantage<a class="ref-mark sidenote-number" href="https://arxiv.org/abs/2402.03300" aria-label="Shao et al., DeepSeekMath"></a><span class="sidenote citation-sidenote"><a href="https://arxiv.org/abs/2402.03300">Shao et al.，「DeepSeekMath」（2024）</a>。引入 GRPO 及其 importance ratio。</span>。
               对前缀 <i>h</i><sub>t</sub> 之后采样的 token <i>a</i><sub>t</sub>，on-policy 梯度是：
             </p>
             <div class="math-display math-display-compact" data-tex="\nabla_\theta J(\theta)=\sum_t\mathbb E_{\substack{h_t\sim d_{{\color{#3e88a6}q_\theta}}\\a_t\sim {\color{#3e88a6}q_\theta}(\cdot\mid h_t)}}\!\left[\widehat A_t\nabla_\theta\log {\color{#3e88a6}q_\theta}(a_t\mid h_t)\right]">
@@ -485,8 +471,8 @@
               <div class="fig-stage">
                 <figure>
                   <svg class="fig-svg" id="contract-map-svg" viewBox="0 0 960 530" role="img" aria-labelledby="contract-map-svg-title contract-map-svg-desc" data-seq="idle">
-                    <title id="contract-map-svg-title">从选中 token 的对数概率往回走到第一个数值差异</title>
-                    <desc id="contract-map-svg-desc">训练端打分、推理 prefill 与推理 decode 从相同的输入和权重出发。比较它们选中 token 对数概率的字节，再沿前向往回追踪到第一个不同的算子，并把该算子收缩成一行、一次 reduction 或一次状态更新。对齐它的输入、常数、舍入点、完整加法顺序以及状态交接。只有在生产形状下的字节比较再次通过之后，才允许改调度、布局与传输。</desc>
+                    <title id="contract-map-svg-title">从选中 token 的 logprob往回走到第一个数值差异</title>
+                    <desc id="contract-map-svg-desc">训练端打分、推理 prefill 与推理 decode 从相同的输入和权重出发。比较它们选中 token logprob 的字节，再沿前向往回追踪到第一个不同的算子，并把该算子收缩成一行、一次 reduction 或一次状态更新。对齐它的输入、常数、舍入点、完整加法顺序以及状态交接。只有在生产形状下的字节比较再次通过之后，才允许改调度、布局与传输。</desc>
                     <g data-js-layer></g>
                   </svg>
                 </figure>
@@ -777,7 +763,7 @@
               SGLang RMSNorm ↗ </a>
             </p>
 
-            <h3 id="kernel-gemm">矩阵乘：沿 K 做同一次 reduction</h3>
+            <h3 id="kernel-gemm">GEMM：沿 K 做同一次 reduction</h3>
             <p>
               A <dfn class="term-definition" tabindex="0" data-definition="通用矩阵乘，大多数模型投影背后的分块运算。">GEMM</dfn>
               沿 <i>K</i> 把乘积加起来得到每个输出。训练会乘上数千行 packed token，
@@ -842,7 +828,7 @@
               <a class="source-link implementation-pr" data-pr-topic="swiglu" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/batch_invariant_ops/bi_silu_and_mul.py#L33-L76">
               SGLang 只舍入一次的 SwiGLU kernel ↗ </a>
             </p>
-            <h3 id="kernel-attention">稠密注意力：一次流式 reduction</h3>
+            <h3 id="kernel-attention">Dense attention：一次流式 reduction</h3>
             <p>
               稠密注意力是一种 token 混合算子：它返回我们称为 value 的低维投影的线性组合，线性组合的权重是我们称为 key 与 query 的低维投影点积的 softmax。
               存在大值时直接算 softmax 可能数值不稳，但 softmax 对平移不变，因此可以从输入里减去最大值来稳定它。朴素取最大值需要对整个向量扫一遍。FlashAttention 改做
@@ -869,9 +855,9 @@
               <a href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/layers/attention/backend/flash_attention.py#L397-L456"><code>num_splits=1</code></a>
               的 FlashAttention 4，因此两边都不再做第二次合并。
             </p>
-            <h3 id="kernel-head">语言模型头：对词表做一次 reduction</h3>
+            <h3 id="kernel-head">LM head：对词表做一次 reduction</h3>
             <p>
-              语言模型头接收最终隐状态，为词表里的每个 token 算出一个 logit。
+              LM head 接收最终隐状态，为词表里的每个 token 算出一个 logit。
               对选中的 token <i>y</i>，它的 logprob 是选中 logit 减去整个词表上的
               log-sum-exp：
             </p>
@@ -911,9 +897,9 @@
             <p class="implementation-pr-reference">
               <span> 代码 </span>
               <a class="source-link implementation-pr" data-pr-topic="head" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/ops/bi_families_v2.py#L357-L695">
-              XoRL 语言模型头 ↗ </a>
+              XoRL LM head ↗ </a>
               <a class="source-link implementation-pr" data-pr-topic="head" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/batch_invariant_ops/bi_families_v2.py#L324-L684">
-              SGLang 语言模型头 ↗ </a>
+              SGLang LM head ↗ </a>
             </p>
             <h3 id="sampling-probability">采样变换</h3>
             <p>
@@ -947,8 +933,8 @@
                 </thead>
                 <tbody>
                   <tr><th scope="row">关闭开关</th><td><strong>2,116 tok/s</strong></td><td>1.000×</td></tr>
-                  <tr><th scope="row">逐字节对齐</th><td><strong>1,774 tok/s</strong></td><td>0.839×</td></tr>
-                  <tr><th scope="row">逐字节对齐，去掉 batch-invariant 稠密 GEMM</th><td><strong>1,970 tok/s</strong></td><td>0.931×</td></tr>
+                  <tr><th scope="row">bitwise-aligned</th><td><strong>1,774 tok/s</strong></td><td>0.839×</td></tr>
+                  <tr><th scope="row">bitwise-aligned，去掉 batch-invariant 稠密 GEMM</th><td><strong>1,970 tok/s</strong></td><td>0.931×</td></tr>
                 </tbody>
               </table>
             </section>
@@ -1949,7 +1935,7 @@
                 <tbody>
                   <tr><th scope="row">关闭开关</th><td><strong>7,863 tok/s</strong></td><td>104.0 s</td><td>1.000×</td></tr>
                   <tr><th scope="row">除 GDN 外已对齐</th><td><strong>5,778 tok/s</strong></td><td>134.4 s</td><td>0.735×</td></tr>
-                  <tr><th scope="row">逐字节对齐</th><td><strong>4,767 tok/s</strong></td><td>164.2 s</td><td>0.606×</td></tr>
+                  <tr><th scope="row">bitwise-aligned</th><td><strong>4,767 tok/s</strong></td><td>164.2 s</td><td>0.606×</td></tr>
                 </tbody>
               </table>
             </section>
@@ -2076,7 +2062,7 @@
               LoRA 或全权值前向之后，我们把十六份部分输出按逻辑 rank 顺序摆好，再施加<a href="#parallel-ep">固定的 expert 输出 reduction</a>；十六个贡献者需要四层。
             </p>
 
-            <h3 id="glm-head">分布式语言模型头</h3>
+            <h3 id="glm-head">Distributed LM head</h3>
             <p>
               推理可以把 <a href="https://huggingface.co/zai-org/GLM-5.2">GLM</a> 的 154,880-token
               词表切到十六个 rank 上，而训练端一次投影完整词表。形状不同的矩阵乘可能按不同
@@ -2090,9 +2076,9 @@
             <p class="implementation-pr-reference">
               <span> 代码 </span>
               <a class="source-link implementation-pr" data-pr-topic="glm-head" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/transformers/glm5/exact_lm_head_qlora.py">
-              XoRL 分布式语言模型头 ↗ </a>
+              XoRL distributed LM head ↗ </a>
               <a class="source-link implementation-pr" data-pr-topic="glm-head" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/layers/xorl_batch_invariant.py#L150-L292">
-              SGLang 分布式语言模型头 ↗ </a>
+              SGLang distributed LM head ↗ </a>
               <a class="source-link implementation-pr" data-pr-topic="glm-head" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/layers/logits_processor.py">
               SGLang logprob 计算 ↗ </a>
             </p>
@@ -2110,10 +2096,10 @@
                 </thead>
                 <tbody>
                   <tr><th scope="row">关闭开关</th><td><strong>147.6 tok/s</strong></td><td>1.000×</td></tr>
-                  <tr><th scope="row">逐字节对齐</th><td><strong>107.2 tok/s</strong></td><td>0.726×</td></tr>
-                  <tr><th scope="row">逐字节对齐，去掉 expert 路径对齐</th><td><strong>125.9 tok/s</strong></td><td>0.853×</td></tr>
-                  <tr><th scope="row">逐字节对齐，去掉稀疏注意力 selector</th><td><strong>110.2 tok/s</strong></td><td>0.747×</td></tr>
-                  <tr><th scope="row">逐字节对齐，去掉 batch-invariant 稠密 GEMM</th><td><strong>105.8 tok/s</strong></td><td>0.717×</td></tr>
+                  <tr><th scope="row">bitwise-aligned</th><td><strong>107.2 tok/s</strong></td><td>0.726×</td></tr>
+                  <tr><th scope="row">bitwise-aligned，去掉 expert 路径对齐</th><td><strong>125.9 tok/s</strong></td><td>0.853×</td></tr>
+                  <tr><th scope="row">bitwise-aligned，去掉稀疏注意力 selector</th><td><strong>110.2 tok/s</strong></td><td>0.747×</td></tr>
+                  <tr><th scope="row">bitwise-aligned，去掉 batch-invariant 稠密 GEMM</th><td><strong>105.8 tok/s</strong></td><td>0.717×</td></tr>
                 </tbody>
               </table>
             </section>
@@ -2280,18 +2266,18 @@
               SGLang expert 输出 reduction ↗ </a>
             </p>
 
-            <h3 id="dsv4-head">最终混合与语言模型头</h3>
+            <h3 id="dsv4-head">最终混合与 LM head</h3>
             <p>
               最后一个 decoder block 之后，<a href="#dsv4-mhc">mixer</a> 产出最后一行 BF16 隐状态，再由最后的 RMSNorm 归一化。
               LM head 用词表权值投影这一行，按 rank 顺序 gather TP shard，再做 log-softmax。这三步里任何一步，只要两个引擎做法不同，都会导致不匹配。
             </p>
             <p>
-              我们复用前面语言模型头里的<a href="#kernel-gemm">固定 <i>K</i> 投影</a>与有序 gather。SGLang 的 LoRA kernel 在普通基座 matmul 之上加上 rank-1 delta。我们按 rank 顺序 gather BF16 logits，从 XoRL 调用 SGLang 的 BF16 log-softmax，并用 FP32 log-softmax 实现 XoRL 的反向。
+              我们复用前面 LM head 里的<a href="#kernel-gemm">固定 <i>K</i> 投影</a>与有序 gather。SGLang 的 LoRA kernel 在普通基座 matmul 之上加上 rank-1 delta。我们按 rank 顺序 gather BF16 logits，从 XoRL 调用 SGLang 的 BF16 log-softmax，并用 FP32 log-softmax 实现 XoRL 的反向。
             </p>
             <p class="implementation-pr-reference">
               <span> 代码 </span>
               <a class="source-link implementation-pr" data-pr-topic="dsv4-head" href="https://github.com/togethercomputer/xorl/blob/e4693f00bb7291c6c3d6d7182fd5a2b69f394fa1/src/xorl/models/transformers/deepseek_v4/exact_lm_head.py">
-              XoRL DeepSeek-V4 语言模型头 ↗ </a>
+              XoRL DeepSeek-V4 LM head ↗ </a>
               <a class="source-link implementation-pr" data-pr-topic="dsv4-head" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/models/deepseek_v4.py">
               SGLang DeepSeek-V4 模型 ↗ </a>
               <a class="source-link implementation-pr" data-pr-topic="dsv4-head" href="https://github.com/togethercomputer/xorl-sglang/blob/b12ae25300ad24a5acf5aa37562d1fb93b2bf85d/python/sglang/srt/batch_invariant_ops/batch_invariant_ops.py#L386-L497">
@@ -2310,8 +2296,8 @@
                 </thead>
                 <tbody>
                   <tr><th scope="row">关闭开关</th><td><strong>46.0 tok/s</strong></td><td>1.000×</td></tr>
-                  <tr><th scope="row">逐字节对齐</th><td><strong>40.2 tok/s</strong></td><td>0.874×</td></tr>
-                  <tr><th scope="row">逐字节对齐，去掉 expert 路径对齐</th><td><strong>42.5 tok/s</strong></td><td>0.925×</td></tr>
+                  <tr><th scope="row">bitwise-aligned</th><td><strong>40.2 tok/s</strong></td><td>0.874×</td></tr>
+                  <tr><th scope="row">bitwise-aligned，去掉 expert 路径对齐</th><td><strong>42.5 tok/s</strong></td><td>0.925×</td></tr>
                 </tbody>
               </table>
             </section>
@@ -2341,7 +2327,7 @@
               <div class="branch-runs-controls">
                 <fieldset class="branch-runs-series">
                   <legend>显示</legend>
-                  <label><input type="checkbox" id="tinker-show-solve" checked> Solve rate（解题率）</label>
+                  <label><input type="checkbox" id="tinker-show-solve" checked> solve rate</label>
                   <label><input type="checkbox" id="tinker-show-k3" checked> K3</label>
                   <label><input type="checkbox" id="tinker-show-logprob" checked> Trainer mean logprob（训练端平均 logprob）</label>
                 </fieldset>
@@ -2380,7 +2366,7 @@
               <div class="grpo-runs-controls">
                 <fieldset class="grpo-runs-series">
                   <legend>显示</legend>
-                  <label><input type="checkbox" id="shared-outer-show-solve" checked> Solve rate（解题率）</label>
+                  <label><input type="checkbox" id="shared-outer-show-solve" checked> solve rate</label>
                   <label><input type="checkbox" id="shared-outer-show-k3"> K3</label>
                 </fieldset>
                 <ul class="grpo-runs-legend" id="shared-outer-legend" aria-label="开或关各条曲线">
@@ -2415,7 +2401,7 @@
               <div class="grpo-runs-controls">
                 <fieldset class="grpo-runs-series">
                   <legend>显示</legend>
-                  <label><input type="checkbox" id="objectives-show-solve" checked> Solve rate（解题率）</label>
+                  <label><input type="checkbox" id="objectives-show-solve" checked> solve rate</label>
                   <label><input type="checkbox" id="objectives-show-k3"> K3</label>
                 </fieldset>
                 <ul class="grpo-runs-legend" id="objectives-legend" aria-label="开或关各条曲线">
@@ -2445,7 +2431,7 @@
               <p>
                 记 <i>ρ</i><sub>t</sub> = <i class="policy-q">q</i><sub class="policy-q">t</sub> /
                 <i class="policy-mu">μ</i><sub class="policy-mu">t</sub> 为训练端对所采样 token 的概率，与推理在采样时记下的概率之比，
-                Â<sub>t</sub> 为 detach 后的组相对优势。三个目标函数的差别在于：在 <i>ρ</i><sub>t</sub> 乘到梯度之前对它做了什么。它们都不对它求导；我们求的是 log <i class="policy-q">q</i><sub class="policy-q">t</sub> 的导数。
+                Â<sub>t</sub> 为 detach 后的group-relative advantage。三个目标函数的差别在于：在 <i>ρ</i><sub>t</sub> 乘到梯度之前对它做了什么。它们都不对它求导；我们求的是 log <i class="policy-q">q</i><sub class="policy-q">t</sub> 的导数。
               </p>
 
               <h4>不截断的 importance sampling</h4>
@@ -2512,7 +2498,7 @@
               <div class="grpo-runs-controls">
                 <fieldset class="grpo-runs-series">
                   <legend>显示</legend>
-                  <label><input type="checkbox" id="replay-show-solve" checked> Solve rate（解题率）</label>
+                  <label><input type="checkbox" id="replay-show-solve" checked> solve rate</label>
                   <label><input type="checkbox" id="replay-show-k3"> K3</label>
                 </fieldset>
                 <ul class="grpo-runs-legend" id="replay-legend" aria-label="开或关各条曲线">
@@ -2617,7 +2603,7 @@
               <div class="grpo-runs-controls">
                 <fieldset class="grpo-runs-series">
                   <legend>显示</legend>
-                  <label><input type="checkbox" id="pipeline-show-solve" checked> Solve rate（解题率）</label>
+                  <label><input type="checkbox" id="pipeline-show-solve" checked> solve rate</label>
                   <label><input type="checkbox" id="pipeline-show-k3"> K3</label>
                 </fieldset>
                 <ul class="grpo-runs-legend" id="pipeline-legend" aria-label="开或关各条曲线">
@@ -2704,11 +2690,11 @@
                   <tbody>
                     <tr class="table-group"><th scope="rowgroup" colspan="3">共享机制</th></tr>
                     <tr><th scope="row"><a href="#kernel-rope">RoPE</a></th><td>构造同一张表并对齐旋转</td><td>同一张位置表、同一套 cast 与旋转算术</td></tr>
-                    <tr><th scope="row"><a href="#kernel-norms">归一化</a></th><td>跑同一套 batch-invariant RMSNorm 计算</td><td>residual 在何处相加、固定的 FP32 reduction 顺序、rsqrt、FP32 scale 与最终 cast</td></tr>
+                    <tr><th scope="row"><a href="#kernel-norms">RMSNorm</a></th><td>跑同一套 batch-invariant RMSNorm 计算</td><td>residual 在何处相加、固定的 FP32 reduction 顺序、rsqrt、FP32 scale 与最终 cast</td></tr>
                     <tr><th scope="row"><a href="#kernel-gemm">GEMM</a></th><td>使用我们的 Triton 参考实现，或输出相同的库 kernel</td><td>沿 K 按同一固定顺序累加乘积，不用 split-K</td></tr>
                     <tr><th scope="row"><a href="#kernel-swiglu">SwiGLU</a></th><td>在两个引擎里跑新的只舍入一次的 SwiGLU kernel</td><td>FP32 SiLU 与乘法，再做一次 BF16 输出 cast</td></tr>
                     <tr><th scope="row"><a href="#kernel-attention">Attention</a></th><td>两个引擎都调用 FlashAttention 4</td><td>同一 backend 与同一构建、同一参数，以及对 key/value 块做一次 reduction</td></tr>
-                    <tr><th scope="row"><a href="#kernel-head">语言模型头</a></th><td>对齐投影与流式 reduction</td><td>同一 GEMM 累加顺序、256-logit 分组与摘要合并树</td></tr>
+                    <tr><th scope="row"><a href="#kernel-head">LM head</a></th><td>对齐投影与流式 reduction</td><td>同一 GEMM 累加顺序、256-logit 分组与摘要合并树</td></tr>
                     <tr><th scope="row"><a href="#lora">LoRA（合并）</a></th><td>在两个引擎里构造相同的合并权值字节</td><td>投影前相同的 W + sBA 字节</td></tr>
                     <tr><th scope="row"><a href="#lora">LoRA（分离）</a></th><td>从 XoRL 调用 SGLang 的 LoRA 前向并实现反向</td><td>传给 SGLang 前向的同一对 BF16 A、B 矩阵</td></tr>
                     <tr><th scope="row"><a href="#sampling-probability">采样变换</a></th><td>把采样参数转给训练端并回放变换</td><td>采样前按同一顺序施加相同的 temperature、top-k、min-p 及其他变换</td></tr>
@@ -2727,7 +2713,7 @@
                     <tr><th scope="row"><a href="#glm-router">GLM router</a></th><td>从 XoRL 调用 SGLang 的 router</td><td>选出八个 expert 时使用的同一固定 K gate 投影与校正 bias，以及同一套 FP32 权重归一化</td></tr>
                     <tr><th scope="row"><a href="#glm-experts">GLM expert 前向</a></th><td>从 XoRL 调用 SGLang 扩展后的 FP8 expert 前向并实现反向</td><td>相同的 FP8 权值与 scale、BF16 LoRA 矩阵以及 routing 权重的放置位置</td></tr>
                     <tr><th scope="row"><a href="#glm-combine">GLM expert 输出相加</a></th><td>对十六个 rank 跑同一套 batch-invariant reduction</td><td>按逻辑 rank 顺序摆好的同一十六份 BF16 部分输出，同一套括号结构，在 FP64 里累加并舍入一次到 BF16</td></tr>
-                    <tr><th scope="row"><a href="#glm-head">GLM 语言模型头</a></th><td>投影同一十六份 shard 并按 rank 顺序 gather</td><td>相同的输入行、十六份词表 shard、投影 kernel、按 rank 排序的 gather 与最终概率 reduction</td></tr>
+                    <tr><th scope="row"><a href="#glm-head">GLM LM head</a></th><td>投影同一十六份 shard 并按 rank 顺序 gather</td><td>相同的输入行、十六份词表 shard、投影 kernel、按 rank 排序的 gather 与最终概率 reduction</td></tr>
                   </tbody>
                   <tbody>
                     <tr class="table-group"><th scope="rowgroup" colspan="3">DeepSeek-V4 组合</th></tr>
@@ -2737,7 +2723,7 @@
                     <tr><th scope="row"><a href="#dsv4-router">DeepSeek-V4 路由</a></th><td>从 XoRL 调用 SGLang 的 gate 投影与 selector</td><td>相同的 token 查找或固定 K gate 投影、sqrt-softplus、校正 bias、top-k slot 顺序与权重归一化</td></tr>
                     <tr><th scope="row"><a href="#dsv4-experts">DeepSeek-V4 expert 前向</a></th><td>从 XoRL 调用 SGLang 扩展后的 Marlin expert runner 并实现反向</td><td>相同的 packed MXFP4 权值、LoRA 插入点、行数、clamp、routing 权重放置与 BF16 输出求和</td></tr>
                     <tr><th scope="row"><a href="#dsv4-combine">DeepSeek-V4 expert 输出相加</a></th><td>在可变行交换之后跑同一套 batch-invariant reduction</td><td>相加前恢复到逻辑 rank 顺序的同一八份源 rank 输出</td></tr>
-                    <tr><th scope="row"><a href="#dsv4-head">DeepSeek-V4 语言模型头</a></th><td>Gather 词表 shard，并从 XoRL 调用 SGLang 的 log-softmax</td><td>同一套最终 mix、按 rank 排序的 BF16 词表 gather，以及 batch-invariant BF16 log-softmax</td></tr>
+                    <tr><th scope="row"><a href="#dsv4-head">DeepSeek-V4 LM head</a></th><td>Gather 词表 shard，并从 XoRL 调用 SGLang 的 log-softmax</td><td>同一套最终 mix、按 rank 排序的 BF16 词表 gather，以及 batch-invariant BF16 log-softmax</td></tr>
                   </tbody>
                   <tbody>
                     <tr class="table-group"><th scope="rowgroup" colspan="3">并行</th></tr>
@@ -2755,7 +2741,7 @@
     </div>
 
     <footer class="site-footer">
-      <div><p>开源权重语言模型的零训练-推理不匹配。 · <a href="/">Zhongzhu (Charlie) Zhou</a></p></div>
+      <div><p>开源 MoE 的 0 train-infer mismatch。 · <a href="/">Zhongzhu (Charlie) Zhou</a></p></div>
       <a href="#top">回到顶部 ↑</a>
     </footer>
   </body>
