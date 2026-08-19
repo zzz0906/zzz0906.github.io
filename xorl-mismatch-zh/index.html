@@ -213,7 +213,7 @@
           三条基线都使用 vanilla Importance Sampling，测得的训练-推理不匹配（K3）相近，但解题率差别很大。
         </p>
         <p class="grpo-comparison-note">
-          <a href="#results-conclusion">点这里跳到经验结果的分析与消融（我们用 CISPO 训练时，Tinker 好得多）</a>。
+          <a href="#results-conclusion">详见经验结果的分析与消融（我们用 CISPO 训练时，Tinker 明显更好）</a>。
         </p>
       </div>
 
@@ -222,7 +222,7 @@
           开源 RL 栈普遍受 <i>train-infer mismatch</i> 困扰：训练
           引擎<label for="sn-training-engines" class="sidenote-number"></label><input type="checkbox" id="sn-training-engines" class="margin-toggle"><span class="sidenote"><a href="https://github.com/NVIDIA/Megatron-LM">Megatron-LM</a>、<a href="https://github.com/pytorch/torchtitan">TorchTitan</a> 与 <a href="https://github.com/togethercomputer/xorl">XoRL</a>。</span>
           和推理引擎<label for="sn-inference-engines" class="sidenote-number"></label><input type="checkbox" id="sn-inference-engines" class="margin-toggle"><span class="sidenote"><a href="https://github.com/sgl-project/sglang">SGLang</a>、<a href="https://github.com/vllm-project/vllm">vLLM</a> 与 <a href="https://github.com/NVIDIA/TensorRT-LLM">TensorRT-LLM</a>。</span>
-          算出的 logprobs <i>对不上</i>。
+          算出的 logprobs <i>无法对齐</i>。
         </p>
       </div>
 
@@ -558,7 +558,7 @@
           <section id="kernels" aria-labelledby="kernels-title" data-reveal>
             <h2 id="kernels-title">Qwen3-8B：对齐一个稠密 Transformer</h2>
             <p>
-              在 Qwen3-8B 上，两个引擎可能在常数如何构造、值在何处舍入、以及 reduction 如何排序上对不上。这里消除不匹配相对直接，但会给我们后续更复杂模型留下积木。
+              在 Qwen3-8B 上，两个引擎可能在常数如何构造、值在何处舍入、以及 reduction 如何排序上无法对齐。这里消除不匹配相对直接，但会给我们后续更复杂模型留下积木。
               我们会按模型里的每个算子走一遍，说明不匹配从何而来、如何修，从 LoRA 开始。
             </p>
             <h3 id="lora">LoRA：对齐前向的两种做法</h3>
@@ -602,7 +602,7 @@
               <dfn class="term-definition" tabindex="0" data-definition="旋转位置编码按与位置相关的角度旋转隐状态中的成对分量。">RoPE</dfn>
               用与位置相关的正弦、余弦旋转隐状态中的成对分量。两个引擎可能在
               何处构造正余弦表、以及旋转过程中
-              <a href="#background-rounding">何时舍入</a>上对不上。
+              <a href="#background-rounding">何时舍入</a>上无法对齐。
             </p>
             <p>
               对 Qwen，
@@ -619,7 +619,7 @@
             <div class="fig-shell kernel-story-figure" id="fig-rope-mismatch" data-reveal data-autoplay="loop">
               <p class="fig-reading-guide">
                 <span class="fig-reading-guide-label">图</span>
-                <span>CPU 构造的表与 GPU 构造的表在位置 593 首次对不上。从此处起，同一旋转会给出不同输出。</span>
+                <span>CPU 构造的表与 GPU 构造的表在位置 593 首次无法对齐。从此处起，同一旋转会给出不同输出。</span>
               </p>
               <div class="fig-stage">
                 <figure>
@@ -828,7 +828,7 @@
               <dfn class="term-definition" tabindex="0" data-definition="SwiGLU 对投影的 gate 半边施加 SiLU，再与 up-projection 半边相乘。">SwiGLU</dfn>
               计算 <code>SiLU(gate) * up</code>，又是
               <a href="#background-rounding"><i>舍入规则</i></a>的一例。训练与推理可能在是否
-              对中间 SiLU 结果舍入上对不上。
+              对中间 SiLU 结果舍入上无法对齐。
             </p>
             <p>
               我们给两份代码库都加上只舍入一次的 SwiGLU kernel。它把输入转成 FP32，计算 SiLU 与乘法，再把输出一次 cast 成 BF16。去掉中间的 BF16 舍入让结果更准<label for="sn-swiglu-accuracy" class="sidenote-number"></label><input type="checkbox" id="sn-swiglu-accuracy" class="margin-toggle"><span class="sidenote">MAE 为 4e-4，SGLang 原生实现为 6e-4。</span>。
@@ -1805,7 +1805,7 @@
             <p>
               64 行的块在内部也不一样。SGLang 自己的 kernel 把运行状态存成
               [<i>V</i>, <i>K</i>]，并用匹配的转置乘法顺序，再用单独的小块 pass 加上一次 merge 来求逆 64 行三角因子。XoRL 把状态存成
-              [<i>K</i>, <i>V</i>]，并用一次融合 merge。两边算的是同一组和，只是 FP32 分组不同，因此长上下文下会有一小截元素对不上。
+              [<i>K</i>, <i>V</i>]，并用一次融合 merge。两边算的是同一组和，只是 FP32 分组不同，因此长上下文下会有一小截元素无法对齐。
             </p>
 
             <h4>在 decode 时回放 64 行计算</h4>
@@ -2137,7 +2137,7 @@
               每个 block 里有四路 BF16 残差流。模型的
               <dfn class="term-definition" tabindex="0" data-definition="mHC 是 DeepSeek-V4 为四路并行残差流学习的混合器。">mHC mixer</dfn>
               在每个注意力 / expert 层之前把这些流合成一行 BF16，再把该层输出加回重新混合后的流。这个 mixer 计算每个 token 的 FP32
-              权重以及一份 4×4 的 FP32 混合矩阵。XoRL 与 SGLang 可能在如何融合 mixer、或在 mixer 内部何处舍入与相加上对不上，于是出现不匹配。
+              权重以及一份 4×4 的 FP32 混合矩阵。XoRL 与 SGLang 可能在如何融合 mixer、或在 mixer 内部何处舍入与相加上无法对齐，于是出现不匹配。
             </p>
             <h4>共用 serving 前向</h4>
             <p>
@@ -2408,7 +2408,7 @@
               is to be expected.
             </p> -->
             <p>
-              当然，不设上界的 importance sampling 有点像被故意放水的基线，对吧？我们总可以在目标函数里把这修好。
+              当然，不设上界的 importance sampling 更接近被刻意放宽的基线。我们总可以在目标函数里把它修正。
             </p>
             <h3 id="conclusion-objectives">什么目标函数能缓解不匹配？</h3>
 <div class="fig-shell grpo-runs-figure objectives-figure" id="fig-objectives" data-reveal>
@@ -2568,7 +2568,7 @@
               但这意味着：若我们要在客户端改动 token / logprobs，例如截掉第一个答案之后的 token，就必须以某种方式在 routing payload 上镜像同样的改动。
              </p>
              <p>
-              看到这里你可能觉得这一切有点凑合，确实如此。Tinker 连基础的 Router Replay 都不支持。
+              看到这里，这一切看起来像权宜之计，也确实如此。Tinker 连基础的 Router Replay 都不支持。
               尽管如此，Total Router Recall 仍是我们目前能想出的、相对逐字节对齐系统最好的替代。
               若你想要一种容易插入、用来缓解不匹配、又不在乎训练 router 的办法，这是个好选项。
               任何 0-k3 的替代都有吸引力，因为它可能不必付 0-mismatch 方案必须付的代价。
@@ -2590,7 +2590,7 @@
               </table>
             </section>
             <p>
-              20% 是一笔不小的税，但请记住：这笔税在 Qwen 上其实最陡，而且对 Qwen 而言大头花在用精确 GDN decode 对齐 SGLang 内部的 prefill 与 decode。
+              20% 是相当可观的额外开销，但请注意：这项开销在 Qwen 上最为陡峭，而且对 Qwen 而言，主要花在用精确 GDN decode 对齐 SGLang 内部的 prefill 与 decode。
             </p>
             <p>
               毫无疑问，未来还有许多优化能压低步级开销；我们乐观地认为，很快做 0-mismatch RL 就不会太贵。我们也相信这值得：心里有数，知道运行不是因为不匹配而平台化。但强制 0 mismatch 还有另一项代价。
@@ -2689,7 +2689,7 @@
               <em>By Ashwinee Panda, Qingyang Wu, and Zhongzhu Zhou.</em>
             </p>
             <p>
-              <em>致谢：Core Automation、Recursive、Ricursive 和 River AI 的朋友看过更早的稿子，提了不少意见，谢谢他们。GPU 时间和 token 是 TogetherAI 给的，没这个根本做不下来。</em>
+              <em>致谢：感谢 Core Automation、Recursive、Ricursive 与 River AI 的朋友为较早稿件提供意见。没有 TogetherAI 提供的 GPU 时间与 token，这项工作无法完成。</em>
             </p>
           </section>
 
