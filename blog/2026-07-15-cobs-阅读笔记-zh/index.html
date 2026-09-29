@@ -7,7 +7,7 @@ Tags
 <strong>论文标题：</strong> COBS: Cumulant Order Block Sparse Attention
 <strong>作者：</strong> Alexander Tian, Aditya Ghai, Sanjit Neelam, Zaal Vasania, Akshay Mishra（MatX）
 <strong>arXiv：</strong> 2607.09052
-<strong>状态：</strong> arXiv 预印本，2026 年 7 月</p>
+</p>
 <h2 id="一句话总结">一句话总结</h2>
 <p>块稀疏注意力理论上是缓解长上下文 LLM 推理时 KV 缓存读带宽瓶颈最”硬件友好”的方式:与其在每个解码步都读取每一个历史 token 的 key/value 对,不如只读几个连续的”块(block)“。可现实是,几乎没有一个主流开源 LLM 真正采用它——大家用的是稠密注意力、隐空间压缩(MLA)、局部窗口,或者细粒度 token 选择。这篇论文追问了原因,而且答得异常精确。它证明:现有所有的块<strong>选择器</strong>——也就是在读取一个块的完整 key 之前,决定”这个块值不值得细粒度读取”的那套机制——本质上都可以归约成按一个数字给块排序,这个数字就是块的<strong>注意力质量(attention mass)</strong>(块会拿到的、未归一化的 softmax 权重之和)。一个按<strong>精确</strong>质量排序的 oracle,即读取每一个 key 来算出精确的质量,在一个高难度的长上下文检索基准上能把与稠密注意力的差距补齐 99.5%。所以说,选择的<strong>标准</strong>从来都不是问题。真正的问题在于:每一个已部署的选择器——NSA 的可学习 MLP 池化、DeepSeek-V4 的 CSA 门控、朴素的块均值、甚至 Quest 的 min/max 包围盒——都只能把这个质量估计到关于 query 向量的<strong>一阶</strong>,原因是它们每个块只缓存一个与 query 无关的向量,评分时只是拿这个向量和 query 做一次内积。论文的核心理论招数是把块质量写成块内 key 的<strong>累积量生成函数(cumulant generating function)<strong>的指数形式,然后指出:这个函数的泰勒展开里有一个二阶项——一个关于</strong>块内 key 协方差</strong>的二次型——这个二阶项是任何一阶选择器都注定漏掉的,不管这个一阶摘要本身是怎么算出来的(均值、学习出来的 MLP,还是门控池化都一样)。COBS(Cumulant Order Block Sparse Attention)要做的就是把这个二阶项找回来:它在缓存块均值的同时,额外缓存一份压缩过的、低秩、量化后的块内 key 协方差,用得到的二次修正项来给块打分。在一个 11 任务、32k 上下文的 RULER 基准上,仅这一处改动就把平均分从 0.2999(一个受控的 NSA 基线)提到了 0.8195——把和稠密注意力(0.9040)之间的差距补齐了约 86%——同时读取的 KV 流量只比 NSA 基线多 1.21 倍,比稠密注意力少 15.15 倍。这篇论文对自己结论的边界异常诚实:所有结果都是在约 1.2B 参数规模、非标准的 SFT 协议下验证的,“COBS”这个标签本身也捆绑了好几个互相纠缠的设计选择——这些细节本文会在后面的批判性分析部分逐一梳理清楚。</p>
 <h2 id="核心要点">核心要点</h2>

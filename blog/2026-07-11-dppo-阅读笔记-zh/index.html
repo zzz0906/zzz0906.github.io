@@ -7,7 +7,7 @@ Tags
 <strong>论文标题：</strong> Rethinking the Trust Region in LLM Reinforcement Learning
 <strong>作者：</strong> Penghui Qi, Xiangxin Zhou, Zichen Liu, Tianyu Pang, Chao Du, Min Lin, Wee Sun Lee
 <strong>arXiv：</strong> 2602.04879
-<strong>状态：</strong> ICML 2026（PMLR 306），Sea AI Lab 与新加坡国立大学（NUS）</p>
+</p>
 <h2 id="一句话总结">一句话总结</h2>
 <p>今天几乎所有用来微调大语言模型的强化学习算法——PPO、GRPO 以及它们的各种变体——都继承了一套 2017 年为经典小动作空间控制问题设计的信任域（trust region）机制，而这套机制从未针对大模型那种极其庞大、长尾分布的词表被重新验证过。这篇论文提出了一个具体且可修复的诊断：PPO 的裁剪判断依赖的是”单个采样 token 的概率比率”，而这只是信任域真正想要约束的那个量——新旧策略 token 分布之间的总变差（TV）或 KL 散度——的一个高噪声、单样本蒙特卡洛估计。由于大模型词表极其庞大且长尾，这个噪声代理会在两个方向上同时失效：对于<strong>罕见 token</strong>，哪怕实际移动的概率质量微乎其微,只要比率一高就会被激进裁剪,拖慢探索与推理相关 token 的学习;对于<strong>高频 token</strong>,哪怕它移动了大量概率质量,只要比率看起来”温和”,裁剪机制就可能完全放行,从而带来灾难性的、破坏稳定性的更新。论文提出的修复方案——Divergence Proximal Policy Optimization（DPPO,散度近端策略优化）——保留了 PPO 简单的掩码结构,但把被阈值判断的量从”比率”换成了对真实散度的直接、廉价估计,并给出两种轻量近似(Binary 与 Top-K),使这一估计在十几万 token 词表规模下依然可行。与此同时,作者们重新推导了经典的 Kakade–Langford 策略提升下界,使其适用于大模型生成的有限时域(finite-horizon)、稀疏奖励、序列级(而非逐步)反馈的真实场景——而不是原始定理所针对的无限时域折扣 MDP。他们还进行了一系列诊断性实验,精确定位了究竟是<strong>哪些</strong>策略更新导致了每个做过强化学习后训练的人都见过的灾难性崩溃——答案是一小部分(常常远低于 1%)、发生在<strong>负奖励</strong> token 上、且策略已经偏离 rollout 分布很远的更新。DPPO 在五种大规模配置(稠密与 MoE 模型、有无 rollout router replay、可验证奖励与 RLHF 风格奖励)上都优于带 Clip-Higher 的 GRPO 与 CISPO,同时不再需要昂贵的重新计算参考策略,训练成本降低约 25%。</p>
 <h2 id="核心要点">核心要点</h2>

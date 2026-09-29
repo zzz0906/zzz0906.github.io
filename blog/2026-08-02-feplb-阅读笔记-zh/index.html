@@ -7,7 +7,7 @@ Tags
 <strong>阅读论文：</strong> FEPLB: Exploiting Copy Engines for Nearly Free MoE Load Balancing in Distributed Training
 <strong>论文作者：</strong> Shuyao Qi, Haoyuan Liu, Shizhen Zhao（上海交通大学）
 <strong>arXiv：</strong> 2604.19654
-<strong>发表状态：</strong> Preprint（cs.DC），2026 年 4 月</p>
+</p>
 <h2 id="1-为什么读这篇论文它到底在解决什么问题">1. 为什么读这篇论文，它到底在解决什么问题</h2>
 <p>先看一个足以让任何训练大规模 Mixture-of-Experts（MoE）模型的人皱眉的数字：在 GLM-5 的 MoE 层上，128 个专家、<strong>不加</strong>辅助负载均衡损失的情况下，<strong>负载不均平均会白白浪费每个 MoE 层 18.6% 的 GPU 时间</strong>——而且不是训练开始时的一次性现象，也不是某种极端数据分布下才会出现的病态情况，而是<strong>持续性的、每一步训练都在发生</strong>的浪费。原因很简单：不同 token 路由到哪个专家是由学出来的路由器决定的，每个 micro-batch 里各专家收到的 token 数量都在随机波动，而同步训练要求每一步都等最慢的那块 GPU 干完活。</p>
 <p>常见的几种应对方式各有各的问题。可以给路由器加一个辅助均衡损失，但这会限制路由器本可以学到的模式，并且会实际拖累模型质量——这正是为什么像 DeepSeek-V3 这样的前沿 MoE 模型近年来在逐渐<strong>放弃</strong>辅助损失。也可以干脆接受不均衡，白白浪费算力。或者——这是此前系统类工作的主战场——可以在运行时动态重新调度哪块 GPU 处理哪个专家的 token。问题在于（这篇论文用扎实、可复现的实验证明了这一点），<strong>几乎所有此前的动态调度方案都要为这份灵活性付出额外通信的代价</strong>，而这份额外通信恰恰要跟你训练策略里其他部分正在满负荷使用的同一份硬件资源（GPU 的流式多处理器 SM，以及节点间网络）抢资源。</p>

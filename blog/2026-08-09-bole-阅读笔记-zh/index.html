@@ -7,7 +7,7 @@ Tags
 <strong>论文标题：</strong> Bole: Efficient Tree Speculation for Hybrid-Attention Language Models
 <strong>论文作者：</strong> Li Wang, Yi Su, Xiabao Wu, Chiran You, Yongchao Liu, Zhan Qiu, Juelu Zhang, Jiajun Zheng, Fangxin Liu, Jie Zhang, Chen Tian, Chengying Huan（南京大学、蚂蚁集团、上海交通大学、北京大学）
 <strong>arXiv：</strong> 2608.01651
-<strong>发表状态：</strong> 预印本（cs.DC），2026年8月</p>
+</p>
 <h2 id="1-为什么混合注意力模型需要一套不一样的投机解码方案">1. 为什么混合注意力模型需要一套”不一样”的投机解码方案</h2>
 <p>如果你这两年一直在关注 LLM 服务系统，树状投机解码（tree speculative decoding）大概已经算是一个”解决了的问题”。EAGLE-2、Medusa 这类方法用一个轻量级”起草模型”（drafter）一次性提出多条候选续写，组织成一棵树而不是一条直链；大模型（target model）用一个”祖先掩码”（ancestor mask）在一次并行前向里给整棵树打分——树上的每个节点只能看到自己到根节点这条路径上的祖先，看不到兄弟分支；然后标准的接受/纠正采样从树里挑出最长的可接受路径，同时保证输出分布和原模型完全一致。SGLang、AdaServe 这类系统已经把这套流程做成了生产级基础设施，报告的加速比动辄 5 倍。</p>
 <p>但所有这些系统背后都藏着一个安静的假设：目标模型是一个纯全注意力（full-attention）Transformer。全注意力有一个对树验证极其友好的性质：因为每个 token 关注的 KV cache 只是简单地”拼接”增长，你可以把整棵候选树摊平成一条带祖先掩码的长序列，一次注意力调用就能打完全部分数，掩码矩阵负责挡住兄弟分支之间互相看见。一个节点需要的”状态”，就是”它所有祖先的 key/value 拼在一起”——因为独立向量的拼接没有顺序依赖，这天然就是并行的。</p>

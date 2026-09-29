@@ -7,7 +7,7 @@ Tags
 <strong>阅读论文：</strong> HqeKV: Towards Hybrid Quantization and Eviction for KV Cache in Long-Context LLM Inference
 <strong>论文作者：</strong> He Wang, Yu Gu, Fangfang Li, Zhigang Wang, Zhenghao Liu, Ning Wang, Xiaohua Li, Ge Yu（东北大学；广州大学；中国海洋大学）
 <strong>arXiv：</strong> 提交至 ACL Rolling Review，正式发表于 Findings of ACL 2026（第 4138–4153 页）
-<strong>状态：</strong> Findings of the Association for Computational Linguistics: ACL 2026</p>
+</p>
 <h2 id="1-这篇论文为什么值得仔细读一遍">1. 这篇论文为什么值得仔细读一遍</h2>
 <p>如果你这两年一直在关注 LLM 推理的 KV cache 压缩方向，大概会注意到一个挺奇怪的现象：这个领域已经发展出两套成熟的工具箱——量化（KIVI、KVQuant、ZipCache、KVTuner 及其一堆变体）和淘汰（H2O、SnapKV、StreamingLLM、PyramidKV、CAKE）——但直到最近，几乎没人真正把两者结合好。每套工具箱单独用都会遇到一个躲不开的权衡：纯量化会保留每一个 token，但会给所有 token 施加大致均匀的精度损失，这就把宝贵的精度浪费在了那些以后根本不会再被用到的 token 上；纯淘汰则会直接把被判定为不重要的 token 整个丢掉——这比削减几个比特的精度要粗暴、破坏性大得多。两种策略单独用，都没法把有限的内存预算真正花在刀刃上。</p>
 <p>“那就两个都用”这个显而易见的想法其实已经有人尝试过，但论文指出（并且我认为这个判断是对的，参考它引用的两篇前人工作 EvicPress 和 MiniKV）：之前把量化和淘汰结合起来的尝试，本质上是工程层面的拼接——先用一种方法定一个淘汰比例，再用另一种方法把剩下的量化，而没有一个有原则的方式来决定淘汰/量化的边界该划在哪里，也没有决定该提供几档不同的精度选项。HqeKV 的贡献，就是把”每个缓存的 K/V 对到底该分配到哪一种（五种可能：FP16、三档量化精度、或淘汰）处理”这整个压缩决策，当成一个由两个耦合子问题组成的单一优化问题来处理：（a）如何足够准确地对缓存的 K/V 对按重要性排序，让系统能做出五选一决策而不只是二选一（保留/淘汰）；（b）拿到排序之后，如何决定五档之间的边界，使得整体压缩率达到内存目标的同时质量损失最小。</p>

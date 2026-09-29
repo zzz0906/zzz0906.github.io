@@ -7,7 +7,7 @@ Tags
 <strong>评述论文：</strong> SwiftQK: Fast and Communication-Efficient Tensor Parallelism for Query-Key Normalization
 <strong>论文作者：</strong> Gyudong Kim, Wonjun Han, Young Geun Kim（高丽大学）
 <strong>arXiv：</strong> 2608.09160
-<strong>发表/状态：</strong> IEEE Computer Architecture Letters，2026 年 8 月预印本</p>
+</p>
 <h2 id="1-一篇只有四页正文的短论文为什么值得写一篇完整笔记">1. 一篇只有四页正文的短论文，为什么值得写一篇完整笔记</h2>
 <p>这篇论文很短——含参考文献一共五页——但它是一个在真实 LLM 推理系统中反复出现的典型样例：一个单独看起来微不足道的组件（一个每个元素只有几次浮点运算的归一化层），一旦把模型切分到多张 GPU 上，就可能变成主导延迟的瓶颈。SwiftQK 正是针对这样一个组件：张量并行（Tensor Parallelism, TP）下的 Query-Key 归一化（QK-Norm）。论文在提出任何修复方案之前给出的核心实证发现本身就很惊人：对同时使用 QK-Norm 的 OLMo2 和 OLMo3 而言，TP 从 2 卡扩展到 4 卡时，<em>仅 QK-Norm 本身的开销</em>就从总延迟的约 20% 增长到约 30%，而这部分开销里有 85% 是纯粹的跨 GPU 同步，而非计算本身。这意味着对一个”现代”开源 LLM 来说，增加更多 TP 并行的 GPU 带来的收益正在递减——不是因为注意力或 MLP 块扩展性差，而是因为某一个特定的归一化步骤扩展性<em>很差</em>，并且随着设备数增加而愈发糟糕。</p>
 <p>论文提出的修复方案 SwiftQK 在概念上很简单：与其交换完整的 Query/Key 激活向量让每个设备本地计算归一化统计量，不如只交换那个标量统计量本身，并把（此时已经便宜得多的）同步过程与有用的计算在一个持久化的 CUDA kernel 内重叠起来。本篇笔记会花较多篇幅先讲清楚这个问题为什么会存在——张量并行到底切分了什么、RMSNorm 的结构为什么会在你最不希望出现同步点的地方强行插入一个同步点、以及为什么已有的隐藏通信的 kernel 融合技术在这里并不奏效——然后再详细展开 SwiftQK 的三阶段设计、其避免死锁的论证，以及它的数值精度分析。</p>

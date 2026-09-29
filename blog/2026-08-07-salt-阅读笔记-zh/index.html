@@ -7,7 +7,7 @@ Tags
 <strong>阅读论文：</strong> Pin Once, Swap Light: Subspace-Aligned Centroid-Residual Training for Efficient Ultra-LoRA Serving
 <strong>论文作者：</strong> Xiang Li, Pengcheng Wang, Huazheng Wang, Saurabh Bagchi（普渡大学、俄勒冈州立大学）
 <strong>arXiv：</strong> 2608.03579
-<strong>状态：</strong> 预印本（cs.LG），2026 年 8 月</p>
+</p>
 <h2 id="1-为什么读这篇论文它到底在解决什么问题">1. 为什么读这篇论文，它到底在解决什么问题</h2>
 <p>想象一个 LLM-as-a-Service 平台，在同一个共享基座模型上挂着几百个租户各自的 LoRA 适配器——给某家客户微调过的代码助手、给另一家做的数学辅导、给第三家做的法律文档摘要。每一个到来的请求都需要先把<em>那个</em>租户的适配器加载好才能跑前向。像 vLLM（配合 Punica 式批量异构适配器 kernel）这样的推理引擎，不可能把每个租户的权重都永久钉在显存里——几百个租户光是这一项就会把模型实际服务请求所需的 KV cache 挤没了。所以引擎选择热插拔：让一部分适配器常驻在”工作集”里，其余的等到真正需要时再走 PCIe 从主存搬进来。这正是 Amazon Bedrock 之类”LoRA 即服务”产品背后的真实运行模式。</p>
 <p>论文开篇提出的张力,是一个真实存在、并非已经被解决的硬约束:适配器的<em>秩</em> (rank)同时决定了每个租户获得多少任务特定容量,以及服务这个租户要付出多大代价。7B 模型上一个 rank-16 的 LoRA 适配器,每次被调用大概需要热插拔 13.6 MB——这是真实的 PCIe 带宽和真实的延迟,乘以并发轮转的租户数量。把 rank 降到 r=1 或 r=2 让热插拔变便宜,任务精度自然会下降,有时候还下降得很难看。论文自己的表格里记录了一个很不稳定的现象:标准 LoRA 在 MBPP 上,rank=8 时精度只有 3.00%,而 rank=4 时却有 25.50%——秩和下游精度之间根本没有单调、可预测的关系,这让服务商很难围绕”选哪个 rank”来规划容量。</p>

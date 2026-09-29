@@ -7,7 +7,7 @@ Tags
 <strong>评阅论文：</strong> Fine-grained Computation-Communication Overlap via Tile-level Signaling and Scheduling for Mixture-of-Experts
 <strong>论文作者：</strong> Minyu Cui, Anna Wingkvist, Morgan Ericsson（林奈大学）
 <strong>arXiv：</strong> 2607.19539
-<strong>会议/状态：</strong> 将发表于 ICPP 2026（第 55 届国际并行处理会议）</p>
+</p>
 <h2 id="1-为什么读这篇它到底在解决什么问题">1. 为什么读这篇，它到底在解决什么问题</h2>
 <p>先说一个任何在多 GPU 上跑过 Mixture-of-Experts（MoE）前向的人都心里有数的事实：一个分布式 MoE 层的 wall-clock 时间里，大约一半可能根本没在算东西，而是在等 token 在 GPU 之间搬运。稀疏 MoE 架构本来是要解决一个扩展性问题——让模型容量（更多专家、更多参数）增长而不让每个 token 实际要碰的计算量成比例增长。从 FLOPs 的角度看，它确实做到了：一个被路由到 <code>E</code> 个专家里 <code>top-k</code> 个的 token，只需要付 <code>k/E</code> 份稠密层的计算代价。但在分布式部署里，“只算一点点”悄悄地把一个瓶颈换成了另一个。要把 token 路由到它被分配的专家，你首先得把它”运”过去；要把结果拿回来，你还得再”运”回来。这两次搬运都是集合通信操作（<code>all-to-all</code>），而在现代硬件上，all-to-all 之所以昂贵，恰恰是因为 GPU 算力的增长速度早就把互连带宽甩在了后面。这篇论文用的平台上，A100 级 GPU 能提供数百 TFLOPs 的张量核心吞吐，但 GPU 对之间的 NVLink 单向带宽封顶大约是 100 GB/s——算力是指数级增长，线缆没跟上。</p>
 <p>“通信慢、计算有余量”的教科书解法，就是把两者重叠起来——让通信和独立的计算并发执行，这样决定 wall-clock 时间的是两者中较慢的那个,而不是两者之和。这个想法在这篇论文里不算新——基于分解（把 GEMM 和集合通信切块、在不同 stream 里流水线化）和基于融合（把计算和通信焊接进同一个内核）的重叠技术已经存在多年，论文自己在相关工作里也认真梳理了这两个流派。真正值得完整读一遍而不是扫一眼的原因，是introduction 里一句具体的技术论断：现有的重叠方法要么(a) 因为 NCCL 的集合通信 API 要求”连续缓冲区”，只能沿单一张量维度做分解，导致通信粒度和 GEMM 本身的 tile 结构错位——所以”仅靠分解很难实现 tile 级重叠”;要么(b) 靠把计算和通信融合进一个整体内核来获得细粒度,代价是”侵入式的工程实现,包括自定义屏障、跨 rank 原子协议、以及针对每个目标的内核特化”。两个流派都没能在不产生错位或不做侵入式内核手术的前提下,拿到 tile 粒度的重叠。</p>

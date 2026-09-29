@@ -7,7 +7,7 @@ Tags
 <strong>阅读论文：</strong> vToken: Token-Level Virtualization for Reclaimable KV Caches
 <strong>论文作者：</strong> Yuanhang Gao, Xiangrui Yang, Yuanfeng Chen, Hongjia Chen, Qianru Lv, Wenfei Wu, Dongsheng Li（国防科技大学；北京大学）
 <strong>arXiv：</strong> 2608.13263
-<strong>发表状态：</strong> arXiv 预印本，2026 年 8 月</p>
+</p>
 <h2 id="1-起点两个各自都很成熟的想法凑在一起却出问题">1. 起点：两个各自都很成熟的想法，凑在一起却出问题</h2>
 <p>如果你读过一些 LLM 推理系统方面的论文，下面这两个想法你大概率都见过，而且单独拎出来看，每一个都像是”已经解决”的问题。第一个：<strong>PagedAttention</strong>（vLLM 提出）用固定大小的”块”（block）来管理 KV cache，而不是给每个请求分配一整块连续显存，这个思路借鉴了操作系统里虚拟内存分页的做法，现在几乎已经是所有主流 LLM 推理引擎管理显存的标配方式。第二个：<strong>token 级 KV 淘汰算法</strong> —— H2O、StreamingLLM、Scissorhands 等一系列方法都观察到,并不是每一个历史 token 对预测下一个 token 都同等重要,把不重要的丢掉就能把 KV cache 的显存占用砍掉一半甚至更多,而生成质量损失很小。</p>
 <p>把这两个想法真的放到一个系统里跑,却会发生一件意外的事:它们不能干净地组合在一起。淘汰算法做的是”逐 token”的决策。块管理器只知道怎么按”整块”来回收内存。如果一个 16-token 的块里,H2O 还想留一个 token,另外十五个 token 已经被标记为死掉,那这个块依然不能还给空闲池——它就那么占着,大部分是浪费的。这篇论文的核心实证发现是:这绝不是无关紧要的边角情况——在三种淘汰策略、两个工作负载上,<strong>由此产生的块内浪费率(intra-block waste ratio)高达 40%-60%</strong>,也就是说,你以为淘汰策略已经释放出来的内存,其实有很大一部分依然被锁死、对分配器不可见。vToken 要解决的正是这个问题——不是发明一个更好的淘汰算法,而是插入一层虚拟化,让已有的淘汰决策真正能够转化为可用的物理内存。</p>

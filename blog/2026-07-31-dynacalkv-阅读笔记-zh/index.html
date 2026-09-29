@@ -7,7 +7,7 @@ Tags
 <strong>阅读论文：</strong> DynaCalKV: Key-Value Cache Compression via Head Grouping and Adaptive Rank Allocation
 <strong>论文作者：</strong> Tan T. Nguyen, Quan V. Dang
 <strong>arXiv：</strong> 2607.24331
-<strong>发表状态：</strong> 预印本，2026 年 7 月 27 日</p>
+</p>
 <h2 id="1-为什么读这篇它到底在解决什么问题">1. 为什么读这篇，它到底在解决什么问题</h2>
 <p>LLM 每生成一个新 token，都要回头对所有之前生成过的 token 的 Key、Value 向量做注意力计算。缓存这些向量——也就是 “KV cache”——正是自回归解码能做到快的原因（不用重新计算旧 token 的注意力），但也正因如此，长上下文服务的成本才会这么高：cache 大小随序列长度线性增长，到 32K+ token 时它甚至能超过模型权重本身占用的显存。过去两年围绕”怎么在不损失模型质量的前提下压缩这个 cache”，系统研究已经形成了三条清晰的路线：<strong>量化</strong>（用更少的比特存 KV，比如 KIVI、KVQuant）、<strong>token 驱逐</strong>（直接丢弃被判定不重要的 KV 条目，比如 H2O、SnapKV、CAKE）、以及<strong>低秩压缩</strong>（通过 SVD 或一个可学习的线性映射把 KV 投影到更小的潜空间，比如 Palu、LoRC、MatryoshkaKV、Eigen-Attention）。</p>
 <p>DynaCalKV 属于第三条路线，而且是具体针对 2025 年的一个方法 <strong>ReCalKV</strong> 做的改进，ReCalKV 本身又是建立在 <strong>Palu</strong> 之上的。这篇论文的核心观察范围很窄，但确实有用：ReCalKV 压缩 Key cache 的做法是先对注意力头分组（这样行为相似的头可以共用一个低秩投影），然后在每个组内做 SVD——但它<strong>始终固定</strong>每组 4 个头，不管某一层里的头到底相似还是不相似。DynaCalKV 问了一个很自然的后续问题：如果让头的<strong>真实相似度结构</strong>来决定该有多少组、每组该多大，而不是到处都硬编码”4 个头一组”，会怎么样？答案在一个参数预算约束下被仔细推导出来（保证公平比较），结论是：在标准多头注意力（MHA）模型上，动态分组能带来实打实的额外压缩收益；但在头本来就比较稀疏的架构（分组查询注意力,GQA）上，长上下文评测里这个策略反而会反噬。这种”这里有效，那里明显有害，而且给出了机制解释”的不对称结果，正是这篇仅有六页的论文值得细读的地方——尽管方法本身只是对现有 pipeline 做了一处相当精细的手术式修改。</p>
